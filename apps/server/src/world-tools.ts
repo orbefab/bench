@@ -47,9 +47,21 @@ const DEFAULT_WINDOW_S = 5;
 const DEFAULT_MAX_FRAMES = 50;
 const MAX_FRAMES = 500;
 
-const PART_FIELDS = new Set(["pulseUs", "commandDeg", "state", "current"]);
+const PART_FIELDS = new Set([
+  "pulseUs",
+  "commandDeg",
+  "state",
+  "current",
+  "voltage",
+]);
 const SUPPLY_FIELDS = new Set(["voltage", "current", "minVoltage"]);
-const BOARD_FIELDS = new Set(["pins", "running", "brownout"]);
+const BOARD_FIELDS = new Set([
+  "pins",
+  "running",
+  "brownout",
+  "voltage",
+  "minVoltage",
+]);
 
 type Loaded = {
   root: string;
@@ -75,6 +87,8 @@ type AgentFrame = {
       commandDeg?: number | null;
       state?: string;
       current?: number;
+      /** Volts at V+ relative to GND. */
+      voltage?: number;
     }
   >;
   supplies?: Record<
@@ -83,7 +97,15 @@ type AgentFrame = {
   >;
   boards?: Record<
     string,
-    { pins?: string[]; running?: boolean; brownout?: boolean }
+    {
+      pins?: string[];
+      running?: boolean;
+      brownout?: boolean;
+      /** 5V node at t. */
+      voltage?: number;
+      /** Lowest 5V-node voltage in the window. */
+      minVoltage?: number;
+    }
   >;
 };
 
@@ -215,7 +237,6 @@ function rangeWarnings(
   frames: RecordingRead["frames"]
 ): string[] {
   const out: string[] = [];
-  const feeds = powerFeedsOf(loaded.plan);
   const soaVoltage = new Map<string, number>();
   const soaSeen = new Set<string>();
   const units = jointUnits(loaded.root, loaded.world, loaded.plan);
@@ -227,8 +248,7 @@ function rangeWarnings(
       const brownout =
         loaded.plan.boards.find((board) => board.id === id)?.brownoutVoltage ??
         2.7;
-      const supplyId = feeds.boards[id];
-      const row = supplyId ? frame.supplies[supplyId] : undefined;
+      const row = frame.boards[id];
       if (!row) continue;
       const candidate =
         row.minVoltage > brownout && row.minVoltage < ATMEGA328P_16MHZ_MIN_V
@@ -307,6 +327,8 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       resets: number;
       brownout: boolean;
       pins: string[];
+      /** Volts on the 5V node. Null when no supply reaches the board. */
+      voltage: number | null;
     }
   > = {};
   for (const [id, board] of Object.entries(state.boards)) {
@@ -317,6 +339,10 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       resets: board.resets ?? 0,
       brownout: board.brownout === true,
       pins: drivenPins(board.pins),
+      voltage:
+        unpowered || board.voltage === undefined
+          ? null
+          : round(board.voltage, 3),
     };
   }
   const parts: Record<
@@ -326,6 +352,8 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       commandDeg: number | null;
       state: string | null;
       current: number | null;
+      /** Volts at V+ relative to GND. Null when the part has no power port. */
+      voltage: number | null;
       board: string | null;
       pin: string | null;
     }
@@ -338,6 +366,7 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       commandDeg: live?.commandDeg == null ? null : round(live.commandDeg, 2),
       state: live?.state ?? null,
       current: live?.current == null ? null : round(live.current, 4),
+      voltage: live?.voltage == null ? null : round(live.voltage, 3),
       board: drive?.boardId ?? null,
       pin: drive?.pin ?? null,
     };
@@ -566,6 +595,7 @@ function trimFrame(
     if (all || fields.has("commandDeg")) part.commandDeg = row.commandDeg;
     if (all || fields.has("state")) part.state = row.state;
     if (all || fields.has("current")) part.current = row.current;
+    if (all || fields.has("voltage")) part.voltage = row.voltage;
     parts[id] = part;
   }
   if (Object.keys(parts).length > 0) out.parts = parts;
@@ -595,6 +625,10 @@ function trimFrame(
     if (all || fields.has("running")) board.running = row.running;
     if (all || fields.has("brownout")) {
       board.brownout = row.brownout || row.brownoutAny;
+    }
+    if (all || fields.has("voltage") || fields.has("minVoltage")) {
+      if (all || fields.has("voltage")) board.voltage = row.voltage;
+      if (all || fields.has("minVoltage")) board.minVoltage = row.minVoltage;
     }
     boards[id] = board;
   }
@@ -798,7 +832,7 @@ function commandAck(view: {
 export const worldTools = {
   world_status: tool({
     description:
-      'Read a world\'s shared run. world is the project-relative .world.json path from get_viewer. Returns sim time, who last played or paused, each board (running, fault, resets, brownout, driven pins such as "D9: out H"), each part (pulseUs, commandDeg, state, current, board, pin), each supply, each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose supply is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered".',
+      'Read a world\'s shared run. world is the project-relative .world.json path from get_viewer. Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, driven pins such as "D9: out H"), each part (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin), each supply (terminal voltage and current), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null.',
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);
@@ -853,7 +887,7 @@ export const worldTools = {
   }),
   read_recording: tool({
     description:
-      "Read a world's recording for an agent. world is the project-relative .world.json path from get_viewer. Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, supply:usb.voltage, and board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets, reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board in the 16 MHz out-of-SOA band, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.",
+      "Read a world's recording for an agent. world is the project-relative .world.json path from get_viewer. Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, supply:usb.voltage (the terminal), and board:uno.voltage (the 5V node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets, reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose 5V node was in the 16 MHz out-of-SOA band, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.",
     inputSchema: z.object({
       world: z.string(),
       from: z.number().optional(),

@@ -99,8 +99,10 @@ for the status they return. Do not sample "whatever arrived last".
    collapsed), each with `commandDeg` and the first and last sim time,
    plus that part's board and pin.
 4. `read_recording` — tracks such as `part:servo.pulseUs`,
-   `supply:usb.voltage`, `joint:shoulder` or `joint:arm/shoulder`,
-   `board:uno.pins`. Default window is the last 5 s, 50 frames, 500 max.
+   `part:servo.voltage` (V+ relative to GND), `supply:usb.voltage`
+   (the terminal), `board:uno.voltage` (the 5V node), `joint:shoulder`
+   or `joint:arm/shoulder`, `board:uno.pins`. Default window is the last
+   5 s, 50 frames, 500 max.
    Events in range are resets, reloads, faults, and serial lines. Serial
    text keeps the last 4000 characters and sets `truncated` when it drops
    the rest.
@@ -117,7 +119,7 @@ The same widths are on the `part:servo.pulseUs` track.
 `world_status` lists driven pins only (`D9: out H`), joint positions in
 degrees (metres for a prismatic joint), and each part's own board and pin
 when several robots share a folder. `warnings` is an array of short
-strings, empty when nothing is wrong: a board whose supply is above
+strings, empty when nothing is wrong: a board whose 5V node is above
 brownout and below the 3.78 V an ATmega328P needs at 16 MHz, a hinge more
 than 1° or a slide more than 1 mm past its limit, and any validator
 warning on the document.
@@ -148,14 +150,15 @@ of those steps torques the joint once and the open winding coasts, so in
 ATmega328P resets below 2.675 V and releases
 above 2.725 V. Pins float from the reset. The recording has a `reset`
 event at the assert and a `reboot` event at the first instruction. The
-same stall on the USB preset sits near 4.6 V, reaches the joint stop,
-and does not reset. A stall display needs the drive saturated and slower
+same stall on the USB preset keeps the 5V node near 4.5 V, reaches the
+joint stop, and does not reset. A stall display needs the drive saturated and slower
 than 5 °/s for 20 ms.
 
 To explain one: `world_restart` `arm-stall.world.json`, `world_step` 2000,
 then `read_recording` from 0 to 2. Expect `resets` ≥ 1 on the board, a
-`reset` event, a later `reboot`, and a supply frame whose `minVoltage`
-is under 2.675. The serial line `— brownout reset —` is on the reboot.
+`reset` event, a later `reboot`, and a board frame whose `minVoltage`
+(the 5V node) is under 2.675. On a bench header that node equals the
+supply terminal. The serial line `— brownout reset —` is on the reboot.
 The board status says **in reset** through the 66 ms hold.
 
 ## Not yet
