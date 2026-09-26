@@ -9,3 +9,4 @@ export * from "./urdf";
 export * from "./validate-world";
 export * from "./world";
 export * from "./world-live";
+export * from "./world-view";

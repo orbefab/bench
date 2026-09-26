@@ -1,4 +1,4 @@
-import { powerFeeds, type UrdfInfo } from "@sfab-bench/contract";
+import type { UrdfInfo, WorldViewFeeds } from "@sfab-bench/contract";
 
 export type WorldOutlineJoint = {
   name: string;
@@ -24,6 +24,7 @@ export type WorldOutlineBoard = {
   chip: string;
   firmware: string;
   source?: string;
+  brownoutVoltage?: number;
 };
 
 export type WorldOutlineWire = {
@@ -37,6 +38,8 @@ export type WorldOutlinePart = {
   id: string;
   model: string;
   drives: { robot: string; joint: string } | null;
+  /** Servo signal pin. Absent or null when the part is not a servo. */
+  signalPin?: string | null;
   wires: WorldOutlineWire[];
 };
 
@@ -64,15 +67,15 @@ export type WorldOutlineInput = {
   boards: readonly {
     id: string;
     chip: string;
-    /** Board model id, for example `uno`. Feeds need it to find the power pin. */
-    board?: string;
     firmware: string;
     source?: string;
+    brownoutVoltage?: number;
   }[];
   parts?: readonly {
     id: string;
     model: string;
     drives?: { robot: string; joint: string };
+    signalPin?: string | null;
   }[];
   wires?: readonly [string, string][];
   supplies?: readonly {
@@ -81,6 +84,8 @@ export type WorldOutlineInput = {
     currentLimit: number;
     rSeries: number;
   }[];
+  /** Which supply reaches each board and part. The server computed this. */
+  feeds?: WorldViewFeeds;
 };
 
 const WIRE_PIN_ORDER = ["signal", "V+", "GND"];
@@ -142,16 +147,9 @@ function prismaticMillimetres(
   return metres * 1000;
 }
 
-/** Same pin-then-supply walk the runtime uses. */
+/** Feeds the server already resolved. An absent map feeds nothing. */
 function supplyFeeds(world: WorldOutlineInput): WorldOutlineSupply[] {
-  const feeds = powerFeeds({
-    boards: world.boards.flatMap((board) =>
-      board.board ? [{ id: board.id, board: board.board }] : []
-    ),
-    parts: world.parts ?? [],
-    supplies: world.supplies ?? [],
-    wires: world.wires ?? [],
-  });
+  const feeds = world.feeds ?? { boards: {}, parts: {} };
   return (world.supplies ?? []).map((supply) => ({
     id: supply.id,
     voltage: supply.voltage,
@@ -202,6 +200,7 @@ export function buildWorldOutline(
       id: part.id,
       model: part.model,
       drives: part.drives ?? null,
+      signalPin: part.signalPin ?? null,
       wires: wiresFor(part.id, wires),
     })),
     boards: world.boards.map((board) => ({
@@ -209,6 +208,7 @@ export function buildWorldOutline(
       chip: board.chip,
       firmware: board.firmware,
       ...(board.source ? { source: board.source } : {}),
+      brownoutVoltage: board.brownoutVoltage ?? 2.7,
     })),
     supplies: supplyFeeds(world),
   };

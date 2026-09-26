@@ -2,9 +2,8 @@ import {
   extractUrdfJointsAndMeshes,
   resolveUrdfMesh,
   type UrdfInfo,
-  type WorldBoard,
-  type WorldDocument,
   type WorldPrimitive,
+  type WorldView,
 } from "@sfab-bench/contract";
 import * as THREE from "three";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
@@ -35,7 +34,7 @@ export type WorldSceneDocument = {
     ground: { plane: boolean };
     primitives: WorldPrimitive[];
   };
-  boards: WorldBoard[];
+  boards: WorldView["boards"];
 };
 
 export type WorldAssetProblem = {
@@ -170,49 +169,43 @@ export function releaseMeshes(keys: readonly string[]) {
   for (const key of keys) releaseMesh(key);
 }
 
-function asDocument(value: unknown): {
-  robots: WorldDocument["robots"];
-  parts: NonNullable<WorldDocument["parts"]>;
-  wires: NonNullable<WorldDocument["wires"]>;
-  supplies: NonNullable<WorldDocument["supplies"]>;
-  scene: WorldSceneDocument;
-} | null {
+function asView(value: unknown): WorldView | null {
   if (!value || typeof value !== "object") return null;
-  const doc = value as Partial<WorldDocument>;
-  if (doc.version !== 1 || !Array.isArray(doc.robots)) return null;
-  const environment = doc.environment;
-  if (!environment || typeof environment !== "object") return null;
-  return {
-    robots: doc.robots,
-    parts: Array.isArray(doc.parts) ? doc.parts : [],
-    wires: Array.isArray(doc.wires) ? doc.wires : [],
-    supplies: Array.isArray(doc.supplies) ? doc.supplies : [],
-    scene: {
-      environment: {
-        ground: { plane: Boolean(environment.ground?.plane) },
-        primitives: Array.isArray(environment.primitives)
-          ? environment.primitives
-          : [],
-      },
-      boards: Array.isArray(doc.boards) ? doc.boards : [],
-    },
-  };
+  const view = value as Partial<WorldView>;
+  if (!Array.isArray(view.robots) || !view.environment) return null;
+  if (!Array.isArray(view.boards) || !Array.isArray(view.wires)) return null;
+  return view as WorldView;
 }
 
 export async function loadWorldAssets(
   worldRel: string,
   revision: number
 ): Promise<LoadedWorld> {
-  const res = await readFile(worldRel);
+  const res = await apiFetch(
+    `/api/world/view?world=${encodeURIComponent(worldRel)}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      messageFromHttpBody(text, res.statusText || "Could not load this world")
+    );
+  }
   let parsed: unknown;
   try {
     parsed = (await res.json()) as unknown;
   } catch {
     throw new Error("World file is not JSON.");
   }
-  const read = asDocument(parsed);
-  if (!read) throw new Error("World file is not a version 1 document.");
-  const document = read.scene;
+  const read = asView(parsed);
+  if (!read) throw new Error("World file did not load.");
+  const document: WorldSceneDocument = {
+    environment: {
+      ground: { plane: Boolean(read.environment.ground?.plane) },
+      primitives: read.environment.primitives ?? [],
+    },
+    boards: read.boards,
+  };
 
   const visuals: LoadedVisual[] = [];
   const meshKeys: string[] = [];
@@ -273,10 +266,11 @@ export async function loadWorldAssets(
   const outline = buildWorldOutline(
     {
       robots: read.robots,
-      boards: document.boards,
+      boards: read.boards,
       parts: read.parts,
       wires: read.wires,
       supplies: read.supplies,
+      feeds: read.feeds,
     },
     urdfByRobot
   );

@@ -52,7 +52,6 @@ const outline = buildWorldOutline(
       {
         id: "uno",
         chip: "atmega328p",
-        board: "uno",
         firmware: "firmware/hold/hold.hex",
         source: "firmware/hold/hold.ino",
       },
@@ -62,6 +61,7 @@ const outline = buildWorldOutline(
         id: "servo",
         model: "sg90",
         drives: { robot: "arm", joint: "shoulder" },
+        signalPin: "signal",
       },
     ],
     wires: [
@@ -72,6 +72,7 @@ const outline = buildWorldOutline(
       ["uno.GND", "servo.GND"],
     ],
     supplies: [{ id: "usb", voltage: 5, currentLimit: 0.9, rSeries: 0.5 }],
+    feeds: { boards: { uno: "usb" }, parts: { servo: "usb" } },
   },
   { arm, gripper }
 );

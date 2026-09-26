@@ -54,6 +54,8 @@ import {
   saveThreadPrefs,
 } from "./threads-db";
 import { handleTranscribe } from "./transcribe";
+import { planWorld, WORLD_V1_MESSAGE } from "./world/plan";
+import { viewOf } from "./world/view";
 
 export type AppEnv = {
   Bindings: HttpBindings;
@@ -332,6 +334,24 @@ export const api = new Hono<AppEnv>()
     const denied = denyNoProject(c);
     if (denied) return denied;
     return handleProjectFile(c.req.raw, c.get("projectRoot")!);
+  })
+  .get("/world/view", async (c) => {
+    const denied = denyNoProject(c);
+    if (denied) return denied;
+    const world = c.req.query("world") ?? "";
+    const planned = planWorld(c.get("projectRoot")!, world);
+    if (!planned.ok) {
+      const message = planned.errors.map((error) => error.message).join("; ");
+      return c.json(
+        {
+          error: message.includes(WORLD_V1_MESSAGE)
+            ? WORLD_V1_MESSAGE
+            : message || "World file did not load.",
+        },
+        400
+      );
+    }
+    return c.json(viewOf(planned.plan));
   });
 
 export const app = new Hono().route("/api", api);

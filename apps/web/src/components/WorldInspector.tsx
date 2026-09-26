@@ -1,7 +1,6 @@
 import {
   ARDUINO_PINS,
   maskHasPin,
-  partModel,
   type WorldPinState,
 } from "@sfab-bench/contract";
 import { useEffect } from "react";
@@ -252,10 +251,9 @@ function pulseOnPin(
 ): number | null | undefined {
   const signal = `${boardId}.${pin}`;
   const hit = parts.find((part) => {
-    const model = partModel(part.model);
-    if (model?.drive.kind !== "servo") return false;
+    if (!part.signalPin) return false;
     return part.wires.some(
-      (wire) => wire.pin === model.drive.pin && wire.other === signal
+      (wire) => wire.pin === part.signalPin && wire.other === signal
     );
   });
   if (!hit) return undefined;
@@ -584,7 +582,8 @@ function BoardBody({
             ? recordedSoaLine(
                 recorded.belowSoa,
                 scrub.frame?.supplies,
-                supplyId
+                supplyId,
+                info?.brownoutVoltage
               )
             : boardWarningLine(live?.warnings)
         }

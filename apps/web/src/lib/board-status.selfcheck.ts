@@ -1,5 +1,3 @@
-import { powerFeeds } from "@sfab-bench/contract";
-
 import {
   boardStatusLabel,
   boardWarningLine,
@@ -66,25 +64,11 @@ const twoRails = {
   sag: { voltage: 3.2, minVoltage: 3.2 },
   usb: { voltage: 5, minVoltage: 5 },
 };
-const feeds = powerFeeds({
-  boards: [
-    { id: "uno", board: "uno" },
-    { id: "other", board: "uno" },
-  ],
-  parts: [],
-  supplies: [{ id: "sag" }, { id: "usb" }],
-  wires: [
-    ["sag.5V", "uno.5V"],
-    ["usb.5V", "other.5V"],
-  ],
-});
-expect(feeds.boards.uno === "sag", `uno feed ${feeds.boards.uno}`);
-expect(feeds.boards.other === "usb", `other feed ${feeds.boards.other}`);
 expect(
-  recordedSoaLine(true, twoRails, feeds.boards.uno) === soa,
+  recordedSoaLine(true, twoRails, "sag") === soa,
   "the sagging board uses its own rail"
 );
-const otherLine = recordedSoaLine(true, twoRails, feeds.boards.other);
+const otherLine = recordedSoaLine(true, twoRails, "usb");
 expect(
   otherLine !== soa && !otherLine.includes("3.20"),
   `the in-spec board used the other rail: ${otherLine}`
