@@ -136,7 +136,7 @@ type Netlist = {
 ```
 
 - Instance numeric `params` override form params of the same name. For example, a bench supply takes the world's voltage and current limit.
-- An instance string param `urdf` replaces the body file of a part whose body is `urdf`, relative to the world.
+- An instance string param `urdf` replaces the body file of a part whose body is `urdf`. The path is relative to the project folder.
 - Children are instantiated only when the chosen behaviour is a composite. The lockfile still lists them.
 
 **Model forms** are versioned equations that parts and snapshots fill in:
