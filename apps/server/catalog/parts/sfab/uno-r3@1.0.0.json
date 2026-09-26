@@ -5,7 +5,7 @@
   "foreign": false,
   "sources": [
     {
-      "title": "Bench catalog boardModels.uno and chipModels.atmega328p",
+      "title": "Bench Uno and ATmega328P",
       "ref": "packages/contract/src/world.ts @ b5ce591"
     },
     {

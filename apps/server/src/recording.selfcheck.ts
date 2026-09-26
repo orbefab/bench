@@ -18,7 +18,6 @@ import {
 
 import { closeRootWatches } from "./projects";
 import { BROWNOUT_RESET, FIRMWARE_RELOADED } from "./world/board";
-import { readDraft, writeDraft } from "./world/draft";
 import {
   attachWorld,
   frameAt,
@@ -35,6 +34,7 @@ import {
   type RunRecorder,
   recordingFootprint,
 } from "./world/record";
+import { readDraft, writeDraft } from "./world/selfcheck-draft";
 
 /**
  * The run's recording. Sim time only. A world reload starts a new

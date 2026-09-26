@@ -15,7 +15,6 @@ import type { WorldServerMessage } from "@sfab-bench/contract";
 import { handleProjectFile } from "./cad-pkg";
 import { closeRootWatches, listProjectFiles } from "./projects";
 import { RX_BACKLOG } from "./world/board";
-import { readDraft, writeDraft } from "./world/draft";
 import { projectReal, readerFor } from "./world/files";
 import {
   attachWorld,
@@ -29,6 +28,7 @@ import {
 } from "./world/host";
 import { compileWorld, ensureMujocoCompiler } from "./world/model";
 import { planWorld } from "./world/plan";
+import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import type { FromWorker, ToWorker } from "./world/worker";
 
 /**
@@ -203,6 +203,55 @@ if (bare.ok) {
   bare.vfs.delete();
 }
 rmSync(bareRoot, { recursive: true, force: true });
+
+const restRoot = mkdtempSync(join(tmpdir(), "sfab-world-rest-"));
+try {
+  cpSync(armDir, restRoot, { recursive: true });
+  writeDraft(restRoot, "rest.world.json", {
+    environment: { ground: { plane: false }, gravity: [0, 0, 0] },
+    robots: [
+      {
+        id: "arm",
+        urdf: "robot/arm.urdf",
+        pose: { position: [0, 0, 0], rotation: [1, 0, 0, 0] },
+      },
+    ],
+    boards: [],
+    supplies: [],
+    parts: [],
+    wires: [],
+  });
+  const restReal = projectReal(restRoot);
+  expect(restReal, "zero-g copy resolves");
+  if (!restReal) throw new Error("unreachable");
+  const restPlan = planWorld(restReal, "rest.world.json");
+  expect(
+    restPlan.ok,
+    restPlan.ok ? "" : restPlan.errors.map((error) => error.message).join("; ")
+  );
+  if (!restPlan.ok) throw new Error("unreachable");
+  const rest = await compileWorld(
+    restPlan.plan,
+    readerFor(restReal, "rest.world.json")
+  );
+  expect(
+    rest.ok,
+    `zero-g compile: ${rest.ok ? "" : rest.errors.map((error) => error.message).join("; ")}`
+  );
+  if (!rest.ok) throw new Error("unreachable");
+  const data = new rest.mj.MjData(rest.model);
+  const qpos = data.qpos as Float64Array;
+  const q0 = qpos[0] ?? 0;
+  for (let i = 0; i < 1000; i++) rest.mj.mj_step(rest.model, data);
+  const q1 = qpos[0] ?? 0;
+  expect(q0 === q1, `zero gravity moved the shoulder from ${q0} to ${q1}`);
+  console.log("zero gravity: unpowered shoulder stays at rest");
+  data.delete();
+  rest.model.delete();
+  rest.vfs.delete();
+} finally {
+  rmSync(restRoot, { recursive: true, force: true });
+}
 
 const worker = new Worker(worldWorkerEntry());
 const fromWorker: FromWorker[] = [];

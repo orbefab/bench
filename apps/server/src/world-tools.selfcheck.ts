@@ -13,7 +13,6 @@ import { emptySnapshot, type WorldServerMessage } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
-import { readDraft, writeDraft } from "./world/draft";
 import {
   attachWorld,
   stopWorld,
@@ -22,6 +21,7 @@ import {
   worldStepInFlight,
   worldWorkerCount,
 } from "./world/host";
+import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import { worldTools } from "./world-tools";
 
 function expect(cond: unknown, label: string): asserts cond {

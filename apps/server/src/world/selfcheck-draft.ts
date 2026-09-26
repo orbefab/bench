@@ -1,6 +1,7 @@
 /**
- * Read and write a flat scene so self-checks can change wires and
- * supplies without hand-editing a v2 part file. Not a file format.
+ * Test-only helper. Self-checks use it to edit a scene as flat lists.
+ * Not a runtime module and not a file format. No runtime module may
+ * import it.
  */
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -18,6 +19,8 @@ export type DraftPose = {
 export type WorldDraft = {
   environment: {
     ground: { plane: boolean };
+    /** Metres per second squared. Omitted drafts keep the arm's −9.81. */
+    gravity?: [number, number, number];
     primitives?: unknown[];
     stepProps?: unknown[];
   };
@@ -32,7 +35,7 @@ export type WorldDraft = {
   }[];
   supplies: {
     id: string;
-    kind: "usb" | "bench";
+    kind: "usb" | "bench" | "weak";
     voltage: number;
     currentLimit: number;
     rSeries: number;
@@ -147,6 +150,7 @@ export function readDraft(project: string, worldRel: string): WorldDraft {
   return {
     environment: {
       ground: { plane: plan.environment.ground.plane },
+      gravity: [...plan.environment.gravity],
       ...(plan.environment.primitives
         ? { primitives: plan.environment.primitives }
         : {}),
@@ -169,7 +173,12 @@ export function readDraft(project: string, worldRel: string): WorldDraft {
     })),
     supplies: plan.supplies.map((supply) => ({
       id: supply.id,
-      kind: supply.type === "bench-supply-cv-cc" ? "bench" : "usb",
+      kind:
+        supply.type === "bench-supply-cv-cc"
+          ? "bench"
+          : supply.type === "weak-source"
+            ? "weak"
+            : "usb",
       voltage: supply.voltage,
       currentLimit: supply.currentLimit,
       rSeries: supply.rSeries,
@@ -184,9 +193,82 @@ export function readDraft(project: string, worldRel: string): WorldDraft {
 }
 
 function partRef(kind: WorldDraft["supplies"][number]["kind"]): string {
-  return kind === "bench"
-    ? "sfab/bench-supply@1.0.0"
-    : "sfab/usb-port-500ma@1.0.0";
+  if (kind === "bench") return "sfab/bench-supply@1.0.0";
+  if (kind === "weak") return "sfab/weak-source@1.0.0";
+  return "sfab/usb-port-500ma@1.0.0";
+}
+
+/**
+ * A project-local supply whose series resistance may be 36 Ω. The
+ * catalog bench type stays on its tight range; this type exists only
+ * so the SOA self-check can load that source.
+ */
+function writeWeakSource(worldDir: string): void {
+  const typePath = path.join(worldDir, "types", "weak-source.json");
+  mkdirSync(path.dirname(typePath), { recursive: true });
+  writeFileSync(
+    typePath,
+    `${JSON.stringify(
+      {
+        format: "sfab.part-type@1",
+        id: "weak-source",
+        ports: {
+          "5V": { domain: "electrical", role: "power", direction: "out" },
+          GND: { domain: "electrical", role: "ground", direction: "passive" },
+        },
+        plausible: { Voltage: [0, 60], Current: [0, 20], Resistance: [0, 100] },
+      },
+      null,
+      2
+    )}\n`
+  );
+  const partPath = path.join(
+    worldDir,
+    "parts",
+    "sfab",
+    "weak-source@1.0.0.json"
+  );
+  mkdirSync(path.dirname(partPath), { recursive: true });
+  writeFileSync(
+    partPath,
+    `${JSON.stringify(
+      {
+        format: "sfab.part@1",
+        id: "sfab/weak-source@1.0.0",
+        type: "weak-source",
+        foreign: false,
+        axes: {
+          behaviour: {
+            "1": {
+              default: "thevenin",
+              variants: {
+                thevenin: {
+                  kind: "form",
+                  form: "thevenin-limit@1",
+                  params: { V: 5, Rs: 36, Ilimit: 1 },
+                  omits: ["sense-lead drop", "heat"],
+                },
+              },
+            },
+          },
+          body: {
+            "0": {
+              default: "none",
+              variants: { none: { kind: "none", omits: ["chassis"] } },
+            },
+          },
+          visual: {
+            "0": {
+              default: "none",
+              variants: { none: { kind: "none", omits: ["panel"] } },
+            },
+          },
+        },
+      },
+      null,
+      2
+    )}\n`
+  );
 }
 
 function writeUrdfPart(
@@ -326,6 +408,9 @@ export function writeDraft(
       params,
     };
   }
+  if (draft.supplies.some((supply) => supply.kind === "weak")) {
+    writeWeakSource(path.dirname(worldFile));
+  }
   for (const supply of draft.supplies) {
     instances[supply.id] = {
       part: partRef(supply.kind),
@@ -421,7 +506,7 @@ export function writeDraft(
   writeFileSync(partFile, `${JSON.stringify(sceneFull, null, 2)}\n`);
   const environment: Record<string, unknown> = {
     ground: { plane: draft.environment.ground.plane },
-    gravity: [0, 0, -9.80665],
+    gravity: draft.environment.gravity ?? [0, 0, -9.81],
   };
   if (draft.environment.primitives) {
     environment.primitives = draft.environment.primitives;

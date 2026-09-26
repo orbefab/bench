@@ -19,8 +19,8 @@ import {
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
-import { readDraft, writeDraft } from "./world/draft";
 import { worldWorkerEntry } from "./world/host";
+import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import type { FromWorker, ToWorker } from "./world/worker";
 
 /**

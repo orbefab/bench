@@ -9,18 +9,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  partModels,
-  type WorldServerMessage,
-  type WorldState,
-} from "@sfab-bench/contract";
+import type { WorldServerMessage, WorldState } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
-import { readDraft, writeDraft } from "./world/draft";
 import { projectReal, readerFor } from "./world/files";
 import { attachWorld, stopWorld } from "./world/host";
 import { compileWorld, JOINT_LIMIT_SOLREF } from "./world/model";
 import { planWorld } from "./world/plan";
+import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import {
   blankTrack,
   commandDegFromPulse,
@@ -198,17 +194,16 @@ const shoulderArmature = (compiled.model.dof_armature as Float64Array)[0] ?? 0;
 const shoulderFriction =
   (compiled.model.dof_frictionloss as Float64Array)[0] ?? 0;
 expect(
-  Math.abs(shoulderArmature - (partModels.sg90.motor?.armature ?? -1)) < 1e-12,
+  Math.abs(shoulderArmature - 0.00005) < 1e-12,
   `armature ${shoulderArmature}`
 );
 expect(
-  Math.abs(shoulderFriction - (partModels.sg90.motor?.frictionloss ?? -1)) <
-    1e-12,
+  Math.abs(shoulderFriction - 0.002) < 1e-12,
   `frictionloss ${shoulderFriction}`
 );
 const shoulderDamping = (compiled.model.dof_damping as Float64Array)[0] ?? 0;
 expect(
-  Math.abs(shoulderDamping - (partModels.sg90.motor?.damping ?? -1)) < 1e-12,
+  Math.abs(shoulderDamping - 0.0025) < 1e-12,
   `damping ${shoulderDamping}`
 );
 const jointRange = compiled.model.jnt_actfrcrange as Float64Array;

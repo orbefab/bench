@@ -16,6 +16,6 @@
   "plausible": {
     "Voltage": [0, 60],
     "Current": [0, 20],
-    "Resistance": [0, 100]
+    "Resistance": [0, 10]
   }
 }

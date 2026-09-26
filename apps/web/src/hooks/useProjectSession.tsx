@@ -12,7 +12,7 @@ import { closeToast, showToast } from "@/components/ui/toast";
 import { getDeviceToken, jsonApi } from "@/lib/api";
 import {
   ignoreDocumentHistory,
-  isWorldDocumentPath,
+  isWorldFilePath,
   readOpenDocument,
 } from "@/lib/document-query";
 import {
@@ -314,7 +314,7 @@ export function ProjectSessionProvider({
 
   const setDoc = useCallback(async (file: string | null, reload = false) => {
     const next = file ?? "";
-    if (isWorldDocumentPath(next)) {
+    if (isWorldFilePath(next)) {
       const world = worldStore.getState();
       const failed =
         world.assetIssues.length > 0 ||

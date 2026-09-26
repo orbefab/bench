@@ -206,8 +206,9 @@ function worldXml(plan: RunPlan): string {
       return `<body name="pose_${robot.id}" ${poseAttrs(robot.pose)}/>`;
     })
     .join("");
+  const gravity = plan.environment.gravity.map((n) => String(n)).join(" ");
   return `<mujoco model="world">
-    <option timestep="${TIMESTEP_S}" gravity="0 0 -9.81" integrator="implicitfast"/>
+    <option timestep="${TIMESTEP_S}" gravity="${gravity}" integrator="implicitfast"/>
     <worldbody>
       ${geoms.join("\n")}
       ${mounts}

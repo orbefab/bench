@@ -122,6 +122,8 @@ export type RunPart = {
 export type RunPlan = {
   environment: {
     ground: { plane: boolean };
+    /** Metres per second squared. Passed to the MuJoCo model. */
+    gravity: [number, number, number];
     primitives?: WorldPrimitive[];
     stepProps?: WorldStepProp[];
   };
@@ -424,9 +426,9 @@ function build(
       });
       continue;
     }
-    if (typeId === "usb-a-port" || typeId === "bench-supply-cv-cc") {
+    if (inst.axes.behaviour.label === "form thevenin-limit@1") {
       const numbers = formNumbers(inst);
-      if (!numbers || inst.axes.behaviour.label !== "form thevenin-limit@1") {
+      if (!numbers) {
         diags.push(cannot(inst, "the run needs thevenin-limit@1"));
         continue;
       }
@@ -504,6 +506,7 @@ function build(
     plan: {
       environment: {
         ground: { plane: environment.ground.plane },
+        gravity: [...environment.gravity],
         ...(Array.isArray(environment.primitives)
           ? { primitives: environment.primitives as WorldPrimitive[] }
           : {}),

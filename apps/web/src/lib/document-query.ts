@@ -5,7 +5,7 @@ export type OpenDocument =
   | { kind: "file"; path: string }
   | { kind: "world"; path: string };
 
-export function isWorldDocumentPath(path: string): boolean {
+export function isWorldFilePath(path: string): boolean {
   return path.replace(/\\/g, "/").toLowerCase().endsWith(".world.json");
 }
 

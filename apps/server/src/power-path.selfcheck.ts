@@ -14,17 +14,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  boardModels,
-  partModels,
-  type RecordingRead,
-  supplyPresets,
-  type WorldState,
-} from "@sfab-bench/contract";
+import type { RecordingRead, WorldState } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { Engine, TRACE_CASES } from "./world/circuit";
-import { readDraft, writeDraft } from "./world/draft";
 import {
   type AttachWorldOptions,
   attachWorld,
@@ -50,6 +43,7 @@ import {
   unoUsbPathFor,
 } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
+import { readDraft, writeDraft } from "./world/selfcheck-draft";
 
 const LINE = 0.005;
 /** Board node and recorded rail may sit this far under 0 V. */
@@ -60,10 +54,17 @@ const armDir = fileURLToPath(
 const fixtureDir = fileURLToPath(
   new URL("../fixtures/circuit/", import.meta.url)
 );
-const law = partModels.sg90.motor;
-expect(law, "sg90 motor law");
-if (!law) throw new Error("unreachable");
-const boardA = boardModels.uno.current;
+/** Frozen at abccd10, the numbers the run used before the catalog tables left. */
+const law = {
+  k: 0.458,
+  resistance: 7.1,
+  efficiency: 0.57,
+  eSat: 0.3,
+  quiescent: 0.01,
+};
+const boardA = 0.05;
+const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };
+const benchRs = 0.05;
 const fixedStall = boardA + law.quiescent;
 /**
  * Residual after a trip, so the fuse can cool. The catalog 50 mA board
@@ -193,7 +194,6 @@ const trace = loadCsv("uno-usb.csv");
   console.log(`circuit uno-usb: ${pct(err)} of span`);
 }
 
-const usb = supplyPresets.usb;
 const closedStall = solveRail({
   vNom: usb.voltage,
   rSeries: usb.rSeries,
@@ -239,14 +239,14 @@ expect(
 {
   const benchClosed = solveRail({
     vNom: 5,
-    rSeries: supplyPresets.bench.rSeries,
+    rSeries: benchRs,
     iLimit: 0.3,
     fixed: fixedStall,
     motors: [{ fraction: 1, omega: 0, k: law.k, resistance: law.resistance }],
   });
   const bench = createRailCircuit({
     vNom: 5,
-    rSeries: supplyPresets.bench.rSeries,
+    rSeries: benchRs,
     iLimit: 0.3,
     motors: [{ resistance: law.resistance, k: law.k }],
   });

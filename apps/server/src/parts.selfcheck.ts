@@ -14,16 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  boardModels,
-  chipModels,
-  type Diagnostic,
-  type PartFile,
-  type PartTypeFile,
-  partModels,
-  supplyPresets,
-} from "@sfab-bench/contract";
-import { convertV1, scenePartId } from "./world/parts/convert-v1";
+import type { Diagnostic, PartFile, PartTypeFile } from "@sfab-bench/contract";
 import { expandPartType } from "./world/parts/expand";
 import { type LoadOptions, loadWorldV2 } from "./world/parts/load";
 import { lockPathFor, writeLock } from "./world/parts/lock";
@@ -264,50 +255,6 @@ line(
   `fleet resolver (default=${reasons.default}, type=${reasons.type}, path=${reasons.path}, fallback=${reasons.fallback}, no-level=${reasons.none})`
 );
 
-function convertedClean(v1Name: string, worldName: string): void {
-  const frozen = JSON.parse(
-    readFileSync(path.join(serverDir, "fixtures/v1", v1Name), "utf8")
-  ) as Parameters<typeof convertV1>[0];
-  const converted = convertV1(
-    frozen,
-    path.join(repoRoot, "examples/arm"),
-    repoRoot,
-    worldName
-  );
-  const dir = mkdtempSync(path.join(tmpdir(), "sfab-v2-"));
-  try {
-    const partId = scenePartId(worldName);
-    const parsed = partId.match(/^([^/]+)\/([^@]+)@(.+)$/);
-    expect(parsed, partId);
-    const partFile = path.join(
-      dir,
-      "parts",
-      parsed[1],
-      `${parsed[2]}@${parsed[3]}.json`
-    );
-    writeFileSync(
-      path.join(dir, "world.json"),
-      `${JSON.stringify(converted.world, null, 2)}\n`
-    );
-    mkdirSync(path.dirname(partFile), { recursive: true });
-    writeFileSync(partFile, `${JSON.stringify(converted.part, null, 2)}\n`);
-    const result = loadWorldV2(path.join(dir, "world.json"), opts);
-    const errors = result.diagnostics.filter((d) => d.severity === "error");
-    const detail = errors.map((diag) => diag.message).join(" | ");
-    line(
-      errors.length === 0 &&
-        result.report !== null &&
-        result.resolved.length > 0,
-      `v1 ${v1Name} converts to a checked-clean v2 world (${result.resolved.length} instances${detail ? `; ${detail}` : ""})`
-    );
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-convertedClean("arm.world.json", "arm");
-convertedClean("arm-stall.world.json", "arm-stall");
-
 const lockDir = mkdtempSync(path.join(tmpdir(), "sfab-lock-"));
 try {
   cpSync(path.join(fixtures, "hold"), lockDir, { recursive: true });
@@ -422,7 +369,7 @@ line(
 const uno = expandPartType(
   readJson<PartTypeFile>(path.join(catalogDir, "types/arduino-uno-r3.json"))
 );
-const pwm = new Set<string>(boardModels.uno.pwmPins);
+const pwm = new Set(["D3", "D5", "D6", "D9", "D10", "D11"]);
 line(
   uno.templates === undefined &&
     Object.keys(uno.ports).filter((id) => id.startsWith("D")).length === 14 &&
@@ -442,10 +389,19 @@ const joint =
   sg90.axes?.body?.["1"]?.variants.lumped?.kind === "lumped"
     ? sg90.axes.body["1"].variants.lumped.joint
     : undefined;
-const model = partModels.sg90;
-if (!model.motor || !model.supply) throw new Error("sg90 catalog entry");
-const motor = model.motor;
-const supply = model.supply;
+/** Frozen at abccd10, the numbers the run used before the catalog tables left. */
+const motor = {
+  k: 0.458,
+  resistance: 7.1,
+  efficiency: 0.57,
+  eSat: 0.3,
+  quiescent: 0.01,
+  armature: 0.00005,
+  frictionloss: 0.002,
+  damping: 0.0025,
+};
+const supply = { min: 4.8, max: 6 };
+const torqueNm = 0.176;
 expect(law?.kind === "form", "sg90 law");
 if (law?.kind === "form") {
   line(
@@ -460,8 +416,8 @@ if (law?.kind === "form") {
       joint?.damping === motor.damping &&
       sg90.ratings?.["V+"]?.voltage?.[0] === supply.min &&
       sg90.ratings?.["V+"]?.voltage?.[1] === supply.max &&
-      sg90.ratings?.shaft?.torque?.[1] === model.torqueNm,
-    "sg90 catalog numbers match partModels.sg90"
+      sg90.ratings?.shaft?.torque?.[1] === torqueNm,
+    "sg90 catalog numbers match the frozen run"
   );
 }
 
@@ -476,13 +432,13 @@ const benchLaw = bench.axes?.behaviour?.["1"]?.variants.thevenin;
 expect(usbLaw?.kind === "form" && benchLaw?.kind === "form", "supply laws");
 if (usbLaw?.kind === "form" && benchLaw?.kind === "form") {
   line(
-    usbLaw.params.V === supplyPresets.usb.voltage &&
-      usbLaw.params.Rs === supplyPresets.usb.rSeries &&
-      usbLaw.params.Ilimit === supplyPresets.usb.currentLimit &&
-      benchLaw.params.V === supplyPresets.bench.voltage &&
-      benchLaw.params.Rs === supplyPresets.bench.rSeries &&
-      benchLaw.params.Ilimit === supplyPresets.bench.currentLimit,
-    "supply catalog numbers match supplyPresets (V is the setpoint)"
+    usbLaw.params.V === 5 &&
+      usbLaw.params.Rs === 0.5 &&
+      usbLaw.params.Ilimit === 0.9 &&
+      benchLaw.params.V === 5 &&
+      benchLaw.params.Rs === 0.05 &&
+      benchLaw.params.Ilimit === 1,
+    "supply catalog numbers match the frozen run (V is the setpoint)"
   );
 }
 
@@ -490,20 +446,19 @@ const unoPart = readJson<PartFile>(
   path.join(catalogDir, "parts/sfab/uno-r3@1.0.0.json")
 );
 const fw = unoPart.axes?.behaviour?.["1"]?.variants.avr8js;
-const chip = chipModels.atmega328p;
 expect(fw?.kind === "firmware" && fw.params, "uno firmware");
 if (fw?.kind === "firmware" && fw.params) {
   line(
     fw.chip === "atmega328p" &&
-      fw.params.brownoutVoltage === chip.brownoutVoltage &&
-      fw.params.brownoutAssertVoltage === chip.brownoutAssertVoltage &&
-      fw.params.brownoutReleaseVoltage === chip.brownoutReleaseVoltage &&
-      fw.params.quiescent === boardModels.uno.current &&
-      fw.fuses?.extended === chip.extendedFuse &&
-      Math.abs((fw.params.resetHoldS ?? 0) - chip.resetHoldMs / 1000) < 1e-9 &&
-      uno.ports["5V"]?.ratings?.voltage?.[0] === boardModels.uno.supply.min &&
-      uno.ports["5V"]?.ratings?.voltage?.[1] === boardModels.uno.supply.max,
-    "uno catalog numbers match boardModels.uno and chipModels.atmega328p"
+      fw.params.brownoutVoltage === 2.7 &&
+      fw.params.brownoutAssertVoltage === 2.675 &&
+      fw.params.brownoutReleaseVoltage === 2.725 &&
+      fw.params.quiescent === 0.05 &&
+      fw.fuses?.extended === "0xFD" &&
+      Math.abs((fw.params.resetHoldS ?? 0) - 0.066) < 1e-9 &&
+      uno.ports["5V"]?.ratings?.voltage?.[0] === 5 &&
+      uno.ports["5V"]?.ratings?.voltage?.[1] === 5,
+    "uno catalog numbers match the frozen run"
   );
 }
 
@@ -527,3 +482,19 @@ line(
   displayHits === 0,
   `catalog and fixtures store SI only (${jsonFiles.length} json files)`
 );
+
+const runtimeFiles: string[] = [];
+function walkTs(dir: string): void {
+  for (const name of readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) walkTs(full);
+    else if (name.endsWith(".ts")) runtimeFiles.push(full);
+  }
+}
+walkTs(path.join(serverDir, "src/world"));
+const draftImport = runtimeFiles.find(
+  (file) =>
+    !file.endsWith(`${path.sep}selfcheck-draft.ts`) &&
+    readFileSync(file, "utf8").includes("selfcheck-draft")
+);
+line(draftImport === undefined, "runtime modules do not import the test draft");

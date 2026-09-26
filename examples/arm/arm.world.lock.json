@@ -46,21 +46,21 @@
     {
       "id": "sfab/sg90@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90@1.0.0.json",
-      "sha256": "b34d87f9e19dbd9fca95c516c362bf5dfb6a07fe04566ca3672b6e48d68f5203",
+      "sha256": "32f2d8da1221edca277a1fc2a2bb85a78c8fa2726d1f0cd34203fea21201805f",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/uno-r3@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/uno-r3@1.0.0.json",
-      "sha256": "e0cf0bef29f8b980fd9194df85e09fcba11ea27e54fd1f7cf90ca63eb1bd3277",
+      "sha256": "5f4b975753c7b7fb39c64b5c4fdbf84bdf335aabb37c2d983f352f459f2255d4",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/usb-port-500ma@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/usb-port-500ma@1.0.0.json",
-      "sha256": "c1d4f52a047d702c07c795d08fa57f10e113e68d5fa2a65b8df51341f781c361",
+      "sha256": "4eb1ed6007fd6046ee8d025f2ff70852d9b27bfd460278ab23689ed48f277521",
       "source": "catalog",
       "version": "1.0.0"
     }

@@ -7,8 +7,7 @@
  * first `[w, x, y, z]`. Joint values are radians.
  */
 
-import type { WorldError } from "./validate-world";
-import type { WorldQuat, WorldVec3 } from "./world";
+import type { WorldError, WorldQuat, WorldVec3 } from "./world";
 
 export type WorldLinkPose = {
   /** Position in metres. */

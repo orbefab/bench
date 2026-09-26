@@ -40,10 +40,13 @@ export type WorldViewPart = {
   signalPin: string | null;
 };
 
-export type WorldViewFeeds = {
+/** Which supply reaches a board or a part. Null when nothing feeds it. */
+export type PowerFeeds = {
   boards: Record<string, string | null>;
   parts: Record<string, string | null>;
 };
+
+export type WorldViewFeeds = PowerFeeds;
 
 export type WorldView = {
   environment: {

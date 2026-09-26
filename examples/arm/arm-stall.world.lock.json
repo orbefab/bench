@@ -18,7 +18,7 @@
     {
       "id": "sfab/bench-supply@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/bench-supply@1.0.0.json",
-      "sha256": "ba4e87464eb78e1341bcc7cd9cc6ebb894a7b24a2c1a33c1d6e3789426a9bea1",
+      "sha256": "c7156ad0f9958bb1f50c08debe3922dc84e21fbb6a05210bb5db4029c791c524",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -53,14 +53,14 @@
     {
       "id": "sfab/sg90@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90@1.0.0.json",
-      "sha256": "b34d87f9e19dbd9fca95c516c362bf5dfb6a07fe04566ca3672b6e48d68f5203",
+      "sha256": "32f2d8da1221edca277a1fc2a2bb85a78c8fa2726d1f0cd34203fea21201805f",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/uno-r3@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/uno-r3@1.0.0.json",
-      "sha256": "e0cf0bef29f8b980fd9194df85e09fcba11ea27e54fd1f7cf90ca63eb1bd3277",
+      "sha256": "5f4b975753c7b7fb39c64b5c4fdbf84bdf335aabb37c2d983f352f459f2255d4",
       "source": "catalog",
       "version": "1.0.0"
     }
@@ -81,7 +81,7 @@
     {
       "id": "bench-supply-cv-cc",
       "path": "../../apps/server/catalog/types/bench-supply-cv-cc.json",
-      "sha256": "2c3866cd53f7958fefc5b596a50f0a7c326a5f38241a8bb6349474e42eae1d4a",
+      "sha256": "00d2e6b537f5412b0da315b03461dae6d47709523039c7b26a6fde9e98bee0b4",
       "source": "catalog"
     },
     {

@@ -6,13 +6,7 @@
 
 import { fileURLToPath } from "node:url";
 
-import {
-  boardModels,
-  partModels,
-  type RecordingRead,
-  supplyPresets,
-  type WorldState,
-} from "@sfab-bench/contract";
+import type { RecordingRead, WorldState } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
@@ -72,12 +66,17 @@ function solveCircuit(
   return circuit;
 }
 
-const law = partModels.sg90.motor;
-expect(law, "sg90 motor law");
-if (!law) throw new Error("unreachable");
-const board = boardModels.uno.current;
-const usb = supplyPresets.usb;
-const bench = supplyPresets.bench;
+/** Frozen at abccd10, the numbers the run used before the catalog tables left. */
+const law = {
+  k: 0.458,
+  resistance: 7.1,
+  efficiency: 0.57,
+  eSat: 0.3,
+  quiescent: 0.01,
+};
+const board = 0.05;
+const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };
+const bench = { voltage: 5, rSeries: 0.05, currentLimit: 1 };
 
 {
   const motors: CaseMotor[] = [

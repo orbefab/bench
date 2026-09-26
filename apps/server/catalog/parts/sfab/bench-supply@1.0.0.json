@@ -5,7 +5,7 @@
   "foreign": false,
   "sources": [
     {
-      "title": "Bench supplyPresets.bench",
+      "title": "Bench supply, 0.05 ohm series resistance",
       "ref": "rSeries 0.05 ohm; voltage and current limit come from the world"
     }
   ],

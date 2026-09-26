@@ -11,17 +11,12 @@ import { fileURLToPath } from "node:url";
 
 import {
   atmega328pSoaWarning,
-  boardModels,
-  chipModels,
-  partModels,
-  supplyPresets,
   type WorldServerMessage,
   type WorldState,
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { BROWNOUT_RESET } from "./world/board";
-import { readDraft, writeDraft } from "./world/draft";
 import {
   attachWorld,
   brownoutBootSnapshot,
@@ -42,6 +37,7 @@ import {
   stallTorque,
   stepBrownout,
 } from "./world/power";
+import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import { powerFeedsOf } from "./world/wiring";
 
 /**
@@ -75,9 +71,17 @@ expect(lost.parts.servo === null, "an unwired V+ is unpowered");
 expect(lost.boards.uno === "usb", "the board stays on usb");
 console.log("power nets: usb feeds uno and servo; unwired V+ draws nothing");
 
-const law = partModels.sg90.motor;
-expect(law, "sg90 motor law");
-if (!law) throw new Error("unreachable");
+/** Frozen at abccd10, the numbers the run used before the catalog tables left. */
+const law = {
+  k: 0.458,
+  resistance: 7.1,
+  efficiency: 0.57,
+  eSat: 0.3,
+  quiescent: 0.01,
+};
+const boardCurrent = 0.05;
+const usbPreset = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };
+const benchRs = 0.05;
 const iStall5 = stallCurrent(5, law.resistance);
 expect(
   iStall5 >= 0.7 * 0.95 && iStall5 <= 0.7 * 1.05,
@@ -91,7 +95,7 @@ expect(
   `ideal no-load speed ${noLoadDeg.toFixed(2)} °/s`
 );
 
-const fixed = boardModels.uno.current + law.quiescent;
+const fixed = boardCurrent + law.quiescent;
 const stalled: {
   fraction: number;
   omega: number;
@@ -99,33 +103,33 @@ const stalled: {
   resistance: number;
 }[] = [{ fraction: 1, omega: 0, k: law.k, resistance: law.resistance }];
 const usbRail = solveRail({
-  vNom: supplyPresets.usb.voltage,
-  rSeries: supplyPresets.usb.rSeries,
-  iLimit: supplyPresets.usb.currentLimit,
+  vNom: usbPreset.voltage,
+  rSeries: usbPreset.rSeries,
+  iLimit: usbPreset.currentLimit,
   fixed,
   motors: stalled,
 });
 expect(
   usbRail.voltage >= 4.6 &&
     usbRail.voltage <= 4.7 &&
-    usbRail.current < supplyPresets.usb.currentLimit,
+    usbRail.current < usbPreset.currentLimit,
   `usb stall rail ${usbRail.voltage} V ${usbRail.current} A`
 );
 const light = solveRail({
-  vNom: supplyPresets.usb.voltage,
-  rSeries: supplyPresets.usb.rSeries,
-  iLimit: supplyPresets.usb.currentLimit,
+  vNom: usbPreset.voltage,
+  rSeries: usbPreset.rSeries,
+  iLimit: usbPreset.currentLimit,
   fixed,
   motors: [],
 });
 expect(
   light.current === fixed &&
-    Math.abs(light.voltage - (5 - supplyPresets.usb.rSeries * fixed)) < 1e-9,
+    Math.abs(light.voltage - (5 - usbPreset.rSeries * fixed)) < 1e-9,
   `usb under the limit ${light.voltage} V`
 );
 const benchRail = solveRail({
   vNom: 5,
-  rSeries: supplyPresets.bench.rSeries,
+  rSeries: benchRs,
   iLimit: 0.3,
   fixed,
   motors: stalled,
@@ -224,7 +228,7 @@ expect(
 );
 console.log("brownout: assert 2.675 V, release 2.725 V, hold 66 ms");
 
-const brownoutV = chipModels.atmega328p.brownoutVoltage;
+const brownoutV = 2.7;
 const inBand = atmega328pSoaWarning(3.2, brownoutV);
 expect(
   inBand?.code === "below-16mhz-soa" &&
@@ -522,9 +526,9 @@ try {
     {
       id: "usb",
       kind: "usb",
-      voltage: supplyPresets.usb.voltage,
-      currentLimit: supplyPresets.usb.currentLimit,
-      rSeries: supplyPresets.usb.rSeries,
+      voltage: usbPreset.voltage,
+      currentLimit: usbPreset.currentLimit,
+      rSeries: usbPreset.rSeries,
     },
   ];
   usbWorld.wires = usbWorld.wires.map((wire) => [
@@ -619,7 +623,7 @@ function twoArm(root: string, sharedRail: boolean): string {
         kind: "bench",
         voltage: 5,
         currentLimit: 0.3,
-        rSeries: supplyPresets.bench.rSeries,
+        rSeries: benchRs,
       },
     ];
     world.wires = [
@@ -643,7 +647,7 @@ function twoArm(root: string, sharedRail: boolean): string {
         kind: "bench",
         voltage: 5,
         currentLimit: 0.3,
-        rSeries: supplyPresets.bench.rSeries,
+        rSeries: benchRs,
       },
     ];
     world.wires = [
@@ -759,8 +763,8 @@ try {
       const rail = published.supplies?.bench;
       const part = published.parts?.servo;
       const board = published.boards.uno;
-      const quiescent = partModels.sg90.motor?.quiescent ?? 0;
-      const draw = boardModels.uno.current + quiescent;
+      const quiescent = law.quiescent;
+      const draw = boardCurrent + quiescent;
       expect(
         published.simTime.toFixed(3) === browned.simTime.toFixed(3),
         `reload moved sim to ${published.simTime}`
@@ -774,7 +778,7 @@ try {
       if (!rail) throw new Error("unreachable");
       const solved = solveRail({
         vNom: 5,
-        rSeries: supplyPresets.bench.rSeries,
+        rSeries: benchRs,
         iLimit: 0.3,
         fixed: draw,
         motors: [],
@@ -816,7 +820,7 @@ try {
       supplies: [
         {
           id: "usb",
-          kind: "bench",
+          kind: "weak",
           voltage: 5,
           currentLimit: 1,
           rSeries: 36,

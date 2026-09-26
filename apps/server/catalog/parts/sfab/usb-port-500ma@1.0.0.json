@@ -5,7 +5,7 @@
   "foreign": false,
   "sources": [
     {
-      "title": "Bench supplyPresets.usb",
+      "title": "Bench USB port, 5 V, 0.5 ohm, 0.9 A",
       "ref": "5 V, 0.5 ohm, 0.9 A; the half-ampere USB port"
     }
   ],

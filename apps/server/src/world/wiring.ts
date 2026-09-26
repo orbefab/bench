@@ -2,7 +2,7 @@ import { arduinoPinBit, type PowerFeeds } from "@sfab-bench/contract";
 
 import type { RunPin, RunPlan } from "./plan";
 
-export { type PowerFeeds, powerFeeds } from "@sfab-bench/contract";
+export type { PowerFeeds };
 
 /**
  * A servo signal tied straight to one board GPIO pin. Direct pairs only:

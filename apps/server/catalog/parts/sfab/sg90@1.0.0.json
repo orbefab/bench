@@ -5,7 +5,7 @@
   "foreign": false,
   "sources": [
     {
-      "title": "Bench catalog partModels.sg90",
+      "title": "Bench SG90 datasheet fit",
       "ref": "packages/contract/src/world.ts @ b5ce591"
     },
     {

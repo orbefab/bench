@@ -1,7 +1,5 @@
 import { fileURLToPath } from "node:url";
 
-import { partModels } from "@sfab-bench/contract";
-
 import { projectReal, readerFor } from "./world/files";
 import { compileWorld } from "./world/model";
 import { planWorld } from "./world/plan";
@@ -22,10 +20,18 @@ function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
 }
 
-const motor = partModels.sg90.motor;
-const torqueLimit = partModels.sg90.torqueNm ?? 0;
-expect(motor && torqueLimit > 0, "sg90 motor");
-if (!motor) throw new Error("unreachable");
+/** Frozen at abccd10, the numbers the run used before the catalog tables left. */
+const motor = {
+  k: 0.458,
+  resistance: 7.1,
+  efficiency: 0.57,
+  eSat: 0.3,
+  quiescent: 0.01,
+  armature: 0.00005,
+  frictionloss: 0.002,
+  damping: 0.0025,
+};
+const torqueLimit = 0.176;
 
 const root = projectReal(armDir);
 expect(root, "arm fixture");
