@@ -18,7 +18,7 @@ import type {
 
 import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
-import type { LiveNet } from "./parts/nets";
+import type { LiveNet, Wire, WireEnd } from "./parts/nets";
 import { siValue } from "./parts/si";
 
 /** Shown where a world fails to load, in the UI and in the agent tools. */
@@ -133,6 +133,8 @@ export type RunPlan = {
   parts: RunPart[];
   /** Electrical pairs only. Mechanical links are `parts[].drives`. */
   wires: [string, string][];
+  /** The scene's own electrical wires as authored, for the cards. */
+  shownWires: [string, string][];
 };
 
 export type PlanResult =
@@ -298,6 +300,19 @@ function electricalWires(nets: LiveNet[]): [string, string][] {
     }
   }
   return wires;
+}
+
+function authoredWires(nets: LiveNet[], wires: Wire[]): [string, string][] {
+  const electrical = new Set<string>();
+  for (const net of nets) {
+    if (net.domain !== "electrical") continue;
+    for (const port of net.ports) electrical.add(`${port.path}.${port.port}`);
+  }
+  const shown = (end: WireEnd) =>
+    !end.path.includes(".") && electrical.has(end.full);
+  return wires
+    .filter((wire) => shown(wire.a) && shown(wire.b))
+    .map((wire) => [wire.a.full, wire.b.full]);
 }
 
 function drivesFor(
@@ -519,6 +534,7 @@ function build(
       supplies,
       parts,
       wires: electricalWires(loaded.nets),
+      shownWires: authoredWires(loaded.nets, loaded.wires),
     },
     diags,
   };

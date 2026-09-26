@@ -42,7 +42,7 @@ export function viewOf(plan: RunPlan): WorldView {
       ...(part.drives ? { drives: part.drives } : {}),
       signalPin: part.drive.kind === "servo" ? part.drive.pin : null,
     })),
-    wires: plan.wires.map((wire) => [wire[0], wire[1]]),
+    wires: plan.shownWires.map((wire) => [wire[0], wire[1]]),
     feeds: powerFeedsOf(plan),
   };
 }

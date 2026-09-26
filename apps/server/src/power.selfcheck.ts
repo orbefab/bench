@@ -38,6 +38,7 @@ import {
   stepBrownout,
 } from "./world/power";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
+import { viewOf } from "./world/view";
 import { powerFeedsOf } from "./world/wiring";
 
 /**
@@ -62,6 +63,17 @@ if (!holdPlan.ok) throw new Error("unreachable");
 const feeds = powerFeedsOf(holdPlan.plan);
 expect(feeds.boards.uno === "usb", `uno feed ${feeds.boards.uno}`);
 expect(feeds.parts.servo === "usb", `servo feed ${feeds.parts.servo}`);
+expect(
+  JSON.stringify(viewOf(holdPlan.plan).wires) ===
+    JSON.stringify([
+      ["usb.5V", "uno.5V"],
+      ["usb.GND", "uno.GND"],
+      ["uno.D9", "servo.signal"],
+      ["uno.5V", "servo.V+"],
+      ["uno.GND", "servo.GND"],
+    ]),
+  `view wires ${JSON.stringify(viewOf(holdPlan.plan).wires)}`
+);
 
 const unwired = structuredClone(holdPlan.plan);
 unwired.wires = unwired.wires.filter((wire) => !wire.includes("servo.V+"));

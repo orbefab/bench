@@ -24,7 +24,7 @@ import {
   typeFileExists,
 } from "./library";
 import { buildLock, lockPathFor, readLock, verifyLock } from "./lock";
-import { buildNets, type LiveNet } from "./nets";
+import { buildNets, type LiveNet, type Wire } from "./nets";
 import { buildReport } from "./report";
 import { makeDiag } from "./si";
 
@@ -34,6 +34,8 @@ export type LoadResult = {
   world: WorldFileV2 | null;
   resolved: LiveInstance[];
   nets: LiveNet[];
+  /** Wires as written in the part netlists, before nets merge them. */
+  wires: Wire[];
   diagnostics: Diagnostic[];
   report: RunReport | null;
   lock: LockFile | null;
@@ -44,6 +46,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     world: null,
     resolved: [],
     nets: [],
+    wires: [],
     diagnostics: [],
     report: null,
     lock: null,
@@ -164,6 +167,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     world: lib.world,
     resolved: resolved.instances,
     nets,
+    wires,
     diagnostics,
     report: built.report,
     lock,

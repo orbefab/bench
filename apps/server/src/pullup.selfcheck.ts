@@ -70,6 +70,7 @@ function gpioPlan(
     })),
     parts: [],
     wires,
+    shownWires: wires,
   };
 }
 
