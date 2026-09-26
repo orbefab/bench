@@ -414,9 +414,13 @@ function stateAfter(
 const holdRows = await sample(armDir, "arm.world.json", 3500, 1, ["uno"]);
 let holdMin = Infinity;
 for (const row of holdRows) {
-  const voltage = row.state.supplies?.usb?.voltage ?? Number.NaN;
+  const voltage = row.state.boards.uno?.voltage ?? Number.NaN;
   if (voltage < holdMin) holdMin = voltage;
   const board = row.state.boards.uno;
+  expect(
+    row.state.parts?.servo?.voltage === voltage,
+    `servo V+ ${row.state.parts?.servo?.voltage} V is not the board node ${voltage} V`
+  );
   expect(voltage >= 4.5, `hold rail ${voltage} V at ${row.state.simTime}`);
   expect(board?.resets === 0, `hold resets ${board?.resets}`);
   expect(board?.brownout !== true, "hold board browned out");
@@ -455,7 +459,7 @@ const stallRows = await sample(
     );
   }
 );
-const benchOf = (row: Row) => row.state.supplies?.bench;
+const benchOf = (row: Row) => row.state.boards.uno;
 const sagAt = stallRows.find(
   (row) => (benchOf(row)?.voltage ?? 5) < BOD_ASSERT_V
 );
@@ -479,6 +483,11 @@ let armPeak = 0;
 let armAt = 0;
 for (const row of stallRows) {
   const voltage = benchOf(row)?.voltage ?? 5;
+  const terminal = row.state.supplies?.bench?.voltage;
+  expect(
+    terminal === voltage,
+    `bench terminal ${terminal} V is not the board node ${voltage} V`
+  );
   if (voltage < benchMin) benchMin = voltage;
   const angle = row.state.joints.arm?.shoulder ?? startAngle;
   const moved = Math.abs(((angle - startAngle) * 180) / Math.PI);
@@ -553,7 +562,7 @@ try {
   ]);
   let usbMin = Infinity;
   for (const row of usbRows) {
-    const voltage = row.state.supplies?.usb?.voltage ?? Number.NaN;
+    const voltage = row.state.boards.uno?.voltage ?? Number.NaN;
     if (voltage < usbMin) usbMin = voltage;
     expect(
       row.state.boards.uno?.brownout !== true,
@@ -564,9 +573,9 @@ try {
       "usb stall counted a reset"
     );
   }
-  // The recorded voltage is the board node. One stalled SG90 on the USB
-  // cable sits at 4.494 V: the class-1 terminal is 4.643 V, and the fuse
-  // plus the switch drop about I·(0.15 + 0.06) Ω. Still above brownout.
+  // The board card is the 5V node. One stalled SG90 on the USB cable
+  // sits at 4.494 V: the terminal is 5 − I·0.5 Ω, and the fuse plus the
+  // switch drop about I·(0.15 + 0.06) Ω. Still above brownout.
   expect(Math.abs(usbMin - 4.494279) <= 1e-4, `usb stall minimum ${usbMin} V`);
   const blocked = usbRows.filter((row) => row.state.simTime >= 1.5);
   expect(blocked.length > 100, "usb stall tail");
@@ -574,7 +583,21 @@ try {
     blocked.every((row) => row.state.parts?.servo?.state === "stall"),
     `usb blocked joint shows ${blocked.at(-1)?.state.parts?.servo?.state}`
   );
-  const usbCurrent = blocked.at(-1)?.state.supplies?.usb?.current ?? Number.NaN;
+  const steady = blocked.at(-1);
+  const terminal = steady?.state.supplies?.usb?.voltage ?? Number.NaN;
+  const amps = steady?.state.supplies?.usb?.current ?? Number.NaN;
+  const node = steady?.state.boards.uno?.voltage ?? Number.NaN;
+  expect(
+    Math.abs(terminal - (usbPreset.voltage - amps * usbPreset.rSeries)) <=
+      1e-9,
+    `usb terminal ${terminal} V at ${amps} A`
+  );
+  expect(Math.abs(node - 4.5067) <= 1e-4, `usb board node ${node} V`);
+  expect(
+    steady?.state.parts?.servo?.voltage === node,
+    `servo V+ ${steady?.state.parts?.servo?.voltage} V is not the board node`
+  );
+  const usbCurrent = amps;
   console.log(
     `usb stall: minimum ${usbMin.toFixed(3)} V at ${usbCurrent.toFixed(3)} A, no reset in 2 s, stalled against the stop`
   );
@@ -688,7 +711,7 @@ try {
   const split = await sample(splitRoot, splitName, 2000, 1, ["hold", "stall"]);
   let holdMin = Infinity;
   for (const row of split) {
-    const voltage = row.state.supplies?.["usb-hold"]?.voltage ?? Number.NaN;
+    const voltage = row.state.boards.hold?.voltage ?? Number.NaN;
     if (voltage < holdMin) holdMin = voltage;
     const board = row.state.boards.hold;
     expect(board?.resets === 0 && board.brownout !== true, "split hold reset");
@@ -702,7 +725,7 @@ try {
     (row) => (row.state.boards.stall?.resets ?? 0) >= 1
   );
   const stallSag = split.find(
-    (row) => (row.state.supplies?.["bench-stall"]?.voltage ?? 5) < BOD_ASSERT_V
+    (row) => (row.state.boards.stall?.voltage ?? 5) < BOD_ASSERT_V
   );
   expect(stallSag, "stall supply never sagged");
   expect(stallSide, "stall board never reset");
@@ -724,7 +747,7 @@ try {
   // The stall servo's current pulls that rail through brownout, so the
   // hold board resets even though its own servo is not stalled.
   const sharedSag = shared.find(
-    (row) => (row.state.supplies?.bench?.voltage ?? 5) < BOD_ASSERT_V
+    (row) => (row.state.boards.hold?.voltage ?? 5) < BOD_ASSERT_V
   );
   const holdReset = shared.find(
     (row) => (row.state.boards.hold?.resets ?? 0) >= 1

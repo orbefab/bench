@@ -109,11 +109,16 @@ export type WorldPartState = {
   state?: WorldPartMotion;
   /** Amperes drawn from the supply. An unwired supply pin is 0. */
   current?: number;
+  /**
+   * Volts at V+ relative to GND. Absent when the part has no power port.
+   * An unwired V+ is 0.
+   */
+  voltage?: number;
 };
 
 /** One supply in the shared run. Optional on `WorldState` for older clients. */
 export type WorldSupplyState = {
-  /** Volts on the rail this step, never negative. */
+  /** Volts at this supply's terminal this step, never negative. */
   voltage: number;
   /** Amperes drawn from this supply this step. */
   current: number;
@@ -139,6 +144,11 @@ export type WorldBoardState = {
   resets?: number;
   /** True while the CPU is in reset, including the delay after the rail recovers. */
   brownout?: boolean;
+  /**
+   * Volts on this board's 5V node. Absent when no supply reaches the board.
+   * With no cable this equals the supply terminal.
+   */
+  voltage?: number;
   /**
    * Set while a running ATmega328P supply is above brownout and below
    * 3.78 V. Reporting only: the step does not change.
@@ -243,8 +253,8 @@ export type WorldState = {
    */
   parts?: Record<string, WorldPartState>;
   /**
-   * supply id → voltage and current. Optional so an older client ignores
-   * the power budget. Voltage is solved from this step's loads.
+   * supply id → terminal voltage and current. Optional so an older client
+   * ignores the power budget. Voltage is solved from this step's loads.
    */
   supplies?: Record<string, WorldSupplyState>;
   /**
@@ -444,12 +454,16 @@ export type RecordedFrame = {
       worst: WorldPartMotion;
       current: number;
       maxCurrent: number;
+      /** Volts at V+ relative to GND. 0 when that port is unwired. */
+      voltage: number;
     }
   >;
   supplies: Record<
     string,
     {
+      /** Terminal voltage at t. */
       voltage: number;
+      /** Lowest terminal voltage in the window. */
       minVoltage: number;
       current: number;
       maxCurrent: number;
@@ -466,6 +480,10 @@ export type RecordedFrame = {
       brownoutAny: boolean;
       /** Supply was in the 16 MHz out-of-SOA band at any step of the window. */
       belowSoa: boolean;
+      /** Volts on the 5V node at t. With no cable this equals the terminal. */
+      voltage: number;
+      /** Lowest 5V-node voltage in the window. */
+      minVoltage: number;
     }
   >;
 };
@@ -506,12 +524,12 @@ export type RecordingRead = {
 /** One numeric series for the strip. `t` and `v` are the same length. */
 export type TimelineTrack = {
   id: string;
-  /** `deg` for a joint or a servo command, `V` for a supply. */
+  /** `deg` for a joint or a servo command, `V` for a supply terminal or a board's 5V node. */
   unit: "deg" | "V";
   t: number[];
-  /** Picked frame: joint degrees, supply volts, or the command in degrees. */
+  /** Picked frame: joint degrees, volts at that port, or the command in degrees. */
   v: (number | null)[];
-  /** Window minimum, when the series has one (supply voltage). */
+  /** Window minimum, when the series has one (a supply terminal or a board node). */
   lo?: number[];
 };
 

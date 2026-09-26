@@ -1,10 +1,10 @@
 /**
  * Columnar recording of one world run. The worker calls `commit` once per
  * simulated millisecond. A frame is written every 10 ms and covers (t−10 ms, t]:
- * the value at t, plus the minimum voltage, maximum current, worst part
- * state, any brownout, any out-of-SOA supply, and the furthest a joint
- * passed its limit in that window. A 1 ms dip therefore lands on the
- * frame that closes the window.
+ * the value at t, plus the minimum terminal and board-node voltage, the
+ * maximum current, the worst part state, any brownout, any out-of-SOA
+ * supply, and the furthest a joint passed its limit in that window.
+ * A 1 ms dip therefore lands on the frame that closes the window.
  *
  * Storage is typed-array chunks. Queries copy out plain objects. Downsampling
  * picks real frames and widens those window fields across the frames it skips.
@@ -63,9 +63,9 @@ export function recordingFootprint(counts: {
     4 +
     counts.joints * 8 +
     counts.bodies * 28 +
-    counts.parts * 18 +
+    counts.parts * 22 +
     counts.supplies * 16 +
-    counts.boards * 16;
+    counts.boards * 24;
   const framesPerMinute = 60_000 / RECORD_FRAME_MS;
   return {
     bytesPerFrame,
@@ -97,10 +97,13 @@ type Chunk = {
   worst: Uint8Array;
   partCurrent: Float32Array;
   partMax: Float32Array;
+  partVoltage: Float32Array;
   voltage: Float32Array;
   minVoltage: Float32Array;
   supplyCurrent: Float32Array;
   supplyMax: Float32Array;
+  boardVoltage: Float32Array;
+  boardMinVoltage: Float32Array;
   ddr: Uint32Array;
   level: Uint32Array;
   toggled: Uint32Array;
@@ -144,8 +147,12 @@ export class RunRecorder {
   readonly command: Float64Array;
   readonly state: Uint8Array;
   readonly partCurrent: Float64Array;
+  /** Volts at V+ relative to GND. */
+  readonly partVoltage: Float64Array;
   readonly voltage: Float64Array;
   readonly supplyCurrent: Float64Array;
+  /** Volts on each board's 5V node. */
+  readonly boardVoltage: Float64Array;
   readonly ddr: Uint32Array;
   readonly level: Uint32Array;
   readonly toggled: Uint32Array;
@@ -165,6 +172,7 @@ export class RunRecorder {
   private readonly boards: { id: string; track: string }[];
   private readonly minV: Float64Array;
   private readonly maxSupply: Float64Array;
+  private readonly minBoardV: Float64Array;
   private readonly worst: Uint8Array;
   private readonly partMax: Float64Array;
   private readonly brownAny: Uint8Array;
@@ -209,8 +217,10 @@ export class RunRecorder {
     this.command = new Float64Array(nP);
     this.state = new Uint8Array(nP);
     this.partCurrent = new Float64Array(nP);
+    this.partVoltage = new Float64Array(nP);
     this.voltage = new Float64Array(nS);
     this.supplyCurrent = new Float64Array(nS);
+    this.boardVoltage = new Float64Array(nD);
     this.ddr = new Uint32Array(nD);
     this.level = new Uint32Array(nD);
     this.toggled = new Uint32Array(nD);
@@ -220,6 +230,7 @@ export class RunRecorder {
     this.soaAny = new Uint8Array(nD);
     this.minV = new Float64Array(nS);
     this.maxSupply = new Float64Array(nS);
+    this.minBoardV = new Float64Array(nD);
     this.worst = new Uint8Array(nP);
     this.partMax = new Float64Array(nP);
     this.brownAny = new Uint8Array(nD);
@@ -363,6 +374,10 @@ export class RunRecorder {
       }
     }
     for (let i = 0; i < this.boards.length; i++) {
+      const voltage = this.boardVoltage[i] ?? 0;
+      if (voltage < (this.minBoardV[i] ?? Number.POSITIVE_INFINITY)) {
+        this.minBoardV[i] = voltage;
+      }
       if ((this.brownout[i] ?? 0) !== 0) this.brownAny[i] = 1;
       if ((this.belowSoa[i] ?? 0) !== 0) this.soaAny[i] = 1;
     }
@@ -375,6 +390,7 @@ export class RunRecorder {
   private resetFold() {
     this.minV.fill(Number.POSITIVE_INFINITY);
     this.maxSupply.fill(Number.NEGATIVE_INFINITY);
+    this.minBoardV.fill(Number.POSITIVE_INFINITY);
     this.worst.fill(0);
     this.partMax.fill(Number.NEGATIVE_INFINITY);
     this.brownAny.fill(0);
@@ -404,6 +420,7 @@ export class RunRecorder {
       chunk.worst[channel(i, slot)] = this.worst[i] ?? 0;
       chunk.partCurrent[channel(i, slot)] = this.partCurrent[i] ?? 0;
       chunk.partMax[channel(i, slot)] = this.partMax[i] ?? 0;
+      chunk.partVoltage[channel(i, slot)] = this.partVoltage[i] ?? 0;
     }
     for (let i = 0; i < this.supplies.length; i++) {
       chunk.voltage[channel(i, slot)] = this.voltage[i] ?? 0;
@@ -419,6 +436,8 @@ export class RunRecorder {
       chunk.brownout[channel(i, slot)] = this.brownout[i] ?? 0;
       chunk.brownoutAny[channel(i, slot)] = this.brownAny[i] ?? 0;
       chunk.belowSoa[channel(i, slot)] = this.soaAny[i] ?? 0;
+      chunk.boardVoltage[channel(i, slot)] = this.boardVoltage[i] ?? 0;
+      chunk.boardMinVoltage[channel(i, slot)] = this.minBoardV[i] ?? 0;
     }
     chunk.count += 1;
   }
@@ -576,6 +595,9 @@ export class RunRecorder {
     const soa = this.boards.map(
       (_item, i) => (chosen.chunk.belowSoa[channel(i, chosen.slot)] ?? 0) !== 0
     );
+    const minBoard = this.boards.map(
+      (_item, i) => chosen.chunk.boardMinVoltage[channel(i, chosen.slot)] ?? 0
+    );
     const past = this.joints.map(
       (_item, i) => chosen.chunk.limitDeg[channel(i, chosen.slot)] ?? 0
     );
@@ -602,6 +624,8 @@ export class RunRecorder {
         if ((slot.chunk.belowSoa[channel(i, slot.slot)] ?? 0) !== 0) {
           soa[i] = true;
         }
+        const voltage = slot.chunk.boardMinVoltage[channel(i, slot.slot)] ?? 0;
+        if (voltage < (minBoard[i] ?? 0)) minBoard[i] = voltage;
       }
       for (let i = 0; i < this.joints.length; i++) {
         const deg = slot.chunk.limitDeg[channel(i, slot.slot)] ?? 0;
@@ -628,6 +652,7 @@ export class RunRecorder {
       if (!row) continue;
       row.brownoutAny = brown[i] ?? row.brownoutAny;
       row.belowSoa = soa[i] ?? row.belowSoa;
+      row.minVoltage = minBoard[i] ?? row.minVoltage;
     }
     for (let i = 0; i < this.joints.length; i++) {
       const spec = this.joints[i];
@@ -695,6 +720,7 @@ export class RunRecorder {
         worst: motionName(slot.chunk.worst[channel(i, slot.slot)] ?? 0),
         current: slot.chunk.partCurrent[channel(i, slot.slot)] ?? 0,
         maxCurrent: slot.chunk.partMax[channel(i, slot.slot)] ?? 0,
+        voltage: slot.chunk.partVoltage[channel(i, slot.slot)] ?? 0,
       };
     }
     for (let i = 0; i < this.supplies.length; i++) {
@@ -720,6 +746,8 @@ export class RunRecorder {
         brownout: (slot.chunk.brownout[channel(i, slot.slot)] ?? 0) !== 0,
         brownoutAny: (slot.chunk.brownoutAny[channel(i, slot.slot)] ?? 0) !== 0,
         belowSoa: (slot.chunk.belowSoa[channel(i, slot.slot)] ?? 0) !== 0,
+        voltage: slot.chunk.boardVoltage[channel(i, slot.slot)] ?? 0,
+        minVoltage: slot.chunk.boardMinVoltage[channel(i, slot.slot)] ?? 0,
       };
     }
     // Envelope flags survive a track filter. A pulse-only read still
@@ -738,6 +766,8 @@ export class RunRecorder {
         brownout: (slot.chunk.brownout[at] ?? 0) !== 0,
         brownoutAny: (slot.chunk.brownoutAny[at] ?? 0) !== 0,
         belowSoa: (slot.chunk.belowSoa[at] ?? 0) !== 0,
+        voltage: slot.chunk.boardVoltage[at] ?? 0,
+        minVoltage: slot.chunk.boardMinVoltage[at] ?? 0,
       };
     }
     return {
@@ -852,10 +882,13 @@ function createChunk(counts: {
     worst: new Uint8Array(counts.parts * CHUNK),
     partCurrent: new Float32Array(counts.parts * CHUNK),
     partMax: new Float32Array(counts.parts * CHUNK),
+    partVoltage: new Float32Array(counts.parts * CHUNK),
     voltage: new Float32Array(counts.supplies * CHUNK),
     minVoltage: new Float32Array(counts.supplies * CHUNK),
     supplyCurrent: new Float32Array(counts.supplies * CHUNK),
     supplyMax: new Float32Array(counts.supplies * CHUNK),
+    boardVoltage: new Float32Array(counts.boards * CHUNK),
+    boardMinVoltage: new Float32Array(counts.boards * CHUNK),
     ddr: new Uint32Array(counts.boards * CHUNK),
     level: new Uint32Array(counts.boards * CHUNK),
     toggled: new Uint32Array(counts.boards * CHUNK),
@@ -880,6 +913,7 @@ export function timelineFromRead(read: RecordingRead): {
   const jointIds: string[] = [];
   const partIds: string[] = [];
   const supplyIds: string[] = [];
+  const boardIds: string[] = [];
   const seen = new Set<string>();
   for (const frame of read.frames) {
     for (const [robot, joints] of Object.entries(frame.joints)) {
@@ -901,6 +935,12 @@ export function timelineFromRead(read: RecordingRead): {
       if (seen.has(track)) continue;
       seen.add(track);
       supplyIds.push(id);
+    }
+    for (const id of Object.keys(frame.boards)) {
+      const track = boardTrackId(id);
+      if (seen.has(track)) continue;
+      seen.add(track);
+      boardIds.push(id);
     }
   }
   const tracks: TimelineTrack[] = [];
@@ -926,6 +966,15 @@ export function timelineFromRead(read: RecordingRead): {
       t: read.frames.map((frame) => frame.t),
       v: read.frames.map((frame) => frame.supplies[id]?.voltage ?? null),
       lo: read.frames.map((frame) => frame.supplies[id]?.minVoltage ?? 0),
+    });
+  }
+  for (const id of boardIds) {
+    tracks.push({
+      id: boardTrackId(id),
+      unit: "V",
+      t: read.frames.map((frame) => frame.t),
+      v: read.frames.map((frame) => frame.boards[id]?.voltage ?? null),
+      lo: read.frames.map((frame) => frame.boards[id]?.minVoltage ?? 0),
     });
   }
   for (const id of partIds) {

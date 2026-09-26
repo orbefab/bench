@@ -10,6 +10,9 @@ import type { RecordingEvent, RecordingRead } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stepWorld, stopWorld } from "./world/host";
+import { planWorld } from "./world/plan";
+import { unoUsbPathFor } from "./world/power-path";
+import { powerFeedsOf } from "./world/wiring";
 
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
@@ -47,8 +50,33 @@ function eventsAt(
   return times;
 }
 
+/**
+ * The fixture froze the old supply voltage: the board node when a USB
+ * path is present, and the terminal otherwise. `===` still catches a
+ * 1e-7 change.
+ */
+function pathBoards(name: string): Map<string, string> {
+  const planned = planWorld(armDir, name);
+  if (!planned.ok) {
+    throw new Error(planned.errors.map((item) => item.message).join("; "));
+  }
+  const feeds = powerFeedsOf(planned.plan);
+  const boards = new Map<string, string>();
+  for (const board of planned.plan.boards) {
+    const supplyId = feeds.boards[board.id];
+    if (!supplyId) continue;
+    const supply = planned.plan.supplies.find((item) => item.id === supplyId);
+    if (!supply || !unoUsbPathFor(supply.type, board.type)) continue;
+    boards.set(supplyId, board.id);
+  }
+  return boards;
+}
+
 /** The same rows the baseline script wrote from one 3 s recording. */
-function captured(read: RecordingRead): FrozenFrame[] {
+function captured(
+  read: RecordingRead,
+  pathOf: Map<string, string>
+): FrozenFrame[] {
   return read.frames.map((frame) => {
     const prev = frame.t - 0.01;
     const boards: FrozenFrame["boards"] = {};
@@ -67,7 +95,12 @@ function captured(read: RecordingRead): FrozenFrame[] {
     }
     const supplies: FrozenFrame["supplies"] = {};
     for (const [id, supply] of Object.entries(frame.supplies)) {
-      supplies[id] = { voltage: supply.voltage, current: supply.current };
+      const boardId = pathOf.get(id);
+      const node = boardId ? frame.boards[boardId]?.voltage : undefined;
+      supplies[id] = {
+        voltage: node === undefined ? supply.voltage : node,
+        current: supply.current,
+      };
     }
     return {
       t: frame.t,
@@ -125,7 +158,7 @@ async function runWorld(name: string): Promise<FrozenFrame[]> {
     if ("error" in read) throw new Error(read.error);
     const failed = events.find((event) => event.type === "error");
     expect(!failed, failed?.message ?? "world error");
-    return captured(read);
+    return captured(read, pathBoards(name));
   } finally {
     attached.detach();
     await stopWorld(armDir, name);

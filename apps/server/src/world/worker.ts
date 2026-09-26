@@ -428,7 +428,7 @@ function sample(): WorldState | null {
     const pins = board.takePins();
     const power = boardPower.get(board.id);
     const unpowered = !power?.supplyId;
-    const voltage = power?.supplyId ? supplyOf(power.supplyId) : 0;
+    const node = power?.supplyId ? boardNodeOf(power.supplyId) : 0;
     const chip = specs.find((item) => item.id === board.id)?.chip;
     const soa =
       chip === "atmega328p" &&
@@ -436,7 +436,7 @@ function sample(): WorldState | null {
       !board.brownout &&
       !board.fault &&
       !unpowered
-        ? atmega328pSoaWarning(voltage, power?.brownoutVoltage ?? 2.7)
+        ? atmega328pSoaWarning(node, power?.brownoutVoltage ?? 2.7)
         : null;
     boardState[board.id] = {
       ...(board.fault
@@ -445,6 +445,7 @@ function sample(): WorldState | null {
       ...(unpowered ? { unpowered: true as const } : {}),
       resets: power?.resets ?? 0,
       brownout: board.brownout,
+      ...(power?.supplyId ? { voltage: node } : {}),
       ...(soa ? { warnings: [soa] } : {}),
     };
   }
@@ -458,6 +459,7 @@ function sample(): WorldState | null {
       commandDeg: load.drive?.track.commandDeg ?? null,
       state: load.state,
       current: load.current,
+      voltage: load.supplyId ? boardNodeOf(load.supplyId) : 0,
     };
   }
   return {
@@ -530,6 +532,7 @@ function fillRecorder(full: boolean) {
     if (!load) continue;
     rec.state[i] = motionRank(load.state);
     rec.partCurrent[i] = load.current;
+    rec.partVoltage[i] = load.supplyId ? boardNodeOf(load.supplyId) : 0;
   }
   for (let i = 0; i < lay.supplies.length; i++) {
     const spec = lay.supplies[i];
@@ -540,6 +543,8 @@ function fillRecorder(full: boolean) {
   for (let i = 0; i < lay.boards.length; i++) {
     const id = lay.boards[i];
     const board = boards.find((item) => item.id === id);
+    const power = id ? boardPower.get(id) : undefined;
+    rec.boardVoltage[i] = power?.supplyId ? boardNodeOf(power.supplyId) : 0;
     rec.brownout[i] = board?.brownout ? 1 : 0;
     rec.belowSoa[i] = board && boardInSoa(board) ? 1 : 0;
   }
@@ -551,7 +556,7 @@ function boardInSoa(board: AvrBoard): boolean {
   if (spec?.chip !== "atmega328p") return false;
   const power = boardPower.get(board.id);
   if (!power?.supplyId) return false;
-  const voltage = supplyOf(power.supplyId);
+  const voltage = boardNodeOf(power.supplyId);
   return voltage > power.brownoutVoltage && voltage < ATMEGA328P_16MHZ_MIN_V;
 }
 
@@ -1010,11 +1015,9 @@ function solveSupplies() {
       fixed += load.quiescent;
     }
     const solved = solveOneRail(supply.id, fixed);
-    const group = rails.get(supply.id);
-    // The recorded voltage is the board node when the cable is in the
-    // circuit. The current stays the supply terminal's.
-    const voltage = group?.path ? group.circuit.boardVoltage : solved.voltage;
-    next[supply.id] = { voltage, current: solved.current };
+    // The supply record is the terminal. The board node is reported on
+    // the board, and a servo's V+ is that same node.
+    next[supply.id] = { voltage: solved.voltage, current: solved.current };
   }
   for (const load of loads) {
     const drive = load.drive;
@@ -1120,9 +1123,9 @@ function serialIn(id: string, text: string, by?: WorldSender) {
   });
 }
 
-function supplyOf(id: string | null): number {
-  if (!id) return 0;
-  return supplyLive[id]?.voltage ?? 0;
+/** Board node at the end of the step. With no cable this is the terminal. */
+function boardNodeOf(supplyId: string): number {
+  return rails.get(supplyId)?.circuit.boardVoltage ?? 0;
 }
 
 /**

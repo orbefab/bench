@@ -393,7 +393,7 @@ try {
   );
   let minV = Infinity;
   for (const frame of demo1.read.frames) {
-    const voltage = frame.supplies.usb?.minVoltage ?? 0;
+    const voltage = frame.boards.uno?.minVoltage ?? 0;
     if (voltage < minV) minV = voltage;
     expect(voltage >= 4.5, `recorded rail ${voltage} V at ${frame.t}`);
   }
@@ -432,7 +432,7 @@ try {
   let minAt = 0;
   const start = demo2.read.frames[0]?.joints.arm?.shoulder ?? 0;
   for (const frame of demo2.read.frames) {
-    const voltage = frame.supplies.bench?.minVoltage ?? 5;
+    const voltage = frame.boards.uno?.minVoltage ?? 5;
     if (voltage < minV) {
       minV = voltage;
       minAt = frame.t;
@@ -721,12 +721,12 @@ try {
     );
     let holdMin = Infinity;
     for (const frame of split.read.frames) {
-      const voltage = frame.supplies["usb-hold"]?.minVoltage ?? 0;
+      const voltage = frame.boards.hold?.minVoltage ?? 0;
       if (voltage < holdMin) holdMin = voltage;
       expect(voltage >= 4.5, `hold rail ${voltage}`);
     }
     const stallSag = split.read.frames.some(
-      (frame) => (frame.supplies["usb-stall"]?.minVoltage ?? 5) < 2.675
+      (frame) => (frame.boards.stall?.minVoltage ?? 5) < 2.675
     );
     expect(stallSag, "the stall supply never sagged");
     const resets = split.read.events.filter((event) => event.kind === "reset");

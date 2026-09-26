@@ -159,6 +159,16 @@ function expectRecorded(read: RecordingRead, label: string): void {
         `${label} ${id} min ${frame.t} s at ${supply.minVoltage} V`
       );
     }
+    for (const [id, board] of Object.entries(frame.boards)) {
+      expect(
+        board.voltage >= FLOOR_V,
+        `${label} ${id} node ${frame.t} s at ${board.voltage} V`
+      );
+      expect(
+        board.minVoltage >= FLOOR_V,
+        `${label} ${id} node min ${frame.t} s at ${board.minVoltage} V`
+      );
+    }
   }
 }
 
@@ -466,9 +476,9 @@ async function runWorld(
     fuseStart: "tripped",
   });
   expect(opened.state.supplies, "circuit supplies");
-  const boardV = opened.state.supplies.usb?.voltage ?? Number.NaN;
-  const amps = opened.state.supplies.usb?.current ?? Number.NaN;
-  const terminal = usb.voltage - usb.rSeries * amps;
+  const boardV = opened.state.boards.uno?.voltage ?? Number.NaN;
+  const amps = opened.state.supplies?.usb?.current ?? Number.NaN;
+  const terminal = opened.state.supplies?.usb?.voltage ?? Number.NaN;
   expect(
     opened.state.boards.uno?.brownout === true,
     "tripped fuse did not reset"
@@ -493,11 +503,15 @@ async function runWorld(
   let benchMin = Infinity;
   for (const frame of bench.read.frames) {
     const voltage =
-      frame.supplies.bench?.minVoltage ?? frame.supplies.bench?.voltage;
+      frame.boards.uno?.minVoltage ?? frame.boards.uno?.voltage;
     if (voltage !== undefined && voltage < benchMin) benchMin = voltage;
   }
   expect(browned, "bench stall did not brown out");
   expect(benchMin < BOD_ASSERT_V, `bench stall minimum ${benchMin} V`);
+  expect(
+    bench.state.supplies?.bench?.voltage === bench.state.boards.uno?.voltage,
+    `bench terminal ${bench.state.supplies?.bench?.voltage} V is not the board node`
+  );
   console.log(
     `bench stall: minimum ${benchMin.toFixed(3)} V, brownout, no path`
   );
@@ -530,7 +544,19 @@ try {
   const frames = first.read.frames;
   const last = frames[frames.length - 1];
   expect(last, "no frames");
-  const steady = last.supplies.usb?.voltage ?? Number.NaN;
+  const steady = last.boards.uno?.voltage ?? Number.NaN;
+  const liveTerminal = first.state.supplies?.usb?.voltage ?? Number.NaN;
+  const liveAmps = first.state.supplies?.usb?.current ?? Number.NaN;
+  const liveNode = first.state.boards.uno?.voltage ?? Number.NaN;
+  expect(
+    Math.abs(liveTerminal - (usb.voltage - usb.rSeries * liveAmps)) <= 1e-9,
+    `usb terminal ${liveTerminal} V at ${liveAmps} A`
+  );
+  expect(Math.abs(liveNode - 4.5067) <= 1e-4, `usb board node ${liveNode} V`);
+  expect(
+    first.state.parts?.servo?.voltage === liveNode,
+    `servo V+ ${first.state.parts?.servo?.voltage} V is not the board node`
+  );
   expect(
     frames.every((frame) => frame.boards.uno?.brownout !== true),
     "usb stall browned out"
