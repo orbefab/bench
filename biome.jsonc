@@ -12,6 +12,8 @@
       "!**/apps/desktop/app.prev",
       "!**/apps/desktop/release",
       "!**/apps/server/fixtures/external",
+      // Recorded at full float precision; formatting would rewrite the baseline.
+      "!**/apps/server/fixtures/arm-baseline.json",
       "!**/apps/docs/src/routeTree.gen.ts",
       "!**/apps/docs/worker-configuration.d.ts",
       "!**/apps/docs/public/brand/providers",
