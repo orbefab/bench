@@ -9,48 +9,62 @@ is labeled **agent**.
 
 ## The file
 
-Copy `examples/arm/arm.world.json`. Do not invent a second schema. The
-pieces, in that file:
+A world is version 2. Copy `examples/arm/arm.world.json` and its scene
+part. Do not invent a second schema. Opening a file with `"version": 1`
+fails. The error is **World v1 is no longer supported**, in the page and
+from the world tools.
 
-- `robots` — a URDF path and a pose. Link meshes are STL or OBJ next to
-  the URDF. `examples/arm/robot/arm.urdf` is one revolute joint,
-  `shoulder`.
-- `environment` — `ground.plane`, optional primitives, optional STEP props.
-- `boards` — `chip` (`atmega328p`) and a firmware path (the `.hex`).
-  `source` is the `.ino`, shown read-only.
-- `parts` — a part model (`sg90`) and `drives: { robot, joint }`.
-- `supplies` — voltage, current limit, series resistance (`rSeries`).
-- `wires` — pin-to-pin pairs, power and ground included:
+The world file is a root part plus environment and run settings:
+
+- `version` is `2`.
+- `environment` — `ground.plane`, `gravity`, optional primitives, optional
+  STEP props.
+- `run` — `seed`, and `levels.default` (the arm uses `1`).
+- `root.part` — `publisher/name@version`, for the arm
+  `sfab/arm-scene@1.0.0`.
+
+The scene is a part file next to the world, `parts/sfab/arm-scene@1.0.0.json`.
+Its netlist names the instances and the wires. Instance ids stay short
+(`arm`, `uno`, `servo`, `usb`), so a wire is still `uno.D9`.
+
+- A robot is `sfab/arm@1.0.0` with a pose. The URDF is the part's body,
+  `robot/arm.urdf` in the arm example: one revolute joint, `shoulder`.
+  Link meshes are STL or OBJ next to the URDF.
+- A board is `sfab/uno-r3@1.0.0`. `params.firmware` is the `.hex`.
+  `params.source` is the `.ino`, shown read-only.
+- A servo is `sfab/sg90@1.0.0`. Its shaft wire is
+  `["servo.shaft", "arm.shoulder"]` and its mount wire is
+  `["servo.mount", "arm.base"]`.
+- A supply is `sfab/usb-port-500ma@1.0.0` or `sfab/bench-supply@1.0.0`.
+  Override `V`, `Ilimit`, and `Rs` in `params` when the instance is not
+  the part's defaults.
+- Electrical wires are pin-to-pin pairs, power and ground included:
   `["usb.5V", "uno.5V"]`, `["usb.GND", "uno.GND"]`,
   `["uno.D9", "servo.signal"]`, `["uno.5V", "servo.V+"]`,
   `["uno.GND", "servo.GND"]`.
 
-`examples/arm/arm-stall.world.json` is the same arm with stall firmware.
+`examples/arm/arm-stall.world.json` is the same arm with stall firmware
+and a bench supply.
 
-## Validator
+A part file is `sfab.part@1`: an id `publisher/name@version`, a type, and
+axes (behaviour, body, visual) with numbered levels. Catalog parts live
+under the server catalog. A part in the project's `parts/` shadows one.
 
-`world_status` includes `diagnostics` when the document has any. Fix the
-common ones like this:
+## Load errors
 
+`world_status` includes `diagnostics` when a board has no supply. The
+load itself fails before a run exists:
+
+- **World v1 is no longer supported** — the file says `"version": 1`.
+  Write a version 2 world. Nothing converts the old file.
 - `board uno: no supply reaches its 5V pin` — wire a supply `5V` to the
   board's `5V`. Until you do, the board never boots. Status says
   **unpowered**.
-- `servo … signal must be wired directly to a board pin` — one wire from
-  `servo.signal` straight to a board GPIO. A hop through another part
-  does not drive the servo.
-- `Power pin … shares a net` / `Ground pin … shares a net` — power only
-  to power, ground only to ground. A power-to-ground wire is a short.
-- `Wire net has outputs …` — one net, one driving pin. Two supply
-  positives on one net, or two GPIOs tied together, is this error.
-- `driven by analogWrite on … which is not a PWM pin` — `analogWrite`
-  parts need a PWM pin. A servo may use any digital pin, including A0–A5.
-- `analogWrite on … while a servo signal is wired` — Servo.h takes
-  Timer1 and disables PWM on D9 and D10. Move the `analogWrite` part.
-- `outside … V` — the supply is outside the board or part range.
-- `GND does not reach` — wire the grounds together. Power and ground are
-  both explicit.
-- `mesh-format` — milestone 1 link meshes are `.stl` or `.obj` at a path
-  relative to the URDF. Export STL with `$cad` (`cadgen stl build`).
+- A servo signal drives the joint only when one wire joins
+  `servo.signal` straight to a board GPIO, including A0–A5. A hop
+  through another pin does not.
+- `mesh-format` — link meshes are `.stl` or `.obj` at a path relative to
+  the URDF. Export STL with `$cad` (`cadgen stl build`).
 
 ## Firmware
 
