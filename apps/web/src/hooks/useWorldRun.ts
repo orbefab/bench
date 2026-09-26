@@ -29,6 +29,7 @@ import {
   bindWorldSocket,
   goLive,
   noteLiveRecording,
+  resetTimeline,
   takeFrame,
   takeTimeline,
   takeTimelineError,
@@ -228,6 +229,7 @@ export function useWorldRun(project: string, world: string) {
         return;
       }
       if (message.type === "error") {
+        if (!sawState) resetTimeline();
         const live = worldLiveState();
         if (live) setWorldLiveState({ ...live, playing: false });
         worldStore.getState().setRunProblem(message.errors, message.message);

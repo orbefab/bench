@@ -36,7 +36,7 @@ import {
   worldLiveState,
   worldStore,
 } from "@/state/world";
-import { worldViewPoses } from "@/state/world-timeline";
+import { resetTimeline, worldViewPoses } from "@/state/world-timeline";
 import { useXrTheme } from "@/xr/ui/theme";
 
 const ROBOT_COLORS = [0xc4b8a5, 0x8fa3b0, 0xb7a0c4, 0xa3b59a, 0xc4a090];
@@ -268,9 +268,12 @@ export function WorldScene({
       .catch((err: unknown) => {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : String(err);
-        const ready = worldStore.getState().sceneReady;
+        releaseMeshes(heldKeys.current);
+        heldKeys.current = [];
+        setLoaded(null);
+        resetTimeline();
         worldStore.getState().setAssetIssues([{ text: message }]);
-        worldStore.getState().setAssets(ready ? "ready" : "error");
+        worldStore.getState().setAssets("error", false);
       });
     return () => {
       cancelled = true;

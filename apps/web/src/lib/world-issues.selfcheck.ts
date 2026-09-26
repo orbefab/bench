@@ -163,6 +163,18 @@ expect(
     .length === 1,
   "a non-mesh client error stays beside validator errors"
 );
+expect(
+  visibleAssetIssues(
+    [{ text: "World v1 is no longer supported" }],
+    [
+      {
+        message:
+          "World v1 is no longer supported. Hint: write a version 2 world.",
+      },
+    ]
+  ).length === 0,
+  "a summary that repeats the schema line is hidden"
+);
 
 const sent = new Set(["tab-a"]);
 expect(isOwnCommandNonce("tab-a", sent), "echo of this tab's nonce");

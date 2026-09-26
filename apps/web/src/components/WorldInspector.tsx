@@ -99,12 +99,17 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 function OutlineBody({ outline }: { outline: WorldOutline | null }) {
+  const failed = useWorld(
+    (s) => s.assets === "error" || s.runErrors.length > 0
+  );
   const select = (selection: NonNullable<WorldSelection>) => {
     worldStore.getState().select(selection);
   };
   if (!outline) {
     return (
-      <p className="text-[12px] text-muted-foreground">Reading the world…</p>
+      <p className="text-[12px] text-muted-foreground">
+        {failed ? "This world failed to load." : "Reading the world…"}
+      </p>
     );
   }
   const empty =

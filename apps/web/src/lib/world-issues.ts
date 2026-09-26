@@ -16,6 +16,10 @@ export function visibleAssetIssues(
 ): AssetIssue[] {
   if (errors.length === 0) return [...issues];
   return issues.filter((issue) => {
+    const text = issue.text.trim();
+    if (text && errors.some((error) => error.message.includes(text))) {
+      return false;
+    }
     if (!issue.mesh) return true;
     const mesh = issue.mesh;
     return !errors.some((error) => error.message.includes(mesh));

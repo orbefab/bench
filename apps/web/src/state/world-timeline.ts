@@ -175,6 +175,23 @@ export function scrubTo(t: number) {
   sendSeek(seekTimeFor(next, recording.from, recording.to));
 }
 
+/** Drop this tab's strip. A failed load must not keep the previous run. */
+export function resetTimeline() {
+  if (timelineTimer) {
+    clearTimeout(timelineTimer);
+    timelineTimer = null;
+  }
+  recording = null;
+  data = null;
+  playhead = null;
+  frame = null;
+  inflight = null;
+  queued = null;
+  shownTo = -1;
+  emit();
+  invalidateSceneNow();
+}
+
 export function goLive() {
   inflight = null;
   queued = null;
