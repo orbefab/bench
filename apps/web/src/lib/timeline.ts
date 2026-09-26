@@ -1,4 +1,5 @@
 import {
+  boardTrackId,
   jointTrackId,
   partTrackId,
   RECORD_FRAME_MS,
@@ -113,14 +114,6 @@ function linkJoint(
   return link?.joint?.name ?? null;
 }
 
-function supplyForBoard(
-  outline: WorldOutline | null,
-  board: string
-): string | null {
-  const supply = outline?.supplies.find((item) => item.boards.includes(board));
-  return supply?.id ?? null;
-}
-
 /**
  * One track, or a joint plus its command when a part is selected.
  * Nothing selected uses the first joint.
@@ -165,9 +158,8 @@ export function tracksForSelection(
       secondary: null,
     };
   }
-  const supply = supplyForBoard(outline, selection.board);
   return {
-    primary: supply ? byId(tracks, supplyTrackId(supply)) : null,
+    primary: byId(tracks, boardTrackId(selection.board)),
     secondary: null,
   };
 }

@@ -51,27 +51,17 @@ expect(
 );
 expect(boardWarningLine(undefined) === "", "no warning is a blank line");
 expect(
-  recordedSoaLine(true, { usb: { voltage: 3.2, minVoltage: 3.2 } }, "usb") ===
-    soa,
-  "a scrubbed frame in the band uses the same sentence"
+  recordedSoaLine(true, { voltage: 3.2, minVoltage: 3.2 }) === soa,
+  "a scrubbed frame uses this board's 5V node"
 );
 expect(
-  recordedSoaLine(false, { usb: { voltage: 3.2, minVoltage: 3.2 } }, "usb") ===
-    "",
+  recordedSoaLine(false, { voltage: 3.2, minVoltage: 3.2 }) === "",
   "a frame outside the band has no line"
 );
-const twoRails = {
-  sag: { voltage: 3.2, minVoltage: 3.2 },
-  usb: { voltage: 5, minVoltage: 5 },
-};
-expect(
-  recordedSoaLine(true, twoRails, "sag") === soa,
-  "the sagging board uses its own rail"
-);
-const otherLine = recordedSoaLine(true, twoRails, "usb");
+const otherLine = recordedSoaLine(true, { voltage: 5, minVoltage: 5 });
 expect(
   otherLine !== soa && !otherLine.includes("3.20"),
-  `the in-spec board used the other rail: ${otherLine}`
+  `an in-spec node was quoted as the sag: ${otherLine}`
 );
 expect(
   scrubbedBoardStatus({ running: false, fault: "bad checksum" }) === "stopped",

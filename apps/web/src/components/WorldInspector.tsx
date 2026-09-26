@@ -434,6 +434,18 @@ function PartBody({
         )}
       />
       <Field
+        label="V+"
+        value={
+          scrub.playhead !== null
+            ? recorded
+              ? voltsText(recorded.voltage)
+              : "—"
+            : live?.voltage === undefined
+              ? "—"
+              : voltsText(live.voltage)
+        }
+      />
+      <Field
         label="Current"
         value={
           scrub.playhead !== null
@@ -541,11 +553,6 @@ function BoardBody({
   const serialText =
     scrub.playhead !== null ? serialUntil(markers, id, scrub.playhead) : null;
   const outlineParts = useWorld((s) => s.outline?.parts ?? EMPTY_PARTS);
-  const supplyId = useWorld(
-    (s) =>
-      s.outline?.supplies.find((supply) => supply.boards.includes(id))?.id ??
-      null
-  );
   const consoleState = useBoardConsole();
   const sourceRel =
     path && info?.source ? relFromWorldFile(path, info.source) : undefined;
@@ -576,13 +583,27 @@ function BoardBody({
             : boardStatusLabel(statusBoard, playing)) || "—"
         }
       />
+      <Field
+        label="5V"
+        value={
+          scrub.playhead !== null
+            ? recorded
+              ? voltsText(recorded.voltage)
+              : "—"
+            : live?.voltage === undefined
+              ? "—"
+              : voltsText(live.voltage)
+        }
+      />
+      {recorded ? (
+        <Field label="Min" value={voltsText(recorded.minVoltage)} />
+      ) : null}
       <SoaLine
         text={
           recorded
             ? recordedSoaLine(
                 recorded.belowSoa,
-                scrub.frame?.supplies,
-                supplyId,
+                recorded,
                 info?.brownoutVoltage
               )
             : boardWarningLine(live?.warnings)

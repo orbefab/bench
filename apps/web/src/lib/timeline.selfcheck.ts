@@ -1,4 +1,5 @@
 import {
+  boardTrackId,
   jointTrackId,
   partTrackId,
   supplyTrackId,
@@ -86,7 +87,14 @@ const supply: TimelineTrack = {
   v: [5, 5],
   lo: [5, 2.5],
 };
-const tracks = [joint, command, supply];
+const board: TimelineTrack = {
+  id: boardTrackId("uno"),
+  unit: "V",
+  t: [0, 0.01],
+  v: [4.5, 4.5],
+  lo: [4.5, 2.5],
+};
+const tracks = [joint, command, supply, board];
 const outline = {
   robots: [
     {
@@ -158,8 +166,8 @@ expect(
 );
 expect(
   tracksForSelection(tracks, { kind: "board", board: "uno" }, outline).primary
-    ?.id === supply.id,
-  "a board plots the supply that feeds it"
+    ?.id === board.id,
+  "a board plots its 5V node"
 );
 
 const loRange = seriesRange([seriesValues(supply, "lo")], minSpan("V"));

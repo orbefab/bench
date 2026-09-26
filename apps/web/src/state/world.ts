@@ -294,6 +294,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
           next.unpowered === old.unpowered &&
           next.brownout === old.brownout &&
           next.resets === old.resets &&
+          next.voltage === old.voltage &&
           next.warnings?.[0]?.message === old.warnings?.[0]?.message
         );
       })
@@ -376,7 +377,8 @@ function sameParts(
       left.pulseUs !== right.pulseUs ||
       left.commandDeg !== right.commandDeg ||
       left.state !== right.state ||
-      left.current !== right.current
+      left.current !== right.current ||
+      left.voltage !== right.voltage
     ) {
       return false;
     }

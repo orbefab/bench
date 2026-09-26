@@ -46,23 +46,20 @@ export function boardWarningLine(
 
 /**
  * The same line for a scrubbed frame. `belowSoa` is the window flag.
- * `supplyId` is this board's feed from `powerFeeds`; another rail in
- * the band is not this board's voltage.
+ * The voltage is this board's 5V node, not the supply terminal.
  */
 export function recordedSoaLine(
   belowSoa: boolean | undefined,
-  supplies: Record<string, { voltage: number; minVoltage: number }> | undefined,
-  supplyId: string | null | undefined,
+  board: { voltage: number; minVoltage: number } | undefined,
   brownoutVoltage = 2.7
 ): string {
   if (!belowSoa) return "";
   const brownout = brownoutVoltage;
-  const row = supplyId ? supplies?.[supplyId] : undefined;
-  if (row) {
+  if (board) {
     const voltage =
-      row.minVoltage > brownout && row.minVoltage < ATMEGA328P_16MHZ_MIN_V
-        ? row.minVoltage
-        : row.voltage;
+      board.minVoltage > brownout && board.minVoltage < ATMEGA328P_16MHZ_MIN_V
+        ? board.minVoltage
+        : board.voltage;
     const warning = atmega328pSoaWarning(voltage, brownout);
     if (warning) return warning.message;
   }
