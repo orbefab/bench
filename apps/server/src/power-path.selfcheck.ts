@@ -502,8 +502,7 @@ async function runWorld(
   );
   let benchMin = Infinity;
   for (const frame of bench.read.frames) {
-    const voltage =
-      frame.boards.uno?.minVoltage ?? frame.boards.uno?.voltage;
+    const voltage = frame.boards.uno?.minVoltage ?? frame.boards.uno?.voltage;
     if (voltage !== undefined && voltage < benchMin) benchMin = voltage;
   }
   expect(browned, "bench stall did not brown out");

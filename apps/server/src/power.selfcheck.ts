@@ -588,8 +588,7 @@ try {
   const amps = steady?.state.supplies?.usb?.current ?? Number.NaN;
   const node = steady?.state.boards.uno?.voltage ?? Number.NaN;
   expect(
-    Math.abs(terminal - (usbPreset.voltage - amps * usbPreset.rSeries)) <=
-      1e-9,
+    Math.abs(terminal - (usbPreset.voltage - amps * usbPreset.rSeries)) <= 1e-9,
     `usb terminal ${terminal} V at ${amps} A`
   );
   expect(Math.abs(node - 4.5067) <= 1e-4, `usb board node ${node} V`);
