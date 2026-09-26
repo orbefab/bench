@@ -281,7 +281,9 @@ export function loadLibrary(
 ): { library: Library | null; diagnostics: Diagnostic[] } {
   const diagnostics: Diagnostic[] = [];
   const worldDir = path.dirname(worldFile);
-  const worldName = path.basename(worldDir);
+  // The file stem, not the folder: two worlds in one folder, and a copy
+  // of the folder keeps the same name.
+  const worldName = path.basename(worldFile).replace(/\.json$/, "");
   let world: WorldFileV2;
   try {
     world = readJson(worldFile) as WorldFileV2;

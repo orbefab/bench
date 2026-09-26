@@ -19,12 +19,12 @@ import {
   partModels,
   type RecordingRead,
   supplyPresets,
-  type WorldDocument,
   type WorldState,
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { Engine, TRACE_CASES } from "./world/circuit";
+import { readDraft, writeDraft } from "./world/draft";
 import {
   type AttachWorldOptions,
   attachWorld,
@@ -228,13 +228,13 @@ console.log(
     `(closed form ${closedStall.voltage.toFixed(4)} V, drop ${stallDrop.toFixed(4)} V)`
 );
 
-expect(unoUsbPathFor(usb, "uno"), "usb preset on an Uno should take the path");
 expect(
-  !unoUsbPathFor(
-    { voltage: 5, currentLimit: 0.3, rSeries: supplyPresets.bench.rSeries },
-    "uno"
-  ),
-  "bench preset should not take the path"
+  unoUsbPathFor("usb-a-port", "arduino-uno-r3"),
+  "a USB port on an Uno should take the path"
+);
+expect(
+  !unoUsbPathFor("bench-supply-cv-cc", "arduino-uno-r3"),
+  "a bench supply should not take the path"
 );
 {
   const benchClosed = solveRail({
@@ -397,10 +397,6 @@ expect(
   );
 }
 
-function loadWorld(dir: string, name: string): WorldDocument {
-  return JSON.parse(readFileSync(join(dir, name), "utf8")) as WorldDocument;
-}
-
 async function runWorld(
   project: string,
   world: string,
@@ -510,10 +506,11 @@ async function runWorld(
 const usbRoot = mkdtempSync(join(tmpdir(), "sfab-uno-path-"));
 try {
   cpSync(armDir, usbRoot, { recursive: true });
-  const world = loadWorld(usbRoot, "arm-stall.world.json");
+  const world = readDraft(usbRoot, "arm-stall.world.json");
   world.supplies = [
     {
       id: "usb",
+      kind: "usb",
       voltage: usb.voltage,
       currentLimit: usb.currentLimit,
       rSeries: usb.rSeries,
@@ -523,7 +520,7 @@ try {
     wire[0].replace(/^bench\./, "usb."),
     wire[1].replace(/^bench\./, "usb."),
   ]);
-  writeFileSync(join(usbRoot, "usb-stall.world.json"), JSON.stringify(world));
+  writeDraft(usbRoot, "usb-stall.world.json", world);
   const first = await runWorld(usbRoot, "usb-stall.world.json", 3000);
   const second = await runWorld(usbRoot, "usb-stall.world.json", 3000);
   expect(

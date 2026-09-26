@@ -1,9 +1,77 @@
-import { maskHasPin, type WorldDocument } from "@sfab-bench/contract";
+import { maskHasPin } from "@sfab-bench/contract";
 import { assemble } from "avr8js/dist/esm/utils/assembler.js";
 
 import { AvrBoard } from "./world/board";
 import { FLASH_BYTES } from "./world/ihex";
+import type { RunPin, RunPlan } from "./world/plan";
 import { applyGpioDrives, gpioInputNets } from "./world/wiring";
+
+const GPIO: RunPin = {
+  kind: "gpio",
+  output: true,
+  digital: true,
+  pwm: true,
+};
+const GROUND: RunPin = {
+  kind: "ground",
+  output: false,
+  digital: false,
+  pwm: false,
+};
+const VCC: RunPin = {
+  kind: "power",
+  output: true,
+  digital: false,
+  pwm: false,
+};
+
+/** A plan with only the pins these nets touch. */
+function gpioPlan(
+  boardIds: string[],
+  wires: [string, string][],
+  supplyIds: string[] = []
+): RunPlan {
+  const pins: Record<string, RunPin> = {
+    D2: GPIO,
+    D3: GPIO,
+    GND: GROUND,
+    "5V": VCC,
+  };
+  return {
+    environment: { ground: { plane: true } },
+    robots: [],
+    boards: boardIds.map((id) => ({
+      id,
+      type: "arduino-uno-r3",
+      chip: "atmega328p",
+      firmware: "unused.hex",
+      pose: { position: [0, 0, 0], rotation: [1, 0, 0, 0] },
+      size: [0.0686, 0.0534, 0.012],
+      pins,
+      powerInputs: ["5V"],
+      voltagePin: "5V",
+      groundPin: "GND",
+      current: 0.05,
+      brownoutVoltage: 2.7,
+      brownoutAssertVoltage: 2.675,
+      brownoutReleaseVoltage: 2.725,
+      operatingVoltage: 5,
+      supply: { min: 5, max: 5 },
+    })),
+    supplies: supplyIds.map((id) => ({
+      id,
+      type: "usb-a-port",
+      voltage: 5,
+      currentLimit: 0.9,
+      rSeries: 0.5,
+      positivePin: "5V",
+      groundPin: "GND",
+      pins: { "5V": VCC, GND: GROUND },
+    })),
+    parts: [],
+    wires,
+  };
+}
 
 /**
  * avr8js does not resolve INPUT_PULLUP. The bridge holds an undriven
@@ -69,10 +137,7 @@ expect(
 );
 console.log("pull-up: a wired output wins, then the pin reads HIGH again");
 
-const nets = gpioInputNets({
-  boards: [{ id: "uno", board: "uno" }],
-  wires: [["uno.D2", "uno.D3"]],
-} as WorldDocument);
+const nets = gpioInputNets(gpioPlan(["uno"], [["uno.D2", "uno.D3"]]));
 const d2 = nets.find((net) => net.bit === 2);
 const d3 = nets.find((net) => net.bit === 3);
 expect(
@@ -108,11 +173,7 @@ function loadProgram(id: string, source: string): AvrBoard {
 }
 
 /** The worker's listener: resolve nets, then the caller can sample. */
-function bindNets(
-  boards: AvrBoard[],
-  doc: WorldDocument,
-  after: () => void
-): void {
+function bindNets(boards: AvrBoard[], doc: RunPlan, after: () => void): void {
   const nets = gpioInputNets(doc);
   expect(nets.length > 0, "expected a GPIO net");
   let applying = false;
@@ -150,24 +211,17 @@ rjmp loop
 
 const same = loadProgram("uno", driverSource);
 const sameLevels: boolean[] = [];
-bindNets(
-  [same],
-  {
-    boards: [{ id: "uno", board: "uno" }],
-    wires: [["uno.D2", "uno.D3"]],
-  } as WorldDocument,
-  () => {
-    const level = same.outputLevel(3);
-    if (level === null) return;
-    const pins = same.peekPins();
-    expect(!maskHasPin(pins.ddr, "D2"), "D2 became an output");
-    expect(
-      maskHasPin(pins.level, "D2") === level,
-      `same-port D2 ${maskHasPin(pins.level, "D2")} vs D3 ${level}`
-    );
-    sameLevels.push(level);
-  }
-);
+bindNets([same], gpioPlan(["uno"], [["uno.D2", "uno.D3"]]), () => {
+  const level = same.outputLevel(3);
+  if (level === null) return;
+  const pins = same.peekPins();
+  expect(!maskHasPin(pins.ddr, "D2"), "D2 became an output");
+  expect(
+    maskHasPin(pins.level, "D2") === level,
+    `same-port D2 ${maskHasPin(pins.level, "D2")} vs D3 ${level}`
+  );
+  sameLevels.push(level);
+});
 same.stepMillis();
 expect(
   sameLevels.length === 3 &&
@@ -200,13 +254,7 @@ const peer = loadProgram("other", peerSource);
 const crossLevels: boolean[] = [];
 bindNets(
   [driver, peer],
-  {
-    boards: [
-      { id: "uno", board: "uno" },
-      { id: "other", board: "uno" },
-    ],
-    wires: [["uno.D3", "other.D2"]],
-  } as WorldDocument,
+  gpioPlan(["uno", "other"], [["uno.D3", "other.D2"]]),
   () => {
     const level = driver.outputLevel(3);
     if (level === null) return;
@@ -245,13 +293,7 @@ rjmp loop
 `;
 const resetDriver = loadProgram("uno", lowSource);
 const resetPeer = loadProgram("other", peerSource);
-const resetDoc = {
-  boards: [
-    { id: "uno", board: "uno" },
-    { id: "other", board: "uno" },
-  ],
-  wires: [["uno.D3", "other.D2"]],
-} as WorldDocument;
+const resetDoc = gpioPlan(["uno", "other"], [["uno.D3", "other.D2"]]);
 const resetNets = gpioInputNets(resetDoc);
 bindNets([resetDriver, resetPeer], resetDoc, () => {});
 resetPeer.stepMillis();
@@ -284,14 +326,7 @@ expect(
 console.log("pull-up: reboot clears driven");
 
 const grounded = loadProgram("uno", peerSource);
-bindNets(
-  [grounded],
-  {
-    boards: [{ id: "uno", board: "uno" }],
-    wires: [["uno.D2", "uno.GND"]],
-  } as WorldDocument,
-  () => {}
-);
+bindNets([grounded], gpioPlan(["uno"], [["uno.D2", "uno.GND"]]), () => {});
 grounded.stepMillis();
 const groundedPins = grounded.peekPins();
 expect(
@@ -311,11 +346,7 @@ expect(
   "D2 was high before the supply wire"
 );
 applyGpioDrives(
-  gpioInputNets({
-    boards: [{ id: "uno", board: "uno" }],
-    supplies: [{ id: "usb" }],
-    wires: [["uno.D2", "usb.5V"]],
-  } as WorldDocument),
+  gpioInputNets(gpioPlan(["uno"], [["uno.D2", "usb.5V"]], ["usb"])),
   [supplied]
 );
 const suppliedPins = supplied.peekPins();

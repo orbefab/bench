@@ -1,17 +1,14 @@
 import type { MainModule, MjModel, MjSpec, MjVFS } from "@mujoco/mujoco";
 import {
   extractUrdfJointsAndMeshes,
-  partModel,
   resolveUrdfMesh,
-  validateWorld,
-  type WorldDocument,
   type WorldError,
   type WorldPose,
   type WorldPrimitive,
-  type WorldValidateCtx,
 } from "@sfab-bench/contract";
 
 import type { WorldBytes } from "./files";
+import type { RunPlan } from "./plan";
 
 const TIMESTEP_S = 0.001;
 
@@ -88,19 +85,6 @@ function schemaError(message: string): WorldError {
   return { code: "schema", path: "", message: text };
 }
 
-function ctxFor(files: WorldBytes): WorldValidateCtx {
-  return {
-    fileExists(relativePath) {
-      return files.read(relativePath) !== null;
-    },
-    urdf(relativePath) {
-      const bytes = files.read(relativePath);
-      if (!bytes) return undefined;
-      return extractUrdfJointsAndMeshes(decode(bytes));
-    },
-  };
-}
-
 const COMPILER_FORCED: ReadonlyArray<readonly [string, string]> = [
   ["fusestatic", "false"],
   ["discardvisual", "false"],
@@ -140,6 +124,30 @@ export function ensureMujocoCompiler(xml: string): string {
   return stripped.replace(/<compiler\b([^>]*)>/i, (_full, attrs: string) =>
     forceCompilerAttrs(attrs)
   );
+}
+
+const MESH_HINT = "export STL with $cad (`cadgen stl build`)";
+
+/** Same mesh rules the v1 validator reported as `mesh-format`. */
+function meshFormatProblem(filename: string): string | null {
+  const trimmed = filename.trim();
+  if (trimmed.toLowerCase().startsWith("package://")) {
+    return `Mesh "${filename}" uses a package:// path. Hint: ${MESH_HINT}.`;
+  }
+  if (
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("\\") ||
+    trimmed.startsWith("file://") ||
+    /^[A-Za-z]:[\\/]/.test(trimmed)
+  ) {
+    return `Mesh "${filename}" is an absolute path. Hint: ${MESH_HINT}.`;
+  }
+  if (trimmed.includes("\\") || trimmed.split("/").includes("..")) {
+    return `Mesh "${filename}" leaves the URDF directory. Hint: ${MESH_HINT}.`;
+  }
+  const base = (trimmed.split(/[\\/]/).pop() ?? trimmed).toLowerCase();
+  if (base.endsWith(".stl") || base.endsWith(".obj")) return null;
+  return `Mesh "${filename}" is not .stl or .obj. Hint: ${MESH_HINT}.`;
 }
 
 function retargetMeshes(
@@ -185,15 +193,15 @@ function primitiveGeom(primitive: WorldPrimitive): string {
   return `<geom ${name} type="cylinder" size="${primitive.size.radius} ${halfLength}" ${pose}/>`;
 }
 
-function worldXml(doc: WorldDocument): string {
+function worldXml(plan: RunPlan): string {
   const geoms: string[] = [];
-  if (doc.environment.ground.plane) {
+  if (plan.environment.ground.plane) {
     geoms.push('<geom name="ground" type="plane" size="2 2 0.1"/>');
   }
-  for (const primitive of doc.environment.primitives ?? []) {
+  for (const primitive of plan.environment.primitives ?? []) {
     geoms.push(primitiveGeom(primitive));
   }
-  const mounts = doc.robots
+  const mounts = plan.robots
     .map((robot) => {
       return `<body name="pose_${robot.id}" ${poseAttrs(robot.pose)}/>`;
     })
@@ -229,21 +237,16 @@ function readNum(value: Int32Array, index: number): number {
  * Armature, frictionloss, and viscous damping come from the part
  * catalog and replace the URDF values on the driven joint.
  */
-function applyServoDynamics(
-  mj: MainModule,
-  model: MjModel,
-  doc: WorldDocument
-) {
+function applyServoDynamics(mj: MainModule, model: MjModel, plan: RunPlan) {
   const armature = model.dof_armature as Float64Array;
   const friction = model.dof_frictionloss as Float64Array;
   const damping = model.dof_damping as Float64Array;
   const dofadr = model.jnt_dofadr as Int32Array;
   const trnid = model.actuator_trnid as Int32Array;
   const actuatorType = mj.mjtObj.mjOBJ_ACTUATOR.value;
-  for (const part of doc.parts) {
+  for (const part of plan.parts) {
     if (!part.drives) continue;
-    const spec = partModel(part.model);
-    const motor = spec?.drive.kind === "servo" ? spec.motor : undefined;
+    const motor = part.motor;
     if (!motor) continue;
     const actId = mj.mj_name2id(model, actuatorType, part.id);
     if (actId < 0) continue;
@@ -262,18 +265,13 @@ function applyServoDynamics(
  * clips `qfrc_actuator` to `jnt_actfrcrange` after the actuator range,
  * and the URDF `effort` placeholder is wider than the SG90's clamp.
  */
-function applyServoTorqueClamp(
-  mj: MainModule,
-  model: MjModel,
-  doc: WorldDocument
-) {
+function applyServoTorqueClamp(mj: MainModule, model: MjModel, plan: RunPlan) {
   const range = model.jnt_actfrcrange as Float64Array;
   const trnid = model.actuator_trnid as Int32Array;
   const actuatorType = mj.mjtObj.mjOBJ_ACTUATOR.value;
-  for (const part of doc.parts) {
+  for (const part of plan.parts) {
     if (!part.drives) continue;
-    const spec = partModel(part.model);
-    const torque = spec?.drive.kind === "servo" ? spec.torqueNm : undefined;
+    const torque = part.torqueNm;
     if (torque === undefined || !(torque > 0)) continue;
     const actId = mj.mj_name2id(model, actuatorType, part.id);
     if (actId < 0) continue;
@@ -341,11 +339,11 @@ export function urdfSolrefLimits(xml: string): Map<string, [number, number]> {
 }
 
 function urdfLimitSolref(
-  doc: WorldDocument,
+  plan: RunPlan,
   files: WorldBytes
 ): Map<string, [number, number]> {
   const out = new Map<string, [number, number]>();
-  for (const robot of doc.robots) {
+  for (const robot of plan.robots) {
     const raw = files.read(robot.urdf);
     if (!raw) continue;
     for (const [name, pair] of urdfSolrefLimits(decode(raw))) {
@@ -407,12 +405,10 @@ function forceCompiler(spec: MjSpec) {
  * motor actuator named with the part id. The step loop writes the torque.
  */
 export async function compileWorld(
-  doc: unknown,
+  plan: RunPlan,
   files: WorldBytes
 ): Promise<CompiledWorld | CompileFailure> {
-  const validation = validateWorld(doc, ctxFor(files));
-  if (!validation.ok) return { ok: false, errors: validation.errors };
-  const worldDoc = doc as WorldDocument;
+  const worldDoc = plan;
   const mj = await mujoco();
   const vfs = new mj.MjVFS();
   const robotSpecs: MjSpec[] = [];
@@ -443,6 +439,13 @@ export async function compileWorld(
       const prepared = ensureMujocoCompiler(decode(raw));
       const retargeted = retargetMeshes(prepared, robot.id);
       for (const mesh of retargeted.meshes) {
+        const format = meshFormatProblem(mesh.written);
+        if (format) {
+          return {
+            ok: false,
+            errors: [{ code: "mesh-format", path: "", message: format }],
+          };
+        }
         const rel = resolveUrdfMesh(robot.urdf, mesh.written);
         const bytes = rel ? files.read(rel) : null;
         if (!bytes) {
@@ -497,9 +500,7 @@ export async function compileWorld(
     });
 
     for (const part of worldDoc.parts) {
-      if (!part.drives) continue;
-      const model = partModel(part.model);
-      if (model?.drive.kind !== "servo") continue;
+      if (!part.drives || !part.motor) continue;
       const defaults = mj.mjs_getSpecDefault(scene);
       if (!defaults) throw new Error("MuJoCo spec has no default");
       const actuator = mj.mjs_addActuator(world, defaults);
@@ -515,7 +516,7 @@ export async function compileWorld(
       // into the stop, and the catalog torque is the force clamp.
       const setErr = mj.mjs_setToMotor(actuator);
       if (setErr) throw new Error(setErr);
-      const torque = model.torqueNm;
+      const torque = part.torqueNm;
       if (torque !== undefined && torque > 0) {
         actuator.forcelimited = mj.mjtLimited.mjLIMITED_TRUE
           .value as unknown as typeof actuator.forcelimited;

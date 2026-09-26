@@ -11,15 +11,16 @@ import { fileURLToPath } from "node:url";
 
 import {
   partModels,
-  type WorldDocument,
   type WorldServerMessage,
   type WorldState,
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
+import { readDraft, writeDraft } from "./world/draft";
 import { projectReal, readerFor } from "./world/files";
 import { attachWorld, stopWorld } from "./world/host";
 import { compileWorld, JOINT_LIMIT_SOLREF } from "./world/model";
+import { planWorld } from "./world/plan";
 import {
   blankTrack,
   commandDegFromPulse,
@@ -49,15 +50,33 @@ function deg(rad: number): number {
   return (rad * 180) / Math.PI;
 }
 
-function loadWorld(dir: string, name: string): WorldDocument {
-  return JSON.parse(readFileSync(join(dir, name), "utf8")) as WorldDocument;
+async function compileAt(dir: string, name: string) {
+  const root = projectReal(dir);
+  expect(root, `${name} root`);
+  if (!root) throw new Error("unreachable");
+  const planned = planWorld(root, name);
+  expect(
+    planned.ok,
+    planned.ok ? "" : planned.errors.map((error) => error.message).join("; ")
+  );
+  if (!planned.ok) throw new Error("unreachable");
+  return compileWorld(planned.plan, readerFor(root, name));
 }
 
 function near(us: number, target: number): boolean {
   return Math.abs(us - target) <= 4;
 }
 
-const hold = loadWorld(armDir, "arm.world.json");
+const rooted = projectReal(armDir);
+expect(rooted, "arm fixture resolves");
+if (!rooted) throw new Error("unreachable");
+const loaded = planWorld(rooted, "arm.world.json");
+expect(
+  loaded.ok,
+  loaded.ok ? "" : loaded.errors.map((error) => error.message).join("; ")
+);
+if (!loaded.ok) throw new Error("unreachable");
+const hold = loaded.plan;
 const drives = servoSignalDrives(hold);
 expect(
   drives.length === 1 &&
@@ -75,11 +94,12 @@ expect(
 );
 
 const hopped = structuredClone(hold);
-hopped.wires = hopped.wires.map((wire) =>
-  wire[0] === "uno.D9" && wire[1] === "servo.signal"
+hopped.wires = hopped.wires.map((wire) => {
+  const ends = [wire[0], wire[1]].sort().join("|");
+  return ends === "servo.signal|uno.D9"
     ? (["servo.signal", "led.signal"] as [string, string])
-    : wire
-);
+    : wire;
+});
 hopped.wires.push(["led.signal", "uno.D9"]);
 expect(
   servoSignalDrives(hopped).length === 0,
@@ -87,11 +107,12 @@ expect(
 );
 
 const analog = structuredClone(hold);
-analog.wires = analog.wires.map((wire) =>
-  wire[0] === "uno.D9" && wire[1] === "servo.signal"
+analog.wires = analog.wires.map((wire) => {
+  const ends = [wire[0], wire[1]].sort().join("|");
+  return ends === "servo.signal|uno.D9"
     ? (["uno.A0", "servo.signal"] as [string, string])
-    : wire
-);
+    : wire;
+});
 const a0 = servoSignalDrives(analog);
 expect(
   a0.length === 1 && a0[0]?.boardId === "uno" && a0[0].pin === "A0",
@@ -155,10 +176,7 @@ console.log("pulse map: 544/1472/2400, out of range is no signal, clamp 0–180"
 
 const rootReal = projectReal(armDir);
 expect(rootReal, "arm fixture resolves");
-const compiled = await compileWorld(
-  hold,
-  readerFor(rootReal, "arm.world.json")
-);
+const compiled = await compileAt(armDir, "arm.world.json");
 expect(
   compiled.ok,
   `compile: ${compiled.ok ? "" : compiled.errors.map((e) => e.message).join("; ")}`
@@ -245,10 +263,7 @@ try {
   const rooted = projectReal(solRoot);
   expect(rooted, "temp root resolves");
   if (!rooted) throw new Error("unreachable");
-  const authored = await compileWorld(
-    hold,
-    readerFor(rooted, "arm.world.json")
-  );
+  const authored = await compileAt(solRoot, "arm.world.json");
   expect(
     authored.ok,
     `authored solref compiles: ${authored.ok ? "" : authored.errors.map((item) => item.message).join(" | ")}`
@@ -547,7 +562,7 @@ const pairRoot = mkdtempSync(join(tmpdir(), "sfab-servo-pair-"));
 const limpRoot = mkdtempSync(join(tmpdir(), "sfab-servo-limp-"));
 try {
   cpSync(armDir, pairRoot, { recursive: true });
-  const pair = loadWorld(pairRoot, "arm.world.json");
+  const pair = readDraft(pairRoot, "arm.world.json");
   const armRobot = pair.robots[0];
   const uno = pair.boards[0];
   const servo = pair.parts[0];
@@ -598,6 +613,7 @@ try {
   // case is the mechanical split. Shared-rail brownout is power.selfcheck.
   const shared = pair.supplies[0];
   if (!shared) throw new Error("fixture supply");
+  shared.kind = "bench";
   shared.currentLimit = 2;
   pair.wires = [
     ["usb.5V", "hold.5V"],
@@ -611,7 +627,7 @@ try {
     ["stall.5V", "stall-servo.V+"],
     ["stall.GND", "stall-servo.GND"],
   ];
-  writeFileSync(join(pairRoot, "pair.world.json"), JSON.stringify(pair));
+  writeDraft(pairRoot, "pair.world.json", pair);
   const both = await sample(pairRoot, "pair.world.json", 3500, 10);
   const holdRows = rows(
     both.samples,
@@ -686,13 +702,14 @@ try {
   );
 
   cpSync(armDir, limpRoot, { recursive: true });
-  const limp = loadWorld(limpRoot, "arm.world.json");
-  limp.wires = limp.wires.map((wire) =>
-    wire[0] === "uno.D9" && wire[1] === "servo.signal"
+  const limp = readDraft(limpRoot, "arm.world.json");
+  limp.wires = limp.wires.map((wire) => {
+    const ends = [wire[0], wire[1]].sort().join("|");
+    return ends === "servo.signal|uno.D9"
       ? (["uno.D8", "servo.signal"] as [string, string])
-      : wire
-  );
-  writeFileSync(join(limpRoot, "limp.world.json"), JSON.stringify(limp));
+      : wire;
+  });
+  writeDraft(limpRoot, "limp.world.json", limp);
   const quiet = await sample(limpRoot, "limp.world.json", 2000, 100);
   const start = deg(quiet.initial.joints.arm?.shoulder ?? Number.NaN);
   const limpRows = rows(quiet.samples, "arm", "shoulder", "servo", "uno");

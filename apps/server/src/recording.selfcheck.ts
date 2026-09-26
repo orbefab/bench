@@ -12,13 +12,13 @@ import { fileURLToPath } from "node:url";
 import {
   jointTrackId,
   supplyTrackId,
-  type WorldDocument,
   type WorldServerMessage,
   type WorldState,
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { BROWNOUT_RESET, FIRMWARE_RELOADED } from "./world/board";
+import { readDraft, writeDraft } from "./world/draft";
 import {
   attachWorld,
   frameAt,
@@ -637,9 +637,7 @@ try {
 const pairRoot = mkdtempSync(join(tmpdir(), "sfab-record-pair-"));
 try {
   cpSync(armDir, pairRoot, { recursive: true });
-  const world = JSON.parse(
-    readFileSync(join(pairRoot, "arm.world.json"), "utf8")
-  ) as WorldDocument;
+  const world = readDraft(pairRoot, "arm.world.json");
   const robot = world.robots[0];
   const uno = world.boards[0];
   const servo = world.parts[0];
@@ -686,6 +684,7 @@ try {
     {
       ...supply,
       id: "usb-stall",
+      kind: "bench",
       voltage: 5,
       currentLimit: 0.3,
       rSeries: 0.05,
@@ -703,7 +702,7 @@ try {
     ["stall.5V", "stall-servo.V+"],
     ["stall.GND", "stall-servo.GND"],
   ];
-  writeFileSync(join(pairRoot, "split.world.json"), JSON.stringify(world));
+  writeDraft(pairRoot, "split.world.json", world);
   const split = await recordedRun(pairRoot, "split.world.json", 2000);
   try {
     const tracks = split.state.recording

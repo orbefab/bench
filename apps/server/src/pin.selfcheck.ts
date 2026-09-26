@@ -19,6 +19,7 @@ import {
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
+import { readDraft, writeDraft } from "./world/draft";
 import { worldWorkerEntry } from "./world/host";
 import type { FromWorker, ToWorker } from "./world/worker";
 
@@ -184,26 +185,24 @@ try {
   const pairRoot = mkdtempSync(join(tmpdir(), "sfab-pins-"));
   try {
     cpSync(armDir, pairRoot, { recursive: true });
-    const doc = JSON.parse(
-      readFileSync(join(pairRoot, "arm.world.json"), "utf8")
-    ) as { boards: Record<string, unknown>[]; wires: [string, string][] };
+    const doc = readDraft(pairRoot, "arm.world.json");
+    const unoBoard = doc.boards[0];
+    if (!unoBoard) throw new Error("fixture board");
     doc.boards.push({
+      ...unoBoard,
       id: "stall",
-      chip: "atmega328p",
-      board: "uno",
       firmware: "firmware/stall/stall.hex",
       source: "firmware/stall/stall.ino",
       pose: {
         position: [0.2, 0, 0.006],
         rotation: [1, 0, 0, 0],
       },
-      size: [0.0686, 0.0534, 0.012],
     });
     // An unwired board does not run. This CPU is here for its pins, so
     // it takes the USB rail. Two boards plus the hold servo stay under
     // the 500 mA limit, and the rail does not sag.
     doc.wires.push(["usb.5V", "stall.5V"], ["usb.GND", "stall.GND"]);
-    writeFileSync(join(pairRoot, "two.world.json"), JSON.stringify(doc));
+    writeDraft(pairRoot, "two.world.json", doc);
     // 55 ms lands inside the stall firmware's longer servo pulse and after
     // the hold firmware's pulse has ended, so D9's level differs.
     const both = await stepWorld(pairRoot, "two.world.json", 55);

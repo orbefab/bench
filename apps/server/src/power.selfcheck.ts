@@ -15,19 +15,20 @@ import {
   chipModels,
   partModels,
   supplyPresets,
-  type WorldDocument,
   type WorldServerMessage,
   type WorldState,
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { BROWNOUT_RESET } from "./world/board";
+import { readDraft, writeDraft } from "./world/draft";
 import {
   attachWorld,
   brownoutBootSnapshot,
   readRecording,
   stopWorld,
 } from "./world/host";
+import { planWorld } from "./world/plan";
 import {
   BOD_ASSERT_V,
   BOD_RELEASE_V,
@@ -41,7 +42,7 @@ import {
   stallTorque,
   stepBrownout,
 } from "./world/power";
-import { powerFeeds } from "./world/wiring";
+import { powerFeedsOf } from "./world/wiring";
 
 /**
  * Power budget on sim time. Samples are the state posted for that sim
@@ -56,18 +57,20 @@ function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
 }
 
-function loadWorld(dir: string, name: string): WorldDocument {
-  return JSON.parse(readFileSync(join(dir, name), "utf8")) as WorldDocument;
-}
-
-const hold = loadWorld(armDir, "arm.world.json");
-const feeds = powerFeeds(hold);
+const holdPlan = planWorld(armDir, "arm.world.json");
+expect(
+  holdPlan.ok,
+  holdPlan.ok ? "" : holdPlan.errors.map((error) => error.message).join("; ")
+);
+if (!holdPlan.ok) throw new Error("unreachable");
+const feeds = powerFeedsOf(holdPlan.plan);
 expect(feeds.boards.uno === "usb", `uno feed ${feeds.boards.uno}`);
 expect(feeds.parts.servo === "usb", `servo feed ${feeds.parts.servo}`);
 
-const unwired = structuredClone(hold);
+const unwired = structuredClone(holdPlan.plan);
 unwired.wires = unwired.wires.filter((wire) => !wire.includes("servo.V+"));
-const lost = powerFeeds(unwired);
+unwired.wires.push(["usb.5V", "uno.5V"]);
+const lost = powerFeedsOf(unwired);
 expect(lost.parts.servo === null, "an unwired V+ is unpowered");
 expect(lost.boards.uno === "usb", "the board stays on usb");
 console.log("power nets: usb feeds uno and servo; unwired V+ draws nothing");
@@ -514,10 +517,11 @@ console.log(
 const usbRoot = mkdtempSync(join(tmpdir(), "sfab-power-usb-"));
 try {
   cpSync(armDir, usbRoot, { recursive: true });
-  const usbWorld = loadWorld(usbRoot, "arm-stall.world.json");
+  const usbWorld = readDraft(usbRoot, "arm-stall.world.json");
   usbWorld.supplies = [
     {
       id: "usb",
+      kind: "usb",
       voltage: supplyPresets.usb.voltage,
       currentLimit: supplyPresets.usb.currentLimit,
       rSeries: supplyPresets.usb.rSeries,
@@ -527,10 +531,7 @@ try {
     wire[0].replace(/^bench\./, "usb."),
     wire[1].replace(/^bench\./, "usb."),
   ]);
-  writeFileSync(
-    join(usbRoot, "usb-stall.world.json"),
-    JSON.stringify(usbWorld)
-  );
+  writeDraft(usbRoot, "usb-stall.world.json", usbWorld);
   const usbRows = await sample(usbRoot, "usb-stall.world.json", 2000, 1, [
     "uno",
   ]);
@@ -566,7 +567,7 @@ try {
 }
 
 function twoArm(root: string, sharedRail: boolean): string {
-  const world = loadWorld(root, "arm.world.json");
+  const world = readDraft(root, "arm.world.json");
   const robot = world.robots[0];
   const uno = world.boards[0];
   const servo = world.parts[0];
@@ -615,6 +616,7 @@ function twoArm(root: string, sharedRail: boolean): string {
       {
         ...supply,
         id: "bench",
+        kind: "bench",
         voltage: 5,
         currentLimit: 0.3,
         rSeries: supplyPresets.bench.rSeries,
@@ -638,6 +640,7 @@ function twoArm(root: string, sharedRail: boolean): string {
       {
         ...supply,
         id: "bench-stall",
+        kind: "bench",
         voltage: 5,
         currentLimit: 0.3,
         rSeries: supplyPresets.bench.rSeries,
@@ -656,7 +659,7 @@ function twoArm(root: string, sharedRail: boolean): string {
       ["stall.GND", "stall-servo.GND"],
     ];
   }
-  writeFileSync(join(root, name), JSON.stringify(world));
+  writeDraft(root, name, world);
   return name;
 }
 
@@ -798,28 +801,33 @@ try {
   const soaRoot = mkdtempSync(join(tmpdir(), "sfab-soa-"));
   try {
     cpSync(join(armDir, "firmware/hold/hold.hex"), join(soaRoot, "idle.hex"));
-    const soaWorld = {
-      version: 1,
-      robots: [],
+    writeDraft(soaRoot, "soa.world.json", {
       environment: { ground: { plane: true } },
+      robots: [],
       boards: [
         {
           id: "uno",
           chip: "atmega328p",
-          board: "uno",
           firmware: "idle.hex",
           pose: { position: [0, 0, 0], rotation: [1, 0, 0, 0] },
           size: [0.07, 0.05, 0.01],
         },
       ],
-      supplies: [{ id: "usb", voltage: 5, currentLimit: 1, rSeries: 36 }],
+      supplies: [
+        {
+          id: "usb",
+          kind: "bench",
+          voltage: 5,
+          currentLimit: 1,
+          rSeries: 36,
+        },
+      ],
       parts: [],
       wires: [
         ["usb.5V", "uno.5V"],
         ["usb.GND", "uno.GND"],
       ],
-    };
-    writeFileSync(join(soaRoot, "soa.world.json"), JSON.stringify(soaWorld));
+    });
     const trace = openTrace(soaRoot, "soa.world.json");
     const attached = await trace.attached;
     if ("error" in attached) throw new Error(attached.error);

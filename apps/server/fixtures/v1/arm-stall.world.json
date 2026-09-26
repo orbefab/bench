@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "robots": [
+    {
+      "id": "arm",
+      "urdf": "robot/arm.urdf",
+      "pose": {
+        "position": [0, 0, 0],
+        "rotation": [1, 0, 0, 0]
+      }
+    }
+  ],
+  "environment": {
+    "ground": {
+      "plane": true
+    }
+  },
+  "boards": [
+    {
+      "id": "uno",
+      "chip": "atmega328p",
+      "board": "uno",
+      "firmware": "firmware/stall/stall.hex",
+      "source": "firmware/stall/stall.ino",
+      "pose": {
+        "position": [0.1, 0, 0.006],
+        "rotation": [1, 0, 0, 0]
+      },
+      "size": [0.0686, 0.0534, 0.012]
+    }
+  ],
+  "supplies": [
+    {
+      "id": "bench",
+      "voltage": 5,
+      "currentLimit": 0.3,
+      "rSeries": 0.05
+    }
+  ],
+  "parts": [
+    {
+      "id": "servo",
+      "model": "sg90",
+      "drives": {
+        "robot": "arm",
+        "joint": "shoulder"
+      }
+    }
+  ],
+  "wires": [
+    ["bench.5V", "uno.5V"],
+    ["bench.GND", "uno.GND"],
+    ["uno.D9", "servo.signal"],
+    ["uno.5V", "servo.V+"],
+    ["uno.GND", "servo.GND"]
+  ]
+}

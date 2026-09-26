@@ -3,30 +3,25 @@ import {
   ATMEGA328P_16MHZ_MIN_V,
   atmega328pSoaWarning,
   boardTrackId,
-  chipModels,
   extractUrdfJointsAndMeshes,
   type JointLimitKind,
   jointLimitWarning,
   maskHasPin,
   partTrackId,
   pastLimitAmount,
-  powerFeeds,
   RECORD_FRAME_MS,
   type RecordingEvent,
   type RecordingManifest,
   type RecordingRead,
   type RecordingTracks,
   supplyTrackId,
-  validateWorld,
-  type WorldDocument,
   type WorldSender,
   type WorldState,
-  type WorldValidateCtx,
 } from "@sfab-bench/contract";
 import { tool } from "ai";
 import { z } from "zod";
 import { viewerProjectRoot } from "./viewer-context";
-import { readerFor, readInside } from "./world/files";
+import { readerFor } from "./world/files";
 import {
   ensureWorldRun,
   pauseWorld,
@@ -39,8 +34,9 @@ import {
   stepWorld,
   worldRunView,
 } from "./world/host";
+import { planWorld, type RunPlan, WORLD_V1_MESSAGE } from "./world/plan";
 import { commandDegFromPulse } from "./world/servo";
-import { servoSignalDrives } from "./world/wiring";
+import { powerFeedsOf, servoSignalDrives } from "./world/wiring";
 
 /** Who sent the command. Desktop clients show this label (D-015). */
 const AGENT: WorldSender = { kind: "agent" };
@@ -58,7 +54,7 @@ const BOARD_FIELDS = new Set(["pins", "running", "brownout"]);
 type Loaded = {
   root: string;
   world: string;
-  doc: WorldDocument;
+  plan: RunPlan;
 };
 
 type AgentEvent = {
@@ -125,32 +121,12 @@ function drivenPins(
   return out;
 }
 
-function loadDocument(
-  project: string,
-  world: string
-): WorldDocument | { error: string } {
-  const bytes = readInside(project, world);
-  if (!bytes) return { error: `world "${world}" does not exist` };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-  } catch {
-    return { error: "world file is not JSON" };
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { error: "world file is not a document" };
-  }
-  const doc = parsed as WorldDocument;
-  if (
-    !Array.isArray(doc.robots) ||
-    !Array.isArray(doc.boards) ||
-    !Array.isArray(doc.parts) ||
-    !Array.isArray(doc.supplies) ||
-    !Array.isArray(doc.wires)
-  ) {
-    return { error: "world file is not a document" };
-  }
-  return doc;
+function loadPlan(project: string, world: string): RunPlan | { error: string } {
+  const planned = planWorld(project, world);
+  if (planned.ok) return planned.plan;
+  const message = planned.errors.map((error) => error.message).join("; ");
+  if (message.includes(WORLD_V1_MESSAGE)) return { error: WORLD_V1_MESSAGE };
+  return { error: message || "world file is not a document" };
 }
 
 /** Resolve the file and nothing else, so a bad path does not start a run. */
@@ -159,9 +135,9 @@ async function readWorld(world: string): Promise<Loaded | { error: string }> {
   if (!root) return { error: "no project open" };
   const named = resolveWorldFile(root, world);
   if ("error" in named) return named;
-  const doc = loadDocument(named.project, named.world);
-  if ("error" in doc) return doc;
-  return { root: named.project, world: named.world, doc };
+  const plan = loadPlan(named.project, named.world);
+  if ("error" in plan) return plan;
+  return { root: named.project, world: named.world, plan };
 }
 
 async function openRun(world: string): Promise<Loaded | { error: string }> {
@@ -172,7 +148,7 @@ async function openRun(world: string): Promise<Loaded | { error: string }> {
   return found;
 }
 
-function jointLimits(root: string, world: string, doc: WorldDocument) {
+function jointLimits(root: string, world: string, doc: RunPlan) {
   const limits = new Map<string, { lower: number; upper: number }>();
   const files = readerFor(root, world);
   for (const robot of doc.robots) {
@@ -191,11 +167,16 @@ function jointLimits(root: string, world: string, doc: WorldDocument) {
 }
 
 function documentWarnings(loaded: Loaded): string[] {
-  const validation = validateWorld(
-    loaded.doc,
-    validateCtx(loaded.root, loaded.world)
-  );
-  return validation.warnings.map((issue) => issue.message);
+  const feeds = powerFeedsOf(loaded.plan);
+  const out: string[] = [];
+  for (const board of loaded.plan.boards) {
+    if (feeds.boards[board.id]) continue;
+    const pin = board.voltagePin;
+    out.push(
+      `board ${board.id}: no supply reaches its ${pin} pin. Hint: wire a supply's ${pin} pin to ${board.id}.${pin}.`
+    );
+  }
+  return out;
 }
 
 function liveWarnings(
@@ -209,8 +190,8 @@ function liveWarnings(
       out.push(`${id}: ${warning.message}`);
     }
   }
-  const limits = jointLimits(loaded.root, loaded.world, loaded.doc);
-  const units = jointUnits(loaded.root, loaded.world, loaded.doc);
+  const limits = jointLimits(loaded.root, loaded.world, loaded.plan);
+  const units = jointUnits(loaded.root, loaded.world, loaded.plan);
   for (const [robot, names] of Object.entries(state.joints)) {
     for (const [joint, qpos] of Object.entries(names)) {
       const key = `${robot}/${joint}`;
@@ -234,16 +215,18 @@ function rangeWarnings(
   frames: RecordingRead["frames"]
 ): string[] {
   const out: string[] = [];
-  const brownout = chipModels.atmega328p.brownoutVoltage;
-  const feeds = powerFeeds(loaded.doc);
+  const feeds = powerFeedsOf(loaded.plan);
   const soaVoltage = new Map<string, number>();
   const soaSeen = new Set<string>();
-  const units = jointUnits(loaded.root, loaded.world, loaded.doc);
+  const units = jointUnits(loaded.root, loaded.world, loaded.plan);
   const past = new Map<string, number>();
   for (const frame of frames) {
     for (const [id, board] of Object.entries(frame.boards)) {
       if (!board.belowSoa) continue;
       soaSeen.add(id);
+      const brownout =
+        loaded.plan.boards.find((board) => board.id === id)?.brownoutVoltage ??
+        2.7;
       const supplyId = feeds.boards[id];
       const row = supplyId ? frame.supplies[supplyId] : undefined;
       if (!row) continue;
@@ -266,6 +249,9 @@ function rangeWarnings(
   }
   for (const id of soaSeen) {
     const voltage = soaVoltage.get(id);
+    const brownout =
+      loaded.plan.boards.find((board) => board.id === id)?.brownoutVoltage ??
+      2.7;
     const warning =
       voltage === undefined ? null : atmega328pSoaWarning(voltage, brownout);
     out.push(
@@ -287,7 +273,7 @@ function limitKind(unit: "deg" | "m" | undefined): JointLimitKind {
   return unit === "m" ? "slide" : "hinge";
 }
 
-function jointUnits(root: string, world: string, doc: WorldDocument) {
+function jointUnits(root: string, world: string, doc: RunPlan) {
   const units = new Map<string, "deg" | "m">();
   const files = readerFor(root, world);
   for (const robot of doc.robots) {
@@ -304,27 +290,13 @@ function jointUnits(root: string, world: string, doc: WorldDocument) {
   return units;
 }
 
-function validateCtx(root: string, world: string): WorldValidateCtx {
-  const files = readerFor(root, world);
-  return {
-    fileExists(relativePath) {
-      return files.read(relativePath) !== null;
-    },
-    urdf(relativePath) {
-      const bytes = files.read(relativePath);
-      if (!bytes) return undefined;
-      return extractUrdfJointsAndMeshes(new TextDecoder().decode(bytes));
-    },
-  };
-}
-
 function statusOf(loaded: Loaded, stateOverride?: WorldState) {
   const view = worldRunView(loaded.root, loaded.world);
   if ("error" in view) return view;
   const state = stateOverride ?? view.state;
   const { lastCommand } = view;
-  const doc = loaded.doc;
-  const feeds = powerFeeds(doc);
+  const doc = loaded.plan;
+  const feeds = powerFeedsOf(doc);
   const drives = servoSignalDrives(doc);
   const units = jointUnits(loaded.root, loaded.world, doc);
   const boards: Record<
@@ -385,17 +357,13 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       joints[key] = jointReadout(qpos, units.get(key) ?? "deg");
     }
   }
-  const validation = validateWorld(doc, validateCtx(loaded.root, loaded.world));
-  const diagnostics = [
-    ...validation.errors.map((issue) => ({
-      level: "error" as const,
-      ...issue,
-    })),
-    ...validation.warnings.map((issue) => ({
-      level: "warning" as const,
-      ...issue,
-    })),
-  ];
+  const notes = documentWarnings(loaded);
+  const diagnostics = notes.map((message) => ({
+    level: "warning" as const,
+    code: "no-supply",
+    path: "",
+    message,
+  }));
   return {
     simTime: seconds(state.simTime),
     playing: state.playing,
@@ -412,11 +380,7 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
         }
       : null,
     ...(diagnostics.length > 0 ? { diagnostics } : {}),
-    warnings: liveWarnings(
-      loaded,
-      state,
-      validation.warnings.map((issue) => issue.message)
-    ),
+    warnings: liveWarnings(loaded, state, notes),
   };
 }
 
@@ -451,7 +415,7 @@ function addField(
 }
 
 function trackKnown(
-  doc: WorldDocument,
+  doc: RunPlan,
   jointKeys: Set<string>,
   track: string
 ): boolean {
@@ -493,10 +457,10 @@ function rejectTracks(
 ): { error: string } | null {
   if (!tracks || tracks.length === 0) return null;
   const jointKeys = new Set(
-    jointUnits(loaded.root, loaded.world, loaded.doc).keys()
+    jointUnits(loaded.root, loaded.world, loaded.plan).keys()
   );
   for (const track of tracks) {
-    if (!trackKnown(loaded.doc, jointKeys, track)) {
+    if (!trackKnown(loaded.plan, jointKeys, track)) {
       return { error: `unknown track "${track}"` };
     }
   }
@@ -755,7 +719,7 @@ async function readWindow(
       : {}),
   });
   if ("error" in read) return read;
-  const units = jointUnits(loaded.root, loaded.world, loaded.doc);
+  const units = jointUnits(loaded.root, loaded.world, loaded.plan);
   const serial = agentEvents(read.events);
   const events = capTail(serial.events);
   return {
@@ -931,7 +895,7 @@ export const worldTools = {
     execute: async ({ world, part, from, to }) => {
       const found = await readWorld(world);
       if ("error" in found) return found;
-      if (!found.doc.parts.some((item) => item.id === part)) {
+      if (!found.plan.parts.some((item) => item.id === part)) {
         return { error: `no part "${part}"` };
       }
       const started = await ensureWorldRun(found.root, found.world);
@@ -943,7 +907,7 @@ export const worldTools = {
         everyFrame: true,
       });
       if ("error" in read) return read;
-      const drive = servoSignalDrives(found.doc).find(
+      const drive = servoSignalDrives(found.plan).find(
         (item) => item.partId === part
       );
       const pulses = capTail(collapsePulses(read.raw.frames, part));

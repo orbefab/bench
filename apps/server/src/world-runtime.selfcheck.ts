@@ -15,6 +15,7 @@ import type { WorldServerMessage } from "@sfab-bench/contract";
 import { handleProjectFile } from "./cad-pkg";
 import { closeRootWatches, listProjectFiles } from "./projects";
 import { RX_BACKLOG } from "./world/board";
+import { readDraft, writeDraft } from "./world/draft";
 import { projectReal, readerFor } from "./world/files";
 import {
   attachWorld,
@@ -27,6 +28,7 @@ import {
   worldWorkerEntry,
 } from "./world/host";
 import { compileWorld, ensureMujocoCompiler } from "./world/model";
+import { planWorld } from "./world/plan";
 import type { FromWorker, ToWorker } from "./world/worker";
 
 /**
@@ -84,8 +86,15 @@ function waitUntil(
 
 const rootReal = projectReal(armDir);
 expect(rootReal, "arm fixture resolves");
+if (!rootReal) throw new Error("unreachable");
+const planned = planWorld(rootReal, "arm.world.json");
+expect(
+  planned.ok,
+  planned.ok ? "" : planned.errors.map((error) => error.message).join("; ")
+);
+if (!planned.ok) throw new Error("unreachable");
 const compiled = await compileWorld(
-  JSON.parse(readFileSync(join(armDir, "arm.world.json"), "utf8")) as unknown,
+  planned.plan,
   readerFor(rootReal, "arm.world.json")
 );
 expect(
@@ -167,8 +176,17 @@ writeFileSync(
 );
 const bareReal = projectReal(bareRoot);
 expect(bareReal, "bare copy resolves");
+if (!bareReal) throw new Error("unreachable");
+const barePlanned = planWorld(bareReal, "arm.world.json");
+expect(
+  barePlanned.ok,
+  barePlanned.ok
+    ? ""
+    : barePlanned.errors.map((error) => error.message).join("; ")
+);
+if (!barePlanned.ok) throw new Error("unreachable");
 const bare = await compileWorld(
-  JSON.parse(readFileSync(join(bareRoot, "arm.world.json"), "utf8")) as unknown,
+  barePlanned.plan,
   readerFor(bareReal, "arm.world.json")
 );
 expect(
@@ -616,17 +634,7 @@ writeFileSync(
 </robot>
 `
 );
-const twoWorld = JSON.parse(
-  readFileSync(join(twoRoot, "arm.world.json"), "utf8")
-) as {
-  robots: { id: string; urdf: string; pose: unknown }[];
-  parts: {
-    id: string;
-    model: string;
-    drives?: { robot: string; joint: string };
-  }[];
-  wires: [string, string][];
-};
+const twoWorld = readDraft(twoRoot, "arm.world.json");
 twoWorld.robots.push({
   id: "crane",
   urdf: "robot/crane.urdf",
@@ -639,7 +647,7 @@ twoWorld.parts.push({
 });
 // No signal wire. V+ lets setTarget's motor-law command move the joint.
 twoWorld.wires.push(["usb.5V", "elbow.V+"], ["usb.GND", "elbow.GND"]);
-writeFileSync(join(twoRoot, "arm.world.json"), JSON.stringify(twoWorld));
+writeDraft(twoRoot, "arm.world.json", twoWorld);
 const twoWorker = new Worker(worldWorkerEntry());
 const twoMessages: FromWorker[] = [];
 twoWorker.on("message", (message: FromWorker) => {
@@ -1093,29 +1101,24 @@ try {
 
 const pairRoot = mkdtempSync(join(tmpdir(), "sfab-world-boards-"));
 cpSync(armDir, pairRoot, { recursive: true });
-const pairDoc = JSON.parse(
-  readFileSync(join(pairRoot, "arm.world.json"), "utf8")
-) as {
-  boards: Record<string, unknown>[];
-  wires: [string, string][];
-};
+const pairDoc = readDraft(pairRoot, "arm.world.json");
+const pairUno = pairDoc.boards[0];
+if (!pairUno) throw new Error("fixture board");
 pairDoc.boards.push({
+  ...pairUno,
   id: "stall",
-  chip: "atmega328p",
-  board: "uno",
   firmware: "firmware/stall/stall.hex",
   source: "firmware/stall/stall.ino",
   pose: {
     position: [0.2, 0, 0.006],
     rotation: [1, 0, 0, 0],
   },
-  size: [0.0686, 0.0534, 0.012],
 });
 // An unwired board does not run. The stall CPU is here for its own
 // serial ring, so it takes the same USB rail. Two boards plus the hold
 // servo stay under 500 mA, and neither board browns out.
 pairDoc.wires.push(["usb.5V", "stall.5V"], ["usb.GND", "stall.GND"]);
-writeFileSync(join(pairRoot, "two.world.json"), JSON.stringify(pairDoc));
+writeDraft(pairRoot, "two.world.json", pairDoc);
 const holdHexPath = join(pairRoot, "firmware/hold/hold.hex");
 const goodHex = readFileSync(holdHexPath);
 const pairEvents: WorldServerMessage[] = [];

@@ -23,7 +23,7 @@ import {
   partModels,
   supplyPresets,
 } from "@sfab-bench/contract";
-import { convertV1File, scenePartId } from "./world/parts/convert-v1";
+import { convertV1, scenePartId } from "./world/parts/convert-v1";
 import { expandPartType } from "./world/parts/expand";
 import { type LoadOptions, loadWorldV2 } from "./world/parts/load";
 import { lockPathFor, writeLock } from "./world/parts/lock";
@@ -265,8 +265,12 @@ line(
 );
 
 function convertedClean(v1Name: string, worldName: string): void {
-  const converted = convertV1File(
-    path.join(repoRoot, "examples/arm", v1Name),
+  const frozen = JSON.parse(
+    readFileSync(path.join(serverDir, "fixtures/v1", v1Name), "utf8")
+  ) as Parameters<typeof convertV1>[0];
+  const converted = convertV1(
+    frozen,
+    path.join(repoRoot, "examples/arm"),
     repoRoot,
     worldName
   );

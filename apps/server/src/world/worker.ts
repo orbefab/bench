@@ -8,10 +8,7 @@ import {
   ATMEGA328P_16MHZ_MIN_V,
   arduinoPinBit,
   atmega328pSoaWarning,
-  boardModel,
-  chipModel,
   type JointLimitKind,
-  partModel,
   pastLimitAmount,
   RECORD_FRAME_MS,
   type RecordedFrame,
@@ -21,7 +18,6 @@ import {
   type RecordingRead,
   type TimelineMarker,
   type TimelineTrack,
-  type WorldDocument,
   type WorldError,
   type WorldPartMotion,
   type WorldPartState,
@@ -39,6 +35,7 @@ import {
   compileWorld,
   type WorldModelCounts,
 } from "./model";
+import { planWorld, type RunPlan } from "./plan";
 import {
   type BrownoutState,
   DISPLAY_STALL_DEG_PER_SEC,
@@ -55,7 +52,7 @@ import {
   applyGpioDrives,
   gpioInputNets,
   type PowerFeeds,
-  powerFeeds,
+  powerFeedsOf,
   servoSignalDrives,
 } from "./wiring";
 
@@ -339,7 +336,7 @@ let throwOnStep = false;
 let recorder: RunRecorder | null = null;
 let recordingSeq = 0;
 let worldSha256 = "";
-let worldDoc: WorldDocument | null = null;
+let runPlan: RunPlan | null = null;
 const firmwareSha = new Map<string, string>();
 let inputNets: ReturnType<typeof gpioInputNets> = [];
 let applyingInputs = false;
@@ -620,13 +617,11 @@ function openRecorder() {
   }
 }
 
-function catalogOf(
-  model: NonNullable<ReturnType<typeof partModel>>
-): RecordingPartCatalog {
+function catalogOf(part: RunPlan["parts"][number]): RecordingPartCatalog {
   return {
-    ...(model.torqueNm !== undefined ? { torqueNm: model.torqueNm } : {}),
-    ...(model.supply ? { supply: model.supply } : {}),
-    ...(model.motor ? { motor: model.motor } : {}),
+    ...(part.torqueNm !== undefined ? { torqueNm: part.torqueNm } : {}),
+    ...(part.supply ? { supply: part.supply } : {}),
+    ...(part.motor ? { motor: part.motor } : {}),
   };
 }
 
@@ -634,11 +629,9 @@ function manifestOf(): RecordingManifest {
   const timestep = sim?.model.opt.timestep ?? 0.001;
   const which = sim?.model.opt.integrator ?? 3;
   const parts: RecordingManifest["parts"] = {};
-  for (const part of worldDoc?.parts ?? []) {
+  for (const part of runPlan?.parts ?? []) {
     if (parts[part.model]) continue;
-    const model = partModel(part.model);
-    if (!model) continue;
-    parts[part.model] = catalogOf(model);
+    parts[part.model] = catalogOf(part);
   }
   return {
     mujoco: MUJOCO_VERSION,
@@ -729,24 +722,12 @@ function noteFault(board: AvrBoard) {
   });
 }
 
-function boardSpecsOf(parsed: unknown): BoardSpec[] {
-  if (!parsed || typeof parsed !== "object") return [];
-  const list = (parsed as { boards?: unknown }).boards;
-  if (!Array.isArray(list)) return [];
-  const out: BoardSpec[] = [];
-  for (const item of list) {
-    if (!item || typeof item !== "object") continue;
-    const row = item as { id?: unknown; chip?: unknown; firmware?: unknown };
-    if (
-      typeof row.id !== "string" ||
-      typeof row.chip !== "string" ||
-      typeof row.firmware !== "string"
-    ) {
-      continue;
-    }
-    out.push({ id: row.id, chip: row.chip, firmware: row.firmware });
-  }
-  return out;
+function boardSpecsOf(plan: RunPlan): BoardSpec[] {
+  return plan.boards.map((board) => ({
+    id: board.id,
+    chip: board.chip,
+    firmware: board.firmware,
+  }));
 }
 
 function bootBoard(spec: BoardSpec): AvrBoard {
@@ -772,9 +753,9 @@ function bootBoard(spec: BoardSpec): AvrBoard {
   return board;
 }
 
-function loadBoards(parsed: unknown) {
+function loadBoards(plan: RunPlan) {
   firmwareSha.clear();
-  specs = boardSpecsOf(parsed);
+  specs = boardSpecsOf(plan);
   boards = specs.map((spec) => bootBoard(spec));
   faulted.clear();
   rxSent.clear();
@@ -785,26 +766,23 @@ function loadBoards(parsed: unknown) {
  * One power walk per load. `bootBoard` reads this map, so it is filled
  * before the CPUs start and not again when the servos are bound.
  */
-function fillBoardPower(doc: WorldDocument) {
-  const feeds = powerFeeds(doc);
+function fillBoardPower(plan: RunPlan) {
+  const feeds = powerFeedsOf(plan);
   partFeeds = feeds.parts;
-  supplySpecs = doc.supplies.map((supply) => ({
+  supplySpecs = plan.supplies.map((supply) => ({
     id: supply.id,
     voltage: supply.voltage,
     currentLimit: supply.currentLimit,
     rSeries: supply.rSeries,
   }));
   boardPower = new Map();
-  for (const spec of boardSpecsOf(doc)) {
-    const row = doc.boards.find((item) => item.id === spec.id);
-    const model = row ? boardModel(row.board) : undefined;
-    const chip = chipModel(spec.chip);
-    const supplyId = feeds.boards[spec.id] ?? null;
-    boardPower.set(spec.id, {
+  for (const board of plan.boards) {
+    const supplyId = feeds.boards[board.id] ?? null;
+    boardPower.set(board.id, {
       supplyId,
-      draw: supplyId ? (model?.current ?? 0) : 0,
-      brownoutVoltage: chip?.brownoutVoltage ?? Number.POSITIVE_INFINITY,
-      assertVoltage: chip?.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,
+      draw: supplyId ? board.current : 0,
+      brownoutVoltage: board.brownoutVoltage,
+      assertVoltage: board.brownoutAssertVoltage,
       resets: 0,
       brownout: runningBrownout(),
     });
@@ -824,8 +802,8 @@ function applyInputNets() {
   }
 }
 
-function bindInputNets(doc: WorldDocument) {
-  inputNets = gpioInputNets(doc);
+function bindInputNets(plan: RunPlan) {
+  inputNets = gpioInputNets(plan);
   const refresh = () => applyInputNets();
   for (const board of boards) {
     board.onPinsChanged = inputNets.length > 0 ? refresh : null;
@@ -833,13 +811,12 @@ function bindInputNets(doc: WorldDocument) {
   applyInputNets();
 }
 
-function bindPower(doc: WorldDocument) {
+function bindPower(plan: RunPlan) {
   loads = [];
   if (!sim) return;
-  const drives = servoSignalDrives(doc);
-  for (const part of doc.parts) {
-    const model = partModel(part.model);
-    if (!model?.motor || model.torqueNm === undefined) continue;
+  const drives = servoSignalDrives(plan);
+  for (const part of plan.parts) {
+    if (!part.motor || part.torqueNm === undefined) continue;
     const supplyId = partFeeds[part.id] ?? null;
     const signal = drives.find((item) => item.partId === part.id);
     let drive: ServoDrive | null = null;
@@ -861,8 +838,8 @@ function bindPower(doc: WorldDocument) {
           actuatorId,
           jointId,
           jointName: `${part.drives.robot}/${part.drives.joint}`,
-          torqueNm: model.torqueNm,
-          law: model.motor,
+          torqueNm: part.torqueNm,
+          law: part.motor,
           track: blankTrack(),
           manualDeg: null,
         };
@@ -871,7 +848,7 @@ function bindPower(doc: WorldDocument) {
     const load: Load = {
       partId: part.id,
       supplyId,
-      quiescent: supplyId ? model.motor.quiescent : 0,
+      quiescent: supplyId ? part.motor.quiescent : 0,
       state: "idle",
       current: 0,
       drive,
@@ -899,7 +876,7 @@ function bindRails() {
   }
   for (const supply of supplySpecs) {
     const members = groups.get(supply.id) ?? [];
-    const path = unoUsbPathFor(supply, unoBoardOn(supply.id));
+    const path = unoUsbPathFor(supplyTypeOf(supply.id), unoBoardOn(supply.id));
     const circuit = createRailCircuit({
       vNom: supply.voltage,
       rSeries: supply.rSeries,
@@ -923,12 +900,16 @@ function bindRails() {
   }
 }
 
-/** `"uno"` when an Uno is fed by this supply, otherwise null. */
-function unoBoardOn(supplyId: string): "uno" | null {
-  if (!worldDoc) return null;
-  for (const board of worldDoc.boards) {
-    if (board.board !== "uno") continue;
-    if (boardPower.get(board.id)?.supplyId === supplyId) return "uno";
+function supplyTypeOf(supplyId: string): string {
+  return runPlan?.supplies.find((item) => item.id === supplyId)?.type ?? "";
+}
+
+/** The fed board's part type, when this supply powers an Uno. */
+function unoBoardOn(supplyId: string): string | null {
+  if (!runPlan) return null;
+  for (const board of runPlan.boards) {
+    if (board.type !== "arduino-uno-r3") continue;
+    if (boardPower.get(board.id)?.supplyId === supplyId) return board.type;
   }
   return null;
 }
@@ -1086,7 +1067,7 @@ function reloadBoard(id: string) {
   }
   rxSent.delete(id);
   faulted.delete(id);
-  if (worldDoc) bindInputNets(worldDoc);
+  if (runPlan) bindInputNets(runPlan);
   const recorded = recorder?.manifest.boards.find((item) => item.id === id);
   if (recorded) recorded.sha256 = firmwareSha.get(id) ?? recorded.sha256;
   if (next.running) {
@@ -1329,7 +1310,7 @@ function dispose() {
   boards = [];
   loads = [];
   inputNets = [];
-  worldDoc = null;
+  runPlan = null;
   boardPower = new Map();
   supplySpecs = [];
   partFeeds = {};
@@ -1389,21 +1370,13 @@ async function build(): Promise<boolean> {
     return false;
   }
   worldSha256 = sha256(bytes);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-  } catch {
-    fail([
-      {
-        code: "schema",
-        path: "",
-        message: "World file is not JSON. Hint: a world is <name>.world.json.",
-      },
-    ]);
+  const planned = planWorld(root, worldRel);
+  if (!planned.ok) {
+    fail(planned.errors);
     return false;
   }
   const bytesReader = readerFor(root, worldRel);
-  const compiled = await compileWorld(parsed, bytesReader);
+  const compiled = await compileWorld(planned.plan, bytesReader);
   if (!compiled.ok) {
     fail(compiled.errors);
     return false;
@@ -1414,11 +1387,11 @@ async function build(): Promise<boolean> {
   files = bytesReader;
   playing = false;
   // Feeds are known before boot: an unwired board does not run.
-  worldDoc = parsed as WorldDocument;
-  fillBoardPower(worldDoc);
-  loadBoards(parsed);
-  bindPower(worldDoc);
-  bindInputNets(worldDoc);
+  runPlan = planned.plan;
+  fillBoardPower(runPlan);
+  loadBoards(runPlan);
+  bindPower(runPlan);
+  bindInputNets(runPlan);
   openRecorder();
   post({ type: "ready", generation, counts: countsOf(compiled) });
   postState();

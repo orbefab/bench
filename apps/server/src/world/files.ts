@@ -1,10 +1,18 @@
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 import {
   extractUrdfJointsAndMeshes,
   resolveUrdfMesh,
 } from "@sfab-bench/contract";
+
+import { planWorld } from "./plan";
 
 /**
  * Same containment rule as `projects.insideRoot`. This file does not import
@@ -106,23 +114,11 @@ export function fileStamp(abs: string): string {
  */
 export function dependencyRels(rootReal: string, worldRel: string): string[] {
   const rels = [worldRel];
-  const worldAbs = resolveInside(rootReal, worldRel);
-  if (!worldAbs) return rels;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(worldAbs, "utf8")) as unknown;
-  } catch {
-    return rels;
-  }
-  if (!parsed || typeof parsed !== "object") return rels;
-  const robots = (parsed as { robots?: unknown }).robots;
-  if (!Array.isArray(robots)) return rels;
+  const planned = planWorld(rootReal, worldRel);
+  if (!planned.ok) return rels;
   const worldDir = parentRel(worldRel);
-  for (const robot of robots) {
-    if (!robot || typeof robot !== "object") continue;
-    const urdf = (robot as { urdf?: unknown }).urdf;
-    if (typeof urdf !== "string") continue;
-    const urdfRel = joinRel(worldDir, urdf);
+  for (const robot of planned.plan.robots) {
+    const urdfRel = joinRel(worldDir, robot.urdf);
     if (!urdfRel) continue;
     rels.push(urdfRel);
     const urdfAbs = resolveInside(rootReal, urdfRel);
@@ -138,7 +134,46 @@ export function dependencyRels(rootReal: string, worldRel: string): string[] {
       if (meshRel) rels.push(meshRel);
     }
   }
+  const lockRel = joinRel(worldDir, `${pathBasename(worldRel)}.lock.json`);
+  if (lockRel && resolveInside(rootReal, lockRel)) rels.push(lockRel);
+  for (const partRel of partRels(rootReal, worldDir)) rels.push(partRel);
   return rels;
+}
+
+function pathBasename(rel: string): string {
+  const clean = rel.replace(/\\/g, "/");
+  const slash = clean.lastIndexOf("/");
+  const name = slash === -1 ? clean : clean.slice(slash + 1);
+  return name.replace(/\.json$/, "");
+}
+
+/** Project part files under the world directory. A change rebuilds the run. */
+function partRels(rootReal: string, worldDir: string): string[] {
+  const dirRel = joinRel(worldDir, "parts");
+  if (!dirRel) return [];
+  const abs = resolve(rootReal, dirRel);
+  if (!existsSync(abs)) return [];
+  const out: string[] = [];
+  const walk = (folder: string, prefix: string) => {
+    let names: string[] = [];
+    try {
+      names = readdirSync(folder);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const child = join(folder, name);
+      const rel = `${prefix}/${name}`;
+      try {
+        if (statSync(child).isDirectory()) walk(child, rel);
+        else if (name.endsWith(".json")) out.push(rel);
+      } catch {
+        /* skip */
+      }
+    }
+  };
+  walk(abs, dirRel);
+  return out;
 }
 
 export type FirmwareWatch = {
@@ -153,28 +188,15 @@ export function firmwareWatch(
   rootReal: string,
   worldRel: string
 ): FirmwareWatch[] {
-  const worldAbs = resolveInside(rootReal, worldRel);
-  if (!worldAbs) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(worldAbs, "utf8")) as unknown;
-  } catch {
-    return [];
-  }
-  if (!parsed || typeof parsed !== "object") return [];
-  const boards = (parsed as { boards?: unknown }).boards;
-  if (!Array.isArray(boards)) return [];
+  const planned = planWorld(rootReal, worldRel);
+  if (!planned.ok) return [];
   const worldDir = parentRel(worldRel);
   const out: FirmwareWatch[] = [];
-  for (const item of boards) {
-    if (!item || typeof item !== "object") continue;
-    const id = (item as { id?: unknown }).id;
-    const firmware = (item as { firmware?: unknown }).firmware;
-    if (typeof id !== "string" || typeof firmware !== "string") continue;
-    const rel = joinRel(worldDir, firmware);
+  for (const board of planned.plan.boards) {
+    const rel = joinRel(worldDir, board.firmware);
     if (!rel) continue;
     const abs = resolveInside(rootReal, rel);
-    out.push({ id, rel, stamp: abs ? fileStamp(abs) : "missing" });
+    out.push({ id: board.id, rel, stamp: abs ? fileStamp(abs) : "missing" });
   }
   return out;
 }

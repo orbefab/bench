@@ -39,10 +39,14 @@ export function buildLock(lib: Library): LockFile {
   return { format: LOCK_FORMAT, world: lib.worldName, parts, types };
 }
 
+/**
+ * One lock per world file. A folder can hold two worlds (the arm and the
+ * stall), and a directory-named lock can describe only one of them.
+ */
 export function lockPathFor(worldFile: string): string {
   const dir = path.dirname(worldFile);
-  const name = path.basename(dir);
-  return path.join(dir, `${name}.lock.json`);
+  const stem = path.basename(worldFile).replace(/\.json$/, "");
+  return path.join(dir, `${stem}.lock.json`);
 }
 
 export function writeLock(file: string, lock: LockFile): void {

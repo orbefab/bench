@@ -1,0 +1,125 @@
+{
+  "format": "sfab.lock@1",
+  "parts": [
+    {
+      "id": "sfab/arm-stall-scene@1.0.0",
+      "path": "parts/sfab/arm-stall-scene@1.0.0.json",
+      "sha256": "eb116ef3a56a828463023bdc6e5daabd9a5cd5d9f849ecd686f8935ae4be5d09",
+      "source": "world",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/arm@1.0.0",
+      "path": "parts/sfab/arm@1.0.0.json",
+      "sha256": "838a06db114c887266bf157918da55459b3f1ff5d50316a7be55f51bbd045da6",
+      "source": "world",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/bench-supply@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/bench-supply@1.0.0.json",
+      "sha256": "ba4e87464eb78e1341bcc7cd9cc6ebb894a7b24a2c1a33c1d6e3789426a9bea1",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90-control@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90-control@1.0.0.json",
+      "sha256": "854a15e984507289c9c11ce661075f22a4d6f439e356c381195233f4a619b332",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90-gears@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90-gears@1.0.0.json",
+      "sha256": "6f52a68ecf7dfbfd1126883ded2e554ce99d9303e481ee5b4dd67e23d1dbd9ee",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90-motor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90-motor@1.0.0.json",
+      "sha256": "a8932c36ba1e6b817bf82b1ef89c64ae5a9915203fc40c36907798e7b401cae5",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90-pot@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90-pot@1.0.0.json",
+      "sha256": "b69c7da321d2c89e3eac63b307e5225eca40618b7ddf58b343f16c530382ffe0",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90@1.0.0.json",
+      "sha256": "b34d87f9e19dbd9fca95c516c362bf5dfb6a07fe04566ca3672b6e48d68f5203",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/uno-r3@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/uno-r3@1.0.0.json",
+      "sha256": "e0cf0bef29f8b980fd9194df85e09fcba11ea27e54fd1f7cf90ca63eb1bd3277",
+      "source": "catalog",
+      "version": "1.0.0"
+    }
+  ],
+  "types": [
+    {
+      "id": "arduino-uno-r3",
+      "path": "../../apps/server/catalog/types/arduino-uno-r3.json",
+      "sha256": "26b2e31852af7b77b660e84f2dcf2ccd6ff19790231803c3f5496d369fd4fe4b",
+      "source": "catalog"
+    },
+    {
+      "id": "assembly",
+      "path": "../../apps/server/catalog/types/assembly.json",
+      "sha256": "d3d12a01bb5564827caab4bf45b624199124264c89dc582d46f4775b83a34c41",
+      "source": "catalog"
+    },
+    {
+      "id": "bench-supply-cv-cc",
+      "path": "../../apps/server/catalog/types/bench-supply-cv-cc.json",
+      "sha256": "2c3866cd53f7958fefc5b596a50f0a7c326a5f38241a8bb6349474e42eae1d4a",
+      "source": "catalog"
+    },
+    {
+      "id": "dc-motor-terminals",
+      "path": "../../apps/server/catalog/types/dc-motor-terminals.json",
+      "sha256": "dd0e94aafb85b2d9208cc7a1cf588ac35502f4047406429c22e557915588e20f",
+      "source": "catalog"
+    },
+    {
+      "id": "gear-train",
+      "path": "../../apps/server/catalog/types/gear-train.json",
+      "sha256": "9ae6f5da4b38030d227d1fb76d5dcefb902f1fb93bedd1d92d7556b9f1e0da2d",
+      "source": "catalog"
+    },
+    {
+      "id": "hobby-servo-3wire",
+      "path": "../../apps/server/catalog/types/hobby-servo-3wire.json",
+      "sha256": "c590f8687a8c4a9aad9ae47296cc18644abd262034373dfae863826840d9cd99",
+      "source": "catalog"
+    },
+    {
+      "id": "potentiometer",
+      "path": "../../apps/server/catalog/types/potentiometer.json",
+      "sha256": "c3dbd8b5a5e46ad450b96003fdf8124c74feab642c0e541d9d9dca9461d08697",
+      "source": "catalog"
+    },
+    {
+      "id": "robot-arm",
+      "path": "../../apps/server/catalog/types/robot-arm.json",
+      "sha256": "aef43a363fe939603e22a20328bf91bd899163bd24f9d96d797a71042ac361ef",
+      "source": "catalog"
+    },
+    {
+      "id": "servo-control-ic",
+      "path": "../../apps/server/catalog/types/servo-control-ic.json",
+      "sha256": "50934c47afa851a1a6b3bf8491312f734d979879c22debd13e6fa5ace12f2472",
+      "source": "catalog"
+    }
+  ],
+  "world": "arm-stall.world"
+}

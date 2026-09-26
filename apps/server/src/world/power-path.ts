@@ -2,19 +2,17 @@
 // The Nano USB function is `nanoRail` in circuit/circuits.ts (E1 @ 031dc5e). World v1
 // has no Nano board, so that function waits for one.
 /**
- * A `usb` preset wired to an Uno's `5V` is the cable into the USB connector.
- * That is how the arm examples are drawn. A `bench` preset on `5V` is the
+ * A `usb-a-port` wired to an Uno's `5V` is the cable into the USB connector.
+ * That is how the arm examples are drawn. A bench supply on `5V` is the
  * header, and the rail stays the supply terminal. Servos on `uno.5V` load
- * the board node. World v1's power walk cannot tell a part on the header
- * from a part on the board, so every motor of that supply sits on the node
- * when the path is on.
+ * the board node. The power walk cannot tell a part on the header from a
+ * part on the board, so every motor of that supply sits on the node when
+ * the path is on.
  *
  * Schematic: "Arduino Uno Rev3", arduino.cc, CC-BY-SA (A000066). Parts are
  * the Rev3e bill of materials (arduino_Uno_Rev3-02-TH). Datasheets cited
  * on the constants. A value marked assumed is not in those documents.
  */
-
-import { boardModels, supplyPresets } from "@sfab-bench/contract";
 
 import {
   gStamp,
@@ -113,31 +111,17 @@ export const UNO_PC2_ESR = PC2_TAN_DELTA / (2 * Math.PI * 120 * UNO_PC2_C);
 export const UNO_DECOUPLE_C = 100e-9;
 const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;
 
-const USB_EPS = 1e-9;
-
-/** Catalog USB numbers. A bench preset, or any other series resistance, is not this. */
-export function isUsbPreset(supply: {
-  voltage: number;
-  currentLimit: number;
-  rSeries: number;
-}): boolean {
-  const usb = supplyPresets.usb;
-  return (
-    Math.abs(supply.voltage - usb.voltage) <= USB_EPS &&
-    Math.abs(supply.currentLimit - usb.currentLimit) <= USB_EPS &&
-    Math.abs(supply.rSeries - usb.rSeries) <= USB_EPS
-  );
-}
-
 /**
- * True when this supply is the USB cable into an Uno. The run asks this
- * for every supply; there is no other switch.
+ * True when this supply is the USB cable into an Uno. A `usb-a-port`
+ * wired to an `arduino-uno-r3`'s `5V` is the cable. A bench supply on
+ * `5V` is the header. The caller has already checked that this supply
+ * feeds that board.
  */
 export function unoUsbPathFor(
-  supply: { voltage: number; currentLimit: number; rSeries: number },
-  board: string | null
+  supplyType: string,
+  boardType: string | null
 ): boolean {
-  return board === "uno" && isUsbPreset(supply);
+  return supplyType === "usb-a-port" && boardType === "arduino-uno-r3";
 }
 
 /**
@@ -265,13 +249,14 @@ export function createUnoUsbPath(): UnoUsbPath {
  * and a 0 → 0.714 A step at 1 ms. The probe is the board node.
  */
 export function unoUsbTrace(): Element[] {
-  const board = boardModels.uno.current;
+  // The class-1 deck: 5 V, 0.5 Ω, and the Uno's 50 mA quiescent.
+  const board = 0.05;
   return [
     vSource("vusb", "src", "0", {
       kind: "dc",
-      value: supplyPresets.usb.voltage,
+      value: 5,
     }),
-    resistor("rs", "src", UNO_TERM_NODE, supplyPresets.usb.rSeries),
+    resistor("rs", "src", UNO_TERM_NODE, 0.5),
     resistor("f1", UNO_TERM_NODE, UNO_SW_NODE, UNO_F1_R),
     ...unoBoardElements(UNO_SW_NODE, UNO_BOARD_NODE),
     iSource("iboard", UNO_BOARD_NODE, "0", { kind: "dc", value: board }),

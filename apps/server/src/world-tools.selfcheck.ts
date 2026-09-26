@@ -13,6 +13,7 @@ import { emptySnapshot, type WorldServerMessage } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
+import { readDraft, writeDraft } from "./world/draft";
 import {
   attachWorld,
   stopWorld,
@@ -52,18 +53,7 @@ const armDir = fileURLToPath(
 const root = mkdtempSync(join(tmpdir(), "sfab-world-tools-"));
 cpSync(armDir, root, { recursive: true });
 
-const arm = JSON.parse(readFileSync(join(root, "arm.world.json"), "utf8")) as {
-  robots: { id: string; urdf: string; pose: unknown }[];
-  boards: {
-    id: string;
-    firmware: string;
-    source?: string;
-    pose: { position: number[]; rotation: number[] };
-  }[];
-  parts: { id: string; drives?: { robot: string; joint: string } }[];
-  supplies: { id: string }[];
-  wires: [string, string][];
-};
+const arm = readDraft(root, "arm.world.json");
 const robot = arm.robots[0];
 const uno = arm.boards[0];
 const servo = arm.parts[0];
@@ -123,7 +113,7 @@ two.wires = [
   ["stall.5V", "stall-servo.V+"],
   ["stall.GND", "stall-servo.GND"],
 ];
-writeFileSync(join(root, "two.world.json"), JSON.stringify(two));
+writeDraft(root, "two.world.json", two);
 
 const unpowered = structuredClone(arm);
 unpowered.wires = unpowered.wires.filter(
@@ -131,7 +121,7 @@ unpowered.wires = unpowered.wires.filter(
     !(wire[0] === "usb.5V" && wire[1] === "uno.5V") &&
     !(wire[0] === "uno.5V" && wire[1] === "usb.5V")
 );
-writeFileSync(join(root, "unpowered.world.json"), JSON.stringify(unpowered));
+writeDraft(root, "unpowered.world.json", unpowered);
 
 const events: WorldServerMessage[] = [];
 const held: WorldHandle[] = [];

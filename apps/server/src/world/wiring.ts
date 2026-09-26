@@ -1,12 +1,6 @@
-import {
-  arduinoPinBit,
-  boardModel,
-  MILESTONE_SUPPLY_PRESET,
-  partModel,
-  supplyPresets,
-  type WorldDocument,
-  type WorldPin,
-} from "@sfab-bench/contract";
+import { arduinoPinBit, type PowerFeeds } from "@sfab-bench/contract";
+
+import type { RunPin, RunPlan } from "./plan";
 
 export { type PowerFeeds, powerFeeds } from "@sfab-bench/contract";
 
@@ -31,17 +25,13 @@ function splitEndpoint(endpoint: string): { id: string; pin: string } | null {
  * Anything else is not driven: no wire, a supply pin, or a hop through
  * another part. A0–A5 count (D-018). The first matching pair wins.
  */
-export function servoSignalDrives(doc: WorldDocument): ServoSignalDrive[] {
-  const parts = Array.isArray(doc.parts) ? doc.parts : [];
-  const wires = Array.isArray(doc.wires) ? doc.wires : [];
-  const boards = Array.isArray(doc.boards) ? doc.boards : [];
+export function servoSignalDrives(plan: RunPlan): ServoSignalDrive[] {
   const drives: ServoSignalDrive[] = [];
-  for (const part of parts) {
-    const model = partModel(part.model);
-    if (model?.drive.kind !== "servo") continue;
-    const signal = model.drive.pin;
+  for (const part of plan.parts) {
+    if (part.drive.kind !== "servo") continue;
+    const signal = part.drive.pin;
     let found: ServoSignalDrive | null = null;
-    for (const wire of wires) {
+    for (const wire of plan.wires) {
       const left = splitEndpoint(wire[0]);
       const right = splitEndpoint(wire[1]);
       if (!left || !right) continue;
@@ -52,8 +42,8 @@ export function servoSignalDrives(doc: WorldDocument): ServoSignalDrive[] {
             ? left
             : null;
       if (!other) continue;
-      const board = boards.find((item) => item.id === other.id);
-      const spec = board ? boardModel(board.board)?.pins[other.pin] : undefined;
+      const board = plan.boards.find((item) => item.id === other.id);
+      const spec = board?.pins[other.pin];
       if (!board || !spec?.digital) continue;
       found = { partId: part.id, boardId: board.id, pin: other.pin };
       break;
@@ -81,19 +71,15 @@ export type GpioLevelBoard = {
   setDriven(bit: number, level: boolean | null): void;
 };
 
-function endpointPin(doc: WorldDocument, endpoint: string): WorldPin | null {
+function endpointPin(plan: RunPlan, endpoint: string): RunPin | null {
   const split = splitEndpoint(endpoint);
   if (!split) return null;
-  const boards = Array.isArray(doc.boards) ? doc.boards : [];
-  const board = boards.find((item) => item.id === split.id);
-  if (board) return boardModel(board.board)?.pins[split.pin] ?? null;
-  const parts = Array.isArray(doc.parts) ? doc.parts : [];
-  const part = parts.find((item) => item.id === split.id);
-  if (part) return partModel(part.model)?.pins[split.pin] ?? null;
-  const supplies = Array.isArray(doc.supplies) ? doc.supplies : [];
-  if (supplies.some((item) => item.id === split.id)) {
-    return supplyPresets[MILESTONE_SUPPLY_PRESET].pins[split.pin] ?? null;
-  }
+  const board = plan.boards.find((item) => item.id === split.id);
+  if (board) return board.pins[split.pin] ?? null;
+  const part = plan.parts.find((item) => item.id === split.id);
+  if (part) return part.pins[split.pin] ?? null;
+  const supply = plan.supplies.find((item) => item.id === split.id);
+  if (supply) return supply.pins[split.pin] ?? null;
   return null;
 }
 
@@ -104,15 +90,12 @@ function endpointPin(doc: WorldDocument, endpoint: string): WorldPin | null {
  * and either beats a pull-up. Catalog `output` is not consulted for a
  * GPIO: it is an output at runtime when the firmware sets DDR.
  */
-export function gpioInputNets(doc: WorldDocument): GpioInputNet[] {
-  const boards = Array.isArray(doc.boards) ? doc.boards : [];
-  const wires = Array.isArray(doc.wires) ? doc.wires : [];
+export function gpioInputNets(plan: RunPlan): GpioInputNet[] {
+  const wires = plan.wires;
   const gpio = new Map<string, { boardId: string; bit: number }>();
-  for (const board of boards) {
-    const pins = boardModel(board.board)?.pins;
-    if (!pins) continue;
-    for (const pin of Object.keys(pins)) {
-      if (!pins[pin]?.digital) continue;
+  for (const board of plan.boards) {
+    for (const pin of Object.keys(board.pins)) {
+      if (!board.pins[pin]?.digital) continue;
       const bit = arduinoPinBit(pin);
       if (bit === undefined) continue;
       gpio.set(`${board.id}.${pin}`, { boardId: board.id, bit });
@@ -138,7 +121,7 @@ export function gpioInputNets(doc: WorldDocument): GpioInputNet[] {
       if (current === undefined || seen.has(current)) continue;
       seen.add(current);
       if (current !== endpoint) {
-        const pin = endpointPin(doc, current);
+        const pin = endpointPin(plan, current);
         if (pin?.kind === "ground") {
           drivers.push({ kind: "low" });
         } else if (pin?.kind === "power" && pin.output) {
@@ -166,6 +149,72 @@ export function gpioInputNets(doc: WorldDocument): GpioInputNet[] {
     }
   }
   return out;
+}
+
+function powerAdjacent(plan: RunPlan): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  const link = (from: string, to: string) => {
+    const list = map.get(from);
+    if (list) list.push(to);
+    else map.set(from, [to]);
+  };
+  for (const wire of plan.wires) {
+    const left = endpointPin(plan, wire[0]);
+    const right = endpointPin(plan, wire[1]);
+    if (left?.kind !== "power" || right?.kind !== "power") continue;
+    link(wire[0], wire[1]);
+    link(wire[1], wire[0]);
+  }
+  return map;
+}
+
+function reachedFrom(
+  start: string,
+  adjacent: Map<string, string[]>
+): Set<string> {
+  const seen = new Set<string>();
+  const stack = [start];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined || seen.has(current)) continue;
+    seen.add(current);
+    for (const next of adjacent.get(current) ?? []) {
+      if (!seen.has(next)) stack.push(next);
+    }
+  }
+  return seen;
+}
+
+function supplyOn(plan: RunPlan, reached: Set<string>): string | null {
+  for (const supply of plan.supplies) {
+    if (reached.has(`${supply.id}.${supply.positivePin}`)) return supply.id;
+  }
+  return null;
+}
+
+/** Which supply reaches each board and each part. Same walk as the v1 feeds. */
+export function powerFeedsOf(plan: RunPlan): PowerFeeds {
+  const adjacent = powerAdjacent(plan);
+  const boards: Record<string, string | null> = {};
+  for (const board of plan.boards) {
+    let feed: string | null = null;
+    for (const pin of board.powerInputs) {
+      feed = supplyOn(plan, reachedFrom(`${board.id}.${pin}`, adjacent));
+      if (feed) break;
+    }
+    boards[board.id] = feed;
+  }
+  const parts: Record<string, string | null> = {};
+  for (const part of plan.parts) {
+    let feed: string | null = null;
+    for (const [pin, spec] of Object.entries(part.pins)) {
+      if (spec.kind !== "power") continue;
+      feed = supplyOn(plan, reachedFrom(`${part.id}.${pin}`, adjacent));
+      if (feed) break;
+    }
+    parts[part.id] = feed;
+  }
+  return { boards, parts };
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   type Params,
   type PartFile,
   type PartTypeFile,
+  type Pose,
   type WorldFileV2,
 } from "@sfab-bench/contract";
 
@@ -39,6 +40,8 @@ export type LiveInstance = {
   part: PartFile;
   type: PartTypeFile;
   params: Params;
+  /** Placement from the netlist instance. Absent when the instance sets none. */
+  pose?: Pose;
   axes: Record<AxisName, ResolvedAxis>;
   foreign: boolean;
   declaredOnly: boolean;
@@ -213,7 +216,12 @@ export function resolveLevels(
   const instances: LiveInstance[] = [];
   const appliedPaths = new Set<string>();
 
-  const visit = (part: PartFile, instancePath: string, params: Params) => {
+  const visit = (
+    part: PartFile,
+    instancePath: string,
+    params: Params,
+    pose?: Pose
+  ) => {
     const type = typeOf(lib, part);
     const axes = {
       behaviour: resolveAxis(part, "behaviour", instancePath, type.id, rules),
@@ -229,6 +237,7 @@ export function resolveLevels(
       part,
       type,
       params,
+      ...(pose ? { pose } : {}),
       axes,
       foreign: part.foreign === true,
       declaredOnly: part.declaredOnly === true,
@@ -242,9 +251,12 @@ export function resolveLevels(
             `missing child part ${child.part} under ${instancePath}`
           );
         }
-        visit(childPart.part, childPath(instancePath, id), {
-          ...(child.params ?? {}),
-        });
+        visit(
+          childPart.part,
+          childPath(instancePath, id),
+          { ...(child.params ?? {}) },
+          child.pose
+        );
       }
     }
   };
@@ -254,7 +266,12 @@ export function resolveLevels(
       ? lib.parts.get(lib.world.root.part)?.part
       : lib.world.root.part;
   if (!rootPart) throw new Error("root part did not resolve");
-  visit(rootPart, "$root", { ...(lib.world.root.params ?? {}) });
+  visit(
+    rootPart,
+    "$root",
+    { ...(lib.world.root.params ?? {}) },
+    lib.world.root.pose
+  );
   instances.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { instances, appliedPaths };
 }

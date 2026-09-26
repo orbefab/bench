@@ -1,11 +1,10 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { partModels, type WorldDocument } from "@sfab-bench/contract";
+import { partModels } from "@sfab-bench/contract";
 
 import { projectReal, readerFor } from "./world/files";
 import { compileWorld } from "./world/model";
+import { planWorld } from "./world/plan";
 import { type MotorLaw, servoElectrical } from "./world/power";
 
 /**
@@ -28,13 +27,19 @@ const torqueLimit = partModels.sg90.torqueNm ?? 0;
 expect(motor && torqueLimit > 0, "sg90 motor");
 if (!motor) throw new Error("unreachable");
 
-const hold = JSON.parse(
-  readFileSync(join(armDir, "arm.world.json"), "utf8")
-) as WorldDocument;
 const root = projectReal(armDir);
 expect(root, "arm fixture");
 if (!root) throw new Error("unreachable");
-const compiled = await compileWorld(hold, readerFor(root, "arm.world.json"));
+const planned = planWorld(root, "arm.world.json");
+expect(
+  planned.ok,
+  planned.ok ? "" : planned.errors.map((error) => error.message).join("; ")
+);
+if (!planned.ok) throw new Error("unreachable");
+const compiled = await compileWorld(
+  planned.plan,
+  readerFor(root, "arm.world.json")
+);
 expect(
   compiled.ok,
   `compile: ${compiled.ok ? "" : compiled.errors.map((e) => e.message).join("; ")}`

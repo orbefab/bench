@@ -23,6 +23,8 @@ import {
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
+/** Frozen v1 documents. The examples on disk are version 2. */
+const v1Dir = fileURLToPath(new URL("../fixtures/v1/", import.meta.url));
 
 type Pose = { position: number[]; rotation: number[] };
 
@@ -63,7 +65,7 @@ function expect(cond: unknown, label: string): asserts cond {
 }
 
 function load(name: string): WorldFile {
-  return JSON.parse(readFileSync(join(armDir, name), "utf8")) as WorldFile;
+  return JSON.parse(readFileSync(join(v1Dir, name), "utf8")) as WorldFile;
 }
 
 function clone(doc: WorldFile): WorldFile {
