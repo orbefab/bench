@@ -136,6 +136,7 @@ type Netlist = {
 ```
 
 - Instance numeric `params` override form params of the same name. For example, a bench supply takes the world's voltage and current limit.
+- An instance string param `urdf` replaces the body file of a part whose body is `urdf`, relative to the world.
 - Children are instantiated only when the chosen behaviour is a composite. The lockfile still lists them.
 
 **Model forms** are versioned equations that parts and snapshots fill in:
@@ -201,6 +202,8 @@ type LockFile = {
   types: { id: string; sha256: string; source: "world" | "library" | "catalog" | "inline"; path: string }[];
 };
 ```
+
+The lock sits beside its world as `<stem>.lock.json` (`arm.world.json` → `arm.world.lock.json`), and `world` is that stem (`arm.world`).
 
 A part file whose hash no longer matches the lock is an error that names the part.
 
