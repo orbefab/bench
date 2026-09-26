@@ -1,6 +1,6 @@
 # ADR-0009: The world is the document
 
-**Status:** Accepted. Amended by [0010](0010-layered-simulation.md) for analog circuits and part levels
+**Status:** Accepted. Amended by [0010](0010-layered-simulation.md) for analog circuits and part levels. World v1 was replaced by World v2.
 **Date:** 2026-09-24
 **Deciders:** Alwurts
 
@@ -42,10 +42,10 @@ between pins and the physics.
 ### Document
 
 A world is `<name>.world.json` in the project folder, opened with
-`?world=`. It is declarative data: robots (a URDF path and a pose), an
-environment (ground, primitives, STEP props), boards (a chip and a
-firmware path), and wiring. The server builds one MuJoCo model from that
-file. The file ships with a validator and a Bench skill. A lone STEP or a
+`?world=`. World v2 is one root part, the environment, and the run
+settings. The server builds one MuJoCo model from that file. The file
+ships with a Bench skill. A file with `"version": 1` does not load.
+A lone STEP or a
 lone URDF opens as a world too — one static object, or one posable robot —
 so there is one viewer. That opening is later.
 

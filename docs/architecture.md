@@ -74,11 +74,13 @@ version. Occurrence ids and face ordinals are refs that leave the server,
 so a cache from an older format is rebuilt rather than served with refs
 that no longer mean what they did.
 
-## World runtime (planned, ADR 0009)
+## World runtime (ADR 0009)
 
 [ADR 0009](decisions/0009-world-simulation.md) adds a world document,
-`<name>.world.json`, and a server-side runtime, one per document. That
-runtime is not in this tree. When it lands it steps MuJoCo and an avr8js
+`<name>.world.json`, and a server-side runtime, one per document. The
+file is World v2: one root part, the environment, and the run settings
+([formats](formats.md) §4). A file with `"version": 1` does not load.
+The runtime steps MuJoCo and an avr8js
 board and streams one shared run — play state, sim time, poses, signals —
 to every client of that document. Camera, selection, lens, and timeline
 scrub stay per client. That amends the per-browser viewport rule above

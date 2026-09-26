@@ -109,10 +109,11 @@ parallel. Training runs outside Bench (D-019).
 
 ### First deep part
 
-Pin circuits first (an LED, an RC filter on PWM, a pot on the ADC), then
-the Uno power path: USB, polyfuse, the 5 V rail, its capacitors and
-brownout, from the open schematic, checked against ngspice. Then a DC gear
-motor with an H-bridge, then the servo at level 2 (D-020).
+The order of deep parts is pin circuits (an LED, an RC filter on PWM, a
+pot on the ADC), then the Uno power path: USB, polyfuse, the 5 V rail,
+its capacitors and brownout, from the open schematic, checked against
+ngspice. Then a DC gear motor with an H-bridge, then the servo at level 2
+(D-020).
 
 ## Settled decisions
 
@@ -137,7 +138,7 @@ One line each. The layered-sim packet has the full text and alternatives.
 - **D-017.** Levels change only at reset.
 - **D-018.** The runtime links only MIT, Apache-2.0, BSD or ISC code; ngspice is a separate process.
 - **D-019.** Bench is a Gymnasium-style RL environment; training runs elsewhere.
-- **D-020.** First deep part: pin circuits, then the Uno power path.
+- **D-020.** The order of deep parts is pin circuits, then the Uno power path.
 - **D-021, D-022, D-024.** workspace/process decisions (the E10 bench rig), not product.
 - **D-023.** Types v1: the body owns joint friction, damping and armature; `supply.voltage` is the setpoint; a bare level rule sets all three axes; the lockfile pins types; port templates; plausible ranges per quantity.
 
@@ -147,8 +148,7 @@ Amends [ADR 0009](0009-world-simulation.md):
 
 - **D-005 (0009)'s out list.** Analog simulation is in: the MNA engine
   solves lumped circuits. Heat, wire resistance and KiCad import stay out
-  until a part needs them. The format change is World v2; World v1 files
-  convert mechanically.
+  until a part needs them. World v1 was dropped on 2026-09-26 (green field; no v1 data kept).
 - **D-017 (0009)'s closed-form rail** stays the SG90's class-1 law and the
   reference the circuit is checked against. Since 2026-09-26 the circuit, with
   the Uno USB path, is the run's rail; the closed form is the reference only.
@@ -198,9 +198,9 @@ run, Bench never compiles firmware, and avr8js is the board.
   (E1, E2, E3). They are ported as new modules under `apps/server/src/world/`
   (`circuit/`, `parts/`, `rail-circuit.ts`, `power-path.ts`), and the
   worker calls them.
-- Order: types and World v2 loader with the checker; the circuit engine
-  and pin element; the motor and rail stamps with MuJoCo coupling; then
-  the Uno power path.
+- Order of what was built: the Uno power path came before pin circuits.
+  The loader, the circuit engine, and the motor and rail stamps are in
+  the run. Pin circuits are not.
 - Tests: each circuit against a stored ngspice trace; the SG90 against
   today's closed form; bit-identical recordings from the same seed.
 
