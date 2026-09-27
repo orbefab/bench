@@ -1,3 +1,6 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   ARDUINO_PINS,
   ATMEGA328P_16MHZ_MIN_V,
@@ -35,7 +38,20 @@ import {
   stepWorld,
   worldRunView,
 } from "./world/host";
-import { planWorld, type RunPlan, WORLD_V1_MESSAGE } from "./world/plan";
+import {
+  applyLevelEdit,
+  type LevelTable,
+  replaceLevels,
+} from "./world/level-edit";
+import { loadWorldV2 } from "./world/parts/load";
+import { lockPathFor, readLock, writeLock } from "./world/parts/lock";
+import { canonicalJson } from "./world/parts/si";
+import {
+  catalogRoot,
+  planWorld,
+  type RunPlan,
+  WORLD_V1_MESSAGE,
+} from "./world/plan";
 import { commandDegFromPulse } from "./world/servo";
 import { powerFeedsOf, servoSignalDrives } from "./world/wiring";
 
@@ -357,7 +373,7 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       ...(board.ledCurrent !== undefined
         ? { ledCurrent: round(board.ledCurrent, 6) }
         : {}),
-      ...behaviourLevel(doc, id),
+      ...levelFields(doc, id),
     };
   }
   const parts: Record<
@@ -387,15 +403,44 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       voltage: live?.voltage == null ? null : round(live.voltage, 3),
       board: drive?.boardId ?? null,
       pin: drive?.pin ?? null,
-      ...behaviourLevel(doc, part.id),
+      ...levelFields(doc, part.id),
     };
   }
-  const supplies: Record<string, { voltage: number; current: number }> = {};
+  for (const ranger of doc.rangers ?? []) {
+    const live = state.parts?.[ranger.id];
+    parts[ranger.id] = {
+      pulseUs: null,
+      commandDeg: null,
+      state: null,
+      current: live?.current == null ? null : round(live.current, 4),
+      voltage: live?.voltage == null ? null : round(live.voltage, 3),
+      board: ranger.trig?.boardId ?? null,
+      pin: null,
+      ...levelFields(doc, ranger.id),
+    };
+  }
+  const supplies: Record<
+    string,
+    {
+      voltage: number;
+      current: number;
+      level?: number | null;
+      variant?: string | null;
+      reason?: string;
+      axes?: {
+        axis: string;
+        class: number | null;
+        variant: string | null;
+        reason: string;
+      }[];
+    }
+  > = {};
   for (const supply of doc.supplies) {
     const live = state.supplies?.[supply.id];
     supplies[supply.id] = {
       voltage: round(live?.voltage ?? supply.voltage, 3),
       current: round(live?.current ?? 0, 4),
+      ...levelFields(doc, supply.id),
     };
   }
   const joints: Record<string, { deg: number } | { m: number }> = {};
@@ -432,12 +477,66 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
   };
 }
 
-function behaviourLevel(doc: RunPlan, path: string) {
-  const row = doc.levels?.find(
-    (item) => item.path === path && item.axis === "behaviour"
-  );
-  if (!row) return {};
-  return { level: row.class, variant: row.variant, reason: row.reason };
+function coveredPaths(
+  report: NonNullable<RunPlan["report"]>,
+  scope: "default" | "type" | "path",
+  key: string | undefined
+): Set<string> {
+  const paths = new Set<string>();
+  for (const row of report.levels) {
+    if (scope === "default" || (scope === "path" && row.path === key)) {
+      paths.add(row.path);
+    }
+    if (scope === "type" && row.type === key) paths.add(row.path);
+  }
+  return paths;
+}
+
+function levelRows(
+  report: NonNullable<RunPlan["report"]>,
+  paths: Set<string>
+) {
+  return report.levels
+    .filter((row) => paths.has(row.path))
+    .map((row) => {
+      const snap = report.snapshots.find(
+        (item) => item.path === row.path && item.axis === row.axis
+      );
+      const line =
+        row.class === null
+          ? `${row.axis} none`
+          : `${row.axis} ${row.class} · ${row.variant ?? "—"}`;
+      return {
+        path: row.path,
+        axis: row.axis,
+        class: row.class,
+        variant: row.variant,
+        line,
+        reason: row.reason,
+        ...(snap ? { snapshot: { ref: snap.ref, quality: snap.quality } } : {}),
+      };
+    });
+}
+
+function levelFields(doc: RunPlan, path: string) {
+  const rows = (doc.levels ?? []).filter((item) => item.path === path);
+  if (rows.length === 0) return {};
+  const behaviour = rows.find((item) => item.axis === "behaviour");
+  return {
+    ...(behaviour
+      ? {
+          level: behaviour.class,
+          variant: behaviour.variant,
+          reason: behaviour.reason,
+        }
+      : {}),
+    axes: rows.map((item) => ({
+      axis: item.axis,
+      class: item.class,
+      variant: item.variant,
+      reason: item.reason,
+    })),
+  };
 }
 
 function clampFrames(maxFrames: number | undefined): number {
@@ -870,7 +969,7 @@ function commandAck(view: {
 export const worldTools = {
   world_status: tool({
     description:
-      'Read a world\'s shared run. world is the project-relative .world.json path from get_viewer. Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H", and behaviour level, variant, and reason), each part (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null.',
+      'Read a world\'s shared run. world is the project-relative .world.json path from get_viewer. Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.',
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);
@@ -1015,6 +1114,88 @@ export const worldTools = {
       const moved = moveWorldTarget(found.root, found.world, id, position);
       if ("error" in moved) return moved;
       return { id, position: [position[0], position[1], position[2]] };
+    },
+  }),
+  world_set_level: tool({
+    description:
+      "Set or remove one level rule in the open world file, then restart the run. world is the project-relative .world.json path from get_viewer. scope is default, type, or path. key is the part type or the instance path (nano, fleet.rig2.servo); default takes no key. axis is behaviour, body, or visual; omit it and the class applies to all three. class is 0, 1, 2, 3, or null. null removes that rule. The default cannot be removed. A type or path that is not in the loaded world is an error and the file is left unchanged. Returns the new level rows for the instances that rule covers, including a snapshot when one ran.",
+    inputSchema: z.object({
+      world: z.string(),
+      scope: z.enum(["default", "type", "path"]),
+      key: z.string().optional(),
+      axis: z.enum(["behaviour", "body", "visual"]).optional(),
+      class: z.union([
+        z.literal(0),
+        z.literal(1),
+        z.literal(2),
+        z.literal(3),
+        z.null(),
+      ]),
+    }),
+    execute: async ({ world, scope, key, axis, class: level }) => {
+      const found = await openRun(world);
+      if ("error" in found) return found;
+      const report = found.plan.report;
+      if (!report) return { error: "this world has no run report" };
+      const knownPaths = new Set(report.levels.map((row) => row.path));
+      const knownTypes = new Set(report.levels.map((row) => row.type));
+      if (scope === "path" && key && !knownPaths.has(key)) {
+        return { error: `no path "${key}"` };
+      }
+      if (scope === "type" && key && !knownTypes.has(key)) {
+        return { error: `no type "${key}"` };
+      }
+      const file = join(found.root, found.world);
+      const before = readFileSync(file, "utf8");
+      let parsed: { run?: { levels?: LevelTable } };
+      try {
+        parsed = JSON.parse(before) as { run?: { levels?: LevelTable } };
+      } catch {
+        return { error: "world file is not JSON" };
+      }
+      const current = parsed.run?.levels;
+      if (!current) return { error: "world file has no run.levels" };
+      const edited = applyLevelEdit(current, {
+        scope,
+        ...(key !== undefined ? { key } : {}),
+        ...(axis !== undefined ? { axis } : {}),
+        class: level,
+      });
+      if ("error" in edited) return edited;
+      let next: string;
+      try {
+        next = replaceLevels(before, edited.levels);
+      } catch (err: unknown) {
+        return {
+          error: err instanceof Error ? err.message : "could not edit levels",
+        };
+      }
+      writeFileSync(file, next);
+      const loaded = loadWorldV2(file, {
+        catalogDir: catalogRoot(),
+        assetRoot: found.root,
+      });
+      const blocked = loaded.diagnostics.filter(
+        (diag) =>
+          diag.severity === "error" && !diag.message.includes("lockfile")
+      );
+      if (blocked.length > 0 || !loaded.world || !loaded.report) {
+        writeFileSync(file, before);
+        const message = blocked.map((diag) => diag.message).join("; ");
+        return { error: message || "world file did not load" };
+      }
+      const lockFile = lockPathFor(file);
+      if (!existsSync(lockFile)) writeLock(lockFile, loaded.lock);
+      else if (
+        canonicalJson(readLock(lockFile)) !== canonicalJson(loaded.lock)
+      ) {
+        writeLock(lockFile, loaded.lock);
+      }
+      const restarted = await restartWorld(found.root, found.world);
+      if ("error" in restarted) return restarted;
+      return {
+        rows: levelRows(loaded.report, coveredPaths(loaded.report, scope, key)),
+      };
     },
   }),
   world_restart: tool({
