@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  type AxisLevel,
   type AxisName,
   DIM_KEYS,
   type Diagnostic,
@@ -88,25 +89,50 @@ export function splitPortRef(
   return { inst: ref.slice(0, i), port: ref.slice(i + 1) };
 }
 
+/** The class a rule asks for, and the variant when the rule names one. */
+export type AxisRequest = {
+  class: LevelClass;
+  variant?: string;
+};
+
 export function specAxes(
   spec: LevelSpec
-): Partial<Record<AxisName, LevelClass>> {
+): Partial<Record<AxisName, AxisRequest>> {
   if (typeof spec === "number") {
-    if (!isLevelClass(spec)) {
-      throw new Error(`level class ${String(spec)} is not 0..3`);
-    }
-    return { behaviour: spec, body: spec, visual: spec };
+    const request = classRequest(spec);
+    return {
+      behaviour: request,
+      body: { ...request },
+      visual: { ...request },
+    };
   }
-  const out: Partial<Record<AxisName, LevelClass>> = {};
+  const out: Partial<Record<AxisName, AxisRequest>> = {};
   for (const axis of ["behaviour", "body", "visual"] as const) {
-    const v = spec[axis];
-    if (v === undefined) continue;
-    if (!isLevelClass(v)) {
-      throw new Error(`level class ${String(v)} is not 0..3`);
-    }
-    out[axis] = v;
+    const value = spec[axis];
+    if (value === undefined) continue;
+    out[axis] = axisRequest(value);
   }
   return out;
+}
+
+function classRequest(value: unknown): AxisRequest {
+  if (!isLevelClass(value)) {
+    throw new Error(`level class ${String(value)} is not 0..3`);
+  }
+  return { class: value };
+}
+
+function axisRequest(value: AxisLevel): AxisRequest {
+  if (typeof value === "number") return classRequest(value);
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof value.variant !== "string" ||
+    value.variant === ""
+  ) {
+    throw new Error("a variant rule needs a class and a variant name");
+  }
+  return { ...classRequest(value.class), variant: value.variant };
 }
 
 export function classesOf(

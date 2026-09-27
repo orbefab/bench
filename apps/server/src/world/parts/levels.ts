@@ -13,7 +13,7 @@ import {
 } from "@sfab-bench/contract";
 
 import { type Library, typeOf } from "./library";
-import { classesOf, isLevelClass, specAxes } from "./si";
+import { type AxisRequest, classesOf, isLevelClass, specAxes } from "./si";
 
 export type ReasonKind =
   | { kind: "default" }
@@ -39,6 +39,11 @@ export type ResolvedAxis = {
   impl: unknown;
   label: string;
   omits: string[];
+  /**
+   * Set when a variant rule names a variant this class does not have.
+   * The axis does not fall back.
+   */
+  variantMiss?: string;
 };
 
 export type LiveInstance = {
@@ -54,15 +59,15 @@ export type LiveInstance = {
 };
 
 export type LevelRules = {
-  default: Record<AxisName, LevelClass>;
-  types: Record<string, Partial<Record<AxisName, LevelClass>>>;
-  paths: Record<string, Partial<Record<AxisName, LevelClass>>>;
+  default: Record<AxisName, AxisRequest>;
+  types: Record<string, Partial<Record<AxisName, AxisRequest>>>;
+  paths: Record<string, Partial<Record<AxisName, AxisRequest>>>;
 };
 
 export function compileRules(world: WorldFileV2): LevelRules {
   const def = specAxes(world.run.levels.default);
   for (const axis of AXES) {
-    if (!isLevelClass(def[axis])) {
+    if (!isLevelClass(def[axis]?.class)) {
       throw new Error(`world default must set ${axis}`);
     }
   }
@@ -75,7 +80,7 @@ export function compileRules(world: WorldFileV2): LevelRules {
     paths[id] = specAxes(spec);
   }
   return {
-    default: def as Record<AxisName, LevelClass>,
+    default: def as Record<AxisName, AxisRequest>,
     types,
     paths,
   };
@@ -100,20 +105,31 @@ function request(
   axis: AxisName,
   instancePath: string,
   typeId: string
-): { class: LevelClass; by: ReasonKind } {
-  let cls = rules.default[axis];
+): { class: LevelClass; variant?: string; by: ReasonKind } {
+  let asked = rules.default[axis];
   let by: ReasonKind = { kind: "default" };
   const typeRule = rules.types[typeId];
   if (typeRule?.[axis] !== undefined) {
-    cls = typeRule[axis] as LevelClass;
+    asked = typeRule[axis] as AxisRequest;
     by = { kind: "type", type: typeId };
   }
   const pathRule = rules.paths[instancePath];
   if (pathRule?.[axis] !== undefined) {
-    cls = pathRule[axis] as LevelClass;
+    asked = pathRule[axis] as AxisRequest;
     by = { kind: "path", path: instancePath };
   }
-  return { class: cls, by };
+  return {
+    class: asked.class,
+    ...(asked.variant !== undefined ? { variant: asked.variant } : {}),
+    by,
+  };
+}
+
+function omitsOf(impl: unknown): string[] {
+  if (impl && typeof impl === "object" && "omits" in impl) {
+    return [...(impl.omits as string[])];
+  }
+  return ["no level authored"];
 }
 
 function implLabel(impl: unknown): string {
@@ -138,16 +154,51 @@ function resolveAxis(
   const asked = request(rules, axis, instancePath, typeId);
   let requested = asked.class;
   let by = asked.by;
+  const variantName = asked.variant;
   const map = part.axes?.[axis];
   const available = classesOf(map);
   if (
     axis === "behaviour" &&
     parentClass !== undefined &&
     by.kind === "default" &&
+    variantName === undefined &&
     available.length > 0
   ) {
     requested = parentClass;
     by = { kind: "parent", class: parentClass };
+  }
+  if (variantName !== undefined) {
+    const slot = map?.[String(requested) as "0"];
+    const impl = slot?.variants[variantName] ?? null;
+    const reason = `${reasonOf(by)} chose variant ${variantName}`;
+    const source = sourceOf(by);
+    if (!impl) {
+      return {
+        axis,
+        requested,
+        requestedBy: by,
+        class: null,
+        variant: null,
+        reason,
+        source,
+        impl: null,
+        label: "none",
+        omits: ["no level authored"],
+        variantMiss: variantName,
+      };
+    }
+    return {
+      axis,
+      requested,
+      requestedBy: by,
+      class: requested,
+      variant: variantName,
+      reason,
+      source,
+      impl,
+      label: implLabel(impl),
+      omits: omitsOf(impl),
+    };
   }
   let chosen: LevelClass | null = null;
   let reason = reasonOf(by);

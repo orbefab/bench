@@ -3,6 +3,7 @@
 import { existsSync } from "node:fs";
 
 import {
+  AXES,
   type BehaviourImpl,
   type Diagnostic,
   type LockFile,
@@ -151,6 +152,23 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   }
 
   diagnostics.push(...shadowWarnings(lib));
+  for (const inst of resolved.instances) {
+    for (const axis of AXES) {
+      const miss = inst.axes[axis].variantMiss;
+      if (!miss) continue;
+      diagnostics.push(
+        makeDiag({
+          severity: "error",
+          path: inst.path,
+          port: axis,
+          quantity: "Level",
+          left: miss,
+          right: String(inst.axes[axis].requested),
+          detail: `class ${inst.axes[axis].requested} variant ${miss} is not on this part`,
+        })
+      );
+    }
+  }
   for (const rulePath of Object.keys(rules.paths)) {
     if (!resolved.appliedPaths.has(rulePath)) {
       diagnostics.push(

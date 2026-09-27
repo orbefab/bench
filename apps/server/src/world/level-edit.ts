@@ -4,6 +4,7 @@
  */
 
 import type {
+  AxisLevel,
   AxisName,
   LevelClass,
   LevelSpec,
@@ -90,22 +91,35 @@ function ordered(levels: LevelTable): LevelTable {
   return out;
 }
 
-function axesOf(spec: LevelSpec): Partial<Record<AxisName, LevelClass>> {
+function axesOf(spec: LevelSpec): Partial<Record<AxisName, AxisLevel>> {
   if (typeof spec === "number") {
     return { behaviour: spec, body: spec, visual: spec };
   }
-  return { ...spec };
+  const out: Partial<Record<AxisName, AxisLevel>> = {};
+  for (const axis of AXES) {
+    const value = spec[axis];
+    if (value !== undefined) out[axis] = value;
+  }
+  return out;
 }
 
-function collapse(spec: Partial<Record<AxisName, LevelClass>>): LevelSpec {
+/**
+ * A bare number when every axis is that same class. A variant object
+ * stays as written. Setting a class on one axis replaces that axis's
+ * variant rule with the class alone; the caller assigns the number
+ * before this runs.
+ */
+function collapse(spec: Partial<Record<AxisName, AxisLevel>>): LevelSpec {
   const values = AXES.map((axis) => spec[axis]);
+  const bare = values.every((value) => typeof value === "number");
   if (
+    bare &&
     values.every((value) => value !== undefined) &&
     values.every((value) => value === values[0])
   ) {
     return values[0] as LevelClass;
   }
-  const out: Partial<Record<AxisName, LevelClass>> = {};
+  const out: Partial<Record<AxisName, AxisLevel>> = {};
   for (const axis of AXES) {
     if (spec[axis] !== undefined) out[axis] = spec[axis];
   }

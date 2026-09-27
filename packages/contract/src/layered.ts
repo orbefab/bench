@@ -439,7 +439,13 @@ export type PartFile = {
   };
 };
 
-export type LevelSpec = LevelClass | Partial<Record<AxisName, LevelClass>>;
+/**
+ * A class, or one class and the variant that rule selects.
+ * A bare class on an axis that had a variant replaces that rule.
+ */
+export type AxisLevel = LevelClass | { class: LevelClass; variant: string };
+
+export type LevelSpec = LevelClass | Partial<Record<AxisName, AxisLevel>>;
 
 export type WorldFileV2 = {
   version: 2;
