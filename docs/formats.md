@@ -138,7 +138,7 @@ type Netlist = {
 ```
 
 - Instance numeric `params` override form params of the same name. For example, a bench supply takes the world's voltage and current limit.
-- A firmware variant may set `boardCircuit` to `snapshot:<publisher/name@version>` or `path:uno-usb`. `snapshot:sfab/nano-usb-5v@1.0.0` is the Nano class-1 default. A supply whose positive port has `connector: "usb"` evaluates that snapshot as a Thevenin segment in the same rail solve when the port's series resistance and current limit sit inside the snapshot's source bounds. Any other feed, including a usb connector outside those bounds, leaves the power-in pin as the ideal terminal and the run records one warning. The non-default variant `ideal-terminal` is that ideal terminal with no snapshot. `path:uno-usb` is the Uno cable, declared on `sfab/uno-r3@1.0.0`, and it runs only from a `usb` connector. Any other `boardCircuit` string is an error.
+- A firmware variant may set `boardCircuit` to `snapshot:<publisher/name@version>` or `path:uno-usb`. That ref is the board's front end in feed-replacement use (section 6). A supply whose positive port has `connector: "usb"` evaluates that snapshot as a Thevenin segment in the same rail solve when the port's series resistance and current limit sit inside the snapshot's source bounds. Any other feed, including a usb connector outside those bounds, leaves the power-in pin as the ideal terminal and the run records one warning. The non-default variant `ideal-terminal` is that ideal terminal with no snapshot. `path:uno-usb` is the Uno cable, declared on `sfab/uno-r3@1.0.0`, and it runs only from a `usb` connector. Any other `boardCircuit` string is an error.
 - A firmware variant may set `resetPort` to the logic port the chip uses as reset (`RESET` on the Nano and the Uno). The rail's reset threshold is that chip's fraction of the rail. `atmega328p` is 0.9. An unknown `chip` is a plan error.
 - The board's supply input is the non-internal port with `role: "power"`, `direction: "in"`, and a voltage rating that contains the chip rail. The run prefers the candidate a supply is wired to. `VIN` on these boards is rated above the 5 V rail, so it is not a candidate, and the wired port today is `5V`. Ground is the non-internal port with `role: "ground"`. A port's `connector` names the cable family. The catalog `usb-a-port` pin `5V` and the Nano's internal `VBUS` both say `usb`, so a usb supply on `5V` lands on `VBUS` when the variant has a board netlist, and on `5V` otherwise. A bench supply has no connector, so it attaches to `5V`.
 - A firmware variant may set `board`, a netlist of circuit parts and composites. The world still addresses the board as one instance. The chosen variant's children are resolved. A composite child is a shell: its circuit leaves are stamped with the board. The clone Nano class 2 (`sfab/nano-ch340@1.0.0`, variant `circuits`) is that netlist: SS14 from `VBUS` to `5V`, the +5V capacitors, the reset network, and the D13 LED. `VBUS` is an `internal` power port on `arduino-nano`. It is not a wiring target. A part whose only other node is then unconnected, such as the Schottky with an open anode, is pruned. No extra conductance is added.
@@ -231,10 +231,11 @@ type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual",
 
 **Level resolution** (D-005, amended by D-023.3):
 1. Per axis, a path rule beats a type rule, which beats the default.
-2. A missing class falls back to the nearest **cheaper** class.
-3. If there is none, it uses the nearest **deeper** class and reports "capture suggested".
-4. The class's default variant runs.
-5. Levels are fixed for a run (D-017).
+2. A child of a firmware board, when that request is still the default, is requested at the board's behaviour class. The report source is `board`. Children of a composite stay on the world default.
+3. A missing class falls back to the nearest **cheaper** class.
+4. If there is none, it uses the nearest **deeper** class and reports "capture suggested".
+5. The class's default variant runs.
+6. Levels are fixed for a run (D-017).
 
 ## 5. Library and lockfile (D-007, D-023.5)
 
@@ -264,6 +265,10 @@ Snapshot files are looked up like parts, in `snapshots/<publisher>/<name>@<versi
 
 ## 6. Snapshot
 
+A snapshot is one behaviour level of a part. `{kind: "snapshot", ref}` on a variant is loaded like a part (world, then library, then catalog), linted, pinned in the lock when that variant runs, reported with its quality, and run. A snapshot that fails to load or lint is a plan error. It does not fall back.
+
+A part may hold several snapshots. A run row is keyed by path, axis, and ref. The report sets `axis` explicitly.
+
 ```ts
 type Snapshot = {
   format: "sfab.snapshot@1";
@@ -271,19 +276,19 @@ type Snapshot = {
   part: string;                                          // exact version, D-007
   axis: "behaviour" | "body";
   form: FormId;
-  ports: { inputs: string[]; outputs: string[] };        // actuators must output V+.current
-  params: Record<string, number | number[]>;             // behaviour only: no joint terms (D-023.1)
+  ports: { inputs: string[]; outputs: string[] };        // port.quantity, from the type
+  params: Record<string, number | string | (number | string)[]>; // no joint terms (D-023.1)
   envelope: {
-    bounds: Record<string, Range>;                       // "supply.voltage": [4.5, 6] (D-023.2)
+    bounds: Record<string, Range>;                       // "port.quantity": [lo, hi] (D-023.2)
     data?: { kind: "mahalanobis"; mean: number[]; cov: number[][]; limit: number };
   };
-  error: "none-available" | { metric: "free-run-max-abs" | "free-run-rms"; quantity: string; value: number;
+  error: "none-available" | { metric: "static-max-abs" | "free-run-max-abs" | "free-run-rms"; quantity: string; value: number;
                               corner?: "typ" | "min" | "max"; heldOut: "fixture" | "use-like" | "both";
                               baseline?: { level: string; value: number } }[];
   quality: "Q0" | "Q1" | "Q2a" | "Q2b" | "Q3";           // set by the linter, never by hand
   provenance: {
     source: "captured" | "authored" | "measured" | "imported";
-    from?: { part: string; level: string; hash: string };   // level = class string, "1"
+    from?: { part: string; level: string; hash: string };   // level = class string
     fixture?: { ref: string; hash: string; seed: number };
     data?: { file: string; sha256: string; rig?: string };
     tool?: { name: string; version: string; file?: string };
@@ -294,7 +299,24 @@ type Snapshot = {
 };
 ```
 
-`supply.voltage` is the supply setpoint. `V+.voltage` is the terminal voltage at the port, which sags under load.
+This form is DC only, one port pair. There is no `transfer-fn@1` yet. Body snapshots are a later form.
+
+### `table@1`
+
+A `table@1` snapshot is one port pair and the current through the first port.
+
+- `across` is `[p, m]`, the port names.
+- `iAxis` is amperes. `iSense` is `1` when that axis is current into `p` from outside, and `-1` when it is current out of `p`. A source's output current is negative (section 2). `iSense` is required. There is no default.
+- `vAxis` is volts: `V(p) − V(m)` at each knot. The current axis is monotone.
+- An optional supply term is `supplyPort`, `supplyRef`, and `supplyAffine` together. `supply` is the feed setpoint, not a port on the part (D-023.2). `supplyAffine: 1` shifts the table by `(supply − supplyRef)`.
+- `ports.inputs` and `ports.outputs` name the same quantities by port (`p.current` in, `p.voltage` out, and `supply.voltage` in when the supply term is present). The linter takes the quantity from the part type's port declarations.
+
+Two uses of the one element:
+
+- **Feed replacement.** The envelope has source bounds, `<port>.resistance` and `<port>.currentLimit` on the same prefix. The table stands in for the feed plus the part's front end. It keeps the enter, leave, and floor rules, and it runs only when the feed's resistance and current limit sit inside those bounds. `boardCircuit: "snapshot:<ref>"` is this use, on a firmware board. Any Thevenin feed on that connector can match the bounds.
+- **Plain branch.** No source bounds. The table is a two-terminal branch between the two live nodes, with no current limit and no floor. Outside the knots it extrapolates the end segments, and the envelope warns once. A behaviour variant `{kind: "snapshot", ref}` whose law is `table@1` is this use. It is stamped on its `across` ports, on the rail of the supply those nets reach, the same way as any circuit part. A feed table selected as a behaviour snapshot is a plan error.
+
+During a run, every key in `envelope.bounds` whose quantity is observed on the rail is checked. There is at most one warning per path and ref. The warning names the port and the bound. The run continues. It does not fall back mid-run.
 
 ### Quality and the linter
 
@@ -308,18 +330,30 @@ type Snapshot = {
 
 Foreign parts are capped (D-009).
 
-The linter rejects, and a snapshot that fails cannot run:
+The linter is per form. It rejects, and a snapshot that fails cannot run:
 - missing provenance (a captured snapshot also needs `from`, `fixture`, and `tool`);
-- a table that doesn't cover its envelope (the current axis must span `5V.current`, and `supplyAffine: 1` counts as covering `supply.voltage` when `supplyRef` sits inside that range);
-- an actuator with no `V+.current` output;
+- for `table@1`: an axis that is not monotone; an `across` port that is not on the type; a table that does not cover its envelope (the current knots span the current bound; `supplyAffine: 1` covers the supply bound when `supplyRef` sits inside that range); a listed port quantity the declarations do not match;
+- a missing output that the part type lists in `requiredOutputs` (no such list means no extra output is required);
 - values outside the part type's plausible ranges (a current of 10 A or more is also shown in mA);
 - non-physical output: voltage at a **0 V setpoint**, checked only inside the envelope, and only when that envelope includes 0 V.
 
-Quality in the file is a claim. The linter grants Q0, Q1, Q2a, Q2b, or Q3 from the provenance and the error rows, and a claim above that grant is an error. The loader uses the grant only when the file is clean.
+Quality in the file is a claim. The linter grants Q0, Q1, Q2a, Q2b, or Q3 from the provenance and the error rows, and a claim above that grant is an error. The loader uses the grant only when the file is clean. A captured free-run row with a baseline earns Q2a. A `static-max-abs` row alone stays Q1.
 
-The Nano USB snapshot `sfab/nano-usb-5v@1.0.0` is `table@1`. Its ports are `5V.current` and `supply.voltage` in, and `5V.voltage` out (the board port is `5V`). `vAxis` is the node voltage at `supplyRef` (5 V). `supplyAffine` is 1, so `V(supply, I) = interp(vAxis, I) + (supply − supplyRef)`. The envelope is `supply.voltage` in [4.75, 5.25] V and `5V.current` from 0 up to 0.01 A below the `sfab/usb-port-500ma@1.0.0` thevenin `Ilimit` (0.9 A), so the current bound is 0.89 A. It also records that port: `supply.resistance` is [0.5, 0.5] Ω and `supply.currentLimit` is [0.9, 0.9] A, the `Rs` and `Ilimit` the capture used. A class-1 Nano whose `usb-a-port` is outside those two bounds does not run the snapshot. It runs the ideal terminal, the report says why, and the lock does not pin the snapshot. Outside the voltage or current envelope during a run, the run continues, raises one warning per instance, and lists it on the snapshot row. It does not fall back mid-run. `baseline.level` is the level the error was measured against, and `value` is that level's own error on the same metric, which is 0 for the capture source.
+### Capture
 
-Rebuild the file with `pnpm --filter @sfab-bench/server capture`. The config names the part, the firmware variant, the instance path, the feed port, and the load port. The DC table and `from.hash` come from that variant's board netlist, for any part that has one. The timestamp comes from `apps/server/catalog/fixtures/capture.config.json`, not the wall clock. Free-run cases in that config are Nano scenes (`firmware`, `servo`, `ms`): they boot a sketch and a servo, and they are how the Nano snapshot earns Q2a. A board with no cases still gets a DC snapshot.
+`apps/server/catalog/fixtures/capture.config.json` is a list of entries. Each entry names the part, the variant, the instance, the `across` pair, the port the current goes through, the sweep, the envelope, the baseline level, and an optional feed and free-run case list. The capture reads those fields from the entry.
+
+A plain-branch capture drives an ideal current source through `p` into `m` on the assembly's stamp and reads `V(p) − V(m)`, with `m` pinned at 0. `provenance.from` holds the part id and the stamp hash. An entry that asks records `static-max-abs` against its baseline level, the max-abs error between knots. Free-run rows are written when the entry has cases.
+
+Rebuild with `pnpm --filter @sfab-bench/server capture`. The timestamp comes from the config, not the wall clock.
+
+### Worked examples
+
+**Feed.** `sfab/nano-usb-5v@1.0.0` is the Nano class-1 front end. `across` is `["5V", "GND"]`, `iSense` is `-1` (the stored knots are load current, out of `5V`), and the supply term is `supply` with `supplyAffine` 1. `vAxis` is the node voltage at `supplyRef` (5 V), so `V(supply, I) = interp(vAxis, I) + (supply − supplyRef)`. The envelope is `supply.voltage` in [4.75, 5.25] V and `5V.current` from 0 up to 0.01 A below the `sfab/usb-port-500ma@1.0.0` thevenin `Ilimit` (0.9 A), so the current bound is 0.89 A. Source bounds are `supply.resistance` [0.5, 0.5] Ω and `supply.currentLimit` [0.9, 0.9] A. A class-1 Nano whose feed is outside those bounds runs the ideal terminal, the report says why, and the lock does not pin the snapshot. Free-run cases in that entry boot a sketch and a servo. They are how this file earns Q2a. `baseline.level` is the level the error was measured against, and `value` is that level's own error on the same metric, which is 0 for the capture source.
+
+**Plain branch, inside a board.** `sfab/nano-power-input@1.0.0` is the SS14 and the 10 µF capacitor as one group. Class 2 is that composite. Class 1 is the snapshot: `across` `["VBUS", "5V"]`, current into `VBUS`, swept 0 to 0.9 A, no source bounds. The Nano class-2 netlist instances that group as `power` and wires through `power.5V` and `power.GND`. A path rule can run the group at the snapshot while the rest of the board stays the circuit.
+
+**Plain branch, any assembly.** `sfab/led-module-red@1.0.0` is 220 Ω and a red LED. Class 1 is the snapshot, `across` `["IN", "GND"]`, swept 0 to 20 mA. `examples/nano/nano-led-module.world.json` holds D9 high into that module. At class 1 the record has no inner LED channel.
 
 ## 7. Fixture
 
@@ -341,10 +375,10 @@ Sweeps over `Inertia` or `Torque` replace `mount.load` per run, and sweeps are c
 
 Each run's report contains:
 - a lock summary;
-- the level per instance per axis, with the reason (default / type / path / fallback from X / capture suggested);
+- the level per instance per axis, with the reason (default / type / path / board class / fallback from X / capture suggested);
 - the nets with their level and the reason;
 - the errors and warnings;
-- the quality of each snapshot used, and when one ran, its ref, free-run error, envelope warnings (an empty list when the run stayed inside), and provenance for the card: `source`, `from` (`part` and `level` only), `fixture` (the ref), and `tool` (`name` and `version`). Hashes stay in the snapshot file.
+- the quality of each snapshot used, and when one ran, its path, axis, and ref, its free-run or static error, envelope warnings (an empty list when the run stayed inside), and provenance for the card: `source`, `from` (`part` and `level` only), `fixture` (the ref), and `tool` (`name` and `version`). Hashes stay in the snapshot file.
 - **not simulated**: the `omits` of each chosen level, one row per instance per axis so each keeps its path;
 - the seed and the number of random draws;
 - the cost per engine.
@@ -380,7 +414,7 @@ These came out of the motor/rail and pin experiments. They are proposals, not ye
 - **Run report** adds the **passivity sum** at each circuit/body cut (joules injected by the coupling) and flags it when it grows.
 - **`ptc-fuse@1`** (Uno F1, Bourns MF-MSMF050-2): cold resistance is Rmin 0.15 Ω. R1max 1.00 Ω is the post-trip ceiling, not the cold value. `Ihold` 0.50 A, `Itrip` 1.00 A. Thermal state `u` integrates `I²R` once per 1 ms master step, outside the circuit solve. At `u = 1` the branch goes to a high resistance and returns to the cold value once `u` falls.
 - **`pmos-switch@1`** (Uno T1, FDN340P): `Rds` in parallel with the body diode. On the USB path the gate stays on, so `Rds` is the −4.5 V figure, 60 mΩ typical. VIN and the barrel jack are not in this step.
-- **Board power path:** a supply port with `connector: "usb"` (the catalog `usb-a-port` pin `5V`) wired to an Uno `5V` is the USB cable: fuse, switch, the +5V capacitors, the board load (full current down to 1 V, then linear to 0 A at 0 V), and every servo on that node. The same connector wired to a Nano `5V` is the cable into the Nano's USB connector. At class 2 the firmware `board` netlist stamps the Schottky from `VBUS` to +5V, the +5V capacitors, the board load, the D13 LED and the reset network, and servos on `nano.5V` load that node. The cable's Thevenin attaches to `VBUS`. A bench supply on that `5V` attaches to `5V`, and the Schottky is pruned because its anode is open. At class 1 a usb feed uses the captured snapshot (`boardCircuit` `snapshot:sfab/nano-usb-5v@1.0.0`) as the source into the same rail when that port's series resistance and current limit match the snapshot; the table has no capacitance. Circuit parts wired on the board's pins, such as a breadboard LED, still stamp. Any other class-1 feed, including a usb port outside those bounds, keeps the ideal terminal. A bench supply on an Uno `5V` is the header, and there is no path. A supply with circuit parts and no firmware board is its own rail: the supply's Thevenin and those parts, ground at 0 V. The supply record's `current` is the terminal current and its `voltage` is the terminal voltage. The board record's `voltage` is the 5V node, and `minVoltage` is that node's minimum over the frame. `leds` maps each LED instance path on that rail to its forward current in amperes. `ledCurrent` is the deprecated alias of `leds["<board>.led"]`. A part with a power port reports `voltage` as V+ relative to GND. With no cable the board node equals the supply terminal, and both are reported.
+- **Board power path:** a supply port with `connector: "usb"` (the catalog `usb-a-port` pin `5V`) wired to an Uno `5V` is the USB cable: fuse, switch, the +5V capacitors, the board load (full current down to 1 V, then linear to 0 A at 0 V), and every servo on that node. The same connector wired to a Nano `5V` is the cable into the Nano's USB connector. At class 2 the firmware `board` netlist stamps the power-input group (the Schottky from `VBUS` to +5V and the 10 µF capacitor), the other +5V capacitors, the board load, the D13 LED and the reset network, and servos on `nano.5V` load that node. The cable's Thevenin attaches to `VBUS`. A bench supply on that `5V` attaches to `5V`, and the Schottky is pruned because its anode is open. At class 1 a usb feed uses the captured snapshot (`boardCircuit` `snapshot:sfab/nano-usb-5v@1.0.0`) as the source into the same rail when that port's series resistance and current limit match the snapshot; the table has no capacitance. Circuit parts wired on the board's pins, such as a breadboard LED, still stamp. Any other class-1 feed, including a usb port outside those bounds, keeps the ideal terminal. A bench supply on an Uno `5V` is the header, and there is no path. A supply with circuit parts and no firmware board is its own rail: the supply's Thevenin and those parts, ground at 0 V. The supply record's `current` is the terminal current and its `voltage` is the terminal voltage. The board record's `voltage` is the 5V node, and `minVoltage` is that node's minimum over the frame. `leds` maps each LED instance path on that rail to its forward current in amperes. `ledCurrent` is the deprecated alias of `leds["<board>.led"]`. A part with a power port reports `voltage` as V+ relative to GND. With no cable the board node equals the supply terminal, and both are reported.
 - **Brownout** reads the board node: the lowest board-node voltage over that millisecond's sub-steps. With no cable the board node is the supply terminal.
 
 ## Open for v2
