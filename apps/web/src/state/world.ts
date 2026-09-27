@@ -1,4 +1,5 @@
 import type {
+  RunReport,
   WorldBoardState,
   WorldError,
   WorldPartState,
@@ -111,6 +112,11 @@ export type WorldHudState = {
   parts: Record<string, WorldPartState>;
   /** Supply voltage and current, copied with each state. */
   supplies: Record<string, WorldSupplyState>;
+  /**
+   * Run report that arrived with a state. A late joiner gets the same
+   * object from the host's snapshot. Ordinary states leave it in place.
+   */
+  report: RunReport | null;
   open: (path: string, opts?: { force?: boolean }) => void;
   close: () => void;
   select: (selection: WorldSelection) => void;
@@ -126,6 +132,7 @@ export type WorldHudState = {
   setRun: (playing: boolean, simTime: number) => void;
   setBoards: (boards: Record<string, WorldBoardState>) => void;
   setSupplies: (supplies: Record<string, WorldSupplyState>) => void;
+  setReport: (report: RunReport | null) => void;
   setRunProblem: (errors: WorldError[], message?: string | null) => void;
   clearRunProblem: () => void;
   setNotice: (notice: string | null) => void;
@@ -172,6 +179,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
   pins: {},
   parts: {},
   supplies: {},
+  report: null,
 
   open: (next, opts) => {
     const current = get();
@@ -205,6 +213,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
       pins: {},
       parts: {},
       supplies: {},
+      report: null,
     });
   },
   close: () => {
@@ -228,6 +237,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
       pins: {},
       parts: {},
       supplies: {},
+      report: null,
     });
   },
   select: (selection) => {
@@ -262,7 +272,11 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
     }
     set({ joints, pins, parts });
   },
-  noteReload: () => set((s) => ({ revision: s.revision + 1 })),
+  noteReload: () => set((s) => ({ revision: s.revision + 1, report: null })),
+  setReport: (report) => {
+    if (get().report === report) return;
+    set({ report });
+  },
   setConnection: (connection) => {
     if (get().connection !== connection) set({ connection });
   },

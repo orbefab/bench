@@ -23,6 +23,7 @@ import {
   probeEscLayers,
 } from "@/lib/shortcuts";
 import { faultUntil, resetsUntil, serialUntil } from "@/lib/timeline";
+import { levelCard } from "@/lib/level-card";
 import { relFromWorldFile } from "@/lib/world-assets";
 import { formatSimTime } from "@/lib/world-issues";
 import {
@@ -42,7 +43,11 @@ import {
   clearBoardReject,
   useBoardConsole,
 } from "@/state/board-console";
-import { useWorld, type WorldSelection, worldStore } from "@/state/world";
+import {
+  useWorld,
+  type WorldSelection,
+  worldStore,
+} from "@/state/world";
 import { useWorldTimeline } from "@/state/world-timeline";
 
 function useWorldSelectionEsc() {
@@ -87,6 +92,43 @@ function SoaLine({ text }: { text: string }) {
   );
 }
 
+function LevelBlock({ path }: { path: string }) {
+  const report = useWorld((s) => s.report);
+  const card = levelCard(report, path);
+  if (!card) return null;
+  return (
+    <div className="mb-1.5 min-w-0">
+      <div className="text-[11px] text-muted-foreground">Level</div>
+      {card.axes.map((axis) => (
+        <div
+          key={axis.axis}
+          className="truncate font-mono text-[12px]"
+          title={`${axis.line} · ${axis.reason}`}
+        >
+          {axis.line}
+          <span className="text-muted-foreground"> · {axis.reason}</span>
+        </div>
+      ))}
+      {card.omits.length > 0 ? (
+        <details className="mt-1">
+          <summary className="cursor-pointer text-[11px] text-muted-foreground">
+            Not simulated
+          </summary>
+          {card.omits.map((line) => (
+            <div
+              key={line}
+              className="truncate font-mono text-[12px]"
+              title={line}
+            >
+              {line}
+            </div>
+          ))}
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="mb-1.5 min-w-0">
@@ -102,6 +144,7 @@ function OutlineBody({ outline }: { outline: WorldOutline | null }) {
   const failed = useWorld(
     (s) => s.assets === "error" || s.runErrors.length > 0
   );
+  const nets = useWorld((s) => s.report?.nets ?? []);
   const select = (selection: NonNullable<WorldSelection>) => {
     worldStore.getState().select(selection);
   };
@@ -183,6 +226,24 @@ function OutlineBody({ outline }: { outline: WorldOutline | null }) {
           {outline.targets.map((id) => (
             <div key={id} className="px-1 py-0.5 text-[12px]">
               {id}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {nets.length > 0 ? (
+        <div>
+          <div className="px-1 text-[12px] font-medium">Nets</div>
+          {nets.map((net) => (
+            <div
+              key={net.id}
+              className="truncate px-1 py-0.5 text-[12px]"
+              title={`${net.id} ${net.level} · ${net.reason}`}
+            >
+              <span className="font-mono">{net.id}</span>
+              <span className="text-muted-foreground">
+                {" "}
+                {net.level} · {net.reason}
+              </span>
             </div>
           ))}
         </div>
@@ -410,6 +471,7 @@ function PartBody({
   return (
     <>
       <Field label="Part" value={id} />
+      <LevelBlock path={id} />
       <Field label="Model" value={info?.model ?? "—"} />
       <div className="mb-1.5 min-w-0">
         <div className="text-[11px] text-muted-foreground">Wires</div>
@@ -559,6 +621,7 @@ function SupplyBody({
   return (
     <>
       <Field label="Supply" value={id} />
+      <LevelBlock path={id} />
       <Field
         label="Voltage"
         value={
@@ -639,6 +702,7 @@ function BoardBody({
   return (
     <>
       <Field label="Board" value={id} />
+      <LevelBlock path={id} />
       <Field label="Chip" value={info?.chip ?? "—"} />
       <Field label="Firmware" value={info?.firmware ?? "—"} />
       <Field label="Source" value={info?.source ?? "None"} />

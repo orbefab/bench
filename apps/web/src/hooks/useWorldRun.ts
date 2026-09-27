@@ -180,6 +180,9 @@ export function useWorldRun(project: string, world: string) {
           }, ATTACH_COMMAND_MS);
         }
         worldStore.getState().clearRunProblem();
+        // The host sends the report on the first state and again when it
+        // changes. A late joiner's snapshot includes it. Later states omit it.
+        if (message.report) worldStore.getState().setReport(message.report);
         noteLiveRecording(message.state.recording, message.state.playing);
         publish(message.state);
         return;
