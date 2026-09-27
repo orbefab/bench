@@ -23,6 +23,7 @@ export type WorldDraft = {
     gravity?: [number, number, number];
     primitives?: unknown[];
     stepProps?: unknown[];
+    targets?: unknown[];
   };
   robots: { id: string; urdf: string; pose: DraftPose }[];
   boards: {
@@ -156,6 +157,9 @@ export function readDraft(project: string, worldRel: string): WorldDraft {
         : {}),
       ...(plan.environment.stepProps
         ? { stepProps: plan.environment.stepProps }
+        : {}),
+      ...(plan.environment.targets.length > 0
+        ? { targets: plan.environment.targets }
         : {}),
     },
     robots: plan.robots.map((robot) => ({
@@ -513,6 +517,9 @@ export function writeDraft(
   }
   if (draft.environment.stepProps) {
     environment.stepProps = draft.environment.stepProps;
+  }
+  if (draft.environment.targets) {
+    environment.targets = draft.environment.targets;
   }
   writeFileSync(
     worldFile,

@@ -1,9 +1,10 @@
 import type { ThreeEvent } from "@react-three/fiber";
 import { useFrame } from "@react-three/fiber";
-import type {
-  WorldPose,
-  WorldPrimitive,
-  WorldVec3,
+import {
+  WORLD_TARGET_ROBOT,
+  type WorldPose,
+  type WorldPrimitive,
+  type WorldVec3,
 } from "@sfab-bench/contract";
 import {
   type ReactNode,
@@ -447,6 +448,7 @@ export function WorldScene({
   if (!loaded) return null;
   const doc = loaded.document;
   const primitives = doc.environment.primitives;
+  const targets = doc.environment.targets;
 
   return (
     <>
@@ -518,6 +520,26 @@ export function WorldScene({
             </Body>
           ) : null
         )}
+        {targets.map((target) => (
+          <group
+            key={target.id}
+            name={linkKey(WORLD_TARGET_ROBOT, target.id)}
+            position={target.pose.position}
+            quaternion={[
+              target.pose.rotation[1],
+              target.pose.rotation[2],
+              target.pose.rotation[3],
+              target.pose.rotation[0],
+            ]}
+            ref={(node) => {
+              const key = linkKey(WORLD_TARGET_ROBOT, target.id);
+              if (node) linkGroups.current.set(key, node);
+              else linkGroups.current.delete(key);
+            }}
+          >
+            <PrimitiveMesh primitive={target} material={primitiveMaterial} />
+          </group>
+        ))}
         {doc.boards.map((board) => {
           const material = boardMaterials.get(board.id);
           if (!board.pose || !finiteVec(board.size, 3) || !material) {

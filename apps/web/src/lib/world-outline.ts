@@ -40,6 +40,8 @@ export type WorldOutlinePart = {
   drives: { robot: string; joint: string } | null;
   /** Servo signal pin. Absent or null when the part is not a servo. */
   signalPin?: string | null;
+  /** Ultrasonic ranger. The card shows the last ray, not a servo pulse. */
+  ranger?: boolean;
   wires: WorldOutlineWire[];
 };
 
@@ -76,6 +78,7 @@ export type WorldOutlineInput = {
     model: string;
     drives?: { robot: string; joint: string };
     signalPin?: string | null;
+    ranger?: boolean;
   }[];
   wires?: readonly [string, string][];
   supplies?: readonly {
@@ -201,6 +204,7 @@ export function buildWorldOutline(
       model: part.model,
       drives: part.drives ?? null,
       signalPin: part.signalPin ?? null,
+      ...(part.ranger ? { ranger: true } : {}),
       wires: wiresFor(part.id, wires),
     })),
     boards: world.boards.map((board) => ({

@@ -2,13 +2,16 @@ import type { MainModule, MjModel, MjSpec, MjVFS } from "@mujoco/mujoco";
 import {
   extractUrdfJointsAndMeshes,
   resolveUrdfMesh,
+  WORLD_TARGET_ROBOT,
   type WorldError,
   type WorldPose,
   type WorldPrimitive,
+  type WorldTarget,
 } from "@sfab-bench/contract";
 
 import type { WorldBytes } from "./files";
 import type { RunPlan } from "./plan";
+import { targetPosition } from "./targets";
 
 const TIMESTEP_S = 0.001;
 
@@ -47,6 +50,8 @@ export type WorldModelIndex = WorldModelCounts & {
   /** MuJoCo body name for each link, so the stepper does not rebuild it. */
   linkNames: Record<string, Record<string, string>>;
   jointNamesByRobot: Record<string, Record<string, string>>;
+  /** Mocap body for each environment target. Empty when the world has none. */
+  targets: { id: string; body: number; mocap: number }[];
 };
 
 export type CompiledWorld = {
@@ -193,6 +198,29 @@ function primitiveGeom(primitive: WorldPrimitive): string {
   return `<geom ${name} type="cylinder" size="${primitive.size.radius} ${halfLength}" ${pose}/>`;
 }
 
+/**
+ * Mocap, and contact off. A mocap body would not move from a contact
+ * anyway; contype and conaffinity 0 means it also does not push a robot.
+ * The geom stays in the default group so a ray can hit it.
+ */
+function targetBody(target: WorldTarget): string {
+  const at = targetPosition(target, 0, null);
+  const pose = poseAttrs({ position: at, rotation: target.pose.rotation });
+  const name = `name="${WORLD_TARGET_ROBOT}/${target.id}"`;
+  const contact = `contype="0" conaffinity="0"`;
+  let geom: string;
+  if (target.shape === "box") {
+    const half = target.size.map((n) => n / 2);
+    geom = `<geom ${name} type="box" size="${nums(half)}" ${contact}/>`;
+  } else if (target.shape === "sphere") {
+    geom = `<geom ${name} type="sphere" size="${target.size}" ${contact}/>`;
+  } else {
+    const halfLength = target.size.length / 2;
+    geom = `<geom ${name} type="cylinder" size="${target.size.radius} ${halfLength}" ${contact}/>`;
+  }
+  return `<body name="${WORLD_TARGET_ROBOT}/${target.id}" mocap="true" ${pose}>${geom}</body>`;
+}
+
 function worldXml(plan: RunPlan): string {
   const geoms: string[] = [];
   if (plan.environment.ground.plane) {
@@ -200,6 +228,9 @@ function worldXml(plan: RunPlan): string {
   }
   for (const primitive of plan.environment.primitives ?? []) {
     geoms.push(primitiveGeom(primitive));
+  }
+  for (const target of plan.environment.targets) {
+    geoms.push(targetBody(target));
   }
   const mounts = plan.robots
     .map((robot) => {
@@ -545,6 +576,25 @@ export async function compileWorld(
     applyServoTorqueClamp(mj, model, worldDoc);
     applyServoDynamics(mj, model, worldDoc);
     applyLimitSolref(mj, model, urdfLimitSolref(worldDoc, files));
+    // Rays test group 0. Device geoms, including the ground, move to
+    // group 1 so the sensor does not see itself. A world with no ranger
+    // keeps every geom in the default group.
+    if ((worldDoc.rangers?.length ?? 0) > 0) {
+      const geomModel = model;
+      const groups = geomModel.geom_group as Uint8Array;
+      for (let i = 0; i < geomModel.ngeom; i++) groups[i] = 1;
+      const geomType = mj.mjtObj.mjOBJ_GEOM.value;
+      const show = (name: string) => {
+        const id = mj.mj_name2id(geomModel, geomType, name);
+        if (id >= 0) groups[id] = 0;
+      };
+      for (const target of worldDoc.environment.targets) {
+        show(`${WORLD_TARGET_ROBOT}/${target.id}`);
+      }
+      for (const primitive of worldDoc.environment.primitives ?? []) {
+        show(primitive.id);
+      }
+    }
 
     const bodyType = mj.mjtObj.mjOBJ_BODY.value;
     const jointType = mj.mjtObj.mjOBJ_JOINT.value;
@@ -566,6 +616,7 @@ export async function compileWorld(
       parts: {},
       linkNames: {},
       jointNamesByRobot: {},
+      targets: [],
     };
 
     for (const robot of worldDoc.robots) {
@@ -620,6 +671,28 @@ export async function compileWorld(
       }
       index.joints[robot.id] = joints;
       index.jointNamesByRobot[robot.id] = jointMj;
+    }
+
+    const mocapOf = model.body_mocapid as Int32Array;
+    const targetLinks: Record<string, number> = {};
+    const targetNames: Record<string, string> = {};
+    for (const target of worldDoc.environment.targets) {
+      const mjName = `${WORLD_TARGET_ROBOT}/${target.id}`;
+      const id = mj.mj_name2id(model, bodyType, mjName);
+      const mocap = id >= 0 ? (mocapOf[id] ?? -1) : -1;
+      if (id < 0 || mocap < 0) {
+        return {
+          ok: false,
+          errors: [schemaError(`Target "${target.id}" did not compile as a mocap body.`)],
+        };
+      }
+      index.targets.push({ id: target.id, body: id, mocap });
+      targetLinks[target.id] = id;
+      targetNames[target.id] = mjName;
+    }
+    if (worldDoc.environment.targets.length > 0) {
+      index.links[WORLD_TARGET_ROBOT] = targetLinks;
+      index.linkNames[WORLD_TARGET_ROBOT] = targetNames;
     }
 
     for (const part of worldDoc.parts) {

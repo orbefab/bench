@@ -80,6 +80,8 @@ export type RecordSpec = {
   joints: { robot: string; joint: string }[];
   bodies: { robot: string; link: string }[];
   parts: string[];
+  /** Parallel to `parts`. True when that part records a ranger reading. */
+  partRanger?: boolean[];
   supplies: string[];
   boards: string[];
   /** Parallel to `boards`. True when that board records D13 LED current. */
@@ -108,6 +110,10 @@ type Chunk = {
   boardMinVoltage: Float32Array;
   /** Null when no board on this run records D13 LED current. */
   boardLed: Float32Array | null;
+  /** Null when no part on this run is a ranger. Metres; NaN is no echo. */
+  rangerDistance: Float32Array | null;
+  /** 1 when the last trigger hit. Null when no part is a ranger. */
+  rangerHit: Uint8Array | null;
   ddr: Uint32Array;
   level: Uint32Array;
   toggled: Uint32Array;
@@ -126,6 +132,8 @@ type StoredEvent = {
   to?: number;
   message?: string;
   by?: WorldSender;
+  id?: string;
+  position?: [number, number, number];
 };
 
 type Slot = { chunk: Chunk; slot: number; timeMs: number };
@@ -170,12 +178,18 @@ export class RunRecorder {
   readonly belowSoa: Uint8Array;
   /** Degrees past the joint limit at this step. The frame keeps the max. */
   readonly pastLimit: Float64Array;
+  /** Metres. Null when this run has no ranger. */
+  readonly rangerDistance: Float64Array | null;
+  /** 1 on a hit. Null when this run has no ranger. */
+  readonly rangerHit: Uint8Array | null;
 
   private boundMs: number;
   readonly manifest: RecordingManifest;
   private readonly joints: { robot: string; joint: string; id: string }[];
   private readonly bodies: { robot: string; link: string; id: string }[];
   private readonly parts: { id: string; track: string }[];
+  private readonly partRanger: boolean[];
+  private readonly hasRanger: boolean;
   private readonly supplies: { id: string; track: string }[];
   private readonly boards: { id: string; track: string }[];
   private readonly minV: Float64Array;
@@ -207,6 +221,8 @@ export class RunRecorder {
       id: bodyTrackId(item.robot, item.link),
     }));
     this.parts = spec.parts.map((id) => ({ id, track: partTrackId(id) }));
+    this.partRanger = spec.partRanger ?? spec.parts.map(() => false);
+    this.hasRanger = this.partRanger.some(Boolean);
     this.supplies = spec.supplies.map((id) => ({
       id,
       track: supplyTrackId(id),
@@ -226,6 +242,9 @@ export class RunRecorder {
     this.state = new Uint8Array(nP);
     this.partCurrent = new Float64Array(nP);
     this.partVoltage = new Float64Array(nP);
+    this.rangerDistance = this.hasRanger ? new Float64Array(nP) : null;
+    this.rangerHit = this.hasRanger ? new Uint8Array(nP) : null;
+    this.rangerDistance?.fill(Number.NaN);
     this.voltage = new Float64Array(nS);
     this.supplyCurrent = new Float64Array(nS);
     this.boardVoltage = new Float64Array(nD);
@@ -431,6 +450,13 @@ export class RunRecorder {
       chunk.partCurrent[channel(i, slot)] = this.partCurrent[i] ?? 0;
       chunk.partMax[channel(i, slot)] = this.partMax[i] ?? 0;
       chunk.partVoltage[channel(i, slot)] = this.partVoltage[i] ?? 0;
+      if (chunk.rangerDistance && this.rangerDistance) {
+        chunk.rangerDistance[channel(i, slot)] =
+          this.rangerDistance[i] ?? Number.NaN;
+      }
+      if (chunk.rangerHit && this.rangerHit) {
+        chunk.rangerHit[channel(i, slot)] = this.rangerHit[i] ?? 0;
+      }
     }
     for (let i = 0; i < this.supplies.length; i++) {
       chunk.voltage[channel(i, slot)] = this.voltage[i] ?? 0;
@@ -463,6 +489,7 @@ export class RunRecorder {
       supplies: this.supplies.length,
       boards: this.boards.length,
       boardLed: this.ledOn.some(Boolean),
+      ranger: this.hasRanger,
     };
   }
 
@@ -735,6 +762,17 @@ export class RunRecorder {
         current: slot.chunk.partCurrent[channel(i, slot.slot)] ?? 0,
         maxCurrent: slot.chunk.partMax[channel(i, slot.slot)] ?? 0,
         voltage: slot.chunk.partVoltage[channel(i, slot.slot)] ?? 0,
+        ...(this.partRanger[i]
+          ? {
+              distanceM: Number.isNaN(
+                slot.chunk.rangerDistance?.[channel(i, slot.slot)] ?? Number.NaN
+              )
+                ? null
+                : (slot.chunk.rangerDistance?.[channel(i, slot.slot)] ?? null),
+              echoS: Number.isNaN(pulse) ? null : pulse / 1e6,
+              hit: (slot.chunk.rangerHit?.[channel(i, slot.slot)] ?? 0) !== 0,
+            }
+          : {}),
       };
     }
     for (let i = 0; i < this.supplies.length; i++) {
@@ -858,6 +896,19 @@ function publishEvent(event: StoredEvent): RecordingEvent | null {
   ) {
     return { t, kind: event.kind, board: event.board };
   }
+  if (
+    event.kind === "move-target" &&
+    event.id &&
+    event.position &&
+    event.position.length === 3
+  ) {
+    return {
+      t,
+      kind: "move-target",
+      id: event.id,
+      position: [event.position[0], event.position[1], event.position[2]],
+    };
+  }
   if ((event.kind === "play" || event.kind === "pause") && event.by) {
     return { t, kind: event.kind, by: event.by };
   }
@@ -891,6 +942,7 @@ function createChunk(counts: {
   supplies: number;
   boards: number;
   boardLed?: boolean;
+  ranger?: boolean;
 }): Chunk {
   return {
     start: 0,
@@ -913,6 +965,10 @@ function createChunk(counts: {
     boardVoltage: new Float32Array(counts.boards * CHUNK),
     boardMinVoltage: new Float32Array(counts.boards * CHUNK),
     boardLed: counts.boardLed ? new Float32Array(counts.boards * CHUNK) : null,
+    rangerDistance: counts.ranger
+      ? new Float32Array(counts.parts * CHUNK)
+      : null,
+    rangerHit: counts.ranger ? new Uint8Array(counts.parts * CHUNK) : null,
     ddr: new Uint32Array(counts.boards * CHUNK),
     level: new Uint32Array(counts.boards * CHUNK),
     toggled: new Uint32Array(counts.boards * CHUNK),

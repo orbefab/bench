@@ -31,6 +31,7 @@ import {
   rejectWorldStep,
   resolveWorldFile,
   restartWorld,
+  moveWorldTarget,
   stepWorld,
   worldRunView,
 } from "./world/host";
@@ -72,10 +73,12 @@ type Loaded = {
 
 type AgentEvent = {
   t: number;
-  kind: "reset" | "reload" | "fault" | "serial" | "serial-send";
+  kind: "reset" | "reload" | "fault" | "serial" | "serial-send" | "move-target";
   board?: string;
   text?: string;
   message?: string;
+  id?: string;
+  position?: [number, number, number];
 };
 
 type AgentFrame = {
@@ -697,6 +700,7 @@ function agentEvents(events: RecordingEvent[]): {
       event.kind === "reset" ||
       event.kind === "reload" ||
       event.kind === "fault" ||
+      event.kind === "move-target" ||
       isSerial(event)
   );
   const capped = capSerial(kept);
@@ -710,6 +714,13 @@ function agentEvents(events: RecordingEvent[]): {
         kind: event.kind,
         board: event.board,
         message: event.message,
+      });
+    } else if (event.kind === "move-target") {
+      slim.push({
+        t: event.t,
+        kind: event.kind,
+        id: event.id,
+        position: event.position,
       });
     } else if (isSerial(event)) {
       slim.push({
@@ -965,6 +976,29 @@ export const worldTools = {
         pulses: pulses.items,
         truncated: pulses.truncated,
       };
+    },
+  }),
+  world_move_target: tool({
+    description:
+      "Move an environment target to position (metres) from the next master step. world is the project-relative .world.json path from get_viewer. id is the target's id. The move is recorded. A target with only a path is unchanged until this is called. Dragging in the view is not this tool.",
+    inputSchema: z.object({
+      world: z.string(),
+      id: z.string(),
+      position: z.tuple([z.number(), z.number(), z.number()]),
+    }),
+    execute: async ({ world, id, position }) => {
+      const found = await openRun(world);
+      if ("error" in found) return found;
+      const known = found.plan.environment.targets.some(
+        (target) => target.id === id
+      );
+      if (!known) return { error: `no target "${id}"` };
+      if (!position.every((n) => Number.isFinite(n))) {
+        return { error: "position is not finite" };
+      }
+      const moved = moveWorldTarget(found.root, found.world, id, position);
+      if ("error" in moved) return moved;
+      return { id, position: [position[0], position[1], position[2]] };
     },
   }),
   world_restart: tool({

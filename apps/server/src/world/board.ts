@@ -105,6 +105,12 @@ export class AvrBoard {
    */
   onPinsChanged: (() => void) | null = null;
   /**
+   * A port write, at `cpu.cycles`. Null unless a part is listening.
+   * Worlds with no listener skip the walk.
+   */
+  onEdge: ((bit: number, high: boolean, cycles: number) => void) | null =
+    null;
+  /**
    * Latest GPIO value reported by each port listener. avr8js copies
    * that value into PIN after the listener returns, so a same-port
    * read during the callback has to use this cache.
@@ -317,6 +323,14 @@ export class AvrBoard {
       if (changed !== 0) {
         this.toggled |= changed << shift;
         this.noteEdges(changed, shift, value);
+        const cycles = this.cpu?.cycles;
+        if (this.onEdge && cycles !== undefined) {
+          for (let index = 0; index < width; index++) {
+            if ((changed & (1 << index)) === 0) continue;
+            const high = ((value >> index) & 1) === 1;
+            this.onEdge(shift + index, high, cycles);
+          }
+        }
       }
       // A wired output is updated first, then this pin's pull-up, so
       // the next instruction's digitalRead sees the winner.
@@ -412,6 +426,18 @@ export class AvrBoard {
    * A wire's output level, or null to leave the pin to its pull-up.
    * Ignored while this pin is itself an output.
    */
+  /**
+   * Run `fn` after `delayCycles` CPU cycles. avr8js adds at least one
+   * cycle, so a delay of 0 fires on the next cycle. Returns false when
+   * the CPU is down.
+   */
+  schedule(delayCycles: number, fn: () => void): boolean {
+    const cpu = this.cpu;
+    if (!cpu) return false;
+    cpu.addClockEvent(fn, delayCycles);
+    return true;
+  }
+
   setDriven(bit: number, level: boolean | null) {
     if (bit < 0 || bit > 19) return;
     const next = level === null ? 0 : level ? 2 : 1;

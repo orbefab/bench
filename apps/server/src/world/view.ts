@@ -15,6 +15,9 @@ export function viewOf(plan: RunPlan): WorldView {
       ...(plan.environment.stepProps
         ? { stepProps: plan.environment.stepProps }
         : {}),
+      ...(plan.environment.targets.length > 0
+        ? { targets: plan.environment.targets }
+        : {}),
     },
     robots: plan.robots.map((robot) => ({
       id: robot.id,
@@ -36,12 +39,20 @@ export function viewOf(plan: RunPlan): WorldView {
       currentLimit: supply.currentLimit,
       rSeries: supply.rSeries,
     })),
-    parts: plan.parts.map((part) => ({
-      id: part.id,
-      model: part.model,
-      ...(part.drives ? { drives: part.drives } : {}),
-      signalPin: part.drive.kind === "servo" ? part.drive.pin : null,
-    })),
+    parts: [
+      ...plan.parts.map((part) => ({
+        id: part.id,
+        model: part.model,
+        ...(part.drives ? { drives: part.drives } : {}),
+        signalPin: part.drive.kind === "servo" ? part.drive.pin : null,
+      })),
+      ...(plan.rangers ?? []).map((ranger) => ({
+        id: ranger.id,
+        model: ranger.model,
+        signalPin: null,
+        ranger: true as const,
+      })),
+    ],
     wires: plan.shownWires.map((wire) => [wire[0], wire[1]]),
     feeds: powerFeedsOf(plan),
   };

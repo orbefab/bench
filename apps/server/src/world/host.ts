@@ -1340,6 +1340,28 @@ function waitForStep(
  * One worker step. The reply is the state that command produced, not
  * whatever snapshot is newest when the poll next runs.
  */
+/**
+ * Queue a target move. The worker applies it on the next master step
+ * and records a `move-target` event. The caller has already checked
+ * that `id` is a target in this world.
+ */
+export function moveWorldTarget(
+  project: string,
+  worldRel: string,
+  id: string,
+  position: [number, number, number]
+): { ok: true } | { error: string } {
+  const doc = runningDoc(project, worldRel);
+  if ("error" in doc) return doc;
+  post(doc, {
+    type: "moveTarget",
+    id,
+    position,
+    generation: doc.generation,
+  });
+  return { ok: true };
+}
+
 export async function stepWorld(
   project: string,
   worldRel: string,

@@ -416,58 +416,111 @@ function PartBody({
           ))
         )}
       </div>
-      <Field
-        label="Pulse"
-        value={pulseText(
-          scrub.playhead !== null
-            ? (recorded?.pulseUs ?? null)
-            : (live?.pulseUs ?? null)
-        )}
-      />
-      <Field
-        label="Command"
-        value={commandText(
-          scrub.playhead !== null
-            ? (recorded?.commandDeg ?? null)
-            : (live?.commandDeg ?? null)
-        )}
-      />
-      <Field
-        label="State"
-        value={motionText(
-          scrub.playhead !== null ? recorded?.worst : live?.state
-        )}
-      />
-      <Field
-        label="V+"
-        value={
-          scrub.playhead !== null
-            ? recorded
-              ? voltsText(recorded.voltage)
-              : "—"
-            : live?.voltage === undefined
-              ? "—"
-              : voltsText(live.voltage)
-        }
-      />
-      <Field
-        label="Current"
-        value={
-          scrub.playhead !== null
-            ? recorded
-              ? ampsText(recorded.maxCurrent)
-              : "—"
-            : live?.current === undefined
-              ? "—"
-              : ampsText(live.current)
-        }
-      />
+      {info?.ranger ? (
+        <RangerFields
+          reading={scrub.playhead !== null ? recorded : live}
+        />
+      ) : (
+        <>
+          <Field
+            label="Pulse"
+            value={pulseText(
+              scrub.playhead !== null
+                ? (recorded?.pulseUs ?? null)
+                : (live?.pulseUs ?? null)
+            )}
+          />
+          <Field
+            label="Command"
+            value={commandText(
+              scrub.playhead !== null
+                ? (recorded?.commandDeg ?? null)
+                : (live?.commandDeg ?? null)
+            )}
+          />
+          <Field
+            label="State"
+            value={motionText(
+              scrub.playhead !== null ? recorded?.worst : live?.state
+            )}
+          />
+          <Field
+            label="V+"
+            value={
+              scrub.playhead !== null
+                ? recorded
+                  ? voltsText(recorded.voltage)
+                  : "—"
+                : live?.voltage === undefined
+                  ? "—"
+                  : voltsText(live.voltage)
+            }
+          />
+          <Field
+            label="Current"
+            value={
+              scrub.playhead !== null
+                ? recorded
+                  ? ampsText(recorded.maxCurrent)
+                  : "—"
+                : live?.current === undefined
+                  ? "—"
+                  : ampsText(live.current)
+            }
+          />
+        </>
+      )}
       {drives ? (
         <>
           <Field label="Joint" value={`${drives.robot}/${drives.joint}`} />
           <Field label="Angle" value={angle} />
         </>
       ) : null}
+    </>
+  );
+}
+
+function RangerFields({
+  reading,
+}: {
+  reading:
+    | {
+        distanceM?: number | null;
+        echoS?: number | null;
+        hit?: boolean;
+        voltage?: number;
+        current?: number;
+      }
+    | undefined;
+}) {
+  const distance =
+    reading?.distanceM === null || reading?.distanceM === undefined
+      ? "no echo"
+      : `${(reading.distanceM * 100).toFixed(2)} cm`;
+  const echo =
+    reading?.echoS === null || reading?.echoS === undefined
+      ? "—"
+      : `${Math.round(reading.echoS * 1e6)} µs`;
+  return (
+    <>
+      <Field label="Distance" value={reading ? distance : "—"} />
+      <Field label="Echo" value={reading ? echo : "—"} />
+      <Field
+        label="Return"
+        value={reading ? (reading.hit ? "echo" : "no echo") : "—"}
+      />
+      <Field
+        label="VCC"
+        value={
+          reading?.voltage === undefined ? "—" : voltsText(reading.voltage)
+        }
+      />
+      <Field
+        label="Current"
+        value={
+          reading?.current === undefined ? "—" : ampsText(reading.current)
+        }
+      />
     </>
   );
 }

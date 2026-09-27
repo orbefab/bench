@@ -25,6 +25,7 @@ import {
   type WorldSender,
   type WorldState,
   type WorldSupplyState,
+  type WorldVec3,
 } from "@sfab-bench/contract";
 
 import { analogRead } from "./analog-pin";
@@ -50,6 +51,8 @@ import { type BoardPathName, isFirmwareBoard, usbPathFor } from "./power-path";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
 import { blankTrack, type ServoTrack, trackServo } from "./servo";
+import { RangerRuntime } from "./ranger";
+import { targetPosition } from "./targets";
 import {
   applyGpioDrives,
   gpioInputNets,
@@ -199,6 +202,12 @@ export type ToWorker =
       request?: number;
     }
   | { type: "setTarget"; partId: string; radians: number; generation: number }
+  | {
+      type: "moveTarget";
+      id: string;
+      position: [number, number, number];
+      generation: number;
+    }
   | { type: "reloadBoard"; board: string; generation: number }
   | {
       type: "serialIn";
@@ -270,6 +279,8 @@ let generation = 0;
 let project = "";
 let worldRel = "";
 let sim: Sim | null = null;
+/** Agent moves. A held target ignores its path from the next master step. */
+const targetHolds = new Map<string, WorldVec3>();
 let files: WorldBytes | null = null;
 let specs: BoardSpec[] = [];
 let boards: AvrBoard[] = [];
@@ -341,6 +352,7 @@ type SupplySpec = {
 };
 
 let loads: Load[] = [];
+let rangers: RangerRuntime[] = [];
 let boardPower = new Map<string, BoardPower>();
 let supplySpecs: SupplySpec[] = [];
 let partFeeds: PowerFeeds["parts"] = {};
@@ -405,6 +417,7 @@ type RecLayout = {
   }[];
   bodies: { robot: string; link: string; mj: string }[];
   parts: Load[];
+  rangers: RangerRuntime[];
   supplies: SupplySpec[];
   boards: string[];
 };
@@ -513,6 +526,19 @@ function sample(): WorldState | null {
       voltage: load.supplyId ? boardNodeOf(load.supplyId) : 0,
     };
   }
+  for (const ranger of rangers) {
+    const echoUs = ranger.echoS === null ? null : ranger.echoS * 1e6;
+    parts[ranger.spec.id] = {
+      pulseUs: echoUs,
+      commandDeg: null,
+      state: "idle",
+      current: ranger.current,
+      voltage: ranger.supplyId ? rangerNode(ranger.supplyId) : 0,
+      distanceM: ranger.distanceM,
+      echoS: ranger.echoS,
+      hit: ranger.hit,
+    };
+  }
   return {
     simTime: data.time,
     playing,
@@ -568,6 +594,16 @@ function fillRecorder(full: boolean) {
         (drive?.board ? drive.track.commandDeg : drive?.manualDeg) ??
         Number.NaN;
     }
+    for (let i = 0; i < lay.rangers.length; i++) {
+      const ranger = lay.rangers[i];
+      const index = lay.parts.length + i;
+      if (!ranger || !rec.rangerDistance || !rec.rangerHit) continue;
+      rec.pulse[index] =
+        ranger.echoS === null ? Number.NaN : ranger.echoS * 1e6;
+      rec.command[index] = Number.NaN;
+      rec.rangerDistance[index] = ranger.distanceM ?? Number.NaN;
+      rec.rangerHit[index] = ranger.hit ? 1 : 0;
+    }
     for (let i = 0; i < lay.boards.length; i++) {
       const id = lay.boards[i];
       const board = boards.find((item) => item.id === id);
@@ -584,6 +620,14 @@ function fillRecorder(full: boolean) {
     rec.state[i] = motionRank(load.state);
     rec.partCurrent[i] = load.current;
     rec.partVoltage[i] = load.supplyId ? boardNodeOf(load.supplyId) : 0;
+  }
+  for (let i = 0; i < lay.rangers.length; i++) {
+    const ranger = lay.rangers[i];
+    if (!ranger) continue;
+    const index = lay.parts.length + i;
+    rec.state[index] = 0;
+    rec.partCurrent[index] = ranger.current;
+    rec.partVoltage[index] = ranger.supplyId ? rangerNode(ranger.supplyId) : 0;
   }
   for (let i = 0; i < lay.supplies.length; i++) {
     const spec = lay.supplies[i];
@@ -654,14 +698,28 @@ function openRecorder() {
   }
   const parts = loads.filter((load) => load.drive);
   const boardIds = boards.map((board) => board.id);
-  layout = { joints, bodies, parts, supplies: supplySpecs, boards: boardIds };
+  layout = {
+    joints,
+    bodies,
+    parts,
+    rangers,
+    supplies: supplySpecs,
+    boards: boardIds,
+  };
   recordingSeq += 1;
   recorder = new RunRecorder({
     id: `r${recordingSeq}`,
     manifest: manifestOf(),
     joints: joints.map(({ robot, joint }) => ({ robot, joint })),
     bodies: bodies.map(({ robot, link }) => ({ robot, link })),
-    parts: parts.map((load) => load.partId),
+    parts: [
+      ...parts.map((load) => load.partId),
+      ...rangers.map((ranger) => ranger.spec.id),
+    ],
+    partRanger: [
+      ...parts.map(() => false),
+      ...rangers.map(() => true),
+    ],
     supplies: supplySpecs.map((supply) => supply.id),
     boards: boardIds,
     boardLed: boardIds.map(
@@ -1103,8 +1161,60 @@ function sampleLoad(load: Load) {
  * A powered servo always contributes its quiescent current. A driven
  * one also contributes `max(0, s·I_motor)`.
  */
+/** Board node of the supply that feeds a ranger. The latch, not this step. */
+function latchedSupplyNode(supplyId: string): number {
+  for (const [boardId, power] of boardPower) {
+    if (power.supplyId === supplyId) return latchedBoardNode(boardId);
+  }
+  return 0;
+}
+
+function rangerNode(supplyId: string): number {
+  return boardNodeOf(supplyId);
+}
+
+function bindRangers(plan: RunPlan) {
+  rangers = (plan.rangers ?? []).map((spec) => {
+    const ranger = new RangerRuntime(spec);
+    ranger.supplyId = partFeeds[spec.id] ?? null;
+    ranger.volts = () =>
+      ranger.supplyId ? latchedSupplyNode(ranger.supplyId) : 0;
+    ranger.physics = () =>
+      sim ? { mj: sim.mj, model: sim.model, data: sim.data } : null;
+    return ranger;
+  });
+  for (const board of boards) rearmRangers(board.id, board);
+}
+
+function rearmRangers(boardId: string, board: AvrBoard) {
+  const listening = rangers.filter(
+    (ranger) => ranger.spec.trig?.boardId === boardId
+  );
+  for (const ranger of rangers) {
+    const trig = ranger.spec.trig?.boardId;
+    const echo = ranger.spec.echo?.boardId;
+    if (trig !== boardId && echo !== boardId) continue;
+    ranger.reset(board);
+  }
+  board.onEdge =
+    listening.length === 0
+      ? null
+      : (bit, high, cycles) => {
+          for (const ranger of listening) ranger.onEdge(bit, high, cycles);
+        };
+}
+
 function solveSupplies() {
   for (const load of loads) sampleLoad(load);
+  const rangerFixed = new Map<string, number>();
+  for (const ranger of rangers) {
+    const draw = ranger.takeDraw();
+    if (!ranger.supplyId) continue;
+    rangerFixed.set(
+      ranger.supplyId,
+      (rangerFixed.get(ranger.supplyId) ?? 0) + draw
+    );
+  }
   const next: Record<string, WorldSupplyState> = {};
   for (const supply of supplySpecs) {
     let fixed = 0;
@@ -1116,6 +1226,7 @@ function solveSupplies() {
       if (load.supplyId !== supply.id) continue;
       fixed += load.quiescent;
     }
+    fixed += rangerFixed.get(supply.id) ?? 0;
     const solved = solveOneRail(supply.id, fixed);
     // The supply record is the terminal. The board node is reported on
     // the board, and a servo's V+ is that same node.
@@ -1154,6 +1265,7 @@ function reloadBoard(id: string) {
   if (index >= 0) boards[index] = next;
   else boards.push(next);
   rearmServos(id, next);
+  rearmRangers(id, next);
   // The new image has not run, and this board's servos are idle. Publish
   // the rail those currents actually draw. A sag still under the assert
   // threshold holds the new CPU in reset. A firmware reload is not a
@@ -1476,6 +1588,7 @@ function advanceOne() {
       });
     }
     rearmServos(board.id, board);
+    rearmRangers(board.id, board);
   }
   latchSupplyNodes();
   for (const board of boards) {
@@ -1489,6 +1602,9 @@ function advanceOne() {
   // on a recovered rail.
   latchServos();
   applyTorque();
+  // Targets move after the CPU. A ray cast during this step still sees
+  // the pose from the previous master step, the same lag as the ADC latch.
+  placeTargets();
   sim.mj.mj_step(sim.model, sim.data);
   classifyLoads();
   recordStep();
@@ -1504,6 +1620,7 @@ function dispose() {
   pendingNotes.length = 0;
   boards = [];
   loads = [];
+  rangers = [];
   inputNets = [];
   runPlan = null;
   boardPower = new Map();
@@ -1515,6 +1632,7 @@ function dispose() {
   adcSamples = [];
   rails = new Map();
   stepPulses.clear();
+  targetHolds.clear();
   specs = [];
   files = null;
   faulted.clear();
@@ -1590,6 +1708,10 @@ async function build(): Promise<boolean> {
   loadBoards(runPlan);
   bindPower(runPlan);
   bindInputNets(runPlan);
+  bindRangers(runPlan);
+  // The ranger's idle current is on the node the first CPU step reads.
+  solveSupplies();
+  latchSupplyNodes();
   openRecorder();
   post({ type: "ready", generation, counts: countsOf(compiled) });
   postState();
@@ -1693,6 +1815,50 @@ function step(n: number, pauseBy?: WorldSender, request?: number) {
  * command, the same input a pulse would be. A signal wire owns the
  * servo, so this leaves that joint alone.
  */
+/**
+ * Write each target's mocap pose for the physics step about to run.
+ * `data.time` is still the time of the state the CPU just finished on.
+ */
+function placeTargets() {
+  if (!sim || !runPlan || runPlan.environment.targets.length === 0) return;
+  const pos = sim.data.mocap_pos as Float64Array;
+  const quat = sim.data.mocap_quat as Float64Array;
+  const time = sim.data.time;
+  for (const item of sim.index.targets) {
+    const spec = runPlan.environment.targets.find((target) => target.id === item.id);
+    if (!spec) continue;
+    const p = targetPosition(spec, time, targetHolds.get(item.id) ?? null);
+    const base = item.mocap * 3;
+    pos[base] = p[0];
+    pos[base + 1] = p[1];
+    pos[base + 2] = p[2];
+    const q = spec.pose.rotation;
+    const qb = item.mocap * 4;
+    quat[qb] = q[0];
+    quat[qb + 1] = q[1];
+    quat[qb + 2] = q[2];
+    quat[qb + 3] = q[3];
+  }
+}
+
+/**
+ * An agent move. It replaces the path from the next master step and is
+ * held after that. Recorded at the sim time the command arrived.
+ */
+function moveTarget(id: string, position: [number, number, number]) {
+  if (!sim || !runPlan) return;
+  const known = runPlan.environment.targets.some((target) => target.id === id);
+  if (!known || !position.every((n) => Number.isFinite(n))) return;
+  const next: WorldVec3 = [position[0], position[1], position[2]];
+  targetHolds.set(id, next);
+  recorder?.noteEvent({
+    timeMs: simMs(),
+    kind: "move-target",
+    id,
+    position: next,
+  });
+}
+
 function setTarget(partId: string, radians: number) {
   if (!sim) return;
   if (!Number.isFinite(radians)) {
@@ -1822,6 +1988,8 @@ async function handle(message: ToWorker) {
     step(message.n, message.pauseBy, message.request);
   else if (message.type === "setTarget")
     setTarget(message.partId, message.radians);
+  else if (message.type === "moveTarget")
+    moveTarget(message.id, message.position);
   else if (message.type === "reloadBoard") reloadBoard(message.board);
   else if (message.type === "serialIn") {
     serialIn(message.board, message.text, message.by);

@@ -379,7 +379,10 @@ function sameParts(
       left.commandDeg !== right.commandDeg ||
       left.state !== right.state ||
       left.current !== right.current ||
-      left.voltage !== right.voltage
+      left.voltage !== right.voltage ||
+      left.distanceM !== right.distanceM ||
+      left.echoS !== right.echoS ||
+      left.hit !== right.hit
     ) {
       return false;
     }

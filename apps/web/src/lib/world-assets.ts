@@ -2,7 +2,9 @@ import {
   extractUrdfJointsAndMeshes,
   resolveUrdfMesh,
   type UrdfInfo,
+  WORLD_TARGET_ROBOT,
   type WorldPrimitive,
+  type WorldTarget,
   type WorldView,
 } from "@sfab-bench/contract";
 import * as THREE from "three";
@@ -33,6 +35,7 @@ export type WorldSceneDocument = {
   environment: {
     ground: { plane: boolean };
     primitives: WorldPrimitive[];
+    targets: WorldTarget[];
   };
   boards: WorldView["boards"];
 };
@@ -203,6 +206,7 @@ export async function loadWorldAssets(
     environment: {
       ground: { plane: Boolean(read.environment.ground?.plane) },
       primitives: read.environment.primitives ?? [],
+      targets: read.environment.targets ?? [],
     },
     boards: read.boards,
   };

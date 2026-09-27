@@ -78,6 +78,13 @@ function endpointPin(plan: RunPlan, endpoint: string): RunPin | null {
   if (board) return board.pins[split.pin] ?? null;
   const part = plan.parts.find((item) => item.id === split.id);
   if (part) return part.pins[split.pin] ?? null;
+  const ranger = plan.rangers?.find((item) => item.id === split.id);
+  if (ranger && split.pin === "VCC") {
+    return { kind: "power", output: false, digital: false, pwm: false };
+  }
+  if (ranger && split.pin === "GND") {
+    return { kind: "ground", output: false, digital: false, pwm: false };
+  }
   const supply = plan.supplies.find((item) => item.id === split.id);
   if (supply) return supply.pins[split.pin] ?? null;
   return null;
@@ -213,6 +220,12 @@ export function powerFeedsOf(plan: RunPlan): PowerFeeds {
       if (feed) break;
     }
     parts[part.id] = feed;
+  }
+  for (const ranger of plan.rangers ?? []) {
+    parts[ranger.id] = supplyOn(
+      plan,
+      reachedFrom(`${ranger.id}.VCC`, adjacent)
+    );
   }
   return { boards, parts };
 }

@@ -4,20 +4,24 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type {
-  BehaviourImpl,
-  BodyImpl,
-  Diagnostic,
-  PortDecl,
-  Pose,
-  VisualImpl,
-  WorldError,
-  WorldPrimitive,
-  WorldStepProp,
+import {
+  arduinoPinBit,
+  type BehaviourImpl,
+  type BodyImpl,
+  type Diagnostic,
+  type PortDecl,
+  type Pose,
+  type VisualImpl,
+  type WorldError,
+  type WorldPrimitive,
+  type WorldStepProp,
+  type WorldTarget,
 } from "@sfab-bench/contract";
 import { type AvrPinParams, avrPinParams } from "./circuit/pin";
 import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
+import type { RangerLaw, RunRanger } from "./ranger";
+import { readTargets } from "./targets";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
 import { siValue } from "./parts/si";
 import { isFirmwareBoard } from "./power-path";
@@ -124,6 +128,8 @@ export type RunPart = {
   drives?: { robot: string; joint: string };
 };
 
+export type { RunRanger };
+
 /**
  * What one run executes. Not a file format. Instance ids are the ones
  * written in the scene (`arm`, `uno`, `servo`), so wires stay `uno.D9`.
@@ -135,11 +141,18 @@ export type RunPlan = {
     gravity: [number, number, number];
     primitives?: WorldPrimitive[];
     stepProps?: WorldStepProp[];
+    /** Mocap bodies. Empty when the world names none. */
+    targets: WorldTarget[];
   };
   robots: RunRobot[];
   boards: RunBoard[];
   supplies: RunSupply[];
   parts: RunPart[];
+  /**
+   * Ultrasonic rangers. Absent on a plan built by hand for a pin test.
+   * `build` always sets this, possibly empty.
+   */
+  rangers?: RunRanger[];
   /** Electrical pairs only. Mechanical links are `parts[].drives`. */
   wires: [string, string][];
   /** The scene's own electrical wires as authored, for the cards. */
@@ -368,6 +381,44 @@ function rangePair(
   return null;
 }
 
+function digitalPeer(
+  inst: LiveInstance,
+  port: string,
+  loaded: LoadResult
+): { boardId: string; bit: number } | null {
+  for (const wire of loaded.wires) {
+    const other =
+      wire.a.path === inst.path && wire.a.port === port
+        ? wire.b
+        : wire.b.path === inst.path && wire.b.port === port
+          ? wire.a
+          : null;
+    if (!other) continue;
+    const board = loaded.resolved.find((item) => item.path === other.path);
+    if (!board || !isFirmwareBoard(board.type.id)) continue;
+    const bit = arduinoPinBit(other.port);
+    if (bit === undefined) continue;
+    return { boardId: board.path, bit };
+  }
+  return null;
+}
+
+function rangerLaw(numbers: Record<string, number>): RangerLaw {
+  return {
+    c: numbers.c ?? 0,
+    rangeMin: numbers.rangeMin ?? 0,
+    rangeMax: numbers.rangeMax ?? 0,
+    beamHalf: numbers.beamHalf ?? 0,
+    trigMin: numbers.trigMin ?? 0,
+    echoDelay: numbers.echoDelay ?? 0,
+    echoTimeout: numbers.echoTimeout ?? 0,
+    working: numbers.working ?? 0,
+    quiescent: numbers.quiescent ?? 0,
+    vMin: numbers.vMin ?? 0,
+    face: numbers.face ?? 0,
+  };
+}
+
 function build(
   loaded: LoadResult,
   assetRoot: string,
@@ -380,6 +431,7 @@ function build(
   const boards: RunBoard[] = [];
   const supplies: RunSupply[] = [];
   const parts: RunPart[] = [];
+  const rangers: RunRanger[] = [];
 
   for (const inst of loaded.resolved) {
     if (inst.path === "$root") continue;
@@ -528,11 +580,49 @@ function build(
       });
       continue;
     }
+    if (typeId === "ultrasonic-ranger-4pin") {
+      const numbers = formNumbers(inst);
+      const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+      if (
+        !numbers ||
+        behaviour?.kind !== "form" ||
+        behaviour.form !== "ranger@1"
+      ) {
+        diags.push(cannot(inst, "the run needs ranger@1"));
+        continue;
+      }
+      rangers.push({
+        id: inst.path,
+        model: shortName(inst.part.id),
+        pose: poseOf(inst),
+        law: rangerLaw(numbers),
+        trig: digitalPeer(inst, "Trig", loaded),
+        echo: digitalPeer(inst, "Echo", loaded),
+      });
+      continue;
+    }
     diags.push(cannot(inst, `the run has no ${typeId}`));
   }
 
   if (diags.length > 0) return { plan: null, diags };
   const environment = world.environment;
+  const targets = readTargets(environment.targets);
+  if (!targets.ok) {
+    return {
+      plan: null,
+      diags: [
+        {
+          severity: "error",
+          path: "environment.targets",
+          port: "targets",
+          quantity: "Position",
+          left: "targets",
+          right: "box, sphere, or cylinder",
+          message: targets.error.message,
+        },
+      ],
+    };
+  }
   return {
     plan: {
       environment: {
@@ -544,11 +634,13 @@ function build(
         ...(Array.isArray(environment.stepProps)
           ? { stepProps: environment.stepProps as WorldStepProp[] }
           : {}),
+        targets: targets.targets,
       },
       robots,
       boards,
       supplies,
       parts,
+      rangers,
       wires: electricalWires(loaded.nets),
       shownWires: authoredWires(loaded.nets, loaded.wires),
     },

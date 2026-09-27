@@ -39,7 +39,11 @@ function gpioPlan(
     "5V": VCC,
   };
   return {
-    environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+    environment: {
+      ground: { plane: true },
+      gravity: [0, 0, -9.81],
+      targets: [],
+    },
     robots: [],
     boards: boardIds.map((id) => ({
       id,
