@@ -98,7 +98,14 @@ function errorLines(error: SnapshotFile["error"]): string[] {
   if (error === "none-available") return ["no free-run error"];
   const groups = new Map<
     string,
-    { name: string; unit: string; max?: number; rms?: number; vs?: string }
+    {
+      name: string;
+      unit: string;
+      max?: number;
+      rms?: number;
+      staticMax?: number;
+      vs?: string;
+    }
   >();
   for (const row of error) {
     const named = quantityName(row.quantity);
@@ -110,10 +117,17 @@ function errorLines(error: SnapshotFile["error"]): string[] {
     };
     if (row.metric === "free-run-max-abs") group.max = row.value;
     if (row.metric === "free-run-rms") group.rms = row.value;
+    if (row.metric === "static-max-abs") group.staticMax = row.value;
     groups.set(key, group);
   }
   const lines: string[] = [];
   for (const group of groups.values()) {
+    const vs = group.vs ? ` vs class ${group.vs}` : "";
+    if (group.staticMax !== undefined) {
+      lines.push(
+        `${group.name} static max ${humanValue(group.staticMax, group.unit)}${vs}`
+      );
+    }
     const bits: string[] = [];
     if (group.max !== undefined) {
       bits.push(`max ${humanValue(group.max, group.unit)}`);
@@ -121,8 +135,9 @@ function errorLines(error: SnapshotFile["error"]): string[] {
     if (group.rms !== undefined) {
       bits.push(`rms ${humanValue(group.rms, group.unit)}`);
     }
-    const vs = group.vs ? ` vs class ${group.vs}` : "";
-    lines.push(`${group.name} free-run ${bits.join(", ")}${vs}`);
+    if (bits.length > 0) {
+      lines.push(`${group.name} free-run ${bits.join(", ")}${vs}`);
+    }
   }
   return lines;
 }

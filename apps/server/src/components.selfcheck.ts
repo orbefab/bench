@@ -83,8 +83,8 @@ function nanoLaw() {
 {
   const stamp = NANO_STAMP;
   const ids = stamp.parts.map((part) => part.path).join(",");
-  expect(ids.includes("nano.s4"), `stamp missing s4: ${ids}`);
-  expect(ids.includes("nano.c106"), `stamp missing c106: ${ids}`);
+  expect(ids.includes("nano.power.s4"), `stamp missing s4: ${ids}`);
+  expect(ids.includes("nano.power.c106"), `stamp missing c106: ${ids}`);
   expect(ids.includes("nano.led"), `stamp missing led: ${ids}`);
   const usb = realize(stamp, "usb", {
     roh: 25,
@@ -99,11 +99,11 @@ function nanoLaw() {
     rLeak: 5e6,
   });
   expect(
-    usb.elements.some((el) => el.id === "nano.s4"),
+    usb.elements.some((el) => el.id === "nano.power.s4"),
     "usb feed dropped s4"
   );
   expect(
-    !header.elements.some((el) => el.id === "nano.s4"),
+    !header.elements.some((el) => el.id === "nano.power.s4"),
     "header feed kept s4"
   );
   expect(
@@ -346,15 +346,44 @@ async function runLed(
   const id = "sfab/nano-1n4148@1.0.0";
   part.id = id;
   const board = part.axes.behaviour["2"].variants.circuits.board;
+  const powerId = "sfab/nano-power-input-1n4148@1.0.0";
+  const power = JSON.parse(
+    readFileSync(
+      join(catalog, "parts", "sfab", "nano-power-input@1.0.0.json"),
+      "utf8"
+    )
+  ) as {
+    id: string;
+    axes: {
+      behaviour: {
+        "2": {
+          variants: {
+            netlist: {
+              netlist: { instances: { s4: { part: string } } };
+            };
+          };
+        };
+      };
+    };
+  };
+  power.id = powerId;
+  power.axes.behaviour["2"].variants.netlist.netlist.instances.s4.part =
+    "sfab/diode-1n4148@1.0.0";
+  const powerInst = board.instances.power;
+  if (!powerInst) throw new Error("nano board has no power group");
+  powerInst.part = powerId;
   // The 1N4148's open-circuit point does not return from gmin. A 1 MΩ
   // on the rail is about 5 µA at 5 V, far below the 0.1 A comparison.
-  board.instances.s4.part = "sfab/diode-1n4148@1.0.0";
   board.instances.bleed = { part: "sfab/resistor@1.0.0", params: { R: 1e6 } };
-  board.wires.push(["c106.A", "bleed.A"], ["c106.B", "bleed.B"]);
+  board.wires.push(["power.5V", "bleed.A"], ["power.GND", "bleed.B"]);
   const root = mkdtempSync(join(tmpdir(), "sfab-capture-board-"));
   try {
     const dir = join(root, "parts", "sfab");
     mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "nano-power-input-1n4148@1.0.0.json"),
+      JSON.stringify(power)
+    );
     writeFileSync(join(dir, "nano-1n4148@1.0.0.json"), JSON.stringify(part));
     const config = JSON.parse(
       readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
@@ -363,6 +392,7 @@ async function runLed(
     if (!entry) throw new Error("capture config has no entries");
     entry.part = id;
     entry.cases = {};
+    config.entries = [entry];
     const out = join(root, "snap.json");
     await captureFromConfig({
       config,

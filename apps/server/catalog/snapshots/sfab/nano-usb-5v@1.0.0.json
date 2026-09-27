@@ -124,7 +124,7 @@
       "seed": 20260927
     },
     "from": {
-      "hash": "55e61aca50730919d233b64ecc92fd534fa67d85f72cdf079da77b80e62388d5",
+      "hash": "bc42e74b519d6f19b7887f3df0720f909bb9fb50b371ec38308081dc766ff45f",
       "level": "2",
       "part": "sfab/nano-ch340@1.0.0"
     },

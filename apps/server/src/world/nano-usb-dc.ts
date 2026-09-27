@@ -49,7 +49,10 @@ export function branchDc(
   const mNode = stamp.portNodes[m];
   if (!pNode) throw new Error(`stamp has no ${p} node`);
   if (!mNode) throw new Error(`stamp has no ${m} node`);
-  const realized = realize(stamp, "header", AVR_PIN, { pins: false });
+  const realized = realize(stamp, "header", AVR_PIN, {
+    pins: false,
+    keep: [pNode, mNode],
+  });
   const held =
     mNode === "0"
       ? []

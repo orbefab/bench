@@ -342,11 +342,12 @@ export function realize(
   stamp: BoardStamp,
   feed: "usb" | "header",
   drive: AvrPinParams,
-  opts?: { pins?: boolean }
+  opts?: { pins?: boolean; keep?: readonly string[] }
 ): RealizedCircuit {
   const feedNode =
     feed === "usb" && stamp.vbusNode ? stamp.vbusNode : stamp.boardNode;
   const anchors = new Set<string>(["0", feedNode, stamp.boardNode]);
+  for (const node of opts?.keep ?? []) anchors.add(node);
   const withPins = opts?.pins !== false;
   for (const pin of stamp.pins) anchors.add(pin.node);
   const alive = prune(stamp.parts, anchors);

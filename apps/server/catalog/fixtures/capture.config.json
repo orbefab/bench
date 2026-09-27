@@ -77,6 +77,25 @@
           "load": "sfab/sg90@1.0.0"
         }
       }
+    },
+    {
+      "id": "sfab/nano-power-input@1.0.0",
+      "part": "sfab/nano-power-input@1.0.0",
+      "variant": "netlist",
+      "instance": "power",
+      "across": ["VBUS", "5V"],
+      "through": "VBUS",
+      "iSense": 1,
+      "fitV": 0.002,
+      "baseline": { "level": "2", "value": 0 },
+      "heldOut": "fixture",
+      "staticError": true,
+      "sweep": {
+        "fixture": "sfab/nano-power-input",
+        "currentPort": "VBUS",
+        "currentQuantity": "Current"
+      },
+      "envelope": {}
     }
   ]
 }

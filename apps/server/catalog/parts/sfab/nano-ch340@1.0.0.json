@@ -156,15 +156,8 @@
             },
             "board": {
               "instances": {
-                "s4": {
-                  "part": "sfab/diode-ss14@1.0.0"
-                },
-                "c106": {
-                  "part": "sfab/capacitor@1.0.0",
-                  "params": {
-                    "C": 0.00001,
-                    "esr": 5
-                  }
+                "power": {
+                  "part": "sfab/nano-power-input@1.0.0"
                 },
                 "cvcc": {
                   "part": "sfab/capacitor@1.0.0",
@@ -201,21 +194,20 @@
                 }
               },
               "wires": [
-                ["s4.K", "c106.A"],
-                ["c106.A", "cvcc.A"],
-                ["c106.A", "cavcc.A"],
-                ["c106.A", "rrst.A"],
-                ["c106.A", "crst.A"],
-                ["c106.B", "cvcc.B"],
-                ["c106.B", "cavcc.B"],
-                ["c106.B", "led.K"],
+                ["power.5V", "cvcc.A"],
+                ["power.5V", "cavcc.A"],
+                ["power.5V", "rrst.A"],
+                ["power.5V", "crst.A"],
+                ["power.GND", "cvcc.B"],
+                ["power.GND", "cavcc.B"],
+                ["power.GND", "led.K"],
                 ["rrst.B", "crst.B"],
                 ["rled.B", "led.A"]
               ],
               "expose": {
-                "VBUS": "s4.A",
-                "5V": "c106.A",
-                "GND": "c106.B",
+                "VBUS": "power.VBUS",
+                "5V": "power.5V",
+                "GND": "power.GND",
                 "RESET": "rrst.B",
                 "D13": "rled.A"
               }

@@ -32,7 +32,14 @@
     {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "79305ec48f7cb39ef859896797417c9d851bfbc155f76ebbd25d0e2a518245cd",
+      "sha256": "7015e11a23ed79613472f3bd08f92d94f1c8e2ad74158ab6fa32944026a3a756",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/nano-power-input@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/nano-power-input@1.0.0.json",
+      "sha256": "13321e061f98832b931fc1b05c44b94c11d718185a3f3d3b7e467aa9f907b371",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -152,6 +159,12 @@
       "id": "potentiometer",
       "path": "../../apps/server/catalog/types/potentiometer.json",
       "sha256": "c3dbd8b5a5e46ad450b96003fdf8124c74feab642c0e541d9d9dca9461d08697",
+      "source": "catalog"
+    },
+    {
+      "id": "power-input",
+      "path": "../../apps/server/catalog/types/power-input.json",
+      "sha256": "3eed99108a8d259fddddd12284b837d7127eaf33bc04718f56740553d1573e6e",
       "source": "catalog"
     },
     {

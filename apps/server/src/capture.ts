@@ -156,6 +156,9 @@ export async function captureFromConfig(
 ): Promise<CaptureStats> {
   const catalog = opts.catalogDir ?? catalogRoot();
   const file = readCaptureFile(catalog, opts.config);
+  if (opts.outFile && file.entries.length !== 1) {
+    throw new Error("outFile needs a single capture entry");
+  }
   const stats: CaptureStats[] = [];
   for (const entry of file.entries) {
     stats.push(await captureEntry(entry, file, catalog, opts));

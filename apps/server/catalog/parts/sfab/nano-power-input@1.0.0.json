@@ -1,0 +1,82 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/nano-power-input@1.0.0",
+  "type": "power-input",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "USB diode S4",
+      "ref": "Vishay SS12-SS14, document 88746, Fig. 3. The clone marks this diode S4"
+    },
+    {
+      "title": "C106",
+      "ref": "10 uF on +5V after the diode. ESR 5 ohm assumed"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "table",
+        "variants": {
+          "table": {
+            "kind": "snapshot",
+            "ref": "sfab/nano-power-input@1.0.0",
+            "omits": ["rail capacitance", "temperature", "reverse recovery"]
+          }
+        }
+      },
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": ["temperature", "reverse recovery"],
+            "netlist": {
+              "instances": {
+                "s4": {
+                  "part": "sfab/diode-ss14@1.0.0"
+                },
+                "c106": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 0.00001,
+                    "esr": 5
+                  }
+                }
+              },
+              "wires": [["s4.K", "c106.A"]],
+              "expose": {
+                "VBUS": "s4.A",
+                "5V": "c106.A",
+                "GND": "c106.B"
+              }
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.008, 0.004, 0.003],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}

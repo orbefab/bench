@@ -1,0 +1,112 @@
+{
+  "axis": "behaviour",
+  "envelope": {
+    "bounds": {
+      "VBUS.current": [
+        0,
+        0.9
+      ]
+    }
+  },
+  "error": [
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "static-max-abs",
+      "quantity": "VBUS.voltage",
+      "value": 0.001501644
+    }
+  ],
+  "form": "table@1",
+  "format": "sfab.snapshot@1",
+  "params": {
+    "across": [
+      "VBUS",
+      "5V"
+    ],
+    "iAxis": [
+      0,
+      0.0002,
+      0.0005,
+      0.001,
+      0.002,
+      0.003,
+      0.005,
+      0.007,
+      0.01,
+      0.015,
+      0.02,
+      0.03,
+      0.05,
+      0.08,
+      0.1,
+      0.15,
+      0.2,
+      0.3,
+      0.4,
+      0.6,
+      0.9
+    ],
+    "iSense": 1,
+    "vAxis": [
+      0,
+      0.047353183,
+      0.078728577,
+      0.106614616,
+      0.136617948,
+      0.154768246,
+      0.178031116,
+      0.193524959,
+      0.210059924,
+      0.228971724,
+      0.242458193,
+      0.261566587,
+      0.285841887,
+      0.308454741,
+      0.319321431,
+      0.339370198,
+      0.353914457,
+      0.375058927,
+      0.390694439,
+      0.414016961,
+      0.439514566
+    ]
+  },
+  "part": "sfab/nano-power-input@1.0.0",
+  "partType": "power-input",
+  "ports": {
+    "inputs": [
+      "VBUS.current"
+    ],
+    "outputs": [
+      "VBUS.voltage"
+    ]
+  },
+  "provenance": {
+    "bench": {
+      "avr8js": "0.21.1",
+      "mujoco": "3.14.0",
+      "version": "0.2.2"
+    },
+    "created": "2026-09-27T00:00:00.000Z",
+    "fixture": {
+      "hash": "56a2ea32465063c3b7571703014dbd363f6e5db8dbb3c4a87788496b641ff168",
+      "ref": "sfab/nano-power-input",
+      "seed": 20260927
+    },
+    "from": {
+      "hash": "dd5f1c7818a084adad572183b6077053f6e21bd265d39ebffedbcd945714cc87",
+      "level": "2",
+      "part": "sfab/nano-power-input@1.0.0"
+    },
+    "source": "captured",
+    "tool": {
+      "name": "sfab-bench-capture",
+      "version": "1"
+    }
+  },
+  "quality": "Q1"
+}

@@ -316,11 +316,10 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       stamp.parts.some((part) => part.path === "nano.power.s4"),
       "s4 was not stamped under power"
     );
-    const real = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
-      boardId: "nano",
-    });
-    const rest = Math.abs(nodeAt(stamp, 0, false) - nodeAt(real, 0, false));
-    const stall = Math.abs(nodeAt(stamp, 1, true) - nodeAt(real, 1, true));
+    const flatRest = 4.7132641361241063;
+    const flatStall = 4.2645668254013147;
+    const rest = Math.abs(nodeAt(stamp, 0, false) - flatRest);
+    const stall = Math.abs(nodeAt(stamp, 1, true) - flatStall);
     expect(rest <= 1e-12, `nested power rest Δ ${rest} V`);
     expect(stall <= 1e-12, `nested power stall Δ ${stall} V`);
     console.log(

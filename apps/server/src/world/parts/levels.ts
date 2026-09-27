@@ -18,9 +18,10 @@ import { classesOf, isLevelClass, specAxes } from "./si";
 export type ReasonKind =
   | { kind: "default" }
   | { kind: "type"; type: string }
-  | { kind: "path"; path: string };
+  | { kind: "path"; path: string }
+  | { kind: "board"; class: LevelClass };
 
-export type ResolvedSource = "default" | "type" | "path" | "fallback";
+export type ResolvedSource = "default" | "type" | "path" | "fallback" | "board";
 
 export type ResolvedAxis = {
   axis: AxisName;
@@ -78,12 +79,14 @@ export function compileRules(world: WorldFileV2): LevelRules {
 function reasonOf(by: ReasonKind): string {
   if (by.kind === "default") return "default";
   if (by.kind === "type") return `type rule ${by.type}`;
+  if (by.kind === "board") return `board class ${by.class}`;
   return `path rule ${by.path}`;
 }
 
 function sourceOf(by: ReasonKind): ResolvedSource {
   if (by.kind === "default") return "default";
   if (by.kind === "type") return "type";
+  if (by.kind === "board") return "board";
   return "path";
 }
 
@@ -124,9 +127,20 @@ function resolveAxis(
   axis: AxisName,
   instancePath: string,
   typeId: string,
-  rules: LevelRules
+  rules: LevelRules,
+  boardClass?: LevelClass
 ): ResolvedAxis {
-  const { class: requested, by } = request(rules, axis, instancePath, typeId);
+  const asked = request(rules, axis, instancePath, typeId);
+  let requested = asked.class;
+  let by = asked.by;
+  if (
+    axis === "behaviour" &&
+    boardClass !== undefined &&
+    by.kind === "default"
+  ) {
+    requested = boardClass;
+    by = { kind: "board", class: boardClass };
+  }
   const map = part.axes?.[axis];
   const available = classesOf(map);
   let chosen: LevelClass | null = null;
@@ -220,11 +234,19 @@ export function resolveLevels(
     part: PartFile,
     instancePath: string,
     params: Params,
-    pose?: Pose
+    pose?: Pose,
+    boardClass?: LevelClass
   ) => {
     const type = typeOf(lib, part);
     const axes = {
-      behaviour: resolveAxis(part, "behaviour", instancePath, type.id, rules),
+      behaviour: resolveAxis(
+        part,
+        "behaviour",
+        instancePath,
+        type.id,
+        rules,
+        boardClass
+      ),
       body: resolveAxis(part, "body", instancePath, type.id, rules),
       visual: resolveAxis(part, "visual", instancePath, type.id, rules),
     };
@@ -250,6 +272,10 @@ export function resolveLevels(
           ? (behaviour.board ?? null)
           : null;
     if (netlist) {
+      const nextBoard =
+        behaviour?.kind === "firmware" && axes.behaviour.class !== null
+          ? axes.behaviour.class
+          : undefined;
       for (const [id, child] of Object.entries(netlist.instances)) {
         const childPart = lib.parts.get(child.part);
         if (!childPart) {
@@ -261,7 +287,8 @@ export function resolveLevels(
           childPart.part,
           childPath(instancePath, id),
           { ...(child.params ?? {}) },
-          child.pose
+          child.pose,
+          nextBoard
         );
       }
     }
