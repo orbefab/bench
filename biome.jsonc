@@ -14,6 +14,8 @@
       "!**/apps/server/fixtures/external",
       // Recorded at full float precision; formatting would rewrite the baseline.
       "!**/apps/server/fixtures/arm-baseline.json",
+      // cadgen writes this sidecar as one line. Formatting it would diverge from the generator.
+      "!**/*.step.json",
       "!**/apps/docs/src/routeTree.gen.ts",
       "!**/apps/docs/worker-configuration.d.ts",
       "!**/apps/docs/public/brand/providers",
