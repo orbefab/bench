@@ -2,17 +2,28 @@
  * Level cards, world_set_level, and part visual boxes.
  */
 
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { emptySnapshot } from "@sfab-bench/contract";
+import { emptySnapshot, type WorldServerMessage } from "@sfab-bench/contract";
 
 import { levelCard, reasonWords } from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
-import { stopWorld, worldWorkerCount } from "./world/host";
+import {
+  attachWorld,
+  stopWorld,
+  type WorldHandle,
+  worldWorkerCount,
+} from "./world/host";
 import { replaceLevels } from "./world/level-edit";
 import { planWorld } from "./world/plan";
 import { viewOf } from "./world/view";
@@ -163,12 +174,52 @@ console.log("boxes: HC-SR04, MG90S, no URDF duplicate");
 const root = mkdtempSync(join(tmpdir(), "sfab-levels-ui-"));
 cpSync(nanoDir, root, { recursive: true });
 const worldFile = join(root, "nano-vcc-usb.world.json");
+const lockFile = join(root, "nano-vcc-usb.world.lock.json");
+const partFile = join(root, "parts/sfab/flag@1.0.0.json");
 const before = readFileSync(worldFile, "utf8");
+const events: WorldServerMessage[] = [];
+const held: WorldHandle[] = [];
 
 try {
   await runViewerContext(
     { root, file: "", snapshot: emptySnapshot(), show: () => {} },
     async () => {
+      const partBefore = readFileSync(partFile, "utf8");
+      const lockBefore = readFileSync(lockFile, "utf8");
+      writeFileSync(
+        partFile,
+        partBefore.replace("a box vane", "a drifted vane")
+      );
+      const drifted = await call(worldTools.world_set_level, {
+        world: "nano-vcc-usb.world.json",
+        scope: "path",
+        key: "nano",
+        class: 1,
+      });
+      expect(
+        errorOf(drifted).includes("lockfile") &&
+          errorOf(drifted).includes("sfab/flag@1.0.0"),
+        `drifted part ${JSON.stringify(drifted)}`
+      );
+      expect(
+        readFileSync(worldFile, "utf8") === before,
+        "drift wrote the world"
+      );
+      expect(
+        readFileSync(lockFile, "utf8") === lockBefore,
+        "drift rewrote the lock"
+      );
+      writeFileSync(partFile, partBefore);
+
+      const handle = await attachWorld(root, "nano-vcc-usb.world.json", {
+        sender: { kind: "loopback", label: "Mac" },
+        onEvent(event) {
+          events.push(event);
+        },
+      });
+      if ("error" in handle) throw new Error(handle.error);
+      held.push(handle);
+
       const missing = await call(worldTools.world_set_level, {
         world: "nano-vcc-usb.world.json",
         scope: "path",
@@ -194,6 +245,9 @@ try {
         "removing default wrote"
       );
 
+      const reloadsAt = events.filter(
+        (event) => event.type === "reloaded"
+      ).length;
       const set = await call(worldTools.world_set_level, {
         world: "nano-vcc-usb.world.json",
         scope: "path",
@@ -222,6 +276,14 @@ try {
         replaceLevels(after, originalLevels) === before,
         "the edit changed more than run.levels"
       );
+      // The host has no reload counter. Subscribers see `reloaded`, and the
+      // project watcher debounces at 250 ms, so a second load would arrive
+      // before this wait ends.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const reloads = events.filter(
+        (event) => event.type === "reloaded"
+      ).length;
+      expect(reloads - reloadsAt === 1, `reloads ${reloads - reloadsAt}`);
 
       const cleared = await call(worldTools.world_set_level, {
         world: "nano-vcc-usb.world.json",
@@ -250,11 +312,14 @@ try {
     }
   );
 } finally {
+  for (const handle of held) handle.detach();
   await stopWorld(root, "nano-vcc-usb.world.json");
   closeRootWatches();
   rmSync(root, { recursive: true, force: true });
 }
 
 expect(worldWorkerCount() === 0, "a world worker was left behind");
-console.log("world_set_level: path rule, restore, bad path, default");
+console.log(
+  "world_set_level: path rule, restore, bad path, default, drifted part, one restart"
+);
 console.log("levels-ui.selfcheck ok");

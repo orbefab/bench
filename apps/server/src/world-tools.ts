@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 import {
   ARDUINO_PINS,
@@ -41,9 +41,10 @@ import {
 import {
   applyLevelEdit,
   type LevelTable,
+  lockAfterLevels,
   replaceLevels,
 } from "./world/level-edit";
-import { loadWorldV2 } from "./world/parts/load";
+import { type LoadResult, loadWorldV2 } from "./world/parts/load";
 import { lockPathFor, readLock, writeLock } from "./world/parts/lock";
 import { canonicalJson } from "./world/parts/si";
 import {
@@ -190,6 +191,21 @@ async function openRun(world: string): Promise<Loaded | { error: string }> {
   const started = await ensureWorldRun(found.root, found.world);
   if ("error" in started) return started;
   return found;
+}
+
+/** Load edited world text without writing the real file. Parts resolve beside it. */
+function loadWorldText(
+  worldFile: string,
+  assetRoot: string,
+  text: string
+): LoadResult {
+  const temp = join(dirname(worldFile), `.${basename(worldFile)}.level-edit`);
+  writeFileSync(temp, text);
+  try {
+    return loadWorldV2(temp, { catalogDir: catalogRoot(), assetRoot });
+  } finally {
+    rmSync(temp, { force: true });
+  }
 }
 
 function jointLimits(root: string, world: string, doc: RunPlan) {
@@ -1144,6 +1160,20 @@ export const worldTools = {
       }
       const file = join(found.root, found.world);
       const before = readFileSync(file, "utf8");
+      const live = loadWorldV2(file, {
+        catalogDir: catalogRoot(),
+        assetRoot: found.root,
+      });
+      const lockErrors = live.diagnostics.filter(
+        (diag) => diag.severity === "error" && diag.message.includes("lockfile")
+      );
+      if (lockErrors.length > 0 || !live.lock) {
+        return {
+          error:
+            lockErrors.map((diag) => diag.message).join("; ") ||
+            "world file did not load",
+        };
+      }
       let parsed: { run?: { levels?: LevelTable } };
       try {
         parsed = JSON.parse(before) as { run?: { levels?: LevelTable } };
@@ -1167,14 +1197,9 @@ export const worldTools = {
           error: err instanceof Error ? err.message : "could not edit levels",
         };
       }
-      writeFileSync(file, next);
-      const loaded = loadWorldV2(file, {
-        catalogDir: catalogRoot(),
-        assetRoot: found.root,
-      });
+      const loaded = loadWorldText(file, found.root, next);
       const blocked = loaded.diagnostics.filter(
-        (diag) =>
-          diag.severity === "error" && !diag.message.includes("lockfile")
+        (diag) => diag.severity === "error"
       );
       if (
         blocked.length > 0 ||
@@ -1182,17 +1207,31 @@ export const worldTools = {
         !loaded.report ||
         !loaded.lock
       ) {
-        writeFileSync(file, before);
         const message = blocked.map((diag) => diag.message).join("; ");
         return { error: message || "world file did not load" };
       }
+      const decided = lockAfterLevels(live.lock, loaded.lock);
+      if ("error" in decided) return decided;
       const lockFile = lockPathFor(file);
-      if (!existsSync(lockFile)) writeLock(lockFile, loaded.lock);
-      else if (
-        canonicalJson(readLock(lockFile)) !== canonicalJson(loaded.lock)
-      ) {
-        writeLock(lockFile, loaded.lock);
+      const previousLock = existsSync(lockFile) ? readFileSync(lockFile) : null;
+      const lockChanged =
+        previousLock === null ||
+        canonicalJson(readLock(lockFile)) !== canonicalJson(decided.lock);
+      try {
+        if (lockChanged) writeLock(lockFile, decided.lock);
+        writeFileSync(file, next);
+      } catch (err: unknown) {
+        if (previousLock) writeFileSync(lockFile, previousLock);
+        return {
+          error:
+            err instanceof Error ? err.message : "could not write the world",
+        };
       }
+      // The project watcher reloads when the world or the lock changes, on a
+      // 250 ms debounce, and then skips if the dependency stamp already
+      // matches. restartWorld updates that stamp and reloads once before the
+      // debounce; the tool waits on it for sim time 0 and a new recording.
+      // The watcher then sees the same stamp and does not load again.
       const restarted = await restartWorld(found.root, found.world);
       if ("error" in restarted) return restarted;
       return {

@@ -3,7 +3,13 @@
  * rest of the file stays byte-identical.
  */
 
-import type { AxisName, LevelClass, LevelSpec } from "@sfab-bench/contract";
+import type {
+  AxisName,
+  LevelClass,
+  LevelSpec,
+  LockFile,
+  LockSnapshot,
+} from "@sfab-bench/contract";
 
 export type LevelTable = {
   default: LevelSpec;
@@ -216,4 +222,72 @@ function levelsSpan(
   };
   parse(0, null);
   return span;
+}
+
+/**
+ * The lock written after a level edit. Part and type rows stay as pinned.
+ * Snapshot rows may appear or disappear with the levels. A hash that no
+ * longer matches the pin is drift: the tool must not re-pin it.
+ */
+export function lockAfterLevels(
+  pinned: LockFile,
+  resolved: LockFile
+): { lock: LockFile } | { error: string } {
+  const part = rowDrift("part", pinned.parts, resolved.parts);
+  if (part) return { error: part };
+  const type = rowDrift("part type", pinned.types, resolved.types);
+  if (type) return { error: type };
+  const snapshot = snapshotDrift(
+    pinned.snapshots ?? [],
+    resolved.snapshots ?? []
+  );
+  if (snapshot) return { error: snapshot };
+  const snapshots = resolved.snapshots ?? [];
+  return {
+    lock: {
+      format: pinned.format,
+      world: pinned.world,
+      parts: pinned.parts,
+      types: pinned.types,
+      ...(snapshots.length > 0 ? { snapshots } : {}),
+    },
+  };
+}
+
+function rowDrift(
+  kind: "part" | "part type",
+  pinned: { id: string; sha256: string }[],
+  resolved: { id: string; sha256: string }[]
+): string | null {
+  const have = new Map(pinned.map((row) => [row.id, row.sha256]));
+  const want = new Map(resolved.map((row) => [row.id, row.sha256]));
+  for (const [id, sha] of want) {
+    const found = have.get(id);
+    if (found === undefined) {
+      return `${id} port file quantity sha256: lockfile is missing a resolved ${kind} (missing vs ${sha})`;
+    }
+    if (found !== sha) {
+      return `${id} port file quantity sha256: lockfile hash mismatch on a ${kind} (content changed, lockfile did not) (${found} vs ${sha})`;
+    }
+  }
+  for (const [id, sha] of have) {
+    if (want.has(id)) continue;
+    return `${id} port file quantity sha256: lockfile lists a ${kind} this world does not resolve (${sha} vs not used)`;
+  }
+  return null;
+}
+
+/** A snapshot that stays pinned must keep its hash. Appearing or disappearing is the level change. */
+function snapshotDrift(
+  pinned: LockSnapshot[],
+  resolved: LockSnapshot[]
+): string | null {
+  const have = new Map(pinned.map((row) => [row.id, row.sha256]));
+  for (const row of resolved) {
+    const found = have.get(row.id);
+    if (found !== undefined && found !== row.sha256) {
+      return `${row.id} port file quantity sha256: lockfile hash mismatch on a snapshot (content changed, lockfile did not) (${found} vs ${row.sha256})`;
+    }
+  }
+  return null;
 }
