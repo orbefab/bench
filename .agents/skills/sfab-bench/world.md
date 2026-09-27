@@ -30,7 +30,7 @@ Its netlist names the instances and the wires. Instance ids stay short
 - A robot is `sfab/arm@1.0.0` with a pose. The URDF is the part's body,
   `robot/arm.urdf` in the arm example: one revolute joint, `shoulder`.
   Link meshes are STL or OBJ next to the URDF.
-- A board is `sfab/uno-r3@1.0.0`. `params.firmware` is the `.hex`.
+- A board is `sfab/uno-r3@1.0.0` or `sfab/nano-ch340@1.0.0`. `params.firmware` is the `.hex`.
   `params.source` is the `.ino`, shown read-only.
 - A servo is `sfab/sg90@1.0.0`. Its shaft wire is
   `["servo.shaft", "arm.shoulder"]` and its mount wire is

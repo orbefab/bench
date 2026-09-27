@@ -114,7 +114,7 @@ type BehaviourImpl = { omits: string[] } & (
   | { kind: "form"; form: FormId; params: Record<string, SiNumber> }
   | { kind: "snapshot"; ref: string }
   | { kind: "composite"; netlist: Netlist }
-  | { kind: "firmware"; chip: string; imageParam?: string; fuses?: Record<string, string> }
+  | { kind: "firmware"; chip: string; imageParam?: string; params?: Record<string, number>; fuses?: Record<string, string>; boardCircuit?: string }
   | { kind: "script"; script: string });
 
 // D-023.1: the body owns joint friction, damping and armature.
@@ -136,6 +136,7 @@ type Netlist = {
 ```
 
 - Instance numeric `params` override form params of the same name. For example, a bench supply takes the world's voltage and current limit.
+- A firmware variant may set `boardCircuit`. It names the onboard circuit the run inserts when a `usb-a-port` feeds that board's `5V`. Absent, the 5V pin is the supply terminal. `nano-usb` is the clone Nano (`arduino-nano`, part `sfab/nano-ch340@1.0.0`): the USB Schottky, the +5V capacitors, the D13 LED and the reset network. The Uno path stays on the type `arduino-uno-r3` and does not use this field.
 - An instance string param `urdf` replaces the body file of a part whose body is `urdf`. The path is relative to the project folder.
 - Children are instantiated only when the chosen behaviour is a composite. The lockfile still lists them.
 
@@ -319,7 +320,7 @@ These came out of the motor/rail and pin experiments. They are proposals, not ye
 - **Run report** adds the **passivity sum** at each circuit/body cut (joules injected by the coupling) and flags it when it grows.
 - **`ptc-fuse@1`** (Uno F1, Bourns MF-MSMF050-2): cold resistance is Rmin 0.15 Ω. R1max 1.00 Ω is the post-trip ceiling, not the cold value. `Ihold` 0.50 A, `Itrip` 1.00 A. Thermal state `u` integrates `I²R` once per 1 ms master step, outside the circuit solve. At `u = 1` the branch goes to a high resistance and returns to the cold value once `u` falls.
 - **`pmos-switch@1`** (Uno T1, FDN340P): `Rds` in parallel with the body diode. On the USB path the gate stays on, so `Rds` is the −4.5 V figure, 60 mΩ typical. VIN and the barrel jack are not in this step.
-- **Board power path:** a `usb` preset wired to an Uno `5V` is the USB cable: fuse, switch, the +5V capacitors, the board load (full current down to 1 V, then linear to 0 A at 0 V), and every servo on that node. A `bench` preset on `5V` is the header, and there is no path. The supply record's `current` is the terminal current and its `voltage` is the terminal voltage. The board record's `voltage` is the 5V node, and `minVoltage` is that node's minimum over the frame. A part with a power port reports `voltage` as V+ relative to GND. With no cable the board node equals the supply terminal, and both are reported.
+- **Board power path:** a `usb-a-port` wired to an Uno `5V` is the USB cable: fuse, switch, the +5V capacitors, the board load (full current down to 1 V, then linear to 0 A at 0 V), and every servo on that node. A `usb-a-port` wired to a Nano `5V` is the cable into the Nano's USB connector. At class 2 (`boardCircuit` `nano-usb`) that inserts the Schottky from VBUS to +5V, the +5V capacitors, the board load, the D13 LED and the reset network, and servos on `nano.5V` load that node. At class 1 there is no path. A `bench` preset on `5V` is the header, and there is no path. The supply record's `current` is the terminal current and its `voltage` is the terminal voltage. The board record's `voltage` is the 5V node, and `minVoltage` is that node's minimum over the frame. A Nano whose class-2 circuit stamps the D13 LED also records `ledCurrent` (amperes). A part with a power port reports `voltage` as V+ relative to GND. With no cable the board node equals the supply terminal, and both are reported.
 - **Brownout** reads the board node: the lowest board-node voltage over that millisecond's sub-steps. With no cable the board node is the supply terminal.
 
 ## Open for v2
