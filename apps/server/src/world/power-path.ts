@@ -31,7 +31,15 @@ import {
   thermalVoltage,
   vSource,
 } from "./circuit/elements";
-import { PIN_ROFF, PIN_ROH, PIN_ROL, Pin } from "./circuit/pin";
+import {
+  AVR_PIN,
+  type AvrPinParams,
+  PIN_LEAK,
+  PIN_ROFF,
+  PIN_ROH,
+  PIN_ROL,
+  Pin,
+} from "./circuit/pin";
 
 /** Supply side of F1. The rail's Thevenin terminal when the path is on. */
 export const UNO_TERM_NODE = "term";
@@ -372,7 +380,7 @@ export const NANO_RESET_C = 100e-9;
 export const NANO_VRST_MAX = 0.9;
 
 /** +5V capacitors, the reset network, and the D13 LED to ground. No diode. */
-function nanoBoardNetwork(led: DiodeParams): Element[] {
+function nanoBoardNetwork(led: DiodeParams, rLeak = PIN_LEAK): Element[] {
   return [
     resistor("c106r", UNO_BOARD_NODE, C106_NODE, NANO_C106_ESR),
     capacitor("c106", C106_NODE, "0", NANO_C106_C),
@@ -384,7 +392,7 @@ function nanoBoardNetwork(led: DiodeParams): Element[] {
     resistor("rled", NANO_D13_NODE, NANO_LED_NODE, NANO_D13_R),
     diode("led", NANO_LED_NODE, "0", led),
     // DS40002061 Iin max 1 µA at 5 V. A DC path for D13 while the pin is an input.
-    resistor("d13leak", NANO_D13_NODE, "0", 5e6),
+    resistor("d13leak", NANO_D13_NODE, "0", rLeak),
   ];
 }
 
@@ -412,14 +420,22 @@ export type NanoUsbPath = {
 export function createNanoUsbPath(
   ss14: DiodeParams,
   led: DiodeParams,
-  withDiode = true
+  withDiode = true,
+  drive: AvrPinParams = AVR_PIN
 ): NanoUsbPath {
-  const pin = new Pin("d13pin", NANO_D13_NODE, UNO_BOARD_NODE);
+  const pin = new Pin(
+    "d13pin",
+    NANO_D13_NODE,
+    UNO_BOARD_NODE,
+    drive.roh,
+    drive.rol,
+    drive.rpu
+  );
   return {
     pin,
     elements: [
       ...(withDiode ? [diode("s4", UNO_TERM_NODE, UNO_BOARD_NODE, ss14)] : []),
-      ...nanoBoardNetwork(led),
+      ...nanoBoardNetwork(led, drive.rLeak),
       ...pin.elements(),
     ],
   };

@@ -15,7 +15,7 @@ import type {
   WorldPrimitive,
   WorldStepProp,
 } from "@sfab-bench/contract";
-
+import { type AvrPinParams, avrPinParams } from "./circuit/pin";
 import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
@@ -94,6 +94,8 @@ export type RunBoard = {
   brownoutReleaseVoltage: number;
   operatingVoltage: number;
   supply: { min: number; max: number };
+  /** `avr-pin@1`. High is the board node. The ADC and the Nano D13 stamp use it. */
+  pin: AvrPinParams;
 };
 
 export type RunSupply = {
@@ -451,6 +453,7 @@ function build(
           params.brownoutReleaseVoltage ?? Number.POSITIVE_INFINITY,
         operatingVoltage: rail[0],
         supply: { min: rail[0], max: rail[1] },
+        pin: avrPinParams(params),
       });
       continue;
     }

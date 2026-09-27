@@ -26,8 +26,46 @@ export const PIN_RPU_MIN = 20e3;
 export const PIN_RPU_MAX = 50e3;
 export const PIN_RPU = (PIN_RPU_MIN + PIN_RPU_MAX) / 2;
 
-/** Open high-Z. Not a datasheet leakage. */
+/** Open high-Z. Not a datasheet leakage. A solver floor, not a part param. */
 export const PIN_ROFF = 1e12;
+
+/**
+ * Input leakage to ground. DS40002061 Iin is 1 µA max at 5 V, so 5 MΩ.
+ * The D13 LED uses it as a DC path while the pin is an input.
+ */
+export const PIN_LEAK = 5e6;
+
+/** `avr-pin@1` numbers. The board part carries these; the fits above are the values. */
+export type AvrPinParams = {
+  /** Ohms, high side, from the board node to the pin. */
+  roh: number;
+  /** Ohms, low side, from the pin to ground. */
+  rol: number;
+  /** Ohms, pull-up, from the board node to the pin. */
+  rpu: number;
+  /** Ohms, pin to ground, while the pin is an input. */
+  rLeak: number;
+};
+
+export const AVR_PIN: AvrPinParams = {
+  roh: PIN_ROH,
+  rol: PIN_ROL,
+  rpu: PIN_RPU,
+  rLeak: PIN_LEAK,
+};
+
+/** Part params override the fits. A missing key keeps today's number. */
+export function avrPinParams(
+  params: Record<string, number> | undefined
+): AvrPinParams {
+  if (!params) return AVR_PIN;
+  return {
+    roh: params.roh ?? PIN_ROH,
+    rol: params.rol ?? PIN_ROL,
+    rpu: params.rpu ?? PIN_RPU,
+    rLeak: params.rLeak ?? PIN_LEAK,
+  };
+}
 
 const OPEN: Waveform = { kind: "dc", value: 0 };
 

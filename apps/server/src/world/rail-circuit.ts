@@ -21,7 +21,7 @@ import {
   TheveninLimit,
 } from "./circuit/elements";
 import { Engine } from "./circuit/engine";
-import type { PinMode } from "./circuit/pin";
+import { AVR_PIN, type AvrPinParams, type PinMode } from "./circuit/pin";
 import {
   BOARD_LOAD_KNEE_V,
   type BoardPathName,
@@ -61,6 +61,8 @@ export type RailCircuitSpec = {
    * network without the diode: the terminal is the board node.
    */
   boardPath?: "none" | BoardPathName;
+  /** D13 `avr-pin@1` numbers. Absent uses the datasheet fits. */
+  pin?: AvrPinParams;
 };
 
 const MASTER_S = 0.001;
@@ -146,7 +148,9 @@ export class RailCircuit {
       spec.iLimit
     );
     const unoPath = uno ? createUnoUsbPath() : null;
-    const nanoPath = nano ? createNanoUsbPath(SS14, LED_RED, nanoUsb) : null;
+    const nanoPath = nano
+      ? createNanoUsbPath(SS14, LED_RED, nanoUsb, spec.pin ?? AVR_PIN)
+      : null;
     this.fuse = unoPath?.fuse ?? null;
     this.fuseR = unoPath?.resistor ?? null;
     this.nanoPin = nanoPath?.pin ?? null;
@@ -194,7 +198,7 @@ export class RailCircuit {
   }
 
   /** D13 drive for the Nano LED. No effect without the Nano path. */
-  setD13(mode: "high" | "low" | "input"): void {
+  setD13(mode: PinMode): void {
     this.nanoPin?.setMode(mode);
   }
 

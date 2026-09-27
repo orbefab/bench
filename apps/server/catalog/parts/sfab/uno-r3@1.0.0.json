@@ -11,6 +11,10 @@
     {
       "title": "ATmega328P DC characteristics",
       "ref": "DS40002061: VIL max 0.3*Vcc, VIH min 0.6*Vcc, VOL max 0.9 V at 0.020 A, VOH min 4.2 V at -0.020 A, Vcc abs-max 6.0 V"
+    },
+    {
+      "title": "ATmega328P pin",
+      "ref": "DS40002061 Figure 35-22 and Figure 35-24 at 25 C and VCC 5 V: Roh and Rol are the fitted resistances. Rpu is the midpoint of 20 kohm to 50 kohm. Input leakage is Iin 1 uA at 5 V, a 5 Mohm path to ground"
     }
   ],
   "axes": {
@@ -42,15 +46,23 @@
               "brownoutAssertVoltage": 2.675,
               "brownoutReleaseVoltage": 2.725,
               "resetHoldS": 0.066,
-              "quiescent": 0.05
+              "quiescent": 0.05,
+              "roh": 25.066666666666663,
+              "rol": 23.4,
+              "rpu": 35000,
+              "rLeak": 5000000
             },
             "fuses": {
               "extended": "0xFD"
             },
             "omits": [
-              "analog pin waveforms",
               "temperature",
-              "I/O pin impedance"
+              "I/O pin impedance",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
             ]
           }
         }

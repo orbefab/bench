@@ -15,6 +15,7 @@ import {
   usart0Config,
 } from "avr8js";
 
+import type { PinMode } from "./circuit/pin";
 import { FLASH_BYTES } from "./ihex";
 
 /** ATmega328P is clocked at 16 MHz. One sim millisecond is 16 000 cycles. */
@@ -403,6 +404,22 @@ export class AvrBoard {
     if (this.driven[bit] === next) return;
     this.driven[bit] = next;
     this.applyInputLevels();
+  }
+
+  /**
+   * DDR and PORT, not the pin level. High is DDR and PORT set, low is
+   * DDR set and PORT clear, pull-up is PORT set alone, input is neither.
+   * An unmapped bit or a stopped CPU is an input.
+   */
+  driveMode(bit: number): PinMode {
+    const found = this.pinIndex(bit);
+    const cpu = this.cpu;
+    if (!found || !cpu) return "input";
+    const ddr = cpu.data[found.port.portConfig.DDR] ?? 0;
+    const written = cpu.data[found.port.portConfig.PORT] ?? 0;
+    const mask = 1 << found.index;
+    if ((ddr & mask) !== 0) return (written & mask) !== 0 ? "high" : "low";
+    return (written & mask) !== 0 ? "pullup" : "input";
   }
 
   /** Null while the CPU is down, including brownout reset. */

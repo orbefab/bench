@@ -39,6 +39,10 @@
     {
       "title": "Reset network",
       "ref": "Nano Rev 3.2 schematic, NanoV3.2.sch: C4 is 100 nF from DTR to RESET, and the pull-up is RP1 at 1 kohm. The clone is assumed to match. DTR idle high is the +5V node"
+    },
+    {
+      "title": "ATmega328P pin",
+      "ref": "DS40002061 Figure 35-22 and Figure 35-24 at 25 C and VCC 5 V: Roh and Rol are the fitted resistances. Rpu is the midpoint of 20 kohm to 50 kohm. Input leakage is Iin 1 uA at 5 V, a 5 Mohm path to ground"
     }
   ],
   "axes": {
@@ -70,7 +74,11 @@
               "brownoutAssertVoltage": 2.675,
               "brownoutReleaseVoltage": 2.725,
               "resetHoldS": 0.066,
-              "quiescent": 0.0252
+              "quiescent": 0.0252,
+              "roh": 25.066666666666663,
+              "rol": 23.4,
+              "rpu": 35000,
+              "rLeak": 5000000
             },
             "fuses": {
               "extended": "0xFD"
@@ -80,9 +88,13 @@
               "rail capacitance",
               "D13 LED current",
               "reset network",
-              "analog pin waveforms",
               "temperature",
-              "I/O pin impedance"
+              "I/O pin impedance",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
             ]
           }
         }
@@ -100,7 +112,11 @@
               "brownoutAssertVoltage": 2.675,
               "brownoutReleaseVoltage": 2.725,
               "resetHoldS": 0.066,
-              "quiescent": 0.0252
+              "quiescent": 0.0252,
+              "roh": 25.066666666666663,
+              "rol": 23.4,
+              "rpu": 35000,
+              "rLeak": 5000000
             },
             "fuses": {
               "extended": "0xFD"
@@ -113,8 +129,12 @@
               "CH340 serial",
               "USB enumeration",
               "TX and RX LEDs",
-              "analog pin waveforms",
-              "temperature"
+              "temperature",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
             ]
           }
         }

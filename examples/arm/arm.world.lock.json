@@ -53,7 +53,7 @@
     {
       "id": "sfab/uno-r3@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/uno-r3@1.0.0.json",
-      "sha256": "5f4b975753c7b7fb39c64b5c4fdbf84bdf335aabb37c2d983f352f459f2255d4",
+      "sha256": "b7be42b0d2ca6fdda96d85718eebfdaa30ae69e308db059a5915f358eb010986",
       "source": "catalog",
       "version": "1.0.0"
     },

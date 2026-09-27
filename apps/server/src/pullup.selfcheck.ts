@@ -2,6 +2,7 @@ import { maskHasPin } from "@sfab-bench/contract";
 import { assemble } from "avr8js/dist/esm/utils/assembler.js";
 
 import { AvrBoard } from "./world/board";
+import { AVR_PIN } from "./world/circuit/pin";
 import { FLASH_BYTES } from "./world/ihex";
 import type { RunPin, RunPlan } from "./world/plan";
 import { applyGpioDrives, gpioInputNets } from "./world/wiring";
@@ -58,6 +59,7 @@ function gpioPlan(
       brownoutReleaseVoltage: 2.725,
       operatingVoltage: 5,
       supply: { min: 5, max: 5 },
+      pin: AVR_PIN,
     })),
     supplies: supplyIds.map((id) => ({
       id,

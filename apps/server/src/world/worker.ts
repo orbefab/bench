@@ -35,7 +35,7 @@ import {
   compileWorld,
   type WorldModelCounts,
 } from "./model";
-import { planWorld, type RunPlan } from "./plan";
+import { planWorld, type RunBoard, type RunPlan } from "./plan";
 import {
   type BrownoutState,
   DISPLAY_STALL_DEG_PER_SEC,
@@ -894,7 +894,7 @@ function bindRails() {
     const members = groups.get(supply.id) ?? [];
     const fed = boardOn(supply.id);
     const path = fed
-      ? usbPathFor(supplyTypeOf(supply.id), fed.type, fed.circuit)
+      ? usbPathFor(supplyTypeOf(supply.id), fed.type, fed.boardCircuit)
       : null;
     const circuit = createRailCircuit({
       vNom: supply.voltage,
@@ -908,7 +908,7 @@ function bindRails() {
           k: drive.law.k,
         };
       }),
-      ...(path ? { boardPath: path } : {}),
+      ...(path ? { boardPath: path, ...(fed ? { pin: fed.pin } : {}) } : {}),
     });
     if (path === "uno-usb" && fuseStart === "tripped") circuit.tripFuse();
     for (let i = 0; i < members.length; i++) {
@@ -924,15 +924,11 @@ function supplyTypeOf(supplyId: string): string {
 }
 
 /** The fed board, when this supply powers a firmware board. */
-function boardOn(
-  supplyId: string
-): { type: string; circuit: string | null } | null {
+function boardOn(supplyId: string): RunBoard | null {
   if (!runPlan) return null;
   for (const board of runPlan.boards) {
     if (!isFirmwareBoard(board.type)) continue;
-    if (boardPower.get(board.id)?.supplyId === supplyId) {
-      return { type: board.type, circuit: board.boardCircuit };
-    }
+    if (boardPower.get(board.id)?.supplyId === supplyId) return board;
   }
   return null;
 }
@@ -974,10 +970,11 @@ function solveOneRail(
   const avr = nanoBoard(supplyId);
   if (avr) {
     const bit = arduinoPinBit("D13");
-    const pins = avr.peekPins();
-    const driving = bit !== undefined && (pins.ddr & (1 << bit)) !== 0;
-    const high = bit !== undefined && (pins.level & (1 << bit)) !== 0;
-    circuit.setD13(!driving ? "input" : high ? "high" : "low");
+    // DDR set and PORT set is high, DDR set and PORT clear is low,
+    // PORT set alone is the pull-up, and neither is an input.
+    // High is the board node. peekPins mixes PIN into the level, so
+    // the mode is read from DDR and PORT.
+    circuit.setD13(bit === undefined ? "input" : avr.driveMode(bit));
   }
   for (let i = 0; i < members.length; i++) {
     const load = members[i];
