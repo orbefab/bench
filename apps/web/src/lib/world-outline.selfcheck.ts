@@ -73,6 +73,7 @@ const outline = buildWorldOutline(
     ],
     supplies: [{ id: "usb", voltage: 5, currentLimit: 0.9, rSeries: 0.5 }],
     feeds: { boards: { uno: "usb" }, parts: { servo: "usb" } },
+    targets: [{ id: "card" }],
   },
   { arm, gripper }
 );
@@ -91,6 +92,7 @@ expect(
   "firmware path"
 );
 expect(outline.boards[0]?.source === "firmware/hold/hold.ino", "source path");
+expect(outline.targets.join(",") === "card", "target id");
 
 const base = outline.robots[0]?.links.find((link) => link.name === "base");
 const upper = outline.robots[0]?.links.find(

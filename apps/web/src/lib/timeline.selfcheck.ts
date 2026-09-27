@@ -135,6 +135,7 @@ const outline = {
       parts: ["servo"],
     },
   ],
+  targets: [],
 } satisfies WorldOutline;
 
 expect(

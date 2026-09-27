@@ -275,6 +275,7 @@ export async function loadWorldAssets(
       wires: read.wires,
       supplies: read.supplies,
       feeds: read.feeds,
+      targets: read.environment.targets,
     },
     urdfByRobot
   );

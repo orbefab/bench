@@ -62,6 +62,8 @@ export type WorldOutline = {
   parts: WorldOutlinePart[];
   boards: WorldOutlineBoard[];
   supplies: WorldOutlineSupply[];
+  /** Environment target ids. Not selectable. */
+  targets: string[];
 };
 
 export type WorldOutlineInput = {
@@ -89,6 +91,8 @@ export type WorldOutlineInput = {
   }[];
   /** Which supply reaches each board and part. The server computed this. */
   feeds?: WorldViewFeeds;
+  /** Environment targets. The outline lists their ids. */
+  targets?: readonly { id: string }[];
 };
 
 const WIRE_PIN_ORDER = ["signal", "V+", "GND"];
@@ -167,7 +171,7 @@ function supplyFeeds(world: WorldOutlineInput): WorldOutlineSupply[] {
   }));
 }
 
-/** Robots, the joint that moves each link, parts, boards, and supplies. Pure. */
+/** Robots, the joint that moves each link, parts, boards, supplies, and targets. Pure. */
 export function buildWorldOutline(
   world: WorldOutlineInput,
   urdfByRobot: Readonly<Record<string, UrdfInfo>>
@@ -215,6 +219,7 @@ export function buildWorldOutline(
       brownoutVoltage: board.brownoutVoltage ?? 2.7,
     })),
     supplies: supplyFeeds(world),
+    targets: (world.targets ?? []).map((target) => target.id),
   };
 }
 

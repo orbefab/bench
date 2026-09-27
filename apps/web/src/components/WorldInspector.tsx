@@ -116,11 +116,12 @@ function OutlineBody({ outline }: { outline: WorldOutline | null }) {
     outline.robots.length === 0 &&
     outline.parts.length === 0 &&
     outline.boards.length === 0 &&
-    outline.supplies.length === 0;
+    outline.supplies.length === 0 &&
+    outline.targets.length === 0;
   if (empty) {
     return (
       <p className="text-[12px] text-muted-foreground">
-        This world has no robots, parts, boards, or supplies.
+        This world has no robots, parts, boards, supplies, or targets.
       </p>
     );
   }
@@ -173,6 +174,16 @@ function OutlineBody({ outline }: { outline: WorldOutline | null }) {
             >
               {board.id}
             </button>
+          ))}
+        </div>
+      ) : null}
+      {outline.targets.length > 0 ? (
+        <div>
+          <div className="px-1 text-[12px] font-medium">Targets</div>
+          {outline.targets.map((id) => (
+            <div key={id} className="px-1 py-0.5 text-[12px]">
+              {id}
+            </div>
           ))}
         </div>
       ) : null}

@@ -136,6 +136,7 @@ worldStore.getState().setOutline({
       parts: ["servo"],
     },
   ],
+  targets: [],
 });
 expect(
   worldStore.getState().selection?.kind === "board",
@@ -151,6 +152,7 @@ worldStore.getState().setOutline({
   parts: [],
   boards: [],
   supplies: [],
+  targets: [],
 });
 expect(
   worldStore.getState().selection === null,
@@ -167,6 +169,7 @@ worldStore.getState().setOutline({
   parts: [{ id: "servo", model: "sg90", drives: null, wires: [] }],
   boards: [],
   supplies: [],
+  targets: [],
 });
 expect(
   worldStore.getState().selection?.kind === "part",
@@ -177,6 +180,7 @@ worldStore.getState().setOutline({
   parts: [],
   boards: [],
   supplies: [],
+  targets: [],
 });
 expect(
   worldStore.getState().selection === null,
@@ -198,6 +202,7 @@ worldStore.getState().setOutline({
       parts: [],
     },
   ],
+  targets: [],
 });
 expect(
   worldStore.getState().selection?.kind === "supply",
@@ -208,6 +213,7 @@ worldStore.getState().setOutline({
   parts: [],
   boards: [],
   supplies: [],
+  targets: [],
 });
 expect(
   worldStore.getState().selection === null,
