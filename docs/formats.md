@@ -4,14 +4,14 @@
 
 ## 1. Quantities and units
 
-- Files store **SI coherent numbers only**: V, A, Ω, H, N·m, rad, rad/s, kg, m, s, K, W. Degrees, mA and kgf·cm are display units.
+- Files store **SI coherent numbers only**: V, A, Ω, F, H, N·m, rad, rad/s, kg, m, s, K, W. Degrees, mA and kgf·cm are display units.
 - Each quantity has a name and a dimension vector over `kg m s A K mol cd rad`. Ports connect when the **names** match, not only the dimensions: torque and energy share a vector but not a name.
 - A value may be **tagged** `{ v, q, d, unit? }`. The checker verifies the tag against the field, and a `unit` that is not the SI unit is an error.
 - Dimension vectors cannot see prefixes, so mA and A look alike. The linter therefore checks **plausible ranges per quantity per part type** (D-023.7).
 
 ```ts
 type Quantity =
-  | "Voltage" | "Current" | "Resistance" | "Inductance"
+  | "Voltage" | "Current" | "Resistance" | "Capacitance" | "Inductance"
   | "Angle" | "AngularVelocity" | "Torque"
   | "Position" | "Velocity" | "Force"
   | "Temperature" | "HeatFlow"
@@ -45,6 +45,7 @@ type PortDecl = {
   role?: "power" | "ground" | "logic" | "analog";
   direction?: "in" | "out" | "inout" | "passive";
   pwm?: boolean; adc?: boolean;
+  internal?: boolean;                     // not a wiring target; the cable reaches it
   frame?: string;                         // mount / rotational: where on the body
   ratings?: Ratings;
 };
@@ -114,7 +115,7 @@ type BehaviourImpl = { omits: string[] } & (
   | { kind: "form"; form: FormId; params: Record<string, SiNumber> }
   | { kind: "snapshot"; ref: string }
   | { kind: "composite"; netlist: Netlist }
-  | { kind: "firmware"; chip: string; imageParam?: string; params?: Record<string, number>; fuses?: Record<string, string>; boardCircuit?: string }
+  | { kind: "firmware"; chip: string; imageParam?: string; params?: Record<string, number>; fuses?: Record<string, string>; boardCircuit?: string; board?: Netlist }
   | { kind: "script"; script: string });
 
 // D-023.1: the body owns joint friction, damping and armature.
@@ -136,13 +137,14 @@ type Netlist = {
 ```
 
 - Instance numeric `params` override form params of the same name. For example, a bench supply takes the world's voltage and current limit.
-- A firmware variant may set `boardCircuit`. It names the onboard circuit for that board's `5V`. Absent, the 5V pin is the supply terminal: no capacitors, D13 LED, or reset network, including at class 2. `nano-usb` is the clone Nano at class 2 (`arduino-nano`, part `sfab/nano-ch340@1.0.0`). A `usb-a-port` on its `5V` inserts the Schottky from VBUS plus the +5V capacitors, the D13 LED, and the reset network. Any other supply on that pin, such as a bench supply, inserts the same network without the Schottky. `snapshot:<publisher/name@version>` is the class-1 default (`snapshot:sfab/nano-usb-5v@1.0.0`). A `usb-a-port` on `5V` evaluates that snapshot as a Thevenin segment in the same rail solve when the port's series resistance and current limit sit inside the snapshot's source bounds. Any other feed, including a `usb-a-port` outside those bounds, leaves the 5V pin as the ideal terminal and the run records one warning. The non-default variant `ideal-terminal` is that ideal terminal with no snapshot. The Uno path stays on the type `arduino-uno-r3` and does not use this field.
+- A firmware variant may set `boardCircuit` to `snapshot:<publisher/name@version>` only. That is the class-1 default (`snapshot:sfab/nano-usb-5v@1.0.0`). A `usb-a-port` on `5V` evaluates that snapshot as a Thevenin segment in the same rail solve when the port's series resistance and current limit sit inside the snapshot's source bounds. Any other feed, including a `usb-a-port` outside those bounds, leaves the 5V pin as the ideal terminal and the run records one warning. The non-default variant `ideal-terminal` is that ideal terminal with no snapshot. Any other `boardCircuit` string is an error.
+- A firmware variant may set `board`, a netlist of circuit parts. The world still addresses the board as one instance. The chosen variant's children are resolved, and each `resistor@1`, `capacitor@1` or `diode@1` instance on a net that reaches the board is stamped into the rail that feeds it. The clone Nano class 2 (`sfab/nano-ch340@1.0.0`, variant `circuits`) is that netlist: SS14 from `VBUS` to `5V`, the +5V capacitors, the reset network, and the D13 LED. `VBUS` is an `internal` power port on `arduino-nano`. It is not a wiring target. A `usb-a-port` wired to `nano.5V` is still the cable; when the selected variant has a board netlist, that feed attaches to `VBUS`, and otherwise to `5V`. A bench supply on `5V` attaches to `5V`. A part whose only other node is then unconnected, such as the Schottky with an open anode, is pruned. No extra conductance is added. The Uno path stays on the type `arduino-uno-r3` and does not use `board` or `boardCircuit`.
 - An instance string param `urdf` replaces the body file of a part whose body is `urdf`. The path is relative to the project folder.
-- Children are instantiated only when the chosen behaviour is a composite. The lockfile still lists them.
+- Children are instantiated when the chosen behaviour is a composite, or when it is firmware with a `board` netlist. The lockfile still lists children of every class.
 
 ### `avr-pin@1` and the ADC
 
-A firmware board carries `avr-pin@1` as numbers on the variant's `params`, not as a `form`. The names are `roh`, `rol`, `rpu` and `rLeak`, in ohms. High is the board's 5V node. Low is 0 V. The Nano D13 stamp and the ADC both use these numbers.
+A firmware board carries `avr-pin@1` as numbers on the variant's `params`, not as a `form`. The names are `roh`, `rol`, `rpu` and `rLeak`, in ohms. High is the board's 5V node. Low is 0 V. `rLeak` belongs to the pin element. The rail stamps one pin for every chip pin that has an Arduino bit and whose net contains a circuit part. Each of those pins follows `driveMode` at the master step. The ADC uses the same numbers.
 
 DDR and PORT choose the mode, read when the rail solves and when a conversion starts:
 
@@ -175,7 +177,9 @@ Omitted: ADC INL and DNL, ADC noise, the noise canceller, temperature drift, and
 - `dc-motor@1` (K, R, L?, efficiency, eSat, quiescent)
 - `thevenin-limit@1`
 - `ideal-voltage@1`
-- `resistor@1`, `capacitor@1`, `diode@1`
+- `resistor@1` (`R`, resistance, ohms)
+- `capacitor@1` (`C`, capacitance, farads; `esr`, resistance, ohms, optional). `esr` of 0 is legal and adds no node. `esr` above 0 is a series resistor and an internal node.
+- `diode@1` (`Is`, current, amperes; `N`, dimensionless; `Rs`, resistance, ohms, optional). An LED is this form on a part whose type is `led`.
 - `logic-in@1`
 - `table@1`
 - `transfer-fn@1`
@@ -371,7 +375,7 @@ These came out of the motor/rail and pin experiments. They are proposals, not ye
 - **Run report** adds the **passivity sum** at each circuit/body cut (joules injected by the coupling) and flags it when it grows.
 - **`ptc-fuse@1`** (Uno F1, Bourns MF-MSMF050-2): cold resistance is Rmin 0.15 Ω. R1max 1.00 Ω is the post-trip ceiling, not the cold value. `Ihold` 0.50 A, `Itrip` 1.00 A. Thermal state `u` integrates `I²R` once per 1 ms master step, outside the circuit solve. At `u = 1` the branch goes to a high resistance and returns to the cold value once `u` falls.
 - **`pmos-switch@1`** (Uno T1, FDN340P): `Rds` in parallel with the body diode. On the USB path the gate stays on, so `Rds` is the −4.5 V figure, 60 mΩ typical. VIN and the barrel jack are not in this step.
-- **Board power path:** a `usb-a-port` wired to an Uno `5V` is the USB cable: fuse, switch, the +5V capacitors, the board load (full current down to 1 V, then linear to 0 A at 0 V), and every servo on that node. A `usb-a-port` wired to a Nano `5V` is the cable into the Nano's USB connector. At class 2 (`boardCircuit` `nano-usb`) that inserts the Schottky from VBUS to +5V, the +5V capacitors, the board load, the D13 LED and the reset network, and servos on `nano.5V` load that node. A bench supply on that `5V` at class 2 inserts the same network without the Schottky, so the header is the board node and the LED, capacitors, and reset network stay. At class 1 a `usb-a-port` feed uses the captured snapshot (`boardCircuit` `snapshot:sfab/nano-usb-5v@1.0.0`) as the source into the same rail when that port's series resistance and current limit match the snapshot; the table has no capacitance, and the D13 LED and reset network are omitted. Any other class-1 feed, including a different `usb-a-port`, keeps the ideal terminal. A bench supply on an Uno `5V` is the header, and there is no path. The supply record's `current` is the terminal current and its `voltage` is the terminal voltage. The board record's `voltage` is the 5V node, and `minVoltage` is that node's minimum over the frame. A Nano whose class-2 circuit stamps the D13 LED also records `ledCurrent` (amperes). A part with a power port reports `voltage` as V+ relative to GND. With no cable the board node equals the supply terminal, and both are reported.
+- **Board power path:** a `usb-a-port` wired to an Uno `5V` is the USB cable: fuse, switch, the +5V capacitors, the board load (full current down to 1 V, then linear to 0 A at 0 V), and every servo on that node. A `usb-a-port` wired to a Nano `5V` is the cable into the Nano's USB connector. At class 2 the firmware `board` netlist stamps the Schottky from `VBUS` to +5V, the +5V capacitors, the board load, the D13 LED and the reset network, and servos on `nano.5V` load that node. The cable's Thevenin attaches to `VBUS`. A bench supply on that `5V` attaches to `5V`, and the Schottky is pruned because its anode is open. At class 1 a `usb-a-port` feed uses the captured snapshot (`boardCircuit` `snapshot:sfab/nano-usb-5v@1.0.0`) as the source into the same rail when that port's series resistance and current limit match the snapshot; the table has no capacitance. Circuit parts wired on the board's pins, such as a breadboard LED, still stamp. Any other class-1 feed, including a different `usb-a-port`, keeps the ideal terminal. A bench supply on an Uno `5V` is the header, and there is no path. The supply record's `current` is the terminal current and its `voltage` is the terminal voltage. The board record's `voltage` is the 5V node, and `minVoltage` is that node's minimum over the frame. `leds` maps each LED instance path on that rail to its forward current in amperes. `ledCurrent` is the deprecated alias of `leds["<board>.led"]`. A part with a power port reports `voltage` as V+ relative to GND. With no cable the board node equals the supply terminal, and both are reported.
 - **Brownout** reads the board node: the lowest board-node voltage over that millisecond's sub-steps. With no cable the board node is the supply terminal.
 
 ## Open for v2
