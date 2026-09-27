@@ -24,6 +24,7 @@ import { viewerProjectRoot } from "./viewer-context";
 import { readerFor } from "./world/files";
 import {
   ensureWorldRun,
+  moveWorldTarget,
   pauseWorld,
   playWorld,
   readRecording,
@@ -31,7 +32,6 @@ import {
   rejectWorldStep,
   resolveWorldFile,
   restartWorld,
-  moveWorldTarget,
   stepWorld,
   worldRunView,
 } from "./world/host";

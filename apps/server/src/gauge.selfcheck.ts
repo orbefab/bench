@@ -10,11 +10,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { emptySnapshot, type RecordingRead, type WorldSender } from "@sfab-bench/contract";
+import {
+  emptySnapshot,
+  type RecordingRead,
+  type WorldSender,
+} from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
-import { worldTools } from "./world-tools";
 import {
   attachWorld,
   readRecording,
@@ -23,6 +26,7 @@ import {
   type WorldHandle,
 } from "./world/host";
 import { noLoadSpeedRad } from "./world/power";
+import { worldTools } from "./world-tools";
 
 const sender: WorldSender = { kind: "loopback", label: "Mac" };
 const C = 343;
@@ -32,9 +36,15 @@ const CARD_HALF = 0.0025;
 const HALF_ANGLE = 0.1308996938995747;
 const RAY_STEP = HALF_ANGLE / 5;
 
-const gaugeDir = fileURLToPath(new URL("../../../examples/gauge/", import.meta.url));
-const nanoDir = fileURLToPath(new URL("../../../examples/nano/", import.meta.url));
-const fixtureDir = fileURLToPath(new URL("../fixtures/gauge/", import.meta.url));
+const gaugeDir = fileURLToPath(
+  new URL("../../../examples/gauge/", import.meta.url)
+);
+const nanoDir = fileURLToPath(
+  new URL("../../../examples/nano/", import.meta.url)
+);
+const fixtureDir = fileURLToPath(
+  new URL("../fixtures/gauge/", import.meta.url)
+);
 
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
@@ -51,7 +61,11 @@ function card(distanceM: number) {
     shape: "box" as const,
     size: [0.3, 0.005, 0.3],
     pose: {
-      position: [0, FACE + distanceM + CARD_HALF, 0.05] as [number, number, number],
+      position: [0, FACE + distanceM + CARD_HALF, 0.05] as [
+        number,
+        number,
+        number,
+      ],
       rotation: [1, 0, 0, 0] as [number, number, number, number],
     },
   };
@@ -100,7 +114,8 @@ function worldFile(
 function serialOf(read: RecordingRead): string {
   let text = "";
   for (const event of read.events) {
-    if (event.kind === "serial" && event.board === "nano") text += event.text ?? "";
+    if (event.kind === "serial" && event.board === "nano")
+      text += event.text ?? "";
   }
   return text;
 }
@@ -223,7 +238,9 @@ try {
       // Class 0 raises Echo one cycle after Trig falls, before pulseIn
       // samples, so the sketch reads 0. The part's width is the echo.
       const echoed =
-        level === 0 ? ran.echoS !== null && ran.echoS > 0 : last !== undefined && last !== "-1";
+        level === 0
+          ? ran.echoS !== null && ran.echoS > 0
+          : last !== undefined && last !== "-1";
       if (echoed) hit.push(x);
     }
     return hit;
@@ -243,7 +260,10 @@ try {
   );
   const class0 = await beam(0, [0, edgeX]);
   console.log(`beam class 0 hits ${class0.join(",") || "none"}`);
-  expect(class0.length === 1 && class0[0] === 0, `class 0 beam ${class0.join(",")}`);
+  expect(
+    class0.length === 1 && class0[0] === 0,
+    `class 0 beam ${class0.join(",")}`
+  );
 
   writeFileSync(
     path.join(root, "edges.world.json"),
@@ -285,7 +305,10 @@ try {
   );
   const open = await run(root, "open.world.json", 250);
   const openLast = linesOf(serialOf(open.read)).at(-1);
-  expect(openLast === "-1" && open.current === 0, `unpowered ${openLast} current ${open.current}`);
+  expect(
+    openLast === "-1" && open.current === 0,
+    `unpowered ${openLast} current ${open.current}`
+  );
   console.log(`unpowered: ${openLast}, current ${open.current} A`);
 
   async function gaugeOnce(): Promise<RecordingRead> {
@@ -300,7 +323,12 @@ try {
     });
     if ("error" in attached) throw new Error(attached.error);
     try {
-      const stepped = await stepWorld(gaugeRoot, "gauge-usb.world.json", 7000, sender);
+      const stepped = await stepWorld(
+        gaugeRoot,
+        "gauge-usb.world.json",
+        7000,
+        sender
+      );
       if ("error" in stepped) throw new Error(stepped.error);
       const read = await readRecording(gaugeRoot, "gauge-usb.world.json", {
         from: 0,
@@ -321,9 +349,8 @@ try {
   const gauge = await gaugeOnce();
   const elapsedMs = performance.now() - started;
   console.log(
-    `INFO gauge world: ${(elapsedMs / 7000 * 1000).toFixed(1)} us wall per simulated ms`
+    `INFO gauge world: ${((elapsedMs / 7000) * 1000).toFixed(1)} us wall per simulated ms`
   );
-  const gaugeLines = linesOf(serialOf(gauge));
   let held = 0;
   const readings: { t: number; us: number; d: number; angle: number }[] = [];
   const vcc: number[] = [];
@@ -351,7 +378,10 @@ try {
     const dText = parts[1] ?? "";
     const angle = Number(parts[2]);
     if (us === 0) {
-      expect(dText === "-1" && angle === held, `hold ${stamp.line} after ${held}`);
+      expect(
+        dText === "-1" && angle === held,
+        `hold ${stamp.line} after ${held}`
+      );
     } else {
       const sketch = sketchAngle(us);
       expect(
@@ -368,10 +398,15 @@ try {
   console.log(`vcc rest ${rest} mV, minimum ${vccMin} mV, lines ${vcc.length}`);
 
   function angleNear(t: number, angle: number) {
-    const frames = gauge.frames.filter((frame) => frame.t >= t && frame.t <= t + 0.5);
+    const frames = gauge.frames.filter(
+      (frame) => frame.t >= t && frame.t <= t + 0.5
+    );
     const hit = frames.some((frame) => {
       const q = frame.joints.gauge?.servo;
-      return q !== undefined && Math.abs(q - (angle * Math.PI) / 180) <= (2 * Math.PI) / 180;
+      return (
+        q !== undefined &&
+        Math.abs(q - (angle * Math.PI) / 180) <= (2 * Math.PI) / 180
+      );
     });
     expect(hit, `flag not within 2 deg of ${angle} by ${t + 0.5} s`);
   }
@@ -382,7 +417,9 @@ try {
   }
   const afterLeave = readings.filter((item) => item.t >= 5.5);
   expect(afterLeave.length > 0, "no reading after the card leaves");
-  const heldAngle = readings.filter((item) => item.t < 5.5 && item.us > 0).at(-1)?.angle;
+  const heldAngle = readings
+    .filter((item) => item.t < 5.5 && item.us > 0)
+    .at(-1)?.angle;
   expect(
     afterLeave.every((item) => item.us === 0 && item.angle === heldAngle),
     `angle did not hold at ${heldAngle}`
@@ -416,14 +453,20 @@ try {
     if (!reading) continue;
     const led = frame.boards.nano?.ledCurrent ?? 0;
     const on = reading.us > 0 && reading.d < 15;
-    expect(on ? led > 1e-4 : led < 1e-5, `D13 ${led} A at ${frame.t} s, d ${reading.d}`);
+    expect(
+      on ? led > 1e-4 : led < 1e-5,
+      `D13 ${led} A at ${frame.t} s, d ${reading.d}`
+    );
   }
 
   const againGauge = await gaugeOnce();
   const pack = (read: RecordingRead) =>
     JSON.stringify({ frames: read.frames, events: read.events });
   expect(pack(gauge) === pack(againGauge), "gauge runs are not byte-identical");
-  expect(!pack(gauge).includes(gaugeRoot), "gauge run depends on the temp path");
+  expect(
+    !pack(gauge).includes(gaugeRoot),
+    "gauge run depends on the temp path"
+  );
   console.log(`gauge run: 7 s, ${gauge.frames.length} frames, byte-identical`);
 
   writeFileSync(
@@ -442,19 +485,31 @@ try {
         const first = await stepWorld(root, "move.world.json", 250, sender);
         if ("error" in first) throw new Error(first.error);
         const moved = await worldTools.world_move_target.execute?.(
-          { world: "move.world.json", id: "card", position: [0, FACE + 0.2 + CARD_HALF, 0.05] },
+          {
+            world: "move.world.json",
+            id: "card",
+            position: [0, FACE + 0.2 + CARD_HALF, 0.05],
+          },
           {} as never
         );
-        expect(moved && !("error" in (moved as object)), `move ${JSON.stringify(moved)}`);
+        expect(
+          moved && !("error" in (moved as object)),
+          `move ${JSON.stringify(moved)}`
+        );
         const second = await stepWorld(root, "move.world.json", 250, sender);
         if ("error" in second) throw new Error(second.error);
-        const read = await readRecording(root, "move.world.json", { from: 0, to: 1 });
+        const read = await readRecording(root, "move.world.json", {
+          from: 0,
+          to: 1,
+        });
         if ("error" in read) throw new Error(read.error);
         const us = Number(linesOf(serialOf(read)).at(-1));
         const cm = us / 58;
         console.log(`move to 0.20 m: sketch ${us} us, ${cm.toFixed(2)} cm`);
         expect(Math.abs(cm - 20) < 1, `moved distance ${cm} cm`);
-        const moveEvent = read.events.find((event) => event.kind === "move-target");
+        const moveEvent = read.events.find(
+          (event) => event.kind === "move-target"
+        );
         expect(moveEvent?.kind === "move-target", "move was not recorded");
       } finally {
         attached.detach();
@@ -471,7 +526,12 @@ try {
     });
     if ("error" in attached) throw new Error(attached.error);
     try {
-      const stepped = await stepWorld(nanoRoot, "nano-servo-usb.world.json", 200, sender);
+      const stepped = await stepWorld(
+        nanoRoot,
+        "nano-servo-usb.world.json",
+        200,
+        sender
+      );
       if ("error" in stepped) throw new Error(stepped.error);
       const read = await readRecording(nanoRoot, "nano-servo-usb.world.json", {
         from: 0,

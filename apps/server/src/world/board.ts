@@ -108,8 +108,7 @@ export class AvrBoard {
    * A port write, at `cpu.cycles`. Null unless a part is listening.
    * Worlds with no listener skip the walk.
    */
-  onEdge: ((bit: number, high: boolean, cycles: number) => void) | null =
-    null;
+  onEdge: ((bit: number, high: boolean, cycles: number) => void) | null = null;
   /**
    * Latest GPIO value reported by each port listener. avr8js copies
    * that value into PIN after the listener returns, so a same-port

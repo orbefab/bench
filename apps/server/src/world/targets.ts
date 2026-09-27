@@ -48,7 +48,9 @@ function readPath(
     }
     const row = entry as { t?: unknown; position?: unknown };
     if (typeof row.t !== "number" || !Number.isFinite(row.t) || row.t < 0) {
-      return schema(`target "${id}" has a path time that is not a finite second`);
+      return schema(
+        `target "${id}" has a path time that is not a finite second`
+      );
     }
     if (row.t <= previous) {
       return schema(`target "${id}" path times must increase`);
@@ -78,7 +80,9 @@ function readOne(value: unknown, seen: Set<string>): WorldTarget | WorldError {
   }
   if (seen.has(row.id)) return schema(`target "${row.id}" is repeated`);
   seen.add(row.id);
-  const pose = row.pose as { position?: unknown; rotation?: unknown } | undefined;
+  const pose = row.pose as
+    | { position?: unknown; rotation?: unknown }
+    | undefined;
   if (!pose || !finite3(pose.position) || !finite4(pose.rotation)) {
     return schema(`target "${row.id}" pose is not a position and a quaternion`);
   }
@@ -97,7 +101,9 @@ function readOne(value: unknown, seen: Set<string>): WorldTarget | WorldError {
   };
   if (row.shape === "box") {
     if (!finite3(row.size) || row.size.some((n) => !(n > 0))) {
-      return schema(`target "${row.id}" box size must be three positive lengths`);
+      return schema(
+        `target "${row.id}" box size must be three positive lengths`
+      );
     }
     return { ...shared, shape: "box", size: [...row.size] };
   }

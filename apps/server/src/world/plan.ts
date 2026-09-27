@@ -20,11 +20,11 @@ import {
 import { type AvrPinParams, avrPinParams } from "./circuit/pin";
 import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
-import type { RangerLaw, RunRanger } from "./ranger";
-import { readTargets } from "./targets";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
 import { siValue } from "./parts/si";
 import { isFirmwareBoard } from "./power-path";
+import type { RangerLaw, RunRanger } from "./ranger";
+import { readTargets } from "./targets";
 
 /** Shown where a world fails to load, in the UI and in the agent tools. */
 export const WORLD_V1_MESSAGE = "World v1 is no longer supported";

@@ -417,9 +417,7 @@ function PartBody({
         )}
       </div>
       {info?.ranger ? (
-        <RangerFields
-          reading={scrub.playhead !== null ? recorded : live}
-        />
+        <RangerFields reading={scrub.playhead !== null ? recorded : live} />
       ) : (
         <>
           <Field
@@ -517,9 +515,7 @@ function RangerFields({
       />
       <Field
         label="Current"
-        value={
-          reading?.current === undefined ? "—" : ampsText(reading.current)
-        }
+        value={reading?.current === undefined ? "—" : ampsText(reading.current)}
       />
     </>
   );

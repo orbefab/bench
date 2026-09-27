@@ -117,7 +117,10 @@ export function rangerDirections(beamHalf: number): Vec3[] {
       out.push(
         add(
           scale(forward, along),
-          add(scale(right, across * Math.cos(phi)), scale(up, across * Math.sin(phi)))
+          add(
+            scale(right, across * Math.cos(phi)),
+            scale(up, across * Math.sin(phi))
+          )
         )
       );
     }

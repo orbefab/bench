@@ -683,7 +683,11 @@ export async function compileWorld(
       if (id < 0 || mocap < 0) {
         return {
           ok: false,
-          errors: [schemaError(`Target "${target.id}" did not compile as a mocap body.`)],
+          errors: [
+            schemaError(
+              `Target "${target.id}" did not compile as a mocap body.`
+            ),
+          ],
         };
       }
       index.targets.push({ id: target.id, body: id, mocap });

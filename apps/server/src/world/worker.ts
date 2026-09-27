@@ -49,9 +49,9 @@ import {
 } from "./power";
 import { type BoardPathName, isFirmwareBoard, usbPathFor } from "./power-path";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
+import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
 import { blankTrack, type ServoTrack, trackServo } from "./servo";
-import { RangerRuntime } from "./ranger";
 import { targetPosition } from "./targets";
 import {
   applyGpioDrives,
@@ -716,10 +716,7 @@ function openRecorder() {
       ...parts.map((load) => load.partId),
       ...rangers.map((ranger) => ranger.spec.id),
     ],
-    partRanger: [
-      ...parts.map(() => false),
-      ...rangers.map(() => true),
-    ],
+    partRanger: [...parts.map(() => false), ...rangers.map(() => true)],
     supplies: supplySpecs.map((supply) => supply.id),
     boards: boardIds,
     boardLed: boardIds.map(
@@ -1825,7 +1822,9 @@ function placeTargets() {
   const quat = sim.data.mocap_quat as Float64Array;
   const time = sim.data.time;
   for (const item of sim.index.targets) {
-    const spec = runPlan.environment.targets.find((target) => target.id === item.id);
+    const spec = runPlan.environment.targets.find(
+      (target) => target.id === item.id
+    );
     if (!spec) continue;
     const p = targetPosition(spec, time, targetHolds.get(item.id) ?? null);
     const base = item.mocap * 3;
