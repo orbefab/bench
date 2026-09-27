@@ -15,7 +15,7 @@ export type ServoSignalDrive = {
 };
 
 function splitEndpoint(endpoint: string): { id: string; pin: string } | null {
-  const dot = endpoint.indexOf(".");
+  const dot = endpoint.lastIndexOf(".");
   if (dot <= 0 || dot >= endpoint.length - 1) return null;
   return { id: endpoint.slice(0, dot), pin: endpoint.slice(dot + 1) };
 }

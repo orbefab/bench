@@ -584,19 +584,15 @@ function build(
 
   for (const inst of loaded.resolved) {
     if (inst.path === "$root") continue;
+    const behaviour = selectedBehaviour(inst);
+    if (behaviour?.kind === "composite") continue;
     const circuit = circuitInstOf(inst);
     if (circuit) {
       circuits.push(circuit);
       if (inst.pose) pushBox(boxes, inst, "part");
       continue;
     }
-    if (inst.path.includes(".")) {
-      diags.push(cannot(inst, "a nested instance is not in this run"));
-      continue;
-    }
     const typeId = inst.type.id;
-    const behaviour = selectedBehaviour(inst);
-    if (behaviour?.kind === "composite") continue;
     const bodyImpl = inst.axes.body.impl as BodyImpl | null;
     if (behaviour?.kind === "form" && behaviour.form === "multibody@1") {
       if (bodyImpl?.kind !== "urdf") {

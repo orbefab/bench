@@ -605,6 +605,38 @@ function lintBehaviour(
   }
 }
 
+function partAt(
+  lib: Library,
+  instances: Record<string, { part: string }>,
+  instPath: string
+): PartFile | null {
+  const dot = instPath.indexOf(".");
+  const head = dot === -1 ? instPath : instPath.slice(0, dot);
+  const row = instances[head];
+  if (!row) return null;
+  const loaded = lib.parts.get(row.part);
+  if (!loaded) return null;
+  if (dot === -1) return loaded.part;
+  const behaviour = loaded.part.axes?.behaviour;
+  if (!behaviour) return null;
+  const rest = instPath.slice(dot + 1);
+  for (const slot of Object.values(behaviour)) {
+    if (!slot) continue;
+    for (const variant of Object.values(slot.variants)) {
+      const netlist =
+        variant.kind === "composite"
+          ? variant.netlist
+          : variant.kind === "firmware"
+            ? (variant.board ?? null)
+            : null;
+      if (!netlist) continue;
+      const found = partAt(lib, netlist.instances, rest);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
   const behaviour = part.axes?.behaviour;
   if (!behaviour) return;
@@ -641,7 +673,8 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
           );
         }
         const ref = splitPortRef(inner);
-        if (!ref || !instances[ref.inst]) {
+        const childFile = ref ? partAt(lib, instances, ref.inst) : null;
+        if (!ref || !childFile) {
           diags.push(
             makeDiag({
               severity: "error",
@@ -655,9 +688,7 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
           );
           continue;
         }
-        const child = lib.parts.get(instances[ref.inst].part);
-        if (!child) continue;
-        const childType = typeOf(lib, child.part);
+        const childType = typeOf(lib, childFile);
         if (!childType.ports[ref.port]) {
           diags.push(
             makeDiag({
@@ -675,7 +706,7 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
       for (const [a, b] of wires) {
         for (const end of [a, b]) {
           const ref = splitPortRef(end);
-          if (!ref || !instances[ref.inst]) {
+          if (!ref || !partAt(lib, instances, ref.inst)) {
             diags.push(
               makeDiag({
                 severity: "error",

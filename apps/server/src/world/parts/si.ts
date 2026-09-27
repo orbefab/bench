@@ -83,7 +83,7 @@ export function parsePartRef(
 export function splitPortRef(
   ref: string
 ): { inst: string; port: string } | null {
-  const i = ref.indexOf(".");
+  const i = ref.lastIndexOf(".");
   if (i <= 0 || i === ref.length - 1) return null;
   return { inst: ref.slice(0, i), port: ref.slice(i + 1) };
 }
