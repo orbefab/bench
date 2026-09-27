@@ -1,0 +1,47 @@
+{
+  "format": "sfab.lock@1",
+  "parts": [
+    {
+      "id": "sfab/adc-channels-scene@1.0.0",
+      "path": "parts/sfab/adc-channels-scene@1.0.0.json",
+      "sha256": "d4802b1c45b2eb92938739f59b70395a0e1393d927cbead4c7c79defd3bff4b3",
+      "source": "world",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/nano-ch340@1.0.0",
+      "path": "../../catalog/parts/sfab/nano-ch340@1.0.0.json",
+      "sha256": "412967f7c039b5a94713ba5b39bcbba18ce796b2f5c69e8713709c8d3a7f3d93",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/usb-port-500ma@1.0.0",
+      "path": "../../catalog/parts/sfab/usb-port-500ma@1.0.0.json",
+      "sha256": "4eb1ed6007fd6046ee8d025f2ff70852d9b27bfd460278ab23689ed48f277521",
+      "source": "catalog",
+      "version": "1.0.0"
+    }
+  ],
+  "types": [
+    {
+      "id": "arduino-nano",
+      "path": "../../catalog/types/arduino-nano.json",
+      "sha256": "93183a585587e8f8168ae92117622648025901a17406da87f467895ed843d9a7",
+      "source": "catalog"
+    },
+    {
+      "id": "assembly",
+      "path": "../../catalog/types/assembly.json",
+      "sha256": "d3d12a01bb5564827caab4bf45b624199124264c89dc582d46f4775b83a34c41",
+      "source": "catalog"
+    },
+    {
+      "id": "usb-a-port",
+      "path": "../../catalog/types/usb-a-port.json",
+      "sha256": "c5ef8da223229f1c1dea7d871144e7ee8c7334d04846b053a492320f29b6986a",
+      "source": "catalog"
+    }
+  ],
+  "world": "channels.world"
+}
