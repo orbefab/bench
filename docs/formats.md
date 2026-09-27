@@ -335,7 +335,7 @@ Each run's report contains:
 - the level per instance per axis, with the reason (default / type / path / fallback from X / capture suggested);
 - the nets with their level and the reason;
 - the errors and warnings;
-- the quality of each snapshot used, and when one ran, its ref, free-run error, and envelope warnings (an empty list when the run stayed inside);
+- the quality of each snapshot used, and when one ran, its ref, free-run error, envelope warnings (an empty list when the run stayed inside), and provenance for the card: `source`, `from` (`part` and `level` only), `fixture` (the ref), and `tool` (`name` and `version`). Hashes stay in the snapshot file.
 - **not simulated**: the `omits` of each chosen level, one row per instance per axis so each keeps its path;
 - the seed and the number of random draws;
 - the cost per engine.

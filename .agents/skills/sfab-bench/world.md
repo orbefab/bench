@@ -21,7 +21,7 @@ The world file is a root part plus environment and run settings:
   STEP props, optional `targets`. A target is a box, sphere or cylinder
   on a `path`, or placed with `world_move_target` from the next step.
   `sfab/hc-sr04@1.0.0` reads that distance on Trig and Echo.
-- `run` — `seed`, and `levels.default` (the arm uses `1`).
+- `run` — `seed`, and `levels`. `default` is a class for all three axes (the arm uses `1`). `types` and `paths` override it. A path beats a type, which beats the default. Omit `axis` and the class sets behaviour, body, and visual.
 - `root.part` — `publisher/name@version`, for the arm
   `sfab/arm-scene@1.0.0`.
 
@@ -100,13 +100,20 @@ few degrees from those impulses and does not reach the stop.
 Call these with the `world` path from `get_viewer`. Use sim time. Wait
 for the status they return. Do not sample "whatever arrived last".
 
-1. `world_restart` — sim time 0, paused, new recording.
-2. `world_step` with `ms` from 1 to 10000 — pauses if it was playing,
+1. `world_set_level` — write one rule into `run.levels` and restart.
+   `scope` is `default`, `type`, or `path`. `key` is the part type or the
+   instance path (`nano`). `class` is 0, 1, 2, 3, or `null` to remove the
+   rule. The default cannot be removed. A missing type or path is an error
+   and the file is unchanged. The reply is the new level rows for the
+   instances that rule covers, and a snapshot when one ran. Levels stay
+   fixed for the run, so this always restarts.
+2. `world_restart` — sim time 0, paused, new recording.
+3. `world_step` with `ms` from 1 to 10000 — pauses if it was playing,
    advances exactly that many milliseconds, returns `world_status`.
-3. `read_pulses` with `part` — runs of pulse width (equal within 1 µs
+4. `read_pulses` with `part` — runs of pulse width (equal within 1 µs
    collapsed), each with `commandDeg` and the first and last sim time,
    plus that part's board and pin.
-4. `read_recording` — tracks such as `part:servo.pulseUs`,
+5. `read_recording` — tracks such as `part:servo.pulseUs`,
    `part:servo.voltage` (V+ relative to GND), `supply:usb.voltage`
    (the terminal), `board:uno.voltage` (the 5V node), `joint:shoulder`
    or `joint:arm/shoulder`, `board:uno.pins`. Default window is the last
@@ -114,7 +121,7 @@ for the status they return. Do not sample "whatever arrived last".
    Events in range are resets, reloads, faults, and serial lines. Serial
    text keeps the last 4000 characters and sets `truncated` when it drops
    the rest.
-5. `read_serial` — that board's console. `send_serial` writes to it.
+6. `read_serial` — that board's console. `send_serial` writes to it.
    Neither one plays or pauses.
 
 `world_play` and `world_pause` are the shared run. The last command wins.
@@ -126,7 +133,9 @@ The same widths are on the `part:servo.pulseUs` track.
 
 `world_status` lists driven pins only (`D9: out H`), joint positions in
 degrees (metres for a prismatic joint), and each part's own board and pin
-when several robots share a folder. `warnings` is an array of short
+when several robots share a folder. Each board, part (including a ranger),
+and supply also has its behaviour level, variant, and reason, plus `axes`
+for behaviour, body, and visual. `warnings` is an array of short
 strings, empty when nothing is wrong: a board whose 5V node is above
 brownout and below the 3.78 V an ATmega328P needs at 16 MHz, a hinge more
 than 1° or a slide more than 1 mm past its limit, and any validator
@@ -173,6 +182,6 @@ The board status says **in reset** through the 66 ms hold.
 
 Ground contact and rp2040 are later. The HC-SR04 is the sensor above.
 Link meshes other than STL or OBJ are rejected. Do not look for a breadboard, a net name, or a
-regulator. Do not compile inside Bench, and do not edit the world or the
-firmware through a world tool — change the files with your file tools,
-then `world_restart` or let the `.hex` watch restart the board.
+regulator. Do not compile inside Bench. Change the world or the firmware
+with your file tools, then `world_restart` or let the `.hex` watch restart
+the board. The exception is a level rule: use `world_set_level`.
