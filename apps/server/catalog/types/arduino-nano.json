@@ -1,0 +1,119 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "arduino-nano",
+  "plausible": {
+    "Voltage": [-1, 25],
+    "Current": [-0.5, 0.5]
+  },
+  "templates": [
+    {
+      "id": "D{n}",
+      "n": [0, 13],
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "pwm": [3, 5, 6, 9, 10, 11],
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": 1.5,
+          "vih": 3,
+          "vol": 0.9,
+          "voh": 4.2
+        }
+      }
+    },
+    {
+      "id": "A{n}",
+      "n": [0, 5],
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "adc": true,
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": 1.5,
+          "vih": 3,
+          "vol": 0.9,
+          "voh": 4.2
+        }
+      }
+    },
+    {
+      "id": "A{n}",
+      "n": [6, 7],
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "in",
+      "adc": true,
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5]
+      }
+    }
+  ],
+  "ports": {
+    "5V": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in",
+      "ratings": {
+        "voltage": [5, 5],
+        "absMaxVoltage": [0, 6]
+      }
+    },
+    "3V3": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "out",
+      "ratings": {
+        "voltage": [3.3, 3.3],
+        "absMaxVoltage": [0, 3.6]
+      }
+    },
+    "VIN": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in",
+      "ratings": {
+        "voltage": [7, 12],
+        "absMaxVoltage": [0, 20]
+      }
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    },
+    "RESET": {
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "in",
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "logic": {
+          "vil": 1.5,
+          "vih": 3,
+          "vol": 0.9,
+          "voh": 4.2
+        }
+      }
+    }
+  },
+  "buses": {
+    "uart": {
+      "ports": ["D0", "D1"],
+      "protocol": "uart"
+    },
+    "i2c": {
+      "ports": ["A4", "A5"],
+      "protocol": "i2c"
+    },
+    "spi": {
+      "ports": ["D10", "D11", "D12", "D13"],
+      "protocol": "spi"
+    }
+  }
+}

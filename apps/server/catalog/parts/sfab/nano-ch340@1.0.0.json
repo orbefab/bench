@@ -1,0 +1,151 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/nano-ch340@1.0.0",
+  "type": "arduino-nano",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Arduino Nano 3.x pinout",
+      "ref": "docs.arduino.cc/hardware/nano: D0-D13, A0-A7, 5V, 3V3, GND, VIN, RESET; PWM on D3, D5, D6, D9, D10, D11; A6 and A7 are analog input only; board 45 mm by 18 mm"
+    },
+    {
+      "title": "ATmega328P DC characteristics",
+      "ref": "DS40002061: same logic ratings and brownout as the Uno. Active supply 0.010 A at 5 V and 16 MHz, read from the active-current figure"
+    },
+    {
+      "title": "CH340G",
+      "ref": "WCH CH340 datasheet: USB working current 0.012 A"
+    },
+    {
+      "title": "Power LED",
+      "ref": "1 kohm series resistor on the board photograph. Forward drop 1.8 V assumed, so 0.0032 A at 5 V"
+    },
+    {
+      "title": "USB diode S4",
+      "ref": "Vishay SS12-SS14, document 88746, Fig. 3. The clone marks this diode S4. No polyfuse and no P-MOSFET"
+    },
+    {
+      "title": "C106",
+      "ref": "10 uF, 16 V tantalum on +5V after the diode. Position assumed. ESR 5 ohm assumed, inside the 4-8 ohm maxima of a case-A part of that rating (Kemet T491, AVX TAJ)"
+    },
+    {
+      "title": "D13 LED resistor",
+      "ref": "1 kohm assumed. The resistor code on the board is unknown"
+    },
+    {
+      "title": "D13 input leakage",
+      "ref": "DS40002061 Iin 1 uA max. A 5 Mohm resistor from D13 to ground, so the LED node has a DC path while the pin is an input"
+    },
+    {
+      "title": "Reset network",
+      "ref": "Arduino Nano 3.x schematic (A000005): 10 kohm from RESET to +5V, and 100 nF from the USB-bridge DTR pin"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "pins",
+        "variants": {
+          "pins": {
+            "kind": "script",
+            "script": "pins-follow-level",
+            "omits": [
+              "instruction timing",
+              "peripherals",
+              "brownout",
+              "analog pin waveforms"
+            ]
+          }
+        }
+      },
+      "1": {
+        "default": "avr8js",
+        "variants": {
+          "avr8js": {
+            "kind": "firmware",
+            "chip": "atmega328p",
+            "imageParam": "firmware",
+            "params": {
+              "brownoutVoltage": 2.7,
+              "brownoutAssertVoltage": 2.675,
+              "brownoutReleaseVoltage": 2.725,
+              "resetHoldS": 0.066,
+              "quiescent": 0.0252
+            },
+            "fuses": {
+              "extended": "0xFD"
+            },
+            "omits": [
+              "USB diode drop",
+              "rail capacitance",
+              "D13 LED current",
+              "reset network",
+              "analog pin waveforms",
+              "temperature",
+              "I/O pin impedance"
+            ]
+          }
+        }
+      },
+      "2": {
+        "default": "circuits",
+        "variants": {
+          "circuits": {
+            "kind": "firmware",
+            "chip": "atmega328p",
+            "imageParam": "firmware",
+            "boardCircuit": "nano-usb",
+            "params": {
+              "brownoutVoltage": 2.7,
+              "brownoutAssertVoltage": 2.675,
+              "brownoutReleaseVoltage": 2.725,
+              "resetHoldS": 0.066,
+              "quiescent": 0.0252
+            },
+            "fuses": {
+              "extended": "0xFD"
+            },
+            "omits": [
+              "VIN and the AMS1117",
+              "3.3 V rail",
+              "auto-reset on upload",
+              "CH340 serial",
+              "USB enumeration",
+              "TX and RX LEDs",
+              "analog pin waveforms",
+              "temperature"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["board mass is not in the catalog"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.045, 0.018, 0.008],
+            "omits": [
+              "headers",
+              "silk",
+              "USB connector shape",
+              "board height is assumed"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
