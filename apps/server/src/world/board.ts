@@ -15,6 +15,7 @@ import {
   usart0Config,
 } from "avr8js";
 
+import { attachBoardAdc, type BoardAdcHooks } from "./board-adc";
 import type { PinMode } from "./circuit/pin";
 import { FLASH_BYTES } from "./ihex";
 
@@ -109,6 +110,11 @@ export class AvrBoard {
    * read during the callback has to use this cache.
    */
   private liveLevel = new Map<AVRIOPort, number>();
+  /**
+   * Set before `load`. The ADC is attached on every mount, including a
+   * brownout reboot. Null leaves the chip without an ADC peripheral.
+   */
+  private analog: BoardAdcHooks | null = null;
 
   constructor(id: string) {
     this.id = id;
@@ -116,6 +122,11 @@ export class AvrBoard {
 
   get rxQueued(): number {
     return this.rx.length;
+  }
+
+  /** Call before `load`. Remounts pick up the same hooks. */
+  setAnalog(hooks: BoardAdcHooks | null) {
+    this.analog = hooks;
   }
 
   load(program: Uint8Array) {
@@ -186,7 +197,7 @@ export class AvrBoard {
     this.toggled = 0;
     this.riseAt.clear();
     this.pulses = [];
-    const peripherals = [
+    const peripherals: unknown[] = [
       portB,
       portC,
       portD,
@@ -194,6 +205,9 @@ export class AvrBoard {
       new AVRTimer(cpu, timer1Config),
       new AVRTimer(cpu, timer2Config),
     ];
+    // The hook runs only when firmware writes ADCSRA, so a program that
+    // never touches the ADC keeps the same cycle counts.
+    if (this.analog) peripherals.push(attachBoardAdc(cpu, this.analog));
     const usart = new AVRUSART(cpu, usart0Config, CPU_HZ);
     usart.onByteTransmit = (value) => {
       this.tx += String.fromCharCode(value & 0xff);

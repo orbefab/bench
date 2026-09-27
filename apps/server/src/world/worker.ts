@@ -27,7 +27,9 @@ import {
   type WorldSupplyState,
 } from "@sfab-bench/contract";
 
+import { analogRead } from "./analog-pin";
 import { AvrBoard, type CpuResetRegs, FIRMWARE_RELOADED } from "./board";
+import type { AdcConversion } from "./board-adc";
 import { projectReal, readerFor, readInside, type WorldBytes } from "./files";
 import { parseIntelHex } from "./ihex";
 import {
@@ -118,7 +120,8 @@ export type RecordQuery =
     }
   | { op: "frame"; t: number }
   | { op: "timeline"; from: number; to: number; maxPoints: number }
-  | { op: "config"; boundMs?: number; enabled?: boolean };
+  | { op: "config"; boundMs?: number; enabled?: boolean }
+  | { op: "adc" };
 
 export type RecordBody =
   | { op: "info"; info: RecordingInfo }
@@ -133,7 +136,37 @@ export type RecordBody =
       markers: TimelineMarker[];
     }
   | { op: "ack" }
+  | { op: "adc"; trace: AdcTrace }
   | { op: "error"; message: string };
+
+/**
+ * Board-node voltages and ADC samples for tests. Not part of a recording.
+ * A sample taken while the CPU runs at sim time T is stamped T+1 and used
+ * the node latched at T, the end of the previous master step. A board that
+ * boots in the same quantum, after the solve, sees that solve instead.
+ */
+export type AdcNodeStamp = {
+  ms: number;
+  boards: Record<string, number>;
+};
+
+export type AdcSampleStamp = {
+  board: string;
+  ms: number;
+  mux: string;
+  ref: string;
+  vRef: number;
+  voltage: number;
+  count: number;
+};
+
+export type AdcTrace = {
+  nodes: AdcNodeStamp[];
+  samples: AdcSampleStamp[];
+};
+
+/** Ten minutes, the same window as a recording. */
+const ADC_TRACE_MS = 600_000;
 
 export type ToWorker =
   | {
@@ -309,6 +342,14 @@ let partFeeds: PowerFeeds["parts"] = {};
  * previous step's part states before the CPUs and the joint move.
  */
 let supplyLive: Record<string, WorldSupplyState> = {};
+/**
+ * Board node each CPU sees during its step. Latched before the CPUs run,
+ * so the ADC is at most one master step behind the rail. Latched again
+ * after the solve, before a board that just left reset executes.
+ */
+let latchedNode = new Map<string, number>();
+let adcNodes: AdcNodeStamp[] = [];
+let adcSamples: AdcSampleStamp[] = [];
 /** Test only. A tripped fuse starts hot, before the first solve. */
 let fuseStart: "cold" | "tripped" = "cold";
 type RailGroup = {
@@ -748,6 +789,7 @@ function boardSpecsOf(plan: RunPlan): BoardSpec[] {
 
 function bootBoard(spec: BoardSpec): AvrBoard {
   const board = new AvrBoard(spec.id);
+  attachAnalog(board);
   // No supply: the CPU never starts. A later step does not boot it either.
   if (!boardPower.get(spec.id)?.supplyId) return board;
   if (spec.chip !== "atmega328p") {
@@ -877,6 +919,8 @@ function bindPower(plan: RunPlan) {
   }
   bindRails();
   solveSupplies();
+  latchSupplyNodes();
+  stampNodes(simMs());
 }
 
 /** One circuit per supply. Motor laws are fixed for the run; s and ω are not. */
@@ -1136,6 +1180,9 @@ function reloadBoard(id: string) {
   } else {
     noteFault(next);
   }
+  // The reload solved the rail without advancing time. The next CPU step
+  // reads this node as the previous step.
+  stampNodes(simMs());
   postState();
 }
 
@@ -1175,6 +1222,85 @@ function serialIn(id: string, text: string, by?: WorldSender) {
 /** Board node at the end of the step. With no cable this is the terminal. */
 function boardNodeOf(supplyId: string): number {
   return rails.get(supplyId)?.circuit.boardVoltage ?? 0;
+}
+
+/** Node the CPU is allowed to see: the latch, not the solve in progress. */
+function latchedBoardNode(boardId: string): number {
+  return latchedNode.get(boardId) ?? 0;
+}
+
+/**
+ * Copy each board node into the latch. Called before any CPU step, and
+ * again after `solveSupplies` so a reboot in this quantum sees the rail
+ * that just recovered.
+ */
+function latchSupplyNodes() {
+  if (!runPlan) return;
+  for (const board of runPlan.boards) {
+    const supplyId = boardPower.get(board.id)?.supplyId;
+    latchedNode.set(board.id, supplyId ? boardNodeOf(supplyId) : 0);
+  }
+}
+
+/** Record the board nodes at `ms`. A second stamp at the same ms replaces it. */
+function stampNodes(ms: number) {
+  if (!runPlan) return;
+  const boards: Record<string, number> = {};
+  for (const spec of runPlan.boards) {
+    const supplyId = boardPower.get(spec.id)?.supplyId;
+    boards[spec.id] = supplyId ? boardNodeOf(supplyId) : 0;
+  }
+  const last = adcNodes[adcNodes.length - 1];
+  if (last && last.ms === ms) last.boards = boards;
+  else adcNodes.push({ ms, boards });
+  const cutoff = ms - ADC_TRACE_MS;
+  while (adcNodes.length > 1 && (adcNodes[0]?.ms ?? 0) < cutoff) {
+    adcNodes.shift();
+  }
+  while (adcSamples.length > 0 && (adcSamples[0]?.ms ?? 0) < cutoff) {
+    adcSamples.shift();
+  }
+}
+
+function noteAdc(boardId: string, sample: AdcConversion) {
+  adcSamples.push({
+    board: boardId,
+    ms: simMs() + 1,
+    mux: sample.mux,
+    ref: sample.ref,
+    vRef: sample.vRef,
+    voltage: sample.voltage,
+    count: sample.count,
+  });
+}
+
+/**
+ * AVCC is the latched board node. AREF is 0: the shipped boards have no
+ * AREF port, and the pin circuit is omitted. Channels 0–7 read their net.
+ */
+function attachAnalog(board: AvrBoard) {
+  const spec = runPlan?.boards.find((item) => item.id === board.id);
+  if (!spec) return;
+  board.setAnalog({
+    supply: () => latchedBoardNode(board.id),
+    aref: () => 0,
+    channel: (channel) => {
+      const plan = runPlan;
+      if (!plan) return { voltage: 0, rSource: spec.pin.rLeak };
+      const bit = channel < 6 ? arduinoPinBit(`A${channel}`) : undefined;
+      const mode = bit === undefined ? "analog" : board.driveMode(bit);
+      return analogRead({
+        plan,
+        boardId: board.id,
+        channel,
+        mode,
+        pin: spec.pin,
+        boardVolts: latchedBoardNode,
+        supplyVolts: (supplyId) => supplyLive[supplyId]?.voltage ?? 0,
+      });
+    },
+    converted: (sample) => noteAdc(board.id, sample),
+  });
 }
 
 /**
@@ -1293,6 +1419,7 @@ function advanceOne() {
     throwOnStep = false;
     throw new Error("injected step fault");
   }
+  latchSupplyNodes();
   const already = new Set<string>();
   for (const board of boards) {
     const power = boardPower.get(board.id);
@@ -1336,6 +1463,7 @@ function advanceOne() {
     }
     rearmServos(board.id, board);
   }
+  latchSupplyNodes();
   for (const board of boards) {
     if (already.has(board.id)) continue;
     const power = boardPower.get(board.id);
@@ -1350,6 +1478,7 @@ function advanceOne() {
   sim.mj.mj_step(sim.model, sim.data);
   classifyLoads();
   recordStep();
+  stampNodes(simMs());
 }
 
 function dispose() {
@@ -1367,6 +1496,9 @@ function dispose() {
   supplySpecs = [];
   partFeeds = {};
   supplyLive = {};
+  latchedNode = new Map();
+  adcNodes = [];
+  adcSamples = [];
   rails = new Map();
   stepPulses.clear();
   specs = [];
@@ -1591,6 +1723,13 @@ function answerRecord(message: Extract<ToWorker, { type: "record" }>) {
   }
   if (query.op === "info") {
     reply({ op: "info", info: recorder.info(sim.data.time) });
+    return;
+  }
+  if (query.op === "adc") {
+    reply({
+      op: "adc",
+      trace: { nodes: adcNodes, samples: adcSamples },
+    });
     return;
   }
   if (query.op === "frame") {

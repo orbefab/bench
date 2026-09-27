@@ -25,7 +25,13 @@ import {
   resolveInside,
 } from "./files";
 import { type SerialPage, SerialRing } from "./serial-ring";
-import type { FromWorker, RecordBody, RecordQuery, ToWorker } from "./worker";
+import type {
+  AdcTrace,
+  FromWorker,
+  RecordBody,
+  RecordQuery,
+  ToWorker,
+} from "./worker";
 
 /**
  * One running world per document. Subscribers share play state, sim time,
@@ -1043,6 +1049,23 @@ export async function readRecording(
   if (body.op === "error") return { error: body.message };
   if (body.op !== "read") return { error: "recording did not answer" };
   return body.read;
+}
+
+/**
+ * Board nodes and ADC samples since the run started, capped at ten minutes.
+ * A sample's `ms` is the step it completed in. Its reference is the board
+ * node stamped at `ms - 1`, except a CPU that booted in that same quantum.
+ */
+export async function readAdcTrace(
+  project: string,
+  worldRel: string
+): Promise<AdcTrace | { error: string }> {
+  const doc = runningDoc(project, worldRel);
+  if ("error" in doc) return doc;
+  const body = await ask(doc, { op: "adc" });
+  if (body.op === "error") return { error: body.message };
+  if (body.op !== "adc") return { error: "recording did not answer" };
+  return body.trace;
 }
 
 /** The full frame at or before `t` seconds. Null when that time was dropped. */
