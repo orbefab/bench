@@ -30,7 +30,8 @@ export function applyLevelEdit(
     if (edit.class === null) {
       return { error: "the default level cannot be removed" };
     }
-    if (!edit.axis) return { levels: ordered({ ...levels, default: edit.class }) };
+    if (!edit.axis)
+      return { levels: ordered({ ...levels, default: edit.class }) };
     const spec = axesOf(levels.default);
     spec[edit.axis] = edit.class;
     return { levels: ordered({ ...levels, default: collapse(spec) }) };
@@ -53,7 +54,8 @@ export function applyLevelEdit(
         };
       }
       delete spec[edit.axis];
-      if (AXES.every((axis) => spec[axis] === undefined)) delete table[edit.key];
+      if (AXES.every((axis) => spec[axis] === undefined))
+        delete table[edit.key];
       else table[edit.key] = collapse(spec);
     }
     return { levels: ordered({ ...levels, [tableName]: table }) };

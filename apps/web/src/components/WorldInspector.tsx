@@ -16,6 +16,7 @@ import {
   scrubbedBoardStatus,
 } from "@/lib/board-status";
 import { overlayMaxHeight } from "@/lib/layout";
+import { levelCard } from "@/lib/level-card";
 import {
   activeEscLayer,
   compactChatSheetOpen,
@@ -23,7 +24,6 @@ import {
   probeEscLayers,
 } from "@/lib/shortcuts";
 import { faultUntil, resetsUntil, serialUntil } from "@/lib/timeline";
-import { levelCard } from "@/lib/level-card";
 import { relFromWorldFile } from "@/lib/world-assets";
 import { formatSimTime } from "@/lib/world-issues";
 import {
@@ -43,11 +43,7 @@ import {
   clearBoardReject,
   useBoardConsole,
 } from "@/state/board-console";
-import {
-  useWorld,
-  type WorldSelection,
-  worldStore,
-} from "@/state/world";
+import { useWorld, type WorldSelection, worldStore } from "@/state/world";
 import { useWorldTimeline } from "@/state/world-timeline";
 
 function useWorldSelectionEsc() {

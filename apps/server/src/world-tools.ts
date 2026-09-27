@@ -492,10 +492,7 @@ function coveredPaths(
   return paths;
 }
 
-function levelRows(
-  report: NonNullable<RunPlan["report"]>,
-  paths: Set<string>
-) {
+function levelRows(report: NonNullable<RunPlan["report"]>, paths: Set<string>) {
   return report.levels
     .filter((row) => paths.has(row.path))
     .map((row) => {
@@ -1179,7 +1176,12 @@ export const worldTools = {
         (diag) =>
           diag.severity === "error" && !diag.message.includes("lockfile")
       );
-      if (blocked.length > 0 || !loaded.world || !loaded.report) {
+      if (
+        blocked.length > 0 ||
+        !loaded.world ||
+        !loaded.report ||
+        !loaded.lock
+      ) {
         writeFileSync(file, before);
         const message = blocked.map((diag) => diag.message).join("; ");
         return { error: message || "world file did not load" };

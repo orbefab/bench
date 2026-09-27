@@ -8,7 +8,7 @@ import type {
   LockFile,
   LockSnapshot,
   RunReport,
-  type SnapshotFile,
+  SnapshotFile,
   WorldFileV2,
 } from "@sfab-bench/contract";
 import { snapshotRefOf } from "../power-path";

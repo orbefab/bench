@@ -340,11 +340,7 @@ function formNumbers(inst: LiveInstance): Record<string, number> | null {
  * robot meshes belong to that other part. When this part's own body is
  * a URDF, the meshes are already drawn, so the visual box is skipped.
  */
-function pushBox(
-  boxes: RunBox[],
-  inst: LiveInstance,
-  pick: RunBox["pick"]
-) {
+function pushBox(boxes: RunBox[], inst: LiveInstance, pick: RunBox["pick"]) {
   const body = inst.axes.body.impl as BodyImpl | null;
   if (body?.kind === "urdf") return;
   const visual = inst.axes.visual.impl as VisualImpl | null;

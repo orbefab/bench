@@ -62,7 +62,8 @@ export function levelCard(
 
 function snapshotOf(rows: RunReport["snapshots"]): LevelSnapshot {
   const first = rows[0];
-  if (!first) return { ref: "", quality: "", errors: [], provenance: null, warnings: [] };
+  if (!first)
+    return { ref: "", quality: "", errors: [], provenance: null, warnings: [] };
   const errors: string[] = [];
   const warnings: string[] = [];
   for (const row of rows) {
@@ -82,11 +83,9 @@ function provenanceLine(
   provenance: RunReport["snapshots"][number]["provenance"]
 ): string | null {
   if (!provenance) return null;
-  const parts = [provenance.source];
+  const parts: string[] = [provenance.source];
   if (provenance.from) {
-    parts.push(
-      `from ${provenance.from.part} class ${provenance.from.level}`
-    );
+    parts.push(`from ${provenance.from.part} class ${provenance.from.level}`);
   }
   if (provenance.fixture) parts.push(`fixture ${provenance.fixture}`);
   if (provenance.tool) {

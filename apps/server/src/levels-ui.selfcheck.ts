@@ -92,10 +92,11 @@ expect(
   `snapshot ${class1Nano?.snapshot?.ref} ${class1Nano?.snapshot?.quality}`
 );
 expect(
-  class1Nano?.snapshot?.errors.some((line) =>
-    line.startsWith("+5V free-run max ") &&
-    line.includes("rms ") &&
-    line.includes(" vs class 2")
+  class1Nano?.snapshot?.errors.some(
+    (line) =>
+      line.startsWith("+5V free-run max ") &&
+      line.includes("rms ") &&
+      line.includes(" vs class 2")
   ) === true,
   `error ${class1Nano?.snapshot?.errors.join(" | ")}`
 );
@@ -215,9 +216,8 @@ try {
         `set snapshot ${JSON.stringify(snap)}`
       );
       const after = readFileSync(worldFile, "utf8");
-      const originalLevels = (
-        JSON.parse(before) as { run: { levels: never } }
-      ).run.levels;
+      const originalLevels = (JSON.parse(before) as { run: { levels: never } })
+        .run.levels;
       expect(
         replaceLevels(after, originalLevels) === before,
         "the edit changed more than run.levels"
@@ -230,7 +230,8 @@ try {
         class: null,
       });
       expect(!errorOf(cleared), `clear ${JSON.stringify(cleared)}`);
-      const back = isRecord(cleared) && Array.isArray(cleared.rows) ? cleared.rows : [];
+      const back =
+        isRecord(cleared) && Array.isArray(cleared.rows) ? cleared.rows : [];
       const restored = back.find(
         (row) =>
           isRecord(row) && row.path === "nano" && row.axis === "behaviour"
