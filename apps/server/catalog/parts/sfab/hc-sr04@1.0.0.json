@@ -1,0 +1,135 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/hc-sr04@1.0.0",
+  "type": "ultrasonic-ranger-4pin",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "ElecFreaks HC-SR04",
+      "ref": "https://cdn.sparkfun.com/datasheets/Sensors/Proximity/HCSR04.pdf operating voltage 5 V DC, working current 0.015 A, 40 kHz, range 0.02 to 4 m, measuring angle 0.2618 rad full (0.1309 rad half), trigger at least 10e-6 s, range = high time * 340 m/s / 2. The module outline is 0.045 x 0.020 x 0.015 m."
+    },
+    {
+      "title": "Assumed timing, until M3 and M4",
+      "ref": "Echo rises 200e-6 s after Trig falls: one 8-cycle burst at 40 kHz. A scope on Trig and Echo settles it (M3). With nothing in range, Echo stays high for 0.038 s. M4 times that pulse. Logic thresholds are vil 0.9 V and vih 2.0 V so a Nano pin can drive Trig, and Echo vol 0.4 V voh 4.5 V. Not printed on the sheet (M8)."
+    },
+    {
+      "title": "Assumed supply, until M8",
+      "ref": "Idle current 0.002 A. The sheet states the 0.015 A working current and 5 V, not the idle draw and not a cutoff. vMin 3.0 V is assumed so a servo sag does not drop the echo; M8 measures the current and the voltage where the module stops."
+    },
+    {
+      "title": "Speed of sound",
+      "ref": "343 m/s at 20 C. The sheet uses 340 m/s. The 58e-6 s/cm rule is 344.8 m/s (2 * 0.01 / 58e-6). At 0.10 m the echo is 583e-6 s at 343, 588e-6 s at 340, and 580e-6 s by the 58 rule. The sketch divides microseconds by 58; this part emits 2d/343."
+    },
+    {
+      "title": "Transducer plane",
+      "ref": "The ray starts 0.0128 m along local +Y from the part origin: half of the 0.0016 m board plus the 0.012 m can. Both can figures are marked verify in examples/gauge/cad/lib/dimensions.py. M3 can move the plane."
+    }
+  ],
+  "ratings": {
+    "VCC": {
+      "voltage": [5, 5],
+      "current": [0, 0.015]
+    },
+    "Trig": {
+      "logic": {
+        "vil": 0.9,
+        "vih": 2
+      }
+    },
+    "Echo": {
+      "logic": {
+        "vil": 0.9,
+        "vih": 2,
+        "vol": 0.4,
+        "voh": 4.5
+      }
+    }
+  },
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "ideal",
+        "variants": {
+          "ideal": {
+            "kind": "form",
+            "form": "ranger@1",
+            "params": {
+              "c": 343,
+              "rangeMin": 0,
+              "rangeMax": 0,
+              "beamHalf": 0,
+              "trigMin": 0,
+              "echoDelay": 0,
+              "echoTimeout": 0,
+              "working": 0,
+              "quiescent": 0,
+              "vMin": 0,
+              "face": 0.0128
+            },
+            "omits": [
+              "beam",
+              "range limits",
+              "trigger timing",
+              "echo delay",
+              "timeout pulse",
+              "supply current"
+            ]
+          }
+        }
+      },
+      "1": {
+        "default": "datasheet",
+        "variants": {
+          "datasheet": {
+            "kind": "form",
+            "form": "ranger@1",
+            "params": {
+              "c": 343,
+              "rangeMin": 0.02,
+              "rangeMax": 4,
+              "beamHalf": 0.1308996938995747,
+              "trigMin": 0.00001,
+              "echoDelay": 0.0002,
+              "echoTimeout": 0.038,
+              "working": 0.015,
+              "quiescent": 0.002,
+              "vMin": 3,
+              "face": 0.0128
+            },
+            "omits": [
+              "incidence angle",
+              "multipath",
+              "temperature",
+              "humidity",
+              "noise",
+              "supply sensitivity"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["module body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.045, 0.02, 0.015],
+            "omits": ["cans", "header", "crystal"]
+          }
+        }
+      }
+    }
+  }
+}
