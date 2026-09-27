@@ -5,6 +5,8 @@ import path from "node:path";
 
 import {
   type BehaviourImpl,
+  BODY_FORMS,
+  type BodyImpl,
   type Diagnostic,
   DOMAIN_QUANTITIES,
   FORM_PARAMS,
@@ -15,6 +17,7 @@ import {
   type WorldFileV2,
 } from "@sfab-bench/contract";
 
+import { gearTrainErrors } from "../body/gear-train";
 import { expandPartType } from "./expand";
 import {
   classesOf,
@@ -532,6 +535,11 @@ function lintAxes(part: PartFile, diags: Diagnostic[]): void {
           lintBehaviour(part.id, name, variant as BehaviourImpl, diags);
         }
       }
+      if (axis === "body") {
+        for (const [name, variant] of Object.entries(slot.variants)) {
+          lintBody(part.id, name, variant as BodyImpl, diags);
+        }
+      }
     }
   }
 }
@@ -554,6 +562,20 @@ function lintBehaviour(
         detail: "level must declare what it omits",
       })
     );
+  }
+  if (variant.kind === "form" && isBodyForm(variant.form)) {
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path: partId,
+        port: name,
+        quantity: "Form",
+        left: variant.form,
+        right: "body",
+        detail: `${variant.form} is a body-axis form`,
+      })
+    );
+    return;
   }
   if (variant.kind !== "form") return;
   const form = FORM_PARAMS[variant.form];
@@ -602,6 +624,48 @@ function lintBehaviour(
         })
       );
     }
+  }
+}
+
+function isBodyForm(form: string): boolean {
+  return (BODY_FORMS as readonly string[]).includes(form);
+}
+
+function lintBody(
+  partId: string,
+  name: string,
+  variant: BodyImpl,
+  diags: Diagnostic[]
+): void {
+  const raw = variant as { kind?: string; form?: string };
+  if (raw.kind === "form") {
+    const form = raw.form ?? "form";
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path: partId,
+        port: name,
+        quantity: "Form",
+        left: form,
+        right: "body",
+        detail: `${form} is a behaviour form on the body axis`,
+      })
+    );
+    return;
+  }
+  if (variant.kind !== "gear-train") return;
+  for (const message of gearTrainErrors(partId, variant)) {
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path: partId,
+        port: name,
+        quantity: "GearTrain",
+        left: message,
+        right: "gear-train",
+        detail: message,
+      })
+    );
   }
 }
 

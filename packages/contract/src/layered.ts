@@ -264,7 +264,11 @@ export type FormId =
   | "table@1"
   | "transfer-fn@1"
   | "multibody@1"
-  | "ranger@1";
+  | "ranger@1"
+  | "hinge@1";
+
+/** Forms that belong on the body axis. Anywhere else is a load error. */
+export const BODY_FORMS = ["hinge@1"] as const;
 
 export type FormDef = {
   params: Partial<Record<string, Quantity>>;
@@ -320,6 +324,13 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
       face: "Position",
     },
   },
+  "hinge@1": {
+    params: {
+      armature: "Inertia",
+      damping: "TorquePerAngularVelocity",
+      frictionloss: "Torque",
+    },
+  },
 };
 
 /** Forms whose `V` param is the supply setpoint (D-023.2). */
@@ -353,6 +364,34 @@ export type BehaviourImpl = { omits: string[] } & (
   | { kind: "script"; script: string }
 );
 
+/** One shaft of a `gear-train` body. Inertia, damping and friction are shaft-side. */
+export type GearShaft = {
+  name: string;
+  /** Spin inertia about the shaft, kg·m². */
+  inertia: number;
+  /** Viscous coefficient on this shaft, N·m·s/rad. */
+  damping: number;
+  /** Coulomb torque on this shaft, N·m. */
+  frictionloss: number;
+  /** Mass, kg. Absent, a capture body uses a trace mass. */
+  mass?: number;
+};
+
+/** One spur mesh. `teethDriven / teethDriver` is |ω_driver / ω_driven|. */
+export type GearMesh = {
+  driver: string;
+  driven: string;
+  teethDriver: number;
+  teethDriven: number;
+};
+
+export type GearTrain = {
+  input: string;
+  output: string;
+  shafts: GearShaft[];
+  meshes: GearMesh[];
+};
+
 export type BodyImpl = { omits: string[] } & (
   | {
       kind: "lumped";
@@ -361,6 +400,8 @@ export type BodyImpl = { omits: string[] } & (
       inertia: Sym6;
       joint?: { armature?: number; frictionloss?: number; damping?: number };
     }
+  | ({ kind: "gear-train" } & GearTrain)
+  | { kind: "snapshot"; ref: string }
   | { kind: "urdf"; file: string }
   | { kind: "mjcf"; file: string }
   | { kind: "children" }
@@ -565,7 +606,11 @@ export type SnapshotFile = {
   error:
     | "none-available"
     | {
-        metric: "static-max-abs" | "free-run-max-abs" | "free-run-rms";
+        metric:
+          | "static-max-abs"
+          | "free-run-max-abs"
+          | "free-run-rms"
+          | "step-rise";
         quantity: string;
         value: number;
         corner?: "typ" | "min" | "max";
