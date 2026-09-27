@@ -11,6 +11,7 @@ import {
   type Diagnostic,
   type PortDecl,
   type Pose,
+  type RunReport,
   type VisualImpl,
   type WorldError,
   type WorldPrimitive,
@@ -22,8 +23,14 @@ import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
 import { siValue } from "./parts/si";
-import { isFirmwareBoard } from "./power-path";
+import { isFirmwareBoard, snapshotRefOf } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
+import {
+  envelopeOf,
+  type SnapshotEnvelope,
+  type TableLaw,
+  tableLawOf,
+} from "./snapshot-law";
 import { readTargets } from "./targets";
 
 /** Shown where a world fails to load, in the UI and in the agent tools. */
@@ -100,6 +107,27 @@ export type RunBoard = {
   supply: { min: number; max: number };
   /** `avr-pin@1`. High is the board node. The ADC and the Nano D13 stamp use it. */
   pin: AvrPinParams;
+  /**
+   * Class-1 USB law. Null when this variant does not name a snapshot.
+   * A bench supply still leaves the pin as the ideal terminal.
+   */
+  powerSnapshot?: PowerSnapshot | null;
+};
+
+export type PowerSnapshot = {
+  ref: string;
+  law: TableLaw;
+  envelope: SnapshotEnvelope;
+  quality: string;
+  error: RunReport["snapshots"][number]["error"];
+};
+
+export type RunLevel = {
+  path: string;
+  axis: "behaviour" | "body" | "visual";
+  class: number | null;
+  variant: string | null;
+  reason: string;
 };
 
 export type RunSupply = {
@@ -157,6 +185,10 @@ export type RunPlan = {
   wires: [string, string][];
   /** The scene's own electrical wires as authored, for the cards. */
   shownWires: [string, string][];
+  /** Resolved level per instance per axis. Absent on a hand-built plan. */
+  levels?: RunLevel[];
+  /** Run report from the loader. The worker keeps it and amends envelope warnings. */
+  report?: RunReport | null;
 };
 
 export type PlanResult =
@@ -463,9 +495,27 @@ function build(
         continue;
       }
       const boardCircuit = behaviour.boardCircuit ?? null;
-      if (boardCircuit !== null && boardCircuit !== "nano-usb") {
+      const snapRef = snapshotRefOf(boardCircuit);
+      if (boardCircuit !== null && boardCircuit !== "nano-usb" && !snapRef) {
         diags.push(cannot(inst, `unknown board circuit ${boardCircuit}`));
         continue;
+      }
+      let powerSnapshot: PowerSnapshot | null = null;
+      if (snapRef) {
+        const found = loaded.snapshots.find((row) => row.id === snapRef);
+        const law = found ? tableLawOf(found.file) : null;
+        const envelope = found ? envelopeOf(found.file) : null;
+        if (!found || !law || !envelope) {
+          diags.push(cannot(inst, `snapshot ${snapRef} did not load`));
+          continue;
+        }
+        powerSnapshot = {
+          ref: snapRef,
+          law,
+          envelope,
+          quality: found.quality,
+          error: found.file.error,
+        };
       }
       const params = behaviour.params ?? {};
       const image = behaviour.imageParam
@@ -506,6 +556,7 @@ function build(
         operatingVoltage: rail[0],
         supply: { min: rail[0], max: rail[1] },
         pin: avrPinParams(params),
+        ...(powerSnapshot ? { powerSnapshot } : {}),
       });
       continue;
     }
@@ -645,6 +696,16 @@ function build(
       rangers,
       wires: electricalWires(loaded.nets),
       shownWires: authoredWires(loaded.nets, loaded.wires),
+      levels: loaded.resolved.flatMap((inst) =>
+        (["behaviour", "body", "visual"] as const).map((axis) => ({
+          path: inst.path,
+          axis,
+          class: inst.axes[axis].class,
+          variant: inst.axes[axis].variant,
+          reason: inst.axes[axis].reason,
+        }))
+      ),
+      report: loaded.report,
     },
     diags,
   };

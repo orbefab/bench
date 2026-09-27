@@ -3,7 +3,7 @@
   "id": "arduino-nano",
   "plausible": {
     "Voltage": [-1, 25],
-    "Current": [-0.5, 0.5]
+    "Current": [-5, 5]
   },
   "templates": [
     {

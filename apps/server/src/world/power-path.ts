@@ -126,12 +126,23 @@ const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;
  * `nano-5v` is the clone's onboard network with no diode: the terminal is
  * the board node.
  */
-export type BoardPathName = "uno-usb" | "nano-usb" | "nano-5v";
+export type BoardPathName =
+  | "uno-usb"
+  | "nano-usb"
+  | "nano-5v"
+  | "nano-snapshot";
+
+/** `snapshot:<publisher/name@version>` on a firmware variant's `boardCircuit`. */
+export function snapshotRefOf(boardCircuit: string | null): string | null {
+  if (!boardCircuit?.startsWith("snapshot:")) return null;
+  const ref = boardCircuit.slice("snapshot:".length);
+  return ref.length > 0 ? ref : null;
+}
 
 /**
  * Boards the run executes. `uno-usb` is always the cable when a
  * `usb-a-port` feeds that board. `part` reads the firmware variant's
- * `boardCircuit` (`nano-usb` at class 2, absent at class 1).
+ * `boardCircuit` (`snapshot:<ref>` at class 1, `nano-usb` at class 2).
  */
 const FIRMWARE_BOARDS: Record<string, BoardPathName | "part"> = {
   "arduino-uno-r3": "uno-usb",
@@ -151,7 +162,8 @@ export function isFirmwareBoard(typeId: string): boolean {
  * An Uno takes the cable only from a `usb-a-port`. A bench supply on its
  * `5V` is the header, with no path. A class-2 Nano takes the diode path
  * from a `usb-a-port`, and the same onboard network without the diode
- * from any other supply on `5V`.
+ * from any other supply on `5V`. A class-1 snapshot is
+ * `snapshot:<ref>` and runs only when a `usb-a-port` feeds `5V`.
  */
 export function usbPathFor(
   supplyType: string,
@@ -162,6 +174,9 @@ export function usbPathFor(
   const row = FIRMWARE_BOARDS[boardType];
   if (!row) return null;
   if (row === "uno-usb") return supplyType === "usb-a-port" ? "uno-usb" : null;
+  if (snapshotRefOf(boardCircuit)) {
+    return supplyType === "usb-a-port" ? "nano-snapshot" : null;
+  }
   if (boardCircuit !== "nano-usb") return null;
   return supplyType === "usb-a-port" ? "nano-usb" : "nano-5v";
 }

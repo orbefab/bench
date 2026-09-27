@@ -21,6 +21,7 @@ import {
   TheveninLimit,
 } from "./circuit/elements";
 import { Engine } from "./circuit/engine";
+import { LawTable } from "./circuit/law-table";
 import { AVR_PIN, type AvrPinParams, type PinMode } from "./circuit/pin";
 import {
   BOARD_LOAD_KNEE_V,
@@ -36,6 +37,7 @@ import {
   UNO_BOARD_NODE,
   UNO_TERM_NODE,
 } from "./power-path";
+import type { TableLaw } from "./snapshot-law";
 
 export type { Braking };
 
@@ -59,14 +61,21 @@ export type RailCircuitSpec = {
    * `uno-usb` inserts the Uno cable. `nano-usb` inserts the clone Nano's
    * diode, capacitors, D13 LED, and reset network. `nano-5v` inserts that
    * network without the diode: the terminal is the board node.
+   * `nano-snapshot` is the class-1 USB law: a Thevenin table, no capacitors.
    */
   boardPath?: "none" | BoardPathName;
+  /** Diode-law table for `nano-snapshot`. The supply setpoint is `vNom`. */
+  law?: TableLaw;
   /** D13 `avr-pin@1` numbers. Absent uses the datasheet fits. */
   pin?: AvrPinParams;
 };
 
 const MASTER_S = 0.001;
 const SUBSTEPS = 10;
+
+function missingLaw(): never {
+  throw new Error("nano-snapshot needs a diode-law table");
+}
 
 export class RailCircuit {
   readonly winding: Float64Array;
@@ -108,12 +117,14 @@ export class RailCircuit {
     const uno = spec.boardPath === "uno-usb";
     const nanoUsb = spec.boardPath === "nano-usb";
     const nano5v = spec.boardPath === "nano-5v";
+    const snap = spec.boardPath === "nano-snapshot";
     const nano = nanoUsb || nano5v;
     const board = uno || nano;
     this.nano = nano;
     this.path = board;
-    this.termNode = nano5v ? UNO_BOARD_NODE : board ? UNO_TERM_NODE : "rail";
-    this.boardNode = board ? UNO_BOARD_NODE : "rail";
+    this.termNode =
+      snap || nano5v ? UNO_BOARD_NODE : board ? UNO_TERM_NODE : "rail";
+    this.boardNode = board || snap ? UNO_BOARD_NODE : "rail";
     let inductive = false;
     const motors: BridgeMotor[] = [];
     for (let i = 0; i < spec.motors.length; i++) {
@@ -139,14 +150,23 @@ export class RailCircuit {
       "0",
       board ? BOARD_LOAD_KNEE_V : 0
     );
-    const supply = new TheveninLimit(
-      "src",
-      this.termNode,
-      "0",
-      spec.vNom,
-      spec.rSeries,
-      spec.iLimit
-    );
+    const supply = snap
+      ? new LawTable(
+          "src",
+          this.boardNode,
+          "0",
+          spec.law ?? missingLaw(),
+          spec.vNom,
+          spec.iLimit
+        )
+      : new TheveninLimit(
+          "src",
+          this.termNode,
+          "0",
+          spec.vNom,
+          spec.rSeries,
+          spec.iLimit
+        );
     const unoPath = uno ? createUnoUsbPath() : null;
     const nanoPath = nano
       ? createNanoUsbPath(SS14, LED_RED, nanoUsb, spec.pin ?? AVR_PIN)

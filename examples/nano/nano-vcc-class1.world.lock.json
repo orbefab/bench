@@ -65,6 +65,14 @@
       "version": "1.0.0"
     }
   ],
+  "snapshots": [
+    {
+      "id": "sfab/nano-usb-5v@1.0.0",
+      "path": "../../apps/server/catalog/snapshots/sfab/nano-usb-5v@1.0.0.json",
+      "sha256": "4e3f12baa7ae2b7eab9a576e8879a0f9b336298bb8f04d43af0d0d9f82ba59ab",
+      "source": "catalog"
+    }
+  ],
   "types": [
     {
       "id": "arduino-nano",
@@ -121,5 +129,5 @@
       "source": "catalog"
     }
   ],
-  "world": "nano-vcc-usb.world"
+  "world": "nano-vcc-class1.world"
 }
