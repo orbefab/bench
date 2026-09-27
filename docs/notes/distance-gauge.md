@@ -52,7 +52,7 @@ Classes follow D-004: 0 ideal, 1 behavioural, 2 structural (its children), 3 phy
 
 | Part | Axis | 0 | 1 | 2 | 3 | Check |
 | --- | --- | --- | --- | --- | --- | --- |
-| Nano board | behaviour | ideal 5 V node, no draw | constant board current | the clone's circuits: USB diode, +5V caps, D13 LED and its resistor, reset network; chip on its pins | — | ngspice; M1, M2, M9 |
+| Nano board | behaviour | ideal 5 V node, no draw | USB feed: captured diode-law snapshot of the class-2 input; any other feed stays the ideal terminal | the clone's circuits: USB diode, +5V caps, D13 LED and its resistor, reset network; chip on its pins | — | ngspice; M1, M2, M9 |
 | Nano chip | behaviour | scripted pins | sketch compiled natively against a host HAL | avr8js, cycle-exact | — | firmware output |
 | USB supply | behaviour | ideal 5 V | `thevenin-limit@1` | PC port + cable R | — | M1, M2 |
 | MG90S | behaviour | ideal position | class-1 law (voltage-mode motor, E_sat) | control IC + motor (+L) + pot | — | datasheet; M2, M6 |
