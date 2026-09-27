@@ -484,6 +484,16 @@ export type RunReport = {
     quality: string;
     /** Free-run error rows from the snapshot file. Absent when none ran. */
     error?: SnapshotFile["error"];
+    /**
+     * The line the card shows. Hashes stay in the snapshot file.
+     * Absent when the row was not loaded from a snapshot file.
+     */
+    provenance?: {
+      source: SnapshotFile["provenance"]["source"];
+      from?: { part: string; level: string };
+      fixture?: string;
+      tool?: { name: string; version: string };
+    };
     /** Envelope warnings for this instance. Absent when the row has none. */
     envelope?: string[];
   }[];

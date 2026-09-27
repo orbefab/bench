@@ -8,6 +8,7 @@ import type {
   LockFile,
   LockSnapshot,
   RunReport,
+  type SnapshotFile,
   WorldFileV2,
 } from "@sfab-bench/contract";
 import { snapshotRefOf } from "../power-path";
@@ -176,6 +177,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     ref: string;
     quality: string;
     error: LoadedSnapshot["file"]["error"];
+    provenance: RunReport["snapshots"][number]["provenance"];
   }[] = [];
   for (const inst of resolved.instances) {
     const ref = behaviourSnapshot(inst);
@@ -207,6 +209,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
           ref,
           quality: found.loaded.quality,
           error: found.loaded.file.error,
+          provenance: provenanceOf(found.loaded.file),
         });
       } else {
         diagnostics.push(
@@ -272,6 +275,22 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     lock,
     snapshots,
     snapshotRuns,
+  };
+}
+
+function provenanceOf(
+  file: SnapshotFile
+): RunReport["snapshots"][number]["provenance"] {
+  const source = file.provenance;
+  return {
+    source: source.source,
+    ...(source.from
+      ? { from: { part: source.from.part, level: source.from.level } }
+      : {}),
+    ...(source.fixture ? { fixture: source.fixture.ref } : {}),
+    ...(source.tool
+      ? { tool: { name: source.tool.name, version: source.tool.version } }
+      : {}),
   };
 }
 

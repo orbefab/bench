@@ -31,6 +31,7 @@ export function buildReport(input: {
     ref: string;
     quality: string;
     error?: SnapshotFile["error"];
+    provenance?: RunReport["snapshots"][number]["provenance"];
   }[];
 }): { report: RunReport; json: string } {
   const levels = [];
@@ -102,6 +103,7 @@ export function buildReport(input: {
       ref: row.ref,
       quality: row.quality,
       ...(row.error !== undefined ? { error: row.error } : {}),
+      ...(row.provenance ? { provenance: row.provenance } : {}),
       envelope: [],
     });
   }

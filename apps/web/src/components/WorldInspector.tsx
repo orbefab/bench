@@ -109,6 +109,29 @@ function LevelBlock({ path }: { path: string }) {
           <span className="text-muted-foreground"> · {axis.reason}</span>
         </div>
       ))}
+      {card.snapshot ? (
+        <>
+          <Field
+            label="Snapshot"
+            value={`${card.snapshot.ref} · ${card.snapshot.quality}`}
+          />
+          {card.snapshot.errors.map((line) => (
+            <div
+              key={line}
+              className="mb-1.5 truncate font-mono text-[12px]"
+              title={line}
+            >
+              {line}
+            </div>
+          ))}
+          {card.snapshot.provenance ? (
+            <Field label="Provenance" value={card.snapshot.provenance} />
+          ) : null}
+          {card.snapshot.warnings.map((text) => (
+            <SoaLine key={text} text={text} />
+          ))}
+        </>
+      ) : null}
       {card.omits.length > 0 ? (
         <details className="mt-1">
           <summary className="cursor-pointer text-[11px] text-muted-foreground">
