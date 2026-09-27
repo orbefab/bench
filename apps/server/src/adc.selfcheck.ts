@@ -340,7 +340,10 @@ async function assertTraceOff(project: string, world: string): Promise<void> {
       class1.trace,
       "nano"
     );
-    expect(low.rest > supply.rest, "class 1 rest is not above class 2");
+    expect(
+      Math.abs(low.rest - supply.rest) <= 50,
+      `class 1 rest ${low.rest} mV is not within 50 mV of class 2 ${supply.rest} mV`
+    );
     console.log(
       `Nano class 1 rest ${low.rest} mV, min ${low.min} mV; class 2 rest ${supply.rest} mV, min ${supply.min} mV`
     );

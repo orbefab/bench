@@ -4,7 +4,14 @@
  * ATmega328P stays in avr8js.
  */
 
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,10 +31,11 @@ import {
   readRecording,
   stopWorld,
 } from "./world/host";
-import { planWorld } from "./world/plan";
+import { catalogRoot, planWorld } from "./world/plan";
 import { BOD_ASSERT_V, BOD_RELEASE_V, RESET_HOLD_MS } from "./world/power";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
+import { tableLawOf } from "./world/snapshot-law";
 
 /** Frozen with the SG90 catalog fit the arm self-checks use. */
 const law = {
@@ -75,7 +83,7 @@ function ss14Drop(amps: number): number {
 }
 
 function rail(
-  path: "none" | "nano-usb" | "nano-5v",
+  path: "none" | "nano-usb" | "nano-5v" | "nano-snapshot",
   rSeries: number
 ): RailCircuit {
   return createRailCircuit({
@@ -83,8 +91,25 @@ function rail(
     rSeries,
     iLimit: usb.currentLimit,
     motors: [{ resistance: law.resistance, k: law.k }],
-    ...(path === "none" ? {} : { boardPath: path }),
+    ...(path === "none"
+      ? {}
+      : {
+          boardPath: path,
+          ...(path === "nano-snapshot" ? { law: nanoUsbLaw() } : {}),
+        }),
   });
+}
+
+function nanoUsbLaw() {
+  const file = join(
+    catalogRoot(),
+    "snapshots",
+    "sfab",
+    "nano-usb-5v@1.0.0.json"
+  );
+  const law = tableLawOf(JSON.parse(readFileSync(file, "utf8")));
+  if (!law) throw new Error("nano usb snapshot has no table");
+  return law;
 }
 
 /** Settle, then return the rail. `mode` is the D13 pin. */
@@ -106,7 +131,7 @@ function settle(
 }
 
 function point(
-  path: "none" | "nano-usb" | "nano-5v",
+  path: "none" | "nano-usb" | "nano-5v" | "nano-snapshot",
   rSeries: number,
   fraction: number,
   connected: boolean
@@ -167,8 +192,11 @@ function point(
     ["stalled", 1, true],
   ] as const;
   const lines: string[] = [];
-  for (const level of ["class 1", "class 2"] as const) {
-    const path = level === "class 2" ? "nano-usb" : "none";
+  for (const [level, path] of [
+    ["ideal terminal", "none"],
+    ["snapshot", "nano-snapshot"],
+    ["class 2", "nano-usb"],
+  ] as const) {
     const bits: string[] = [];
     for (const [name, fraction, connected] of rows) {
       const solved = point(path, usb.rSeries, fraction, connected);
@@ -457,7 +485,7 @@ try {
   const live2 = tail2?.boards.nano?.voltage ?? Number.NaN;
   const live1 = tail1?.boards.nano?.voltage ?? Number.NaN;
   const circuit2 = point("nano-usb", usb.rSeries, 1, true).boardVoltage;
-  const circuit1 = point("none", usb.rSeries, 1, true).boardVoltage;
+  const circuit1 = point("nano-snapshot", usb.rSeries, 1, true).boardVoltage;
   expect(
     Math.abs(live2 - circuit2) <= 0.001,
     `class 2 world stall ${live2} V vs circuit ${circuit2} V`
