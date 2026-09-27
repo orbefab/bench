@@ -37,6 +37,8 @@
     "TorquePerCurrent": [0, 5],
     "Resistance": [0.01, 100],
     "Angle": [0, 4],
-    "Dimensionless": [0, 1]
+    "Dimensionless": [0, 1],
+    "Inertia": [1e-9, 0.01],
+    "TorquePerAngularVelocity": [0, 1]
   }
 }

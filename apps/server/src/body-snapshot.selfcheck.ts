@@ -3,68 +3,37 @@
  * hinge form on the behaviour axis is rejected.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { GearTrain } from "@sfab-bench/contract";
-
+import type { GearTrain, SnapshotFile } from "@sfab-bench/contract";
 import { collapse, gearTrainErrors, reflection } from "./world/body/gear-train";
+import { writeHingeSnapshot } from "./world/body/hinge-capture";
 import { applyLevelEdit } from "./world/level-edit";
-import { planWorld } from "./world/plan";
+import { catalogRoot, planWorld } from "./world/plan";
 
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
 }
 
-/** E5 disk model and the 70/30, 50/50 split. The catalog stores these. */
-const TRAIN: GearTrain = {
-  input: "rotor",
-  output: "output",
-  shafts: [
-    {
-      name: "rotor",
-      mass: 0.0007333759612329867,
-      inertia: 5.387068780247043e-9,
-      damping: 2.5726492761638665e-8,
-      frictionloss: 0.000003834169141632991,
-    },
-    {
-      name: "g1",
-      mass: 0.0001484753196829288,
-      inertia: 1.616580003354382e-9,
-      damping: 0,
-      frictionloss: 0,
-    },
-    {
-      name: "g2",
-      mass: 0.0001507365153565197,
-      inertia: 1.689375384633888e-9,
-      damping: 0,
-      frictionloss: 0,
-    },
-    {
-      name: "g3",
-      mass: 0.0001574427566115979,
-      inertia: 1.7770781240122473e-9,
-      damping: 0,
-      frictionloss: 0,
-    },
-    {
-      name: "output",
-      mass: 0.00010063047486217586,
-      inertia: 1.397366434978325e-9,
-      damping: 0.00075,
-      frictionloss: 0.001,
-    },
-  ],
-  meshes: [
-    { driver: "rotor", driven: "g1", teethDriver: 9, teethDriven: 47 },
-    { driver: "g1", driven: "g2", teethDriver: 10, teethDriven: 38 },
-    { driver: "g2", driven: "g3", teethDriver: 8, teethDriven: 32 },
-    { driver: "g3", driven: "output", teethDriver: 7, teethDriven: 23 },
-  ],
+const catalog = catalogRoot();
+const sg90 = JSON.parse(
+  readFileSync(join(catalog, "parts/sfab/sg90@1.0.0.json"), "utf8")
+) as {
+  axes: {
+    body: {
+      "2": { variants: { "gear-train": GearTrain } };
+    };
+  };
 };
+const TRAIN = sg90.axes.body["2"].variants["gear-train"];
 
 const CATALOG_DAMPING = 0.0025;
 const CATALOG_FRICTION = 0.002;
@@ -262,6 +231,63 @@ expect(
 console.log(
   "world_set_level: setting a class replaces that axis's variant rule with the class alone"
 );
+
+const snapPath = join(catalog, "snapshots/sfab/sg90-hinge@1.0.0.json");
+const snap = JSON.parse(readFileSync(snapPath, "utf8")) as SnapshotFile;
+expect(snap.quality === "Q2a", `quality ${snap.quality}`);
+const hingeParams = snap.params as {
+  armature: number;
+  damping: number;
+  frictionloss: number;
+};
+console.log(
+  `hinge params armature ${hingeParams.armature} damping ${hingeParams.damping} frictionloss ${hingeParams.frictionloss}`
+);
+const toDeg = 180 / Math.PI;
+if (snap.error === "none-available")
+  throw new Error("hinge snapshot has no error rows");
+for (const row of snap.error) {
+  if (row.metric === "step-rise") {
+    console.log(`step-rise ${(row.value * 1000).toFixed(3)} ms`);
+  } else {
+    console.log(`${row.metric} ${(row.value * toDeg).toFixed(4)} deg`);
+  }
+}
+console.log(`quality ${snap.quality}`);
+
+const captureFile = JSON.parse(
+  readFileSync(join(catalog, "fixtures/capture.config.json"), "utf8")
+) as {
+  created: string;
+  tool: { name: string; version: string };
+  entries: { form?: string }[];
+};
+const hingeEntry = captureFile.entries.find((row) => row.form === "hinge@1");
+expect(hingeEntry, "hinge capture entry");
+const pkg = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8")
+) as { version: string; dependencies: Record<string, string> };
+const againDir = mkdtempSync(join(tmpdir(), "sfab-hinge-again-"));
+try {
+  const againPath = join(againDir, "sg90-hinge@1.0.0.json");
+  await writeHingeSnapshot({
+    catalog,
+    entry: hingeEntry as never,
+    created: captureFile.created,
+    tool: captureFile.tool,
+    bench: {
+      version: pkg.version,
+      mujoco: pkg.dependencies["@mujoco/mujoco"] ?? "",
+      avr8js: pkg.dependencies.avr8js ?? "",
+    },
+    outFile: againPath,
+  });
+  const again = readFileSync(againPath);
+  expect(again.equals(readFileSync(snapPath)), "second capture differs");
+  console.log("second capture byte-identical");
+} finally {
+  rmSync(againDir, { recursive: true, force: true });
+}
 
 function hingeFile(partType: string) {
   return {

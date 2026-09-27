@@ -11,6 +11,14 @@
     {
       "title": "TowerPro SG90 typical mass and envelope",
       "ref": "9 g, 23 mm x 12.2 mm x 29 mm; not in the Bench catalog"
+    },
+    {
+      "title": "Aus Electronics Direct TA0233 SG90 brochure",
+      "ref": "Published tooth counts: 9-tooth pinion, compounds 47:10, 38:8, 32:7, 23-tooth output. The brochure's 55.49:1 drops the 47:10 stage. N = 82156/315."
+    },
+    {
+      "title": "Rigid-gear collapse of that train",
+      "ref": "Rotor cup is an estimate: copper 8960 kg/m³, diameter 6 mm, length 8 mm, wall 0.6 mm, plus the 9-tooth pinion. Gears are POM disks at 1410 kg/m³, face width 1.5 mm, tooth-zone fill 1/2. Modules 0.20, 0.25, 0.30 and 0.40 mm, so each large gear is about 10 mm across. Bores 0.5 mm on the pinion, 0.75 mm on the idlers, 2.4 mm on the output. Damping is 70% on the rotor and 30% on the output. Friction is split 50/50. Idlers carry neither. Gear data stays on this servo until the class-2 children run; the gears child takes this body over then."
     }
   ],
   "ratings": {
@@ -132,15 +140,92 @@
               "damping": 0.0025
             },
             "omits": ["gear-stage bodies", "case flex"]
+          },
+          "collapsed": {
+            "kind": "snapshot",
+            "ref": "sfab/sg90-hinge@1.0.0",
+            "omits": [
+              "fitted armature: this is the class-2 collapse (reflected armature, not fitted)"
+            ]
           }
         }
       },
       "2": {
-        "default": "children",
+        "default": "gear-train",
         "variants": {
-          "children": {
-            "kind": "children",
-            "omits": ["gear tooth compliance"]
+          "gear-train": {
+            "kind": "gear-train",
+            "input": "rotor",
+            "output": "output",
+            "shafts": [
+              {
+                "name": "rotor",
+                "mass": 0.0007333759612329867,
+                "inertia": 5.387068780247043e-9,
+                "damping": 2.5726492761638665e-8,
+                "frictionloss": 0.000003834169141632991
+              },
+              {
+                "name": "g1",
+                "mass": 0.0001484753196829288,
+                "inertia": 1.616580003354382e-9,
+                "damping": 0,
+                "frictionloss": 0
+              },
+              {
+                "name": "g2",
+                "mass": 0.0001507365153565197,
+                "inertia": 1.689375384633888e-9,
+                "damping": 0,
+                "frictionloss": 0
+              },
+              {
+                "name": "g3",
+                "mass": 0.0001574427566115979,
+                "inertia": 1.7770781240122473e-9,
+                "damping": 0,
+                "frictionloss": 0
+              },
+              {
+                "name": "output",
+                "mass": 0.00010063047486217586,
+                "inertia": 1.397366434978325e-9,
+                "damping": 0.00075,
+                "frictionloss": 0.001
+              }
+            ],
+            "meshes": [
+              {
+                "driver": "rotor",
+                "driven": "g1",
+                "teethDriver": 9,
+                "teethDriven": 47
+              },
+              {
+                "driver": "g1",
+                "driven": "g2",
+                "teethDriver": 10,
+                "teethDriven": 38
+              },
+              {
+                "driver": "g2",
+                "driven": "g3",
+                "teethDriver": 8,
+                "teethDriven": 32
+              },
+              {
+                "driver": "g3",
+                "driven": "output",
+                "teethDriver": 7,
+                "teethDriven": 23
+              }
+            ],
+            "omits": [
+              "tooth compliance",
+              "backlash",
+              "per-mesh friction and efficiency (not published)",
+              "live gear bodies: the run uses the exact rigid collapse"
+            ]
           }
         }
       }

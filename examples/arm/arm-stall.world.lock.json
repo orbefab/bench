@@ -53,7 +53,7 @@
     {
       "id": "sfab/sg90@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90@1.0.0.json",
-      "sha256": "32f2d8da1221edca277a1fc2a2bb85a78c8fa2726d1f0cd34203fea21201805f",
+      "sha256": "452781cba96e214ba8007a80413e90d7c0fb3e800438080f18f102788fb7fba6",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -99,7 +99,7 @@
     {
       "id": "hobby-servo-3wire",
       "path": "../../apps/server/catalog/types/hobby-servo-3wire.json",
-      "sha256": "c590f8687a8c4a9aad9ae47296cc18644abd262034373dfae863826840d9cd99",
+      "sha256": "3ce8b1451eb2ec1e9182375dca3d37da6d5cae639ad1113e3f32c7f1042d2d1f",
       "source": "catalog"
     },
     {

@@ -114,6 +114,15 @@
         "currentQuantity": "Current"
       },
       "envelope": {}
+    },
+    {
+      "form": "hinge@1",
+      "id": "sfab/sg90-hinge@1.0.0",
+      "part": "sfab/sg90@1.0.0",
+      "fixture": "sfab/sg90-body",
+      "baseline": { "level": "2", "value": 0 },
+      "heldOut": "fixture",
+      "sourceLevel": "2"
     }
   ]
 }

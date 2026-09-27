@@ -29,6 +29,10 @@ import {
 
 import { closeRootWatches } from "./projects";
 import {
+  type HingeCaptureEntry,
+  writeHingeSnapshot,
+} from "./world/body/hinge-capture";
+import {
   assemblyStampOf,
   boardStampOf,
   describeNetlist,
@@ -190,6 +194,26 @@ async function captureEntry(
   catalog: string,
   opts: CaptureRun
 ): Promise<CaptureStats> {
+  if ((config as { form?: string }).form === "hinge@1") {
+    await writeHingeSnapshot({
+      catalog,
+      entry: config as unknown as HingeCaptureEntry,
+      created: file.created,
+      tool: file.tool,
+      bench: benchVersions(),
+      ...(opts.outFile ? { outFile: opts.outFile } : {}),
+    });
+    return {
+      staticMaxAbsMv: 0,
+      lineMaxAbsMv: 0,
+      knots: 0,
+      tripA: 0,
+      envelopeMaxA: 0,
+      cases: [],
+      moveUsPerMs: { class1: 0, class2: 0 },
+      json: "",
+    };
+  }
   const across = acrossOf(config, catalog, opts.libraryDir);
   const stampOpts = {
     catalogDir: catalog,
