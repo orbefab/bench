@@ -1,0 +1,58 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/capacitor@1.0.0",
+  "type": "capacitor",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Ideal capacitor",
+      "ref": "Default 1 uF, series esr 0 ohm. esr 0 adds no internal node. Tolerance, temperature, and parasitics are later classes"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "lumped",
+        "variants": {
+          "lumped": {
+            "kind": "form",
+            "form": "capacitor@1",
+            "params": {
+              "C": 0.000001,
+              "esr": 0
+            },
+            "omits": [
+              "tolerance",
+              "temperature",
+              "dielectric absorption",
+              "parasitics"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.006, 0.003, 0.003],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}

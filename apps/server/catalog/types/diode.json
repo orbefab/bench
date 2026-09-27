@@ -1,0 +1,21 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "diode",
+  "plausible": {
+    "Current": [1e-20, 1],
+    "Dimensionless": [0.5, 5],
+    "Resistance": [0, 100]
+  },
+  "ports": {
+    "A": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    },
+    "K": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    }
+  }
+}

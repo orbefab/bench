@@ -20,6 +20,7 @@ export type Quantity =
   | "Voltage"
   | "Current"
   | "Resistance"
+  | "Capacitance"
   | "Inductance"
   | "Angle"
   | "AngularVelocity"
@@ -58,6 +59,7 @@ export const QUANTITY_DIM: Record<Quantity, Dim> = {
   Voltage: { kg: 1, m: 2, s: -3, A: -1 },
   Current: { A: 1 },
   Resistance: { kg: 1, m: 2, s: -3, A: -2 },
+  Capacitance: { kg: -1, m: -2, s: 4, A: 2 },
   Inductance: { kg: 1, m: 2, s: -2, A: -2 },
   Angle: { rad: 1 },
   AngularVelocity: { rad: 1, s: -1 },
@@ -82,6 +84,7 @@ export const SI_UNIT: Record<Quantity, string> = {
   Voltage: "V",
   Current: "A",
   Resistance: "Ω",
+  Capacitance: "F",
   Inductance: "H",
   Angle: "rad",
   AngularVelocity: "rad/s",
@@ -178,6 +181,11 @@ export type PortDecl = {
   adc?: boolean;
   frame?: string;
   ratings?: Ratings;
+  /**
+   * Present on the type, absent from wiring lists. The Nano `VBUS`
+   * pin is the USB connector's 5 V, reached by a cable on `5V`.
+   */
+  internal?: boolean;
 };
 
 /**
@@ -255,8 +263,7 @@ export type FormDef = {
 
 /**
  * Param quantities the checker knows. Joint friction, damping and
- * armature are not behaviour params (D-023.1). `capacitor@1` and
- * `diode@1` are named in the spec without a param table.
+ * armature are not behaviour params (D-023.1).
  */
 export const FORM_PARAMS: Record<FormId, FormDef> = {
   "slew@1": { params: { omega: "AngularVelocity" } },
@@ -276,8 +283,14 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
   },
   "ideal-voltage@1": { params: { V: "Voltage" } },
   "resistor@1": { params: { R: "Resistance" } },
-  "capacitor@1": { params: {} },
-  "diode@1": { params: {} },
+  "capacitor@1": {
+    params: { C: "Capacitance", esr: "Resistance" },
+    optional: ["esr"],
+  },
+  "diode@1": {
+    params: { Is: "Current", N: "Dimensionless", Rs: "Resistance" },
+    optional: ["Rs"],
+  },
   "logic-in@1": { params: {} },
   "table@1": { params: {} },
   "transfer-fn@1": { params: {} },
@@ -313,12 +326,16 @@ export type BehaviourImpl = { omits: string[] } & (
       params?: Record<string, number>;
       fuses?: Record<string, string>;
       /**
-       * Onboard circuit for this board's `5V`. Absent means the pin is
-       * the supply terminal: no capacitors, D13 LED, or reset network.
-       * `nano-usb` inserts the Schottky when a `usb-a-port` feeds `5V`,
-       * and the same network without the Schottky from any other supply.
+       * Class-1 source law. Only `snapshot:<publisher/name@version>`.
+       * Absent, the 5V pin is the supply terminal.
        */
       boardCircuit?: string;
+      /**
+       * Class-2 board. Child parts, wires, and expose from this
+       * board's ports onto those children. The chip's pin drivers
+       * stay in the firmware params.
+       */
+      board?: Netlist;
     }
   | { kind: "script"; script: string }
 );
