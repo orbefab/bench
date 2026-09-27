@@ -31,6 +31,7 @@ import {
   readRecording,
   stopWorld,
 } from "./world/host";
+import { maxBoardDelta } from "./world/nano-reference";
 import { catalogRoot, planWorld } from "./world/plan";
 import { BOD_ASSERT_V, BOD_RELEASE_V, RESET_HOLD_MS } from "./world/power";
 import { NANO_BOARD_A } from "./world/power-path";
@@ -64,6 +65,24 @@ const D13 = 1 << (arduinoPinBit("D13") ?? 13);
 
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
+}
+
+function driveSamples(
+  read: RecordingRead
+): { fraction: number; d13: "high" | "low" | "input" }[] {
+  const bit = 1 << (arduinoPinBit("D13") ?? 13);
+  return read.frames.map((frame) => {
+    const pulse = frame.parts.servo?.pulseUs ?? 0;
+    const pins = frame.boards.nano?.pins;
+    const driving = pins ? (pins.ddr & bit) !== 0 : false;
+    const high = pins ? (pins.level & bit) !== 0 : false;
+    const fraction =
+      pulse > 0 ? Math.min(1, Math.max(0, (pulse - 1000) / 1000)) : 0;
+    return {
+      fraction,
+      d13: !driving ? "input" : high ? "high" : "low",
+    };
+  });
 }
 
 /** SS14 terminal drop at `amps`, from the same Shockley fit the rail stamps. */
@@ -568,6 +587,23 @@ try {
     "the SG90 did not record"
   );
   console.log(`nano on USB, SG90 on D9, class 2, 3 s, two runs byte-identical`);
+
+  const vcc = await runWorld(root, "nano-vcc-usb.world.json", 1000);
+  const match = {
+    vNom: usb.voltage,
+    rSeries: usb.rSeries,
+    iLimit: usb.currentLimit,
+    fixed: NANO_BOARD_A + law.quiescent,
+    motors: [{ resistance: law.resistance, k: law.k }],
+  };
+  const servoDelta = maxBoardDelta(driveSamples(first.read), match);
+  const vccDelta = maxBoardDelta(driveSamples(vcc.read), match);
+  expect(servoDelta <= 1e-6, `nano-servo-usb board delta ${servoDelta} V`);
+  expect(vccDelta <= 1e-6, `nano-vcc-usb board delta ${vccDelta} V`);
+  console.log(
+    `nano netlist vs reference: nano-vcc-usb ${vccDelta.toExponential(2)} V, ` +
+      `nano-servo-usb ${servoDelta.toExponential(2)} V`
+  );
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  arduinoPinBit,
   emptySnapshot,
   type LockFile,
   type RecordingRead,
@@ -39,10 +40,12 @@ import {
   lockAfterLevels,
   replaceLevels,
 } from "./world/level-edit";
+import { maxBoardDelta } from "./world/nano-reference";
 import { loadWorldV2 } from "./world/parts/load";
 import { writeLock } from "./world/parts/lock";
 import { catalogRoot } from "./world/plan";
 import { noLoadSpeedRad } from "./world/power";
+import { NANO_BOARD_A } from "./world/power-path";
 import { worldTools } from "./world-tools";
 
 const sender: WorldSender = { kind: "loopback", label: "Mac" };
@@ -65,6 +68,24 @@ const fixtureDir = fileURLToPath(
 
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
+}
+
+function driveSamples(
+  read: RecordingRead
+): { fraction: number; d13: "high" | "low" | "input" }[] {
+  const bit = 1 << (arduinoPinBit("D13") ?? 13);
+  return read.frames.map((frame) => {
+    const pulse = frame.parts.servo?.pulseUs ?? 0;
+    const pins = frame.boards.nano?.pins;
+    const driving = pins ? (pins.ddr & bit) !== 0 : false;
+    const high = pins ? (pins.level & bit) !== 0 : false;
+    const fraction =
+      pulse > 0 ? Math.min(1, Math.max(0, (pulse - 1000) / 1000)) : 0;
+    return {
+      fraction,
+      d13: !driving ? "input" : high ? "high" : "low",
+    };
+  });
 }
 
 function widthS(distanceM: number): number {
@@ -875,6 +896,17 @@ try {
     "gauge run depends on the temp path"
   );
   console.log(`gauge run: 7 s, ${gauge.frames.length} frames, byte-identical`);
+  const gaugeDelta = maxBoardDelta(driveSamples(gauge), {
+    vNom: 5,
+    rSeries: 0.5,
+    iLimit: 0.9,
+    fixed: NANO_BOARD_A + 0.01,
+    motors: [{ resistance: 7.1, k: 0.458 }],
+  });
+  expect(gaugeDelta <= 1e-6, `gauge mix A board delta ${gaugeDelta} V`);
+  console.log(
+    `nano netlist vs reference: gauge mix A ${gaugeDelta.toExponential(2)} V`
+  );
 
   const mixA = gaugeRun;
   const mixB = await gaugeOnce(1, 1);
