@@ -104,12 +104,16 @@ function snapshotOf(path: string, rows: RunReport["snapshots"]): LevelSnapshot {
   }
   return {
     path,
-    ref: rows.map((row) => row.ref).join(", "),
+    ref: rows.map((row) => snapshotRef(row)).join(", "),
     quality: rows.map((row) => row.quality).join(", "),
     errors,
     provenance: provenanceLine(first.provenance),
     warnings,
   };
+}
+
+function snapshotRef(row: { axis: AxisName; ref: string }): string {
+  return row.axis === "body" ? `body ${row.ref}` : row.ref;
 }
 
 function provenanceLine(
@@ -137,6 +141,7 @@ function errorLines(error: SnapshotFile["error"]): string[] {
       max?: number;
       rms?: number;
       staticMax?: number;
+      rise?: number;
       vs?: string;
     }
   >();
@@ -151,6 +156,7 @@ function errorLines(error: SnapshotFile["error"]): string[] {
     if (row.metric === "free-run-max-abs") group.max = row.value;
     if (row.metric === "free-run-rms") group.rms = row.value;
     if (row.metric === "static-max-abs") group.staticMax = row.value;
+    if (row.metric === "step-rise") group.rise = row.value;
     groups.set(key, group);
   }
   const lines: string[] = [];
@@ -170,6 +176,9 @@ function errorLines(error: SnapshotFile["error"]): string[] {
     }
     if (bits.length > 0) {
       lines.push(`${group.name} free-run ${bits.join(", ")}${vs}`);
+    }
+    if (group.rise !== undefined) {
+      lines.push(`${group.name} step-rise ${sig(group.rise * 1000)} ms${vs}`);
     }
   }
   return lines;

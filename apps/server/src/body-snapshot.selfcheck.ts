@@ -4,6 +4,7 @@
  */
 
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -12,10 +13,22 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import type { GearTrain, SnapshotFile } from "@sfab-bench/contract";
+import type {
+  GearTrain,
+  RecordedFrame,
+  RecordingRead,
+  RunReport,
+  SnapshotFile,
+  WorldState,
+} from "@sfab-bench/contract";
+
+import { levelCard } from "../../web/src/lib/level-card";
+import { closeRootWatches } from "./projects";
 import { collapse, gearTrainErrors, reflection } from "./world/body/gear-train";
 import { writeHingeSnapshot } from "./world/body/hinge-capture";
+import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { applyLevelEdit } from "./world/level-edit";
 import { catalogRoot, planWorld } from "./world/plan";
 
@@ -37,6 +50,7 @@ const TRAIN = sg90.axes.body["2"].variants["gear-train"];
 
 const CATALOG_DAMPING = 0.0025;
 const CATALOG_FRICTION = 0.002;
+const SKETCH_MS = 3000;
 
 const lumped = collapse(TRAIN);
 const rows = reflection(TRAIN);
@@ -289,6 +303,86 @@ try {
   rmSync(againDir, { recursive: true, force: true });
 }
 
+const nanoSrc = fileURLToPath(
+  new URL("../../../examples/nano/", import.meta.url)
+);
+const e10Dir = mkdtempSync(join(tmpdir(), "sfab-e10-"));
+try {
+  cpSync(nanoSrc, e10Dir, { recursive: true });
+  const collapsedPlan = planWorld(e10Dir, "nano-servo-collapsed.world.json");
+  expect(
+    collapsedPlan.ok,
+    collapsedPlan.ok
+      ? ""
+      : collapsedPlan.errors.map((error) => error.message).join("; ")
+  );
+  if (!collapsedPlan.ok) throw new Error("unreachable");
+  const card = levelCard(collapsedPlan.plan.report ?? null, "servo");
+  expect(
+    card?.snapshot?.ref === "body sfab/sg90-hinge@1.0.0" &&
+      card.snapshot.quality === "Q2a",
+    `card ${card?.snapshot?.ref} ${card?.snapshot?.quality}`
+  );
+  console.log(
+    `inspector body row: ${card?.snapshot?.ref} · ${card?.snapshot?.quality}`
+  );
+
+  const fitted = await runSketch(e10Dir, "nano-servo-usb.world.json");
+  const collapsed = await runSketch(e10Dir, "nano-servo-collapsed.world.json");
+  const repeat = await runSketch(e10Dir, "nano-servo-collapsed.world.json");
+  expect(
+    JSON.stringify(collapsed.read.frames) ===
+      JSON.stringify(repeat.read.frames),
+    "collapsed repeat differs"
+  );
+  console.log("E10 collapsed repeat byte-identical");
+
+  const fittedSweep = firstSweep(fitted.read.frames);
+  const collapsedSweep = firstSweep(collapsed.read.frames);
+  const fittedRise = riseMs(fittedSweep);
+  const collapsedRise = riseMs(collapsedSweep);
+  console.log(
+    `E10 flag 10–90% rise fitted ${msText(fittedRise)} ms, collapsed ${msText(collapsedRise)} ms`
+  );
+  const angleDelta = maxAbsDelta(fittedSweep.angle, collapsedSweep.angle);
+  console.log(
+    `E10 max-abs angle Δ ${((angleDelta * 180) / Math.PI).toFixed(4)} deg`
+  );
+  console.log(
+    `E10 peak supply fitted ${ma(fittedSweep.frames)} mA, collapsed ${ma(collapsedSweep.frames)} mA`
+  );
+  console.log(
+    `E10 5V min fitted ${volts(fittedSweep.frames)} V, collapsed ${volts(collapsedSweep.frames)} V`
+  );
+  console.log(
+    `E10 brownout fitted ${brownout(fittedSweep.frames)}, collapsed ${brownout(collapsedSweep.frames)}`
+  );
+  console.log(
+    `E10 warnings fitted ${warnText(fitted.report)}, collapsed ${warnText(collapsed.report)}`
+  );
+
+  const trainWorld = JSON.parse(
+    readFileSync(join(e10Dir, "nano-servo-collapsed.world.json"), "utf8")
+  ) as {
+    run: { levels: { paths: { servo: { body: unknown } } } };
+  };
+  trainWorld.run.levels.paths.servo.body = 2;
+  writeFileSync(
+    join(e10Dir, "nano-servo-train.world.json"),
+    JSON.stringify(trainWorld)
+  );
+  const train = await runSketch(e10Dir, "nano-servo-train.world.json");
+  const jointDelta = maxAbsDelta(
+    flagAngles(collapsed.read.frames),
+    flagAngles(train.read.frames)
+  );
+  expect(jointDelta === 0, `class 2 vs collapsed joint trace Δ ${jointDelta}`);
+  console.log(`class 2 vs collapsed joint trace Δ ${jointDelta}`);
+} finally {
+  rmSync(e10Dir, { recursive: true, force: true });
+  closeRootWatches();
+}
+
 function hingeFile(partType: string) {
   return {
     format: "sfab.snapshot@1",
@@ -522,4 +616,180 @@ function scene() {
       },
     },
   };
+}
+
+async function runSketch(
+  project: string,
+  world: string
+): Promise<{ read: RecordingRead; report: RunReport | null }> {
+  const planned = planWorld(project, world);
+  if (!planned.ok) {
+    throw new Error(planned.errors.map((error) => error.message).join("; "));
+  }
+  const seen: {
+    state: WorldState | null;
+    failed: string | null;
+    report: RunReport | null;
+  } = { state: null, failed: null, report: planned.plan.report ?? null };
+  const attached = await attachWorld(project, world, {
+    sender: { kind: "loopback", label: "Mac" },
+    onEvent(event) {
+      if (event.type === "error") {
+        seen.failed =
+          event.message ?? event.errors.map((item) => item.message).join("; ");
+      }
+      if (event.type === "state") {
+        seen.state = event.state;
+        if (event.report) seen.report = event.report;
+      }
+    },
+  });
+  if ("error" in attached) throw new Error(attached.error);
+  try {
+    attached.step(SKETCH_MS);
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      if (seen.failed) throw new Error(seen.failed);
+      if ((seen.state?.simTime ?? -1) >= SKETCH_MS / 1000 - 1e-3) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const state = seen.state;
+    if (!state || state.simTime < SKETCH_MS / 1000 - 1e-3) {
+      throw new Error(
+        `${world} timed out at ${state ? state.simTime : "no state"} s`
+      );
+    }
+    const read = await readRecording(project, world, {
+      from: 0,
+      to: SKETCH_MS / 1000,
+    });
+    if ("error" in read) throw new Error(read.error);
+    return { read, report: seen.report };
+  } finally {
+    attached.detach();
+    await stopWorld(project, world);
+  }
+}
+
+function flagAngles(frames: RecordedFrame[]): number[] {
+  return frames.map((frame) => frame.joints.flag?.hinge ?? Number.NaN);
+}
+
+function firstSweep(frames: RecordedFrame[]): {
+  frames: RecordedFrame[];
+  angle: number[];
+  t: number[];
+} {
+  let initial = -1;
+  for (let i = 0; i < frames.length; i++) {
+    if (frames[i]?.parts.servo?.commandDeg != null) {
+      initial = i;
+      break;
+    }
+  }
+  const first = frames[initial]?.parts.servo?.commandDeg;
+  if (initial < 0 || first == null) {
+    throw new Error("the sketch never commanded the servo");
+  }
+  let start = -1;
+  for (let i = initial + 1; i < frames.length; i++) {
+    const command = frames[i]?.parts.servo?.commandDeg;
+    if (command != null && Math.abs(command - first) > 5) {
+      start = i;
+      break;
+    }
+  }
+  const target = frames[start]?.parts.servo?.commandDeg;
+  if (start < 0 || target == null) {
+    throw new Error("the sketch has no second target");
+  }
+  let end = frames.length;
+  for (let i = start + 1; i < frames.length; i++) {
+    const command = frames[i]?.parts.servo?.commandDeg;
+    if (command != null && Math.abs(command - target) > 5) {
+      end = i;
+      break;
+    }
+  }
+  const slice = frames.slice(start, end);
+  return {
+    frames: slice,
+    angle: slice.map((frame) => frame.joints.flag?.hinge ?? Number.NaN),
+    t: slice.map((frame) => frame.t),
+  };
+}
+
+function riseMs(sweep: { angle: number[]; t: number[] }): number | null {
+  const { angle, t } = sweep;
+  if (angle.length < 2) return null;
+  const a0 = angle[0] ?? 0;
+  const a1 = angle[angle.length - 1] ?? a0;
+  const span = a1 - a0;
+  if (Math.abs(span) < 1e-6) return null;
+  const lo = a0 + 0.1 * span;
+  const hi = a0 + 0.9 * span;
+  let tLo: number | null = null;
+  let tHi: number | null = null;
+  for (let i = 1; i < angle.length; i++) {
+    const prev = angle[i - 1] ?? 0;
+    const cur = angle[i] ?? prev;
+    if (tLo === null && crossed(prev, cur, lo, span)) tLo = t[i] ?? null;
+    if (tHi === null && crossed(prev, cur, hi, span)) tHi = t[i] ?? null;
+  }
+  if (tLo === null || tHi === null) return null;
+  return (tHi - tLo) * 1000;
+}
+
+function crossed(
+  prev: number,
+  cur: number,
+  target: number,
+  span: number
+): boolean {
+  return span > 0
+    ? prev < target && cur >= target
+    : prev > target && cur <= target;
+}
+
+function msText(value: number | null): string {
+  return value === null ? "unavailable" : value.toFixed(1);
+}
+
+function maxAbsDelta(left: number[], right: number[]): number {
+  const n = Math.max(left.length, right.length);
+  let worst = 0;
+  for (let i = 0; i < n; i++) {
+    const a = left[i];
+    const b = right[i];
+    if (a === undefined || b === undefined) return Number.POSITIVE_INFINITY;
+    worst = Math.max(worst, Math.abs(a - b));
+  }
+  return worst;
+}
+
+function ma(frames: RecordedFrame[]): string {
+  let peak = 0;
+  for (const frame of frames) {
+    peak = Math.max(peak, frame.supplies.usb?.maxCurrent ?? 0);
+  }
+  return (peak * 1000).toFixed(1);
+}
+
+function volts(frames: RecordedFrame[]): string {
+  let low = Number.POSITIVE_INFINITY;
+  for (const frame of frames) {
+    low = Math.min(low, frame.boards.nano?.minVoltage ?? low);
+  }
+  return Number.isFinite(low) ? low.toFixed(3) : "unavailable";
+}
+
+function brownout(frames: RecordedFrame[]): string {
+  return frames.some((frame) => frame.boards.nano?.brownoutAny === true)
+    ? "yes"
+    : "none";
+}
+
+function warnText(report: RunReport | null): string {
+  const lines = report?.warnings.map((row) => row.message) ?? [];
+  return lines.length > 0 ? lines.join(" | ") : "none";
 }
