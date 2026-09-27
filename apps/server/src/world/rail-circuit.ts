@@ -144,11 +144,13 @@ export class RailCircuit {
     }
     this.motors = motors;
     this.substeps = inductive || board ? SUBSTEPS : 1;
+    // The snapshot replaces the USB front end. The board load still
+    // has its knee: full current down to 1 V, then linear to 0 A at 0 V.
     this.load = new CurrentLoad(
       "load",
       this.boardNode,
       "0",
-      board ? BOARD_LOAD_KNEE_V : 0
+      board || snap ? BOARD_LOAD_KNEE_V : 0
     );
     const supply = snap
       ? new LawTable(

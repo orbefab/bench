@@ -5,6 +5,7 @@ import {
   segmentThevenin,
   shiftedVoltage,
   type TableLaw,
+  tableVoltage,
 } from "../snapshot-law";
 import type { StampCtx } from "./context";
 import { type PowerSplit, vBranch, volt } from "./context";
@@ -15,7 +16,8 @@ type Region = "cv" | "cc" | "floor";
 /**
  * Piecewise-linear `V(supply, I)` as a Thevenin branch.
  * Inside a segment the stamp is `v = Voc − R·I`. Above `iLimit` the
- * branch holds that current, the same limit as `thevenin-limit@1`.
+ * branch holds that current, with the same enter, leave, and floor
+ * rules as `thevenin-limit@1`.
  */
 export class LawTable implements Element {
   readonly form = "table@1";
@@ -27,6 +29,11 @@ export class LawTable implements Element {
   private segment = 0;
   factoredRegion: Region | null = null;
   factoredSegment = 0;
+  /**
+   * Set when a current-limit stamp is singular (the load cannot draw
+   * exactly `iLimit`). The next stamp holds the rail at 0 V.
+   */
+  private holdFloor = false;
 
   constructor(
     readonly id: string,
@@ -58,14 +65,44 @@ export class LawTable implements Element {
     return "";
   }
 
+  /** The current-limit row conflicted with the load. Hold 0 V next stamp. */
+  fallToFloor(): boolean {
+    if (this.region !== "cc") return false;
+    this.holdFloor = true;
+    return true;
+  }
+
   private desired(ctx: StampCtx): { region: Region; segment: number } {
+    const tol = 1e-9;
+    if (this.holdFloor) {
+      this.holdFloor = false;
+      return { region: "floor", segment: this.segment };
+    }
     const iLoad = -((ctx.x[this.ibr] as number) ?? 0);
     const vt = volt(ctx, this.ip) - volt(ctx, this.im);
-    if (vt < -1e-9) return { region: "floor", segment: this.segment };
-    if (iLoad > this.iLimit + 1e-9) {
-      return { region: "cc", segment: this.segment };
+    if (vt < -tol) return { region: "floor", segment: this.segment };
+    if (this.region === "floor") {
+      const vCv = tableVoltage(this.law, this.supply, iLoad);
+      if (iLoad <= this.iLimit + tol && vCv > tol) {
+        return {
+          region: "cv",
+          segment: segmentIndex(this.law.iAxis, iLoad),
+        };
+      }
+      return { region: "floor", segment: this.segment };
     }
-    return { region: "cv", segment: segmentIndex(this.law.iAxis, iLoad) };
+    if (this.region === "cv") {
+      if (iLoad > this.iLimit + tol) {
+        return { region: "cc", segment: this.segment };
+      }
+      return { region: "cv", segment: segmentIndex(this.law.iAxis, iLoad) };
+    }
+    const volts = shiftedVoltage(this.law, this.supply);
+    const iUnc = unconstrainedAmps(volts, this.law.iAxis, vt);
+    if (iUnc < this.iLimit - tol) {
+      return { region: "cv", segment: segmentIndex(this.law.iAxis, iUnc) };
+    }
+    return { region: "cc", segment: this.segment };
   }
 
   stamp(ctx: StampCtx): void {
@@ -125,6 +162,30 @@ export class LawTable implements Element {
       [this.im, -i],
     ];
   }
+}
+
+/** Current the piecewise law would supply at `vt`, with the ends extrapolated. */
+function unconstrainedAmps(
+  volts: readonly number[],
+  iAxis: readonly number[],
+  vt: number
+): number {
+  const last = iAxis.length - 2;
+  const tol = 1e-9;
+  for (let k = 0; k <= last; k++) {
+    const { r, voc } = segmentThevenin(volts, iAxis, k);
+    if (!(r > 0)) {
+      if (k === last && vt < voc - tol) return Number.POSITIVE_INFINITY;
+      continue;
+    }
+    const i = (voc - vt) / r;
+    const i0 = iAxis[k] ?? 0;
+    const i1 = iAxis[k + 1] ?? i0;
+    const lo = k === 0 ? Number.NEGATIVE_INFINITY : i0;
+    const hi = k === last ? Number.POSITIVE_INFINITY : i1;
+    if (i >= lo - tol && i <= hi + tol) return i;
+  }
+  return Number.POSITIVE_INFINITY;
 }
 
 function currentRow(ctx: StampCtx, iCol: number, value: number): void {

@@ -383,6 +383,9 @@ export class Engine {
     for (let i = 0; i < this.thevenins.length; i++) {
       if (this.thevenins[i]!.fallToFloor()) held = true;
     }
+    for (let i = 0; i < this.laws.length; i++) {
+      if (this.laws[i]!.fallToFloor()) held = true;
+    }
     return held;
   }
 

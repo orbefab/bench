@@ -26,7 +26,9 @@ import { closeRootWatches } from "./projects";
 import { attachWorld, stopWorld } from "./world/host";
 import { canonicalJson } from "./world/parts/si";
 import { catalogRoot, planWorld } from "./world/plan";
-import { envelopeOf, outsideEnvelope } from "./world/snapshot-law";
+import { NANO_BOARD_A } from "./world/power-path";
+import { createRailCircuit } from "./world/rail-circuit";
+import { envelopeOf, outsideEnvelope, tableLawOf } from "./world/snapshot-law";
 import { lintSnapshot } from "./world/snapshot-lint";
 import { loadSnapshot } from "./world/snapshot-load";
 
@@ -92,6 +94,7 @@ expect(
 console.log(
   "envelope unit: 0.89 A inside, 0.9 A outside; the stock port limit can cross the bound"
 );
+overLimit(committed);
 const loaded = loadSnapshot(
   tmpdir(),
   { catalogDir: catalogRoot(), assetRoot: tmpdir() },
@@ -243,12 +246,20 @@ try {
     `selection: path 2 ${highNano.variant} (${highNano.reason}), path 1 ${lowNano.variant} snapshot (${lowNano.reason}), bench ideal terminal, mismatched usb-a-port ideal terminal`
   );
 
-  const warned = await envelopeRun(root);
+  const stalled = await envelopeRun(root);
   expect(
-    warned.envelope.length === 1,
-    `envelope warnings ${warned.envelope.length}`
+    stalled.low.envelope.length === 1,
+    `envelope warnings ${stalled.low.envelope.length}`
   );
-  console.log("envelope: one warning on a matching source, run continued");
+  if (stalled.high.resets > 0) {
+    expect(
+      stalled.low.resets > 0,
+      `class 2 reset ${stalled.high.resets} times and class 1 did not`
+    );
+  }
+  console.log(
+    `envelope: one warning, run continued; resets class 2 ${stalled.high.resets}, class 1 ${stalled.low.resets}`
+  );
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
@@ -402,7 +413,48 @@ function writeMismatch(dir: string): void {
   );
 }
 
-async function envelopeRun(dir: string): Promise<{ envelope: string[] }> {
+function overLimit(file: SnapshotFile): void {
+  const law = tableLawOf(file);
+  expect(law !== null, "snapshot table");
+  if (!law) return;
+  for (const n of [1, 2, 3]) {
+    const motors = Array.from({ length: n }, () => ({
+      resistance: 6.5,
+      k: 0.3,
+    }));
+    const usb = stalledRail("nano-usb", motors);
+    const snap = stalledRail("nano-snapshot", motors, law);
+    const dvMv = Math.abs(usb - snap) * 1000;
+    console.log(
+      `over-limit n=${n}: class 2 ${usb.toFixed(3)} V, class 1 ${snap.toFixed(3)} V, |Δ| ${dvMv.toFixed(1)} mV`
+    );
+    expect(dvMv <= 50, `n=${n} differs by ${dvMv.toFixed(1)} mV`);
+  }
+}
+
+function stalledRail(
+  boardPath: "nano-usb" | "nano-snapshot",
+  motors: { resistance: number; k: number }[],
+  law?: NonNullable<ReturnType<typeof tableLawOf>>
+): number {
+  const circuit = createRailCircuit({
+    vNom: 5,
+    rSeries: 0.5,
+    iLimit: 0.9,
+    motors,
+    boardPath,
+    ...(boardPath === "nano-snapshot" && law ? { law } : {}),
+  });
+  circuit.setFixed(NANO_BOARD_A + 0.0252);
+  for (let i = 0; i < motors.length; i++) circuit.setMotor(i, 1, 0, true);
+  for (let k = 0; k < 200; k++) circuit.solve();
+  return circuit.boardVoltage;
+}
+
+async function envelopeRun(dir: string): Promise<{
+  low: { envelope: string[]; resets: number };
+  high: { resets: number };
+}> {
   mkdirSync(join(dir, "firmware", "stall"), { recursive: true });
   cpSync(
     join(armDir, "firmware", "stall", "stall.hex"),
@@ -426,8 +478,6 @@ async function envelopeRun(dir: string): Promise<{ envelope: string[] }> {
     join(dir, "parts", "sfab", "flag-stop@1.0.0.json"),
     `{"format":"sfab.part@1","id":"sfab/flag-stop@1.0.0","type":"flag-hinge","foreign":false,"sources":[{"title":"stall stop","ref":"upper limit 0.05 rad"}],"axes":{"behaviour":{"1":{"default":"rigid","variants":{"rigid":{"kind":"form","form":"multibody@1","params":{},"omits":["joint flexibility"]}}}},"body":{"1":{"default":"urdf","variants":{"urdf":{"kind":"urdf","file":"robot/flag-stop.urdf","omits":["link flex"]}}}},"visual":{"0":{"default":"box","variants":{"box":{"kind":"box","size":[0.08,0.04,0.02],"omits":["link meshes"]}}}}}}`
   );
-  // R sits under the SG90's 7.1 Ω so the stall current falls between the
-  // 0.89 A envelope and this port's 0.9 A limit.
   writeFileSync(
     join(dir, "parts", "sfab", "over-scene@1.0.0.json"),
     `{
@@ -437,14 +487,18 @@ async function envelopeRun(dir: string): Promise<{ envelope: string[] }> {
     "netlist": {
       "instances": {
         "flag": { "part": "sfab/flag-stop@1.0.0" },
+        "flag2": { "part": "sfab/flag-stop@1.0.0", "pose": { "position": [0.25, 0, 0], "rotation": [1, 0, 0, 0] } },
         "nano": { "part": "sfab/nano-ch340@1.0.0", "params": { "firmware": "firmware/stall/stall.hex", "source": "firmware/stall/stall.ino" } },
         "usb": { "part": "sfab/usb-port-500ma@1.0.0" },
-        "servo": { "part": "sfab/sg90@1.0.0", "params": { "R": 4.95 } }
+        "servo": { "part": "sfab/sg90@1.0.0" },
+        "servo2": { "part": "sfab/sg90@1.0.0", "pose": { "position": [0.25, 0, 0], "rotation": [1, 0, 0, 0] } }
       },
       "wires": [
         ["usb.5V", "nano.5V"], ["usb.GND", "nano.GND"],
         ["nano.D9", "servo.signal"], ["nano.5V", "servo.V+"], ["nano.GND", "servo.GND"],
-        ["servo.shaft", "flag.hinge"], ["servo.mount", "flag.base"]
+        ["servo.shaft", "flag.hinge"], ["servo.mount", "flag.base"],
+        ["nano.D9", "servo2.signal"], ["nano.5V", "servo2.V+"], ["nano.GND", "servo2.GND"],
+        ["servo2.shaft", "flag2.hinge"], ["servo2.mount", "flag2.base"]
       ],
       "expose": {}
     }
@@ -455,9 +509,22 @@ async function envelopeRun(dir: string): Promise<{ envelope: string[] }> {
 `
   );
   writeFileSync(
-    join(dir, "over.world.json"),
+    join(dir, "over-1.world.json"),
     `{"version":2,"environment":{"ground":{"plane":true},"gravity":[0,0,-9.81]},"run":{"seed":1,"levels":{"default":1}},"root":{"id":"scene","part":"sfab/over-scene@1.0.0"}}`
   );
+  writeFileSync(
+    join(dir, "over-2.world.json"),
+    `{"version":2,"environment":{"ground":{"plane":true},"gravity":[0,0,-9.81]},"run":{"seed":1,"levels":{"default":1,"paths":{"nano":{"behaviour":2}}}},"root":{"id":"scene","part":"sfab/over-scene@1.0.0"}}`
+  );
+  const low = await runStall(dir, "over-1.world.json");
+  const high = await runStall(dir, "over-2.world.json");
+  return { low, high };
+}
+
+async function runStall(
+  dir: string,
+  world: string
+): Promise<{ envelope: string[]; resets: number }> {
   const seen: {
     state: WorldState | null;
     report: RunReport | null;
@@ -467,7 +534,7 @@ async function envelopeRun(dir: string): Promise<{ envelope: string[] }> {
     report: null,
     failed: null,
   };
-  const attached = await attachWorld(dir, "over.world.json", {
+  const attached = await attachWorld(dir, world, {
     sender: { kind: "loopback", label: "Mac" },
     onEvent(event) {
       if (event.type === "error") {
@@ -492,14 +559,17 @@ async function envelopeRun(dir: string): Promise<{ envelope: string[] }> {
     }
     if (!seen.state || seen.state.simTime < ms / 1000 - 1e-3) {
       throw new Error(
-        `envelope run timed out at ${seen.state?.simTime ?? "no state"} s`
+        `${world} timed out at ${seen.state?.simTime ?? "no state"} s`
       );
     }
   } finally {
     attached.detach();
-    await stopWorld(dir, "over.world.json");
+    await stopWorld(dir, world);
     closeRootWatches();
   }
   const row = seen.report?.snapshots.find((item) => item.ref === SNAPSHOT_ID);
-  return { envelope: row?.envelope ?? [] };
+  return {
+    envelope: row?.envelope ?? [],
+    resets: seen.state?.boards.nano?.resets ?? 0,
+  };
 }
