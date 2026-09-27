@@ -103,8 +103,7 @@ function pole(x: number) {
 function worldFile(
   part: string,
   sensorLevel: number,
-  target: ReturnType<typeof card> | ReturnType<typeof pole> | null,
-  nanoBehaviour: 1 | 2 = 2
+  target: ReturnType<typeof card> | ReturnType<typeof pole> | null
 ) {
   return {
     version: 2,
@@ -118,7 +117,7 @@ function worldFile(
       levels: {
         default: 1,
         types: {
-          "arduino-nano": { behaviour: nanoBehaviour },
+          "arduino-nano": { behaviour: 2 },
           ...(sensorLevel === 0
             ? { "ultrasonic-ranger-4pin": { behaviour: 0 } }
             : {}),
@@ -699,12 +698,7 @@ try {
   async function gaugeOnce(
     nanoBehaviour: 1 | 2 = 2,
     sensorBehaviour: 0 | 1 = 1
-  ): Promise<{
-    read: RecordingRead;
-    report: RunReport;
-    hostEnvelope: string[];
-    resets: number;
-  }> {
+  ): Promise<GaugeRun> {
     writeGaugeLevels(nanoBehaviour, sensorBehaviour);
     const events: { type: string; message?: string }[] = [];
     let report: RunReport | null = null;

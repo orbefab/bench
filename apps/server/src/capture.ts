@@ -403,24 +403,9 @@ const CASES: FreeScene[] = [
  * Same scenes as `CASES`, with an MG90S on the Nano rail.
  * Kept off `CASES` so the snapshot's free-run error rows stay the SG90 figures.
  */
-const MG90S_FREE_RUN: FreeScene[] = [
-  {
-    name: "hold",
-    firmware: "firmware/hold/hold.hex",
-    source: "firmware/hold/hold.ino",
-    flag: "sfab/flag@1.0.0",
-    ms: 1200,
-    servo: MG90S,
-  },
-  {
-    name: "stall",
-    firmware: "firmware/stall/stall.hex",
-    source: "firmware/stall/stall.ino",
-    flag: "sfab/flag-stop@1.0.0",
-    ms: 1000,
-    servo: MG90S,
-  },
-];
+const MG90S_FREE_RUN: FreeScene[] = CASES.filter(
+  (spec) => spec.name !== "move"
+).map((spec) => ({ ...spec, servo: MG90S }));
 
 export type ServoFreeRun = CaptureCase & {
   /** Last-frame Nano 5V node, volts. */
