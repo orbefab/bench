@@ -500,22 +500,28 @@ function build(
         diags.push(cannot(inst, `unknown board circuit ${boardCircuit}`));
         continue;
       }
+      let runCircuit = boardCircuit;
       let powerSnapshot: PowerSnapshot | null = null;
       if (snapRef) {
-        const found = loaded.snapshots.find((row) => row.id === snapRef);
-        const law = found ? tableLawOf(found.file) : null;
-        const envelope = found ? envelopeOf(found.file) : null;
-        if (!found || !law || !envelope) {
-          diags.push(cannot(inst, `snapshot ${snapRef} did not load`));
-          continue;
+        const runs = loaded.snapshotRuns.includes(inst.path);
+        if (runs) {
+          const found = loaded.snapshots.find((row) => row.id === snapRef);
+          const law = found ? tableLawOf(found.file) : null;
+          const envelope = found ? envelopeOf(found.file) : null;
+          if (!found || !law || !envelope) {
+            diags.push(cannot(inst, `snapshot ${snapRef} did not load`));
+            continue;
+          }
+          powerSnapshot = {
+            ref: snapRef,
+            law,
+            envelope,
+            quality: found.quality,
+            error: found.file.error,
+          };
+        } else {
+          runCircuit = null;
         }
-        powerSnapshot = {
-          ref: snapRef,
-          law,
-          envelope,
-          quality: found.quality,
-          error: found.file.error,
-        };
       }
       const params = behaviour.params ?? {};
       const image = behaviour.imageParam
@@ -547,7 +553,7 @@ function build(
         voltagePin: "5V",
         groundPin: "GND",
         current: params.quiescent ?? 0,
-        boardCircuit,
+        boardCircuit: runCircuit,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
           params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,

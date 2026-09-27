@@ -46,6 +46,7 @@ function numeric(value: unknown): number | null {
 
 function quantityOf(key: string): Quantity | null {
   if (key.endsWith(".voltage")) return "Voltage";
+  if (key.endsWith(".currentLimit")) return "Current";
   if (key.endsWith(".current")) return "Current";
   if (key.endsWith(".resistance")) return "Resistance";
   if (key.endsWith(".torque")) return "Torque";

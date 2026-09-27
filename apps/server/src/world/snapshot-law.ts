@@ -14,6 +14,12 @@ export type SnapshotEnvelope = {
   current: [number, number];
 };
 
+/** The feeding port the table was captured through. A point range is one value. */
+export type SourceBounds = {
+  resistance: [number, number];
+  currentLimit: [number, number];
+};
+
 export function tableLawOf(snap: SnapshotFile): TableLaw | null {
   const iAxis = snap.params.iAxis;
   const vAxis = snap.params.vAxis;
@@ -32,6 +38,26 @@ export function envelopeOf(snap: SnapshotFile): SnapshotEnvelope | null {
   const current = pair(snap.envelope.bounds["5V.current"]);
   if (!supply || !current) return null;
   return { supply, current };
+}
+
+/** Series resistance and current limit of the port the capture swept. */
+export function sourceBoundsOf(snap: SnapshotFile): SourceBounds | null {
+  const resistance = pair(snap.envelope.bounds["supply.resistance"]);
+  const currentLimit = pair(snap.envelope.bounds["supply.currentLimit"]);
+  if (!resistance || !currentLimit) return null;
+  return { resistance, currentLimit };
+}
+
+/** True when this port is not the one the snapshot was captured through. */
+export function sourceOutside(
+  bounds: SourceBounds,
+  resistance: number,
+  currentLimit: number
+): boolean {
+  return (
+    outsideRange(bounds.resistance, resistance) ||
+    outsideRange(bounds.currentLimit, currentLimit)
+  );
 }
 
 function pair(value: unknown): [number, number] | null {
@@ -94,6 +120,10 @@ export function tableVoltage(
 }
 
 const EDGE = 1e-9;
+
+function outsideRange(range: [number, number], value: number): boolean {
+  return value < range[0] - EDGE || value > range[1] + EDGE;
+}
 
 /** True when the point sits outside the envelope, past a 1 nA / 1 nV edge. */
 export function outsideEnvelope(

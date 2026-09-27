@@ -1,4 +1,7 @@
-/** Ported from layered-sim E4 (fd10742). Fit the Nano USB input and write its snapshot. */
+/**
+ * Ported from layered-sim E4 (fd10742). Fit the Nano USB input and write its snapshot.
+ * This captures that one case. Other parts need their own case.
+ */
 import {
   cpSync,
   mkdirSync,
@@ -26,7 +29,7 @@ import { closeRootWatches } from "./projects";
 import { SS14 } from "./world/circuit/circuits";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { nanoUsbDc, USB_RS } from "./world/nano-usb-dc";
-import { canonicalJson, contentHash } from "./world/parts/si";
+import { contentHash, sortValue } from "./world/parts/si";
 import { catalogRoot } from "./world/plan";
 import { type TableLaw, tableVoltage } from "./world/snapshot-law";
 import { lintSnapshot } from "./world/snapshot-lint";
@@ -208,6 +211,8 @@ function snapshotOf(input: {
       bounds: {
         "supply.voltage": [4.75, 5.25],
         "5V.current": [0, input.envelopeMaxA],
+        "supply.resistance": [USB_RS, USB_RS],
+        "supply.currentLimit": [input.tripA, input.tripA],
       },
     },
     error: input.error,
@@ -243,7 +248,7 @@ function snapshotOf(input: {
 
 function writeSnapshot(file: string, snap: SnapshotFile): string {
   mkdirSync(dirname(file), { recursive: true });
-  const json = `${canonicalJson(snap)}\n`;
+  const json = `${JSON.stringify(sortValue(snap), null, 2)}\n`;
   writeFileSync(file, json);
   return json;
 }

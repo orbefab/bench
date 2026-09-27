@@ -163,7 +163,9 @@ export function isFirmwareBoard(typeId: string): boolean {
  * `5V` is the header, with no path. A class-2 Nano takes the diode path
  * from a `usb-a-port`, and the same onboard network without the diode
  * from any other supply on `5V`. A class-1 snapshot is
- * `snapshot:<ref>` and runs only when a `usb-a-port` feeds `5V`.
+ * `snapshot:<ref>` and runs only when a matching `usb-a-port` feeds `5V`.
+ * The plan drops that circuit when the port is outside the captured
+ * resistance and current limit, so this function then sees no circuit.
  */
 export function usbPathFor(
   supplyType: string,

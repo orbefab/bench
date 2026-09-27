@@ -1,1 +1,132 @@
-{"axis":"behaviour","envelope":{"bounds":{"5V.current":[0,0.89],"supply.voltage":[4.75,5.25]}},"error":[{"baseline":{"level":"2","value":0},"heldOut":"use-like","metric":"free-run-max-abs","quantity":"5V.voltage","value":0.001650333},{"baseline":{"level":"2","value":0},"heldOut":"use-like","metric":"free-run-rms","quantity":"5V.voltage","value":0.00124409}],"form":"table@1","format":"sfab.snapshot@1","params":{"iAxis":[0,0.001,0.002,0.003,0.005,0.007,0.011,0.015,0.02,0.03,0.05,0.07,0.1,0.15,0.2,0.35,0.6,0.89],"supplyAffine":1,"supplyRef":5,"vAxis":[5,4.892885384,4.862382052,4.843731754,4.819468884,4.802975041,4.780004995,4.763528276,4.747541807,4.723433413,4.689158113,4.663003672,4.630678569,4.585629802,4.546085543,4.441641042,4.285983039,4.116225748]},"part":"sfab/nano-ch340@1.0.0","partType":"arduino-nano","ports":{"inputs":["5V.current","supply.voltage"],"outputs":["5V.voltage"]},"provenance":{"bench":{"avr8js":"0.21.1","mujoco":"3.14.0","version":"0.2.2"},"citations":[{"ref":"sfab/usb-port-500ma@1.0.0 thevenin Ilimit 0.9 A; the envelope stops 0.01 A below that trip","title":"usb-a-port current limit"}],"created":"2026-09-27T00:00:00.000Z","fixture":{"hash":"f083e5bae3113afa3e84a03752b9401aa4acb81c822db2613de2a1215f5bf1df","ref":"sfab/nano-usb-5v","seed":20260927},"from":{"hash":"2ce925ad36b0ef23722c65b2321f98c28504978840df3432750244188933f2da","level":"2","part":"sfab/nano-ch340@1.0.0"},"source":"captured","tool":{"name":"sfab-bench-capture","version":"1"}},"quality":"Q2a"}
+{
+  "axis": "behaviour",
+  "envelope": {
+    "bounds": {
+      "5V.current": [
+        0,
+        0.89
+      ],
+      "supply.currentLimit": [
+        0.9,
+        0.9
+      ],
+      "supply.resistance": [
+        0.5,
+        0.5
+      ],
+      "supply.voltage": [
+        4.75,
+        5.25
+      ]
+    }
+  },
+  "error": [
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "use-like",
+      "metric": "free-run-max-abs",
+      "quantity": "5V.voltage",
+      "value": 0.001650333
+    },
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "use-like",
+      "metric": "free-run-rms",
+      "quantity": "5V.voltage",
+      "value": 0.00124409
+    }
+  ],
+  "form": "table@1",
+  "format": "sfab.snapshot@1",
+  "params": {
+    "iAxis": [
+      0,
+      0.001,
+      0.002,
+      0.003,
+      0.005,
+      0.007,
+      0.011,
+      0.015,
+      0.02,
+      0.03,
+      0.05,
+      0.07,
+      0.1,
+      0.15,
+      0.2,
+      0.35,
+      0.6,
+      0.89
+    ],
+    "supplyAffine": 1,
+    "supplyRef": 5,
+    "vAxis": [
+      5,
+      4.892885384,
+      4.862382052,
+      4.843731754,
+      4.819468884,
+      4.802975041,
+      4.780004995,
+      4.763528276,
+      4.747541807,
+      4.723433413,
+      4.689158113,
+      4.663003672,
+      4.630678569,
+      4.585629802,
+      4.546085543,
+      4.441641042,
+      4.285983039,
+      4.116225748
+    ]
+  },
+  "part": "sfab/nano-ch340@1.0.0",
+  "partType": "arduino-nano",
+  "ports": {
+    "inputs": [
+      "5V.current",
+      "supply.voltage"
+    ],
+    "outputs": [
+      "5V.voltage"
+    ]
+  },
+  "provenance": {
+    "bench": {
+      "avr8js": "0.21.1",
+      "mujoco": "3.14.0",
+      "version": "0.2.2"
+    },
+    "citations": [
+      {
+        "ref": "sfab/usb-port-500ma@1.0.0 thevenin Ilimit 0.9 A; the envelope stops 0.01 A below that trip",
+        "title": "usb-a-port current limit"
+      }
+    ],
+    "created": "2026-09-27T00:00:00.000Z",
+    "fixture": {
+      "hash": "f083e5bae3113afa3e84a03752b9401aa4acb81c822db2613de2a1215f5bf1df",
+      "ref": "sfab/nano-usb-5v",
+      "seed": 20260927
+    },
+    "from": {
+      "hash": "2ce925ad36b0ef23722c65b2321f98c28504978840df3432750244188933f2da",
+      "level": "2",
+      "part": "sfab/nano-ch340@1.0.0"
+    },
+    "source": "captured",
+    "tool": {
+      "name": "sfab-bench-capture",
+      "version": "1"
+    }
+  },
+  "quality": "Q2a"
+}

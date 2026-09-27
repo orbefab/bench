@@ -14,7 +14,7 @@
       "!**/apps/server/fixtures/external",
       // Recorded at full float precision; formatting would rewrite the baseline.
       "!**/apps/server/fixtures/arm-baseline.json",
-      // Capture writes this as one canonical line. Formatting would diverge from the tool.
+      // Capture writes this as canonical JSON with 2-space indentation. Formatting it again would diverge from the tool.
       "!**/apps/server/catalog/snapshots/**",
       // cadgen writes this sidecar as one line. Formatting it would diverge from the generator.
       "!**/*.step.json",

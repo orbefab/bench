@@ -26,6 +26,7 @@ import { closeRootWatches } from "./projects";
 import { attachWorld, stopWorld } from "./world/host";
 import { canonicalJson } from "./world/parts/si";
 import { catalogRoot, planWorld } from "./world/plan";
+import { envelopeOf, outsideEnvelope } from "./world/snapshot-law";
 import { lintSnapshot } from "./world/snapshot-lint";
 import { loadSnapshot } from "./world/snapshot-load";
 
@@ -78,6 +79,19 @@ expect(
   clean.diagnostics.map((d) => d.message).join("; ")
 );
 expect(clean.quality === "Q2a", `linter granted ${clean.quality}`);
+const env = envelopeOf(committed);
+expect(env !== null, "snapshot envelope");
+expect(
+  env !== null && !outsideEnvelope(env, 5, env.current[1]),
+  "current bound is outside itself"
+);
+expect(
+  env !== null && outsideEnvelope(env, 5, 0.9),
+  "stock 0.9 A limit is not outside the 0.89 A current bound"
+);
+console.log(
+  "envelope unit: 0.89 A inside, 0.9 A outside; the stock port limit can cross the bound"
+);
 const loaded = loadSnapshot(
   tmpdir(),
   { catalogDir: catalogRoot(), assetRoot: tmpdir() },
@@ -166,9 +180,11 @@ try {
     paths: { nano: { behaviour: 1 } },
   });
   writeBench(root);
+  writeMismatch(root);
   const high = open(root, "path-2.world.json");
   const low = open(root, "path-1.world.json");
   const bench = open(root, "bench.world.json");
+  const mismatch = open(root, "mismatch.world.json");
   const highNano = levelRow(high, "nano");
   const lowNano = levelRow(low, "nano");
   expect(
@@ -205,8 +221,26 @@ try {
     bench.warnings.some((diag) => diag.message.includes("ideal terminal")),
     "bench feed has no ideal-terminal note"
   );
+  const mismatchNano = levelRow(mismatch, "nano");
+  expect(
+    mismatchNano.variant === "avr8js" && mismatchNano.class === 1,
+    "mismatched port left class 1"
+  );
+  expect(mismatch.snapshots.length === 0, "mismatched port ran the snapshot");
+  expect(
+    mismatch.lock.snapshots === undefined,
+    "mismatched port pinned the snapshot"
+  );
+  expect(
+    mismatch.warnings.some(
+      (diag) =>
+        diag.message.includes("ideal terminal") &&
+        diag.message.includes("usb-a-port")
+    ),
+    "mismatched port has no ideal-terminal note"
+  );
   console.log(
-    `selection: path 2 ${highNano.variant} (${highNano.reason}), path 1 ${lowNano.variant} snapshot (${lowNano.reason}), bench ideal terminal`
+    `selection: path 2 ${highNano.variant} (${highNano.reason}), path 1 ${lowNano.variant} snapshot (${lowNano.reason}), bench ideal terminal, mismatched usb-a-port ideal terminal`
   );
 
   const warned = await envelopeRun(root);
@@ -214,7 +248,7 @@ try {
     warned.envelope.length === 1,
     `envelope warnings ${warned.envelope.length}`
   );
-  console.log("envelope: one warning, run continued");
+  console.log("envelope: one warning on a matching source, run continued");
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
@@ -330,6 +364,44 @@ function writeBench(dir: string): void {
   );
 }
 
+function writeMismatch(dir: string): void {
+  writeFileSync(
+    join(dir, "parts", "sfab", "mismatch-scene@1.0.0.json"),
+    `{
+  "format": "sfab.part@1",
+  "id": "sfab/mismatch-scene@1.0.0",
+  "type": "assembly",
+  "foreign": false,
+  "axes": {
+    "behaviour": { "2": { "default": "netlist", "variants": { "netlist": {
+      "kind": "composite", "omits": ["no snapshot of this assembly"],
+      "netlist": {
+        "instances": {
+          "nano": { "part": "sfab/nano-ch340@1.0.0", "params": { "firmware": "firmware/hold/hold.hex", "source": "firmware/hold/hold.ino" } },
+          "usb": { "part": "sfab/usb-port-500ma@1.0.0", "params": { "Rs": 1 } }
+        },
+        "wires": [["usb.5V", "nano.5V"], ["usb.GND", "nano.GND"]],
+        "expose": {}
+      }
+    } } } },
+    "body": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["assembly adds no body"] } } } },
+    "visual": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["assembly adds no visual"] } } } }
+  }
+}
+`
+  );
+  writeFileSync(
+    join(dir, "mismatch.world.json"),
+    `{
+  "version": 2,
+  "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },
+  "run": { "seed": 1, "levels": { "default": 1 } },
+  "root": { "id": "scene", "part": "sfab/mismatch-scene@1.0.0" }
+}
+`
+  );
+}
+
 async function envelopeRun(dir: string): Promise<{ envelope: string[] }> {
   mkdirSync(join(dir, "firmware", "stall"), { recursive: true });
   cpSync(
@@ -354,6 +426,8 @@ async function envelopeRun(dir: string): Promise<{ envelope: string[] }> {
     join(dir, "parts", "sfab", "flag-stop@1.0.0.json"),
     `{"format":"sfab.part@1","id":"sfab/flag-stop@1.0.0","type":"flag-hinge","foreign":false,"sources":[{"title":"stall stop","ref":"upper limit 0.05 rad"}],"axes":{"behaviour":{"1":{"default":"rigid","variants":{"rigid":{"kind":"form","form":"multibody@1","params":{},"omits":["joint flexibility"]}}}},"body":{"1":{"default":"urdf","variants":{"urdf":{"kind":"urdf","file":"robot/flag-stop.urdf","omits":["link flex"]}}}},"visual":{"0":{"default":"box","variants":{"box":{"kind":"box","size":[0.08,0.04,0.02],"omits":["link meshes"]}}}}}}`
   );
+  // R sits under the SG90's 7.1 Ω so the stall current falls between the
+  // 0.89 A envelope and this port's 0.9 A limit.
   writeFileSync(
     join(dir, "parts", "sfab", "over-scene@1.0.0.json"),
     `{
@@ -363,18 +437,14 @@ async function envelopeRun(dir: string): Promise<{ envelope: string[] }> {
     "netlist": {
       "instances": {
         "flag": { "part": "sfab/flag-stop@1.0.0" },
-        "flag2": { "part": "sfab/flag-stop@1.0.0", "pose": { "position": [0.25, 0, 0], "rotation": [1, 0, 0, 0] } },
         "nano": { "part": "sfab/nano-ch340@1.0.0", "params": { "firmware": "firmware/stall/stall.hex", "source": "firmware/stall/stall.ino" } },
-        "usb": { "part": "sfab/usb-port-500ma@1.0.0", "params": { "Ilimit": 2 } },
-        "servo": { "part": "sfab/sg90@1.0.0" },
-        "servo2": { "part": "sfab/sg90@1.0.0", "pose": { "position": [0.25, 0, 0], "rotation": [1, 0, 0, 0] } }
+        "usb": { "part": "sfab/usb-port-500ma@1.0.0" },
+        "servo": { "part": "sfab/sg90@1.0.0", "params": { "R": 4.95 } }
       },
       "wires": [
         ["usb.5V", "nano.5V"], ["usb.GND", "nano.GND"],
         ["nano.D9", "servo.signal"], ["nano.5V", "servo.V+"], ["nano.GND", "servo.GND"],
-        ["servo.shaft", "flag.hinge"], ["servo.mount", "flag.base"],
-        ["nano.D9", "servo2.signal"], ["nano.5V", "servo2.V+"], ["nano.GND", "servo2.GND"],
-        ["servo2.shaft", "flag2.hinge"], ["servo2.mount", "flag2.base"]
+        ["servo.shaft", "flag.hinge"], ["servo.mount", "flag.base"]
       ],
       "expose": {}
     }
