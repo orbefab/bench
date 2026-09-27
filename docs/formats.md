@@ -123,6 +123,10 @@ type BehaviourImpl = { omits: string[] } & (
 type BodyImpl = { omits: string[] } & (
   | { kind: "lumped"; mass: number; com: Vec3; inertia: Sym6;
       joint?: { armature?: number; frictionloss?: number; damping?: number } }
+  | { kind: "gear-train"; input: string; output: string;
+      shafts: { name: string; inertia: number; damping: number; frictionloss: number; mass?: number }[];
+      meshes: { driver: string; driven: string; teethDriver: number; teethDriven: number }[] }
+  | { kind: "snapshot"; ref: string }
   | { kind: "urdf"; file: string } | { kind: "mjcf"; file: string }
   | { kind: "children" } | { kind: "none" });
 
@@ -146,6 +150,7 @@ type Netlist = {
 - A circuit part (`resistor@1`, `capacitor@1`, `diode@1`) belongs to the rail of the supply its nets reach. There is one rail per supply. A firmware board on that supply adds its board stamp and pins. A part that reaches that supply and shares no net with the board is still stamped on the board. A supply with those parts and no board stamps them against the supply's positive and ground ports. A circuit part that reaches no supply and no board is a plan error naming the path. After the stamps are built, every such part is in exactly one stamp. A part `realize` later prunes still counts as placed. A part on two boards, or on two supplies, is a plan error. Two firmware boards may share one supply only when neither has a stamp or a snapshot. Today's Uno pairs are that case. A class-2 netlist or a class-1 snapshot on a shared supply is a plan error naming the boards and the supply.
 - An instance string param `urdf` replaces the body file of a part whose body is `urdf`. The path is relative to the project folder.
 - Children are instantiated when the chosen behaviour is a composite, or when it is firmware with a `board` netlist. The lockfile still lists children of every class.
+- A `gear-train` stores shaft-side inertia, damping and friction in SI. Teeth are positive integers. `collapse()` reflects them onto the output: armature is Σ n²J, damping is Σ n²B, frictionloss is Σ |n|τ, and n is |ω_shaft / ω_output|, the product of `teethDriven / teethDriver` walking from the output. The run uses that hinge. It does not instance the gear bodies. On the SG90 the train sits on the servo, not on the `gears` child. Those children are instanced only when the behaviour is the class-2 composite, and that composite still has no runtime. When the children run, the `gears` child takes this body over.
 
 ### `avr-pin@1` and the ADC
 
@@ -189,6 +194,7 @@ Omitted: ADC INL and DNL, ADC noise, the noise canceller, temperature drift, and
 - `table@1`
 - `transfer-fn@1`
 - `multibody@1` (a URDF/MJCF body run by MuJoCo; the arm's class-1 behaviour)
+- `hinge@1` (body axis only: `armature` Inertia, `damping` TorquePerAngularVelocity, `frictionloss` Torque). On the behaviour axis it is a load error. A behaviour form on the body axis is a load error.
 - `mlp@1` (later)
 - `ranger@1` (c, rangeMin, rangeMax, beamHalf, trigMin, echoDelay, echoTimeout, working, quiescent, vMin, face)
 
@@ -222,7 +228,8 @@ type WorldFile = {
   };
   root: { id: string; part: string | PartFile; pose?: Pose; params?: Params };
 };
-type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual", 0 | 1 | 2 | 3>>;
+type AxisLevel = 0 | 1 | 2 | 3 | { class: 0 | 1 | 2 | 3; variant: string };
+type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual", AxisLevel>>;
 ```
 
 **Targets.** A target is a box, sphere or cylinder that moves, and that a ray can hit. It is a MuJoCo mocap body with `contype` and `conaffinity` 0, so it does not push a robot; a mocap body would not move from contact anyway. `path` is `{ t, position }[]`, times in seconds, strictly increasing. The position is linear between keyframes, the first keyframe before its time, and held after the last. With no path the target stays at `pose`. The viewer draws it where it is, and the recording keeps that pose on the robot id `target` (`target/<id>`), the same way a link pose is kept, so scrubbing shows it move. `world_move_target` sets the position from the next master step and records a `move-target` event. A world whose targets only follow `path` stays byte-identical across runs. Dragging a target in the view is later.
@@ -234,8 +241,10 @@ type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual",
 2. Children of the world root use the world default. The scene composite is a container, not a parent. Below that, a nested instance whose request is still the default takes its parent's resolved behaviour class when the parent has that class, whether the parent is a firmware board or a composite. A parent that only reached its class by fallback does not pass it down. The report source is `parent`. A leaf that lacks the parent's class falls back, and the report says so. A part with no behaviour class stays on the world default.
 3. A missing class falls back to the nearest **cheaper** class.
 4. If there is none, it uses the nearest **deeper** class and reports "capture suggested".
-5. The class's default variant runs.
+5. A bare class runs that class's default variant. `{ class, variant }` selects that named variant in that class. A variant the part does not have is a plan error naming the path, axis, class and variant. It does not fall back. The level row shows the variant, and the reason says the rule chose it. A named variant does not inherit a parent class.
 6. Levels are fixed for a run (D-017).
+
+`world_set_level` writes a class number onto one axis. When that axis held a variant rule, the write replaces the rule with the class alone. The other axes keep their variant objects.
 
 ## 5. Library and lockfile (D-007, D-023.5)
 
@@ -265,7 +274,7 @@ Snapshot files are looked up like parts, in `snapshots/<publisher>/<name>@<versi
 
 ## 6. Snapshot
 
-A snapshot is one behaviour level of a part. `{kind: "snapshot", ref}` on a variant is loaded like a part (world, then library, then catalog), linted, pinned in the lock when that variant runs, reported with its quality, and run. A snapshot that fails to load or lint is a plan error. It does not fall back.
+A snapshot is one behaviour or body level of a part. `{kind: "snapshot", ref}` on a variant is loaded like a part (world, then library, then catalog), linted, pinned in the lock when that variant runs, reported with its quality, and run. A snapshot that fails to load or lint is a plan error. It does not fall back. Body rows carry `axis: "body"`.
 
 A part may hold several snapshots. A run row is keyed by path, axis, and ref. The report sets `axis` explicitly.
 
@@ -277,12 +286,12 @@ type Snapshot = {
   axis: "behaviour" | "body";
   form: FormId;
   ports: { inputs: string[]; outputs: string[] };        // port.quantity, from the type
-  params: Record<string, number | string | (number | string)[]>; // no joint terms (D-023.1)
+  params: Record<string, number | string | (number | string)[]>; // behaviour: no joint terms (D-023.1). hinge@1: the joint terms.
   envelope: {
     bounds: Record<string, Range>;                       // "port.quantity": [lo, hi] (D-023.2)
     data?: { kind: "mahalanobis"; mean: number[]; cov: number[][]; limit: number };
   };
-  error: "none-available" | { metric: "static-max-abs" | "free-run-max-abs" | "free-run-rms"; quantity: string; value: number;
+  error: "none-available" | { metric: "static-max-abs" | "free-run-max-abs" | "free-run-rms" | "step-rise"; quantity: string; value: number;
                               corner?: "typ" | "min" | "max"; heldOut: "fixture" | "use-like" | "both";
                               baseline?: { level: string; value: number } }[];
   quality: "Q0" | "Q1" | "Q2a" | "Q2b" | "Q3";           // set by the linter, never by hand
@@ -299,7 +308,7 @@ type Snapshot = {
 };
 ```
 
-This form is DC only, one port pair. There is no `transfer-fn@1` yet. Body snapshots are a later form.
+`table@1` is DC only, one port pair. There is no `transfer-fn@1` yet, and no servo actuator table yet: that table needs `map@1` and the E10 data. A world run does not instance live gear bodies, and it does not add backlash.
 
 ### `table@1`
 
@@ -318,6 +327,16 @@ Two uses of the one element:
 
 During a run, every key in `envelope.bounds` whose quantity is observed on the rail is checked. There is at most one warning per path and ref. The warning names the port and the bound. The run continues. It does not fall back mid-run.
 
+### `hinge@1`
+
+A body-axis form. The axis must be `body`, and a body snapshot must be this form. `armature` (Inertia) is finite and greater than 0. `damping` (TorquePerAngularVelocity) and `frictionloss` (Torque) are finite and non-negative. Port quantities come from the type's declarations and are a rotational port's angle, speed or torque. Envelope keys are on that same port. The type's plausible ranges apply. `hobby-servo-3wire` allows Inertia from 1e-9 to 0.01 kg·m² and TorquePerAngularVelocity from 0 to 1 N·m·s/rad, wide enough for a fitted armature and a reflected one, and tight enough to catch a missing prefix.
+
+`step-rise` is |t₁₀₋₉₀(snapshot) − t₁₀₋₉₀(baseline)| in seconds, on the named quantity. Each side's rise is 10% to 90% of that trace's own start-to-end span. A captured free-run row with a baseline earns Q2a, the same rule as `table@1`. `step-rise` does not grant Q2a by itself.
+
+Each master step compares the driven joint's speed and the applied actuator torque with the snapshot's speed and torque bounds. At most one warning per path and ref. The warning names the port and the bound. The run continues.
+
+The servo adapter takes its joint from the selected body: a lumped joint, a `hinge@1` snapshot, or `collapse()` of a gear train. Anything else is a plan error.
+
 ### Quality and the linter
 
 | Quality | Meaning |
@@ -333,6 +352,7 @@ Foreign parts are capped (D-009).
 The linter is per form. It rejects, and a snapshot that fails cannot run:
 - missing provenance (a captured snapshot also needs `from`, `fixture`, and `tool`);
 - for `table@1`: an axis that is not monotone; an `across` port that is not on the type; a table that does not cover its envelope (the current knots span the current bound; `supplyAffine: 1` covers the supply bound when `supplyRef` sits inside that range); a listed port quantity the declarations do not match;
+- for `hinge@1`: an axis other than body; a body snapshot that is not `hinge@1`; a param that is missing, non-finite or negative; `armature` that is not greater than 0; a port quantity that is not angle, speed or torque on a declared rotational port; an envelope key that is not on that port;
 - a missing output that the part type lists in `requiredOutputs` (no such list means no extra output is required);
 - values outside the part type's plausible ranges (a current of 10 A or more is also shown in mA);
 - non-physical output: voltage at a **0 V setpoint**, checked only inside the envelope, and only when that envelope includes 0 V.
@@ -341,7 +361,7 @@ Quality in the file is a claim. The linter grants Q0, Q1, Q2a, Q2b, or Q3 from t
 
 ### Capture
 
-`apps/server/catalog/fixtures/capture.config.json` is a list of entries. Each entry names the part, the variant, the instance, the `across` pair, the port the current goes through, the sweep, the envelope, the baseline level, and an optional feed and free-run case list. The capture reads those fields from the entry.
+`apps/server/catalog/fixtures/capture.config.json` is a list of entries. Capture dispatches on `form`. A `table@1` entry names the part, the variant, the instance, the `across` pair, the port the current goes through, the sweep, the envelope, the baseline level, and an optional feed and free-run case list. A `hinge@1` entry names the part, the fixture, the baseline and the source class. The runner reads those fields from the entry. It has no part-specific numbers.
 
 A plain-branch capture drives an ideal current source through `p` into `m` on the assembly's stamp and reads `V(p) − V(m)`, with `m` pinned at 0. `provenance.from` holds the part id and the stamp hash. An entry that asks records `static-max-abs` against its baseline level, the max-abs error between knots. Free-run rows are written when the entry has cases.
 
@@ -354,6 +374,10 @@ Rebuild with `pnpm --filter @sfab-bench/server capture`. The timestamp comes fro
 **Plain branch, inside a board.** `sfab/nano-power-input@1.0.0` is the SS14 and the 10 µF capacitor as one group. Class 2 is that composite. Class 1 is the snapshot: `across` `["VBUS", "5V"]`, current into `VBUS`, swept 0 to 0.9 A, no source bounds. The Nano class-2 netlist instances that group as `power` and wires through `power.5V` and `power.GND`. A path rule can run the group at the snapshot while the rest of the board stays the circuit.
 
 **Plain branch, any assembly.** `sfab/led-module-red@1.0.0` is 220 Ω and a red LED. Class 1 is the snapshot, `across` `["IN", "GND"]`, swept 0 to 20 mA. `examples/nano/nano-led-module.world.json` holds D9 high into that module. At class 1 the record has no inner LED channel.
+
+**Body.** `sfab/sg90@1.0.0` body class 1 default `lumped` is the fitted joint: armature 5e-5 kg·m², damping 0.0025 N·m·s/rad, frictionloss 0.002 N·m. Variant `collapsed` is the snapshot `sfab/sg90-hinge@1.0.0`, the class-2 collapse, so the armature is reflected rather than fitted. Class 2 is the gear train: a 9-tooth pinion, compounds 47:10, 38:8 and 32:7, and a 23-tooth output. Tooth counts are the published brochure figures. Shaft inertias are estimates (a copper rotor cup, POM gear disks). Damping is 70% on the rotor and 30% on the output. Friction is split evenly. The snapshot's ports are `shaft.torque` in and `shaft.angle` out. Its envelope is the speed and torque the fixture reached, and both sit inside the part ratings. `examples/nano/nano-servo-collapsed.world.json` selects `{ class: 1, variant: "collapsed" }` on `servo`.
+
+A `hinge@1` capture runs the gear train and the collapsed hinge on the same fixture. The deep side is one MuJoCo hinge per shaft and one joint equality per mesh, with the load inertia on the output, at the 1 ms master step. The snapshot side is one hinge from `collapse()`, with the same load. The error rows compare `shaft.angle`: worst-case free-run max-abs and rms, and the worst `step-rise` across the step cases.
 
 ## 7. Fixture
 
@@ -370,6 +394,8 @@ type Fixture = {
 ```
 
 Sweeps over `Inertia` or `Torque` replace `mount.load` per run, and sweeps are crossed. Captured and measured snapshots use the same fixture. A real rig runs the same script by hand (E10). The Nano USB fixture is the current and voltage sweep. Its free-run scenes are not in the fixture; they are the capture config's cases, because each one needs a sketch and a servo.
+
+`sfab/sg90-body` is a body fixture. `mount.load.inertia` is 2.15e-5 kg·m², the flag vane about its hinge in `examples/nano`. The inertia sweep is that flag and 1.4384e-4 kg·m², the arm's upper link about the shoulder in `examples/arm`. Inputs are a torque step and a torque chirp on `shaft`, both inside the torque rating. It records `shaft.angle`.
 
 ## 8. Run report (D-008)
 
@@ -409,7 +435,6 @@ These came out of the motor/rail and pin experiments. They are proposals, not ye
 - **Braking current** returns to the rail (`I_rail = s·I` may be negative). The rail clips it at 0; the measured bench (E10) decides which the SG90 part keeps.
 - **Pin element `avr-pin@1`** (landed, §3): `roh`, `rol`, `rpu` and `rLeak` on the firmware variant. High is the board node. DDR and PORT select the mode at the master step.
 - **ADC** (landed, §3): AVCC is the board node from the end of the previous 1 ms step. The count is `floor(V/Vref·1024)`, clamped to 1023. The sample-and-hold is a closed form, not a live 14 pF node. INL, DNL, noise, the noise canceller and temperature drift are omitted.
-- **`gear-train` body kind** beside `mjcf`: shafts `{ name, inertia, damping, friction }` and meshes `{ driver, driven, teethDriver, teethDriven }`, so the body-axis snapshot `collapse()` (armature `N²·J` plus reflected idlers, friction scaled by the speed ratio) is data. A catalog armature that was fitted, not reflected, says so.
 - **Current-limit floor**: a `thevenin-limit@1` rail feeding regenerating motors needs a clamp (the bridge's body diodes) so the terminal voltage cannot go negative.
 - **Run report** adds the **passivity sum** at each circuit/body cut (joules injected by the coupling) and flags it when it grows.
 - **`ptc-fuse@1`** (Uno F1, Bourns MF-MSMF050-2): cold resistance is Rmin 0.15 Ω. R1max 1.00 Ω is the post-trip ceiling, not the cold value. `Ihold` 0.50 A, `Itrip` 1.00 A. Thermal state `u` integrates `I²R` once per 1 ms master step, outside the circuit solve. At `u = 1` the branch goes to a high resistance and returns to the cold value once `u` falls.
