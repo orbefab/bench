@@ -5,7 +5,7 @@ ngspice 45.2, inside `eecircuit-engine` 1.8.0. The decks use gear,
 step. The run header was `Command: ngspice-45.2, Build Sat Sep  5 01:00:10 UTC 2026`.
 
 Generator: `scratch/layered-sim/port-circuit-ref` @
-`0715661821eb8f1f254948818836e8d45d54ece0`.
+`f6492d67f0bcd3526b8726311a9a2d070f2e6830`.
 
 ```bash
 cd /abs/path/port-circuit-ref
@@ -32,5 +32,7 @@ resistors changed, and records wiper and rail voltage (V).
 | pwm-20 | out | 10 µs | 80 ms |
 | nano-power | rail | 100 ns | 3 ms |
 | uno-usb | v5 | 20 ns | 3 ms |
+| nano-usb | v5 | 20 ns | 3 ms |
+| nano-d13 | d13 | 20 ns | 3 ms |
 | pot-adc-50 | wiper, rail | DC | 5.0 V rail |
 | pot-adc-44 | wiper, rail | DC | 4.4 V rail |
