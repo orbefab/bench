@@ -25,6 +25,7 @@ import {
   worldWorkerCount,
 } from "./world/host";
 import { replaceLevels } from "./world/level-edit";
+import { contentHash } from "./world/parts/si";
 import { planWorld } from "./world/plan";
 import { viewOf } from "./world/view";
 import { worldTools } from "./world-tools";
@@ -125,6 +126,86 @@ expect(
 console.log(
   "level card: gauge nano type rule, sensor fallback, class 1 snapshot"
 );
+
+const nestedDir = mkdtempSync(join(tmpdir(), "sfab-nested-snap-"));
+try {
+  cpSync(nanoDir, nestedDir, { recursive: true });
+  const nestedFile = join(nestedDir, "nano-vcc-usb.world.json");
+  const nestedWorld = JSON.parse(readFileSync(nestedFile, "utf8")) as {
+    run: { levels: { paths?: Record<string, { behaviour: number }> } };
+  };
+  nestedWorld.run.levels.paths = {
+    ...(nestedWorld.run.levels.paths ?? {}),
+    "nano.power": { behaviour: 1 },
+  };
+  writeFileSync(nestedFile, `${JSON.stringify(nestedWorld, null, 2)}\n`);
+  const snapFile = fileURLToPath(
+    new URL(
+      "../catalog/snapshots/sfab/nano-power-input@1.0.0.json",
+      import.meta.url
+    )
+  );
+  const lockFile = join(nestedDir, "nano-vcc-usb.world.lock.json");
+  const lock = JSON.parse(readFileSync(lockFile, "utf8")) as {
+    snapshots?: {
+      id: string;
+      path: string;
+      sha256: string;
+      source: string;
+    }[];
+  };
+  lock.snapshots = [
+    {
+      id: "sfab/nano-power-input@1.0.0",
+      path: "../../apps/server/catalog/snapshots/sfab/nano-power-input@1.0.0.json",
+      sha256: contentHash(JSON.parse(readFileSync(snapFile, "utf8"))),
+      source: "catalog",
+    },
+  ];
+  writeFileSync(lockFile, `${JSON.stringify(lock, null, 2)}\n`);
+  const mixed = openReport(nestedDir, "nano-vcc-usb.world.json");
+  const boardCard = levelCard(mixed.report, "nano");
+  const power = boardCard?.nested.find((row) => row.path === "nano.power");
+  expect(
+    power?.ref === "sfab/nano-power-input@1.0.0" &&
+      power.quality.length > 0 &&
+      power.errors.some((line) => line.includes("static max")) &&
+      power.provenance !== null,
+    `nested snapshot ${power?.path} ${power?.ref} ${power?.errors.join(" | ")}`
+  );
+  console.log(
+    `level card: nested snapshot ${power?.path} · ${power?.ref} · ${power?.quality}`
+  );
+} finally {
+  rmSync(nestedDir, { recursive: true, force: true });
+}
+
+const moduleWorld = openReport(nanoDir, "nano-led-module.world.json");
+const moduleView = viewOf(moduleWorld.plan);
+const modulePart = moduleView.parts.find((part) => part.id === "module");
+const moduleBox = moduleView.boxes.find((box) => box.id === "module");
+expect(
+  modulePart?.model === "led-module-red" && modulePart.signalPin === null,
+  `module part ${JSON.stringify(modulePart)}`
+);
+expect(
+  moduleBox?.pick === "part" &&
+    moduleBox.size[0] === 0.01 &&
+    moduleBox.size[1] === 0.005 &&
+    moduleBox.size[2] === 0.008 &&
+    moduleBox.pose.position[0] === 0.04 &&
+    moduleBox.pose.position[2] === 0.004,
+  `module box ${JSON.stringify(moduleBox)}`
+);
+const nanoBoard = moduleView.boards.find((board) => board.id === "nano");
+const usbBox = moduleView.boxes.find((box) => box.id === "usb");
+expect(
+  nanoBoard?.pose.position[0] === 0 &&
+    usbBox?.pose.position[0] === -0.04 &&
+    moduleBox?.pose.position[0] === 0.04,
+  "nano, usb, and module sit on separate poses"
+);
+console.log(`parts: ${modulePart?.id} · ${modulePart?.model}`);
 
 const gaugeView = viewOf(gauge.plan);
 const sensorBox = gaugeView.boxes.find((box) => box.id === "sensor");

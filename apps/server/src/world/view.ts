@@ -52,6 +52,17 @@ export function viewOf(plan: RunPlan): WorldView {
         signalPin: null,
         ranger: true as const,
       })),
+      ...(plan.leaves ?? [])
+        .filter(
+          (leaf) =>
+            !plan.parts.some((part) => part.id === leaf.id) &&
+            !(plan.rangers ?? []).some((ranger) => ranger.id === leaf.id)
+        )
+        .map((leaf) => ({
+          id: leaf.id,
+          model: leaf.model,
+          signalPin: null,
+        })),
     ],
     boxes: (plan.boxes ?? []).map((box) => ({
       id: box.id,

@@ -17,7 +17,7 @@ import {
   scrubbedBoardStatus,
 } from "@/lib/board-status";
 import { overlayMaxHeight } from "@/lib/layout";
-import { levelCard } from "@/lib/level-card";
+import { type LevelSnapshot, levelCard } from "@/lib/level-card";
 import {
   activeEscLayer,
   compactChatSheetOpen,
@@ -90,10 +90,44 @@ function SoaLine({ text }: { text: string }) {
   );
 }
 
+function SnapshotBlock({
+  cardPath,
+  snap,
+}: {
+  cardPath: string;
+  snap: LevelSnapshot;
+}) {
+  const value =
+    snap.path === cardPath
+      ? `${snap.ref} · ${snap.quality}`
+      : `${snap.path} · ${snap.ref} · ${snap.quality}`;
+  return (
+    <div className="min-w-0">
+      <Field label="Snapshot" value={value} />
+      {snap.errors.map((line) => (
+        <div
+          key={line}
+          className="mb-1.5 truncate font-mono text-[12px]"
+          title={line}
+        >
+          {line}
+        </div>
+      ))}
+      {snap.provenance ? (
+        <Field label="Provenance" value={snap.provenance} />
+      ) : null}
+      {snap.warnings.map((text) => (
+        <SoaLine key={text} text={text} />
+      ))}
+    </div>
+  );
+}
+
 function LevelBlock({ path }: { path: string }) {
   const report = useWorld((s) => s.report);
   const card = levelCard(report, path);
   if (!card) return null;
+  const snaps = [...(card.snapshot ? [card.snapshot] : []), ...card.nested];
   return (
     <div className="mb-1.5 min-w-0">
       <div className="text-[11px] text-muted-foreground">Level</div>
@@ -107,29 +141,9 @@ function LevelBlock({ path }: { path: string }) {
           <span className="text-muted-foreground"> · {axis.reason}</span>
         </div>
       ))}
-      {card.snapshot ? (
-        <>
-          <Field
-            label="Snapshot"
-            value={`${card.snapshot.ref} · ${card.snapshot.quality}`}
-          />
-          {card.snapshot.errors.map((line) => (
-            <div
-              key={line}
-              className="mb-1.5 truncate font-mono text-[12px]"
-              title={line}
-            >
-              {line}
-            </div>
-          ))}
-          {card.snapshot.provenance ? (
-            <Field label="Provenance" value={card.snapshot.provenance} />
-          ) : null}
-          {card.snapshot.warnings.map((text) => (
-            <SoaLine key={text} text={text} />
-          ))}
-        </>
-      ) : null}
+      {snaps.map((snap) => (
+        <SnapshotBlock key={snap.path} cardPath={path} snap={snap} />
+      ))}
       {card.omits.length > 0 ? (
         <details className="mt-1">
           <summary className="cursor-pointer text-[11px] text-muted-foreground">
@@ -512,7 +526,7 @@ function PartBody({
       </div>
       {info?.ranger ? (
         <RangerFields reading={scrub.playhead !== null ? recorded : live} />
-      ) : (
+      ) : info && info.signalPin === null ? null : (
         <>
           <Field
             label="Pulse"

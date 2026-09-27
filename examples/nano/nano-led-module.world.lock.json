@@ -39,7 +39,7 @@
     {
       "id": "sfab/nano-led-module-scene@1.0.0",
       "path": "parts/sfab/nano-led-module-scene@1.0.0.json",
-      "sha256": "8ed16b184e263b065784c0d27fad1e3ac2884ab7a0abd20700f4088f14fb0608",
+      "sha256": "8c727fb2c93449577944e981a9e4ec47412db2e67986aa57ded1437a987b19ad",
       "source": "world",
       "version": "1.0.0"
     },

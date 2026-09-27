@@ -15,13 +15,29 @@
               "instances": {
                 "nano": {
                   "part": "sfab/nano-ch340@1.0.0",
+                  "pose": {
+                    "position": [0, 0, 0.004],
+                    "rotation": [1, 0, 0, 0]
+                  },
                   "params": {
                     "firmware": "firmware/d9-high/d9-high.hex",
                     "source": "firmware/d9-high/d9-high.ino"
                   }
                 },
-                "usb": { "part": "sfab/usb-port-500ma@1.0.0" },
-                "module": { "part": "sfab/led-module-red@1.0.0" }
+                "usb": {
+                  "part": "sfab/usb-port-500ma@1.0.0",
+                  "pose": {
+                    "position": [-0.04, 0, 0.004],
+                    "rotation": [1, 0, 0, 0]
+                  }
+                },
+                "module": {
+                  "part": "sfab/led-module-red@1.0.0",
+                  "pose": {
+                    "position": [0.04, 0, 0.004],
+                    "rotation": [1, 0, 0, 0]
+                  }
+                }
               },
               "wires": [
                 ["usb.5V", "nano.5V"],

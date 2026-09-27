@@ -215,6 +215,11 @@ export type RunPlan = {
   supplies: RunSupply[];
   parts: RunPart[];
   /**
+   * Circuit and snapshot leaves that sit on the scene, listed with the
+   * servos and sensors. Nested board parts stay on the board card.
+   */
+  leaves?: { id: string; model: string }[];
+  /**
    * Visual boxes for parts and supplies. Absent on a hand-built plan.
    * A body that is a URDF is omitted so the robot meshes are not drawn twice.
    */
@@ -695,6 +700,7 @@ function build(
   const boards: RunBoard[] = [];
   const supplies: RunSupply[] = [];
   const parts: RunPart[] = [];
+  const leaves: { id: string; model: string }[] = [];
   const rangers: RunRanger[] = [];
   const boxes: RunBox[] = [];
   const circuits: CircuitInst[] = [];
@@ -711,6 +717,9 @@ function build(
     const circuit = circuitInstOf(inst);
     if (circuit) {
       circuits.push(circuit);
+      if (!inst.path.includes(".")) {
+        leaves.push({ id: inst.path, model: shortName(inst.part.id) });
+      }
       if (inst.pose) pushBox(boxes, inst, "part");
       continue;
     }
@@ -978,6 +987,9 @@ function build(
         ports,
         table: { ref: behaviour.ref, law, envelope },
       });
+      if (!inst.path.includes(".")) {
+        leaves.push({ id: inst.path, model: shortName(inst.part.id) });
+      }
       if (inst.pose) pushBox(boxes, inst, "part");
       continue;
     }
@@ -1172,6 +1184,7 @@ function build(
       boards,
       supplies,
       parts,
+      leaves,
       rangers,
       boxes,
       wires: electricalWires(loaded.nets),

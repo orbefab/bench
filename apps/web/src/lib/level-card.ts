@@ -11,6 +11,8 @@ export type LevelAxisLine = {
 };
 
 export type LevelSnapshot = {
+  /** Instance the snapshot ran on. The card's own path, or one nested under it. */
+  path: string;
   ref: string;
   quality: string;
   /** `+5V free-run max 1.65 mV, rms 1.24 mV vs class 2` */
@@ -25,6 +27,8 @@ export type LevelCard = {
   axes: LevelAxisLine[];
   /** Set when a snapshot ran on this instance. */
   snapshot: LevelSnapshot | null;
+  /** Snapshots on children of this instance, such as `nano.power` on `nano`. */
+  nested: LevelSnapshot[];
   /** Effects the chosen levels leave out. The card keeps this collapsed. */
   omits: string[];
 };
@@ -57,13 +61,41 @@ export function levelCard(
     for (const effect of row.effects) omits.push(`${row.axis}: ${effect}`);
   }
   const snaps = report.snapshots.filter((row) => row.path === path);
-  return { axes, snapshot: snaps.length ? snapshotOf(snaps) : null, omits };
+  const nested = report.snapshots.filter((row) =>
+    row.path.startsWith(`${path}.`)
+  );
+  return {
+    axes,
+    snapshot: snaps.length ? snapshotOf(path, snaps) : null,
+    nested: groupedSnapshots(nested),
+    omits,
+  };
 }
 
-function snapshotOf(rows: RunReport["snapshots"]): LevelSnapshot {
+function groupedSnapshots(rows: RunReport["snapshots"]): LevelSnapshot[] {
+  const byPath = new Map<string, RunReport["snapshots"]>();
+  for (const row of rows) {
+    const group = byPath.get(row.path) ?? [];
+    group.push(row);
+    byPath.set(row.path, group);
+  }
+  return [...byPath.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([rowPath, group]) => snapshotOf(rowPath, group));
+}
+
+function snapshotOf(path: string, rows: RunReport["snapshots"]): LevelSnapshot {
   const first = rows[0];
-  if (!first)
-    return { ref: "", quality: "", errors: [], provenance: null, warnings: [] };
+  if (!first) {
+    return {
+      path,
+      ref: "",
+      quality: "",
+      errors: [],
+      provenance: null,
+      warnings: [],
+    };
+  }
   const errors: string[] = [];
   const warnings: string[] = [];
   for (const row of rows) {
@@ -71,6 +103,7 @@ function snapshotOf(rows: RunReport["snapshots"]): LevelSnapshot {
     for (const warning of row.envelope ?? []) warnings.push(warning);
   }
   return {
+    path,
     ref: rows.map((row) => row.ref).join(", "),
     quality: rows.map((row) => row.quality).join(", "),
     errors,
