@@ -8,8 +8,10 @@
   - vane | box 0.08 0.02 0.005 along +X | mass 0.01 kg
   joints:
   - hinge | revolute | parent base | child vane
-    origin xyz 0 0 0.0125 | axis 0 0 1
-    limits 0 .. 2.617993877991494 rad (the hold sketch's 2.094 rad target fits)
+    origin xyz 0 0 0.023 | axis 0 0 1
+    the vane sits 0.5 mm above the base: MuJoCo does not filter contacts
+    between a joint's child and a parent welded to the world
+    limits 0 .. pi rad (the vcc sketch's 170° swing stays off the stop)
     effort 0.18 N·m and velocity 10.472 rad/s are hobby-servo placeholders
 -->
 <robot name="flag">
@@ -57,9 +59,9 @@
   <joint name="hinge" type="revolute">
     <parent link="base"/>
     <child link="vane"/>
-    <origin xyz="0 0 0.0125" rpy="0 0 0"/>
+    <origin xyz="0 0 0.023" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit lower="0" upper="2.617993877991494" effort="0.18" velocity="10.472"/>
+    <limit lower="0" upper="3.141592653589793" effort="0.18" velocity="10.472"/>
     <dynamics damping="0.001" friction="0"/>
   </joint>
 </robot>
