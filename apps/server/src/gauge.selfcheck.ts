@@ -2,17 +2,26 @@
  * The HC-SR04 and the distance gauge. Echo width is checked to the
  * cycle. A world with no target and no ranger is not part of this
  * file's physics; the nano run below has neither, and it is compared
- * with itself.
+ * with itself. The level matrix runs that same gauge with the Nano
+ * on its USB snapshot, and once with the sensor at class 0.
  */
 
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   emptySnapshot,
+  type LockFile,
   type RecordingRead,
+  type RunReport,
   type WorldSender,
 } from "@sfab-bench/contract";
 
@@ -25,6 +34,14 @@ import {
   stopWorld,
   type WorldHandle,
 } from "./world/host";
+import {
+  type LevelTable,
+  lockAfterLevels,
+  replaceLevels,
+} from "./world/level-edit";
+import { loadWorldV2 } from "./world/parts/load";
+import { writeLock } from "./world/parts/lock";
+import { catalogRoot } from "./world/plan";
 import { noLoadSpeedRad } from "./world/power";
 import { worldTools } from "./world-tools";
 
@@ -86,7 +103,8 @@ function pole(x: number) {
 function worldFile(
   part: string,
   sensorLevel: number,
-  target: ReturnType<typeof card> | ReturnType<typeof pole> | null
+  target: ReturnType<typeof card> | ReturnType<typeof pole> | null,
+  nanoBehaviour: 1 | 2 = 2
 ) {
   return {
     version: 2,
@@ -100,7 +118,7 @@ function worldFile(
       levels: {
         default: 1,
         types: {
-          "arduino-nano": { behaviour: 2 },
+          "arduino-nano": { behaviour: nanoBehaviour },
           ...(sensorLevel === 0
             ? { "ultrasonic-ranger-4pin": { behaviour: 0 } }
             : {}),
@@ -125,6 +143,307 @@ function linesOf(text: string): string[] {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && line !== "boot");
+}
+
+const NANO_SNAPSHOT = "sfab/nano-usb-5v@1.0.0";
+/** `1125300 / count` in the gauge sketch: 1.1 * 1023 * 1000, integer division. */
+const VCC_SCALE = 1_125_300;
+
+type GaugeRun = {
+  read: RecordingRead;
+  report: RunReport;
+  hostEnvelope: string[];
+  resets: number;
+};
+
+function envelopeMessages(report: RunReport): string[] {
+  const out: string[] = [];
+  for (const row of report.snapshots) {
+    for (const message of row.envelope ?? []) out.push(message);
+  }
+  for (const warning of report.warnings) {
+    if (warning.message.includes("envelope")) out.push(warning.message);
+  }
+  return out;
+}
+
+function serialGroups(read: RecordingRead): {
+  readings: string[];
+  vcc: number[];
+} {
+  const readings: string[] = [];
+  const vcc: number[] = [];
+  let text = "";
+  for (const event of read.events) {
+    if (event.kind !== "serial" || event.board !== "nano") continue;
+    text += event.text ?? "";
+    const chunk = text.split(/\r?\n/);
+    text = chunk.pop() ?? "";
+    for (const line of chunk) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed === "boot") continue;
+      if (trimmed.startsWith("vcc,")) {
+        vcc.push(Number(trimmed.slice(4)));
+        continue;
+      }
+      readings.push(trimmed);
+    }
+  }
+  return { readings, vcc };
+}
+
+/** ADC counts whose integer `1125300 / count` is this printed millivolt value. */
+function adcCounts(printedMv: number): number[] {
+  const counts: number[] = [];
+  for (let count = 1; count <= 1023; count++) {
+    if (Math.floor(VCC_SCALE / count) === printedMv) counts.push(count);
+  }
+  return counts;
+}
+
+/** Smallest |count| gap between two printed bandgap readings. */
+function adcCountGap(a: number, b: number): number {
+  const left = adcCounts(a);
+  const right = adcCounts(b);
+  expect(
+    left.length > 0 && right.length > 0,
+    `vcc ${a} or ${b} mV is not an ADC reading`
+  );
+  let best = 1023;
+  for (const ca of left) {
+    for (const cb of right) best = Math.min(best, Math.abs(ca - cb));
+  }
+  return best;
+}
+
+function railMv(
+  low: RecordingRead,
+  high: RecordingRead
+): { maxAbsMv: number; rmsMv: number } {
+  expect(
+    low.frames.length === high.frames.length,
+    `5V frames ${low.frames.length} vs ${high.frames.length}`
+  );
+  const err: number[] = [];
+  for (let i = 0; i < low.frames.length; i++) {
+    const a = low.frames[i]?.boards.nano?.voltage;
+    const b = high.frames[i]?.boards.nano?.voltage;
+    expect(a !== undefined && b !== undefined, `5V sample ${i}`);
+    err.push((b ?? 0) - (a ?? 0));
+  }
+  const maxAbs = err.reduce((max, item) => Math.max(max, Math.abs(item)), 0);
+  let sum = 0;
+  for (const item of err) sum += item * item;
+  return {
+    maxAbsMv: maxAbs * 1000,
+    rmsMv: Math.sqrt(sum / err.length) * 1000,
+  };
+}
+
+function flagMaxDeg(low: RecordingRead, high: RecordingRead): number {
+  expect(
+    low.frames.length === high.frames.length,
+    `flag frames ${low.frames.length} vs ${high.frames.length}`
+  );
+  let max = 0;
+  for (let i = 0; i < low.frames.length; i++) {
+    const a = low.frames[i]?.joints.gauge?.servo;
+    const b = high.frames[i]?.joints.gauge?.servo;
+    expect(a !== undefined && b !== undefined, `flag joint ${i}`);
+    const deg = Math.abs((b ?? 0) - (a ?? 0)) * (180 / Math.PI);
+    if (deg > max) max = deg;
+  }
+  return max;
+}
+
+function brownoutCount(run: GaugeRun): number {
+  let frames = 0;
+  for (const frame of run.read.frames) {
+    const board = frame.boards.nano;
+    if (board?.brownout || board?.brownoutAny) frames += 1;
+  }
+  let marks = 0;
+  for (const event of run.read.events) {
+    if (
+      (event.kind === "reset" || event.kind === "reboot") &&
+      event.board === "nano"
+    ) {
+      marks += 1;
+    }
+  }
+  return run.resets + frames + marks;
+}
+
+function assertGaugeMatrix(
+  mixA: GaugeRun,
+  mixB: GaugeRun,
+  mixBAgain: GaugeRun,
+  mixC: GaugeRun,
+  pack: (read: RecordingRead) => string
+): void {
+  const nano2 = {
+    class: 2,
+    variant: "circuits",
+    reason: "type rule arduino-nano",
+  };
+  const nano1 = {
+    class: 1,
+    variant: "avr8js",
+    reason: "type rule arduino-nano",
+  };
+  const sensor1 = { class: 1, variant: "datasheet", reason: "default" };
+  const sensor0 = {
+    class: 0,
+    variant: "ideal",
+    reason: "type rule ultrasonic-ranger-4pin",
+  };
+  expectMix("A", mixA, nano2, sensor1, false);
+  expectMix("B", mixB, nano1, sensor1, true);
+  expectMix("C", mixC, nano1, sensor0, true);
+
+  const aSerial = serialGroups(mixA.read);
+  const bSerial = serialGroups(mixB.read);
+  const cSerial = serialGroups(mixC.read);
+  const same = (left: string[], right: string[]) =>
+    left.length === right.length && left.every((line, i) => line === right[i]);
+  expect(
+    same(aSerial.readings, bSerial.readings),
+    "mix B readings differ from A"
+  );
+  expect(
+    same(aSerial.readings, cSerial.readings),
+    "mix C readings differ from A"
+  );
+  console.log(
+    `readings: ${aSerial.readings.length} us,d_cm,angle lines identical across A, B and C`
+  );
+
+  const restMin = (label: string, lines: number[]) => {
+    expect(lines.length > 0, `${label} has no vcc line`);
+    return { rest: lines[0] ?? 0, min: Math.min(...lines) };
+  };
+  const aVcc = restMin("A", aSerial.vcc);
+  const bVcc = restMin("B", bSerial.vcc);
+  const cVcc = restMin("C", cSerial.vcc);
+  expect(
+    bSerial.vcc.length === aSerial.vcc.length,
+    `mix B vcc lines ${bSerial.vcc.length} vs ${aSerial.vcc.length}`
+  );
+  expect(
+    cSerial.vcc.length === aSerial.vcc.length,
+    `mix C vcc lines ${cSerial.vcc.length} vs ${aSerial.vcc.length}`
+  );
+  let bGap = 0;
+  let cGap = 0;
+  let bWorst = "";
+  let cWorst = "";
+  for (let i = 0; i < aSerial.vcc.length; i++) {
+    const a = aSerial.vcc[i] ?? 0;
+    const b = bSerial.vcc[i] ?? 0;
+    const c = cSerial.vcc[i] ?? 0;
+    const bg = adcCountGap(a, b);
+    const cg = adcCountGap(a, c);
+    if (bg > bGap) {
+      bGap = bg;
+      bWorst = `${b} mV vs ${a} mV at ${i}`;
+    }
+    if (cg > cGap) {
+      cGap = cg;
+      cWorst = `${c} mV vs ${a} mV at ${i}`;
+    }
+  }
+  const rail = railMv(mixA.read, mixB.read);
+  const bNote = bGap === 0 ? "identical" : bWorst;
+  const cNote = cGap === 0 ? "identical" : cWorst;
+  console.log(
+    `supply: A rest ${aVcc.rest} mV min ${aVcc.min} mV; ` +
+      `B rest ${bVcc.rest} mV min ${bVcc.min} mV; ` +
+      `C rest ${cVcc.rest} mV min ${cVcc.min} mV; ` +
+      `vcc counts B vs A max ${bGap} (${bNote}), C vs A max ${cGap} (${cNote}); ` +
+      `5V B vs A max-abs ${rail.maxAbsMv.toFixed(3)} mV, rms ${rail.rmsMv.toFixed(3)} mV`
+  );
+  // Mix B keeps the sensor, so the bandgap stays within one count of A.
+  // Mix C's class-0 sensor draws no current. Two counts is the gap that holds.
+  expect(bGap <= 1, `mix B vcc count gap ${bGap} (${bWorst})`);
+  expect(cGap <= 2, `mix C vcc count gap ${cGap} (${cWorst})`);
+  expect(
+    rail.maxAbsMv <= 10,
+    `5V B vs A max-abs ${rail.maxAbsMv.toFixed(3)} mV`
+  );
+
+  const flag = flagMaxDeg(mixA.read, mixB.read);
+  expect(flag <= 0.5, `flag B vs A ${flag.toFixed(3)} deg`);
+  console.log(`flag: B vs A max ${flag.toFixed(3)} deg`);
+
+  const reportEnvelope = (run: GaugeRun) => envelopeMessages(run.report);
+  expect(
+    reportEnvelope(mixB).length === 0 && mixB.hostEnvelope.length === 0,
+    `mix B envelope report ${reportEnvelope(mixB).join("; ")} host ${mixB.hostEnvelope.join("; ")}`
+  );
+  expect(
+    reportEnvelope(mixC).length === 0 && mixC.hostEnvelope.length === 0,
+    `mix C envelope report ${reportEnvelope(mixC).join("; ")} host ${mixC.hostEnvelope.join("; ")}`
+  );
+  expect(brownoutCount(mixA) === 0, `mix A brownout ${brownoutCount(mixA)}`);
+  expect(brownoutCount(mixB) === 0, `mix B brownout ${brownoutCount(mixB)}`);
+  expect(brownoutCount(mixC) === 0, `mix C brownout ${brownoutCount(mixC)}`);
+  console.log("clean: no envelope warnings in B or C, no brownout resets");
+
+  expect(
+    pack(mixB.read) === pack(mixBAgain.read),
+    "mix B runs are not byte-identical"
+  );
+  console.log("repeatable: mix B byte-identical");
+}
+
+function expectMix(
+  label: string,
+  run: GaugeRun,
+  nano: { class: number; variant: string; reason: string },
+  sensor: { class: number; variant: string; reason: string },
+  snapshot: boolean
+): void {
+  const nanoRow = behaviourRow(run.report, "nano");
+  const sensorRow = behaviourRow(run.report, "sensor");
+  expect(
+    nanoRow.class === nano.class &&
+      nanoRow.variant === nano.variant &&
+      nanoRow.reason === nano.reason,
+    `${label} nano ${nanoRow.class} ${nanoRow.variant} ${nanoRow.reason}`
+  );
+  expect(
+    sensorRow.class === sensor.class &&
+      sensorRow.variant === sensor.variant &&
+      sensorRow.reason === sensor.reason,
+    `${label} sensor ${sensorRow.class} ${sensorRow.variant} ${sensorRow.reason}`
+  );
+  const snaps = run.report.snapshots.filter((row) => row.ref === NANO_SNAPSHOT);
+  if (snapshot) {
+    expect(
+      snaps.length === 1 && snaps[0]?.quality === "Q2a",
+      `${label} snapshot ${snaps.map((row) => `${row.ref} ${row.quality}`).join(",")}`
+    );
+  } else {
+    expect(
+      run.report.snapshots.length === 0,
+      `${label} snapshots ${run.report.snapshots.map((row) => row.ref).join(",")}`
+    );
+  }
+  console.log(
+    `levels ${label}: nano behaviour ${nanoRow.class} ${nanoRow.variant}, ${nanoRow.reason}` +
+      (snapshot
+        ? `, snapshot ${NANO_SNAPSHOT} ${snaps[0]?.quality}`
+        : ", snapshots none") +
+      `; sensor behaviour ${sensorRow.class} ${sensorRow.variant}, ${sensorRow.reason}`
+  );
+}
+
+function behaviourRow(report: RunReport, part: string) {
+  const row = report.levels.find(
+    (item) => item.path === part && item.axis === "behaviour"
+  );
+  if (!row) throw new Error(`no behaviour level for ${part}`);
+  return row;
 }
 
 async function run(
@@ -329,13 +648,77 @@ try {
     `bench supply: sketch ${benchUs} us, ${bench.voltage.toFixed(3)} V, current ${bench.current} A`
   );
 
-  async function gaugeOnce(): Promise<RecordingRead> {
+  const gaugeWorldPath = path.join(gaugeRoot, "gauge-usb.world.json");
+  const gaugeLockPath = path.join(gaugeRoot, "gauge-usb.world.lock.json");
+  const gaugeWorldText = readFileSync(gaugeWorldPath, "utf8");
+  const gaugeLockText = readFileSync(gaugeLockPath, "utf8");
+  const gaugeLock = JSON.parse(gaugeLockText) as LockFile;
+
+  function levelsFor(nano: 1 | 2, sensor: 0 | 1): LevelTable {
+    const types: NonNullable<LevelTable["types"]> = {
+      "arduino-nano": { behaviour: nano },
+    };
+    if (sensor === 0) types["ultrasonic-ranger-4pin"] = { behaviour: 0 };
+    return { default: 1, types };
+  }
+
+  // The committed world is mix A. Other mixes rewrite only `run.levels`
+  // in the temp copy, and the lock gains the snapshot the class-1 Nano runs.
+  function writeGaugeLevels(nano: 1 | 2, sensor: 0 | 1): void {
+    if (nano === 2 && sensor === 1) {
+      writeFileSync(gaugeWorldPath, gaugeWorldText);
+      writeFileSync(gaugeLockPath, gaugeLockText);
+      return;
+    }
+    const text = replaceLevels(gaugeWorldText, levelsFor(nano, sensor));
+    const temp = path.join(gaugeRoot, ".gauge-usb.world.json.level-edit");
+    writeFileSync(temp, text);
+    try {
+      const loaded = loadWorldV2(temp, {
+        catalogDir: catalogRoot(),
+        assetRoot: gaugeRoot,
+      });
+      const errors = loaded.diagnostics.filter(
+        (diag) => diag.severity === "error"
+      );
+      if (errors.length > 0 || !loaded.lock) {
+        throw new Error(
+          errors.map((diag) => diag.message).join("; ") ||
+            "gauge world did not load"
+        );
+      }
+      const decided = lockAfterLevels(gaugeLock, loaded.lock);
+      if ("error" in decided) throw new Error(decided.error);
+      writeLock(gaugeLockPath, decided.lock);
+      writeFileSync(gaugeWorldPath, text);
+    } finally {
+      rmSync(temp, { force: true });
+    }
+  }
+
+  async function gaugeOnce(
+    nanoBehaviour: 1 | 2 = 2,
+    sensorBehaviour: 0 | 1 = 1
+  ): Promise<{
+    read: RecordingRead;
+    report: RunReport;
+    hostEnvelope: string[];
+    resets: number;
+  }> {
+    writeGaugeLevels(nanoBehaviour, sensorBehaviour);
     const events: { type: string; message?: string }[] = [];
+    let report: RunReport | null = null;
+    const hostEnvelope: string[] = [];
     const attached = await attachWorld(gaugeRoot, "gauge-usb.world.json", {
       sender,
       onEvent(event) {
         if (event.type === "error") {
           events.push({ type: event.type, message: event.message });
+        }
+        if (event.type === "state" && event.report) {
+          report = event.report;
+          hostEnvelope.length = 0;
+          hostEnvelope.push(...envelopeMessages(event.report));
         }
       },
     });
@@ -355,7 +738,18 @@ try {
       if ("error" in read) throw new Error(read.error);
       const failed = events.find((event) => event.type === "error");
       expect(!failed, failed?.message ?? "gauge world error");
-      return read;
+      expect(report, "gauge run produced no report");
+      for (const warning of stepped.state.boards.nano?.warnings ?? []) {
+        if (warning.message.includes("envelope")) {
+          hostEnvelope.push(warning.message);
+        }
+      }
+      return {
+        read,
+        report,
+        hostEnvelope,
+        resets: stepped.state.boards.nano?.resets ?? 0,
+      };
     } finally {
       attached.detach();
       await stopWorld(gaugeRoot, "gauge-usb.world.json");
@@ -364,7 +758,8 @@ try {
   }
 
   const started = performance.now();
-  const gauge = await gaugeOnce();
+  const gaugeRun = await gaugeOnce();
+  const gauge = gaugeRun.read;
   const elapsedMs = performance.now() - started;
   console.log(
     `INFO gauge world: ${((elapsedMs / 7000) * 1000).toFixed(1)} us wall per simulated ms`
@@ -477,7 +872,7 @@ try {
     );
   }
 
-  const againGauge = await gaugeOnce();
+  const againGauge = (await gaugeOnce()).read;
   const pack = (read: RecordingRead) =>
     JSON.stringify({ frames: read.frames, events: read.events });
   expect(pack(gauge) === pack(againGauge), "gauge runs are not byte-identical");
@@ -486,6 +881,12 @@ try {
     "gauge run depends on the temp path"
   );
   console.log(`gauge run: 7 s, ${gauge.frames.length} frames, byte-identical`);
+
+  const mixA = gaugeRun;
+  const mixB = await gaugeOnce(1, 1);
+  const mixBAgain = await gaugeOnce(1, 1);
+  const mixC = await gaugeOnce(1, 0);
+  assertGaugeMatrix(mixA, mixB, mixBAgain, mixC, pack);
 
   writeFileSync(
     path.join(root, "move.world.json"),
