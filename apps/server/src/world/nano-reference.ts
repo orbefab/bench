@@ -29,6 +29,7 @@ import {
   Pin,
   type PinMode,
 } from "./circuit/pin";
+import { boardStampOf, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,
   NANO_BOARD_A,
@@ -36,6 +37,10 @@ import {
   UNO_TERM_NODE,
 } from "./power-path";
 import { createRailCircuit } from "./rail-circuit";
+
+const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
+  boardId: "nano",
+});
 
 /** D13 series resistor. Assumed: the code on the board is unknown. */
 export const NANO_D13_R = 1e3;
@@ -194,6 +199,62 @@ export function nanoD13Deck(ss14: DiodeParams, led: DiodeParams): Element[] {
   ];
 }
 
+/** USB trace stimulus on the netlist. Capacitors stay; the probe is the node name. */
+export function nanoTraceStimulus(kind: "usb" | "d13"): {
+  elements: Element[];
+  probe: string;
+} {
+  const realized = realize(NANO_STAMP, "usb", AVR_PIN, { pins: false });
+  const d13 = NANO_STAMP.pins.find((pin) => pin.port === "D13")?.node;
+  if (!d13) throw new Error("nano trace has no D13");
+  const board = realized.boardNode;
+  const leak = resistor("d13leak", d13, "0", AVR_PIN.rLeak);
+  const head: Element[] = [
+    vSource("vusb", "src", "0", { kind: "dc", value: 5 }),
+    resistor("rs", "src", realized.feedNode, 0.5),
+    ...realized.elements,
+    leak,
+  ];
+  if (kind === "usb") {
+    return {
+      probe: board,
+      elements: [
+        ...head,
+        resistor("roh", board, d13, PIN_ROH),
+        iSource("iboard", board, "0", { kind: "dc", value: NANO_BOARD_A }),
+        iSource("iload", board, "0", {
+          kind: "step",
+          t0: 1e-3,
+          v0: 0,
+          v1: 0.7,
+        }),
+      ],
+    };
+  }
+  const period = 1e-3;
+  return {
+    probe: d13,
+    elements: [
+      ...head,
+      sw("d13h", board, d13, PIN_ROH, PIN_ROFF, {
+        kind: "pwm",
+        period,
+        duty: 0.5,
+        low: 0,
+        high: 1,
+      }),
+      sw("d13l", d13, "0", PIN_ROL, PIN_ROFF, {
+        kind: "pwm",
+        period,
+        duty: 0.5,
+        low: 1,
+        high: 0,
+      }),
+      iSource("iboard", board, "0", { kind: "dc", value: NANO_BOARD_A }),
+    ],
+  };
+}
+
 const MASTER_S = 0.001;
 const SUBSTEPS = 10;
 
@@ -311,9 +372,8 @@ export function maxBoardDelta(
     rSeries: spec.rSeries,
     iLimit: spec.iLimit,
     motors: spec.motors,
-    ...(spec.header
-      ? { boardPath: "nano-5v" as const }
-      : { boardPath: "nano-usb" as const }),
+    stamp: NANO_STAMP,
+    feed: spec.header ? "header" : "usb",
   });
   const ref = new ReferenceNanoRail({
     vNom: spec.vNom,

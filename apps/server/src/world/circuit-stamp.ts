@@ -2,20 +2,18 @@
  * Circuit parts become rail elements. A firmware `board` netlist is the
  * same step: its children are parts, and `buildNets` names the nodes.
  */
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   arduinoPinBit,
   type BehaviourImpl,
-  type Domain,
   FORM_PARAMS,
-  type Netlist,
+  type LevelClass,
+  PART_FORMAT,
+  PART_TYPE_FORMAT,
   type PartFile,
   type PortDecl,
-  type PortDirection,
-  type PortRole,
 } from "@sfab-bench/contract";
 
 import type { Element } from "./circuit/element";
@@ -23,20 +21,20 @@ import {
   Capacitor,
   Diode,
   type DiodeParams,
-  ISource,
   Resistor,
-  Switch,
-  VSource,
 } from "./circuit/elements";
+import { AVR_PIN, type AvrPinParams, Pin } from "./circuit/pin";
+import { compileRules, resolveLevels } from "./parts/levels";
 import {
-  AVR_PIN,
-  type AvrPinParams,
-  PIN_ROFF,
-  PIN_ROH,
-  PIN_ROL,
-  Pin,
-} from "./circuit/pin";
-import type { LiveNet } from "./parts/nets";
+  type Library,
+  type LibraryOptions,
+  type LoadedPart,
+  type LoadedType,
+  lintLibrary,
+  loadPartById,
+  loadTypeById,
+} from "./parts/library";
+import { buildNets, type LiveNet, netlistOf } from "./parts/nets";
 
 export const CIRCUIT_FORMS = ["resistor@1", "capacitor@1", "diode@1"] as const;
 export type CircuitForm = (typeof CIRCUIT_FORMS)[number];
@@ -77,6 +75,8 @@ export type BoardStamp = {
   /** Null when the type has no `VBUS` on a net. */
   vbusNode: string | null;
   resetNode: string | null;
+  /** Board port → node. Absent when that port is not on a net. */
+  portNodes: Record<string, string>;
   parts: AssignedPart[];
   pins: StampedPin[];
 };
@@ -202,17 +202,30 @@ export function stampBoard(input: {
   pins.sort((a, b) => a.bit - b.bit || (a.port < b.port ? -1 : 1));
 
   const boardNode = named("5V") ?? boardFull("5V");
+  const portNodes: Record<string, string> = {};
+  for (const port of Object.keys(input.ports)) {
+    const node = named(port);
+    if (node) portNodes[port] = node;
+  }
   return {
     netlist: input.netlist,
     boardNode,
     vbusNode: input.ports.VBUS ? named("VBUS") : null,
     resetNode: named("RESET"),
+    portNodes,
     parts: assigned,
     pins,
   };
 }
 
-function touches(
+/**
+ * A part belongs to a board when it is nested there, or when one of its
+ * ports shares a net with that board. A part sitting between two boards
+ * on different supplies shares a net with each, so it would be stamped
+ * into both rails under the same element ids. The plan rejects that:
+ * one part has one rail.
+ */
+export function touches(
   part: CircuitInst,
   boardId: string,
   nets: readonly NetPorts[]
@@ -290,6 +303,8 @@ function prune(
 ): AssignedPart[] {
   let alive = [...parts];
   let changed = true;
+  // One removal per scan, in path order, so a part that only opens after
+  // another drop is still caught. O(n²) in the part count, on purpose.
   while (changed) {
     changed = false;
     const count = new Map<string, number>();
@@ -372,237 +387,246 @@ function needNum(part: AssignedPart, key: string): number {
   return value;
 }
 
-function catalogDir(): string {
+export type BoardStampOptions = {
+  /** Catalog root. Defaults to this package's catalog. */
+  catalogDir?: string;
+  /** Personal library. A part here shadows the catalog. */
+  libraryDir?: string;
+  /** Project directory. Defaults to a directory with no parts. */
+  worldDir?: string;
+  /** Where relative lock paths would be counted from. */
+  assetRoot?: string;
+  /**
+   * Instance path of the board. Node names are `<boardId>.<port>`.
+   * Default `board`.
+   */
+  boardId?: string;
+};
+
+const CLASS_KEYS = ["0", "1", "2", "3"] as const;
+
+function defaultCatalog(): string {
   return fileURLToPath(new URL("../../catalog", import.meta.url));
 }
 
-/** The Nano class-2 board, parent path `nano`, for rails built without a world. */
-export function catalogNanoStamp(): BoardStamp {
-  const root = catalogDir();
-  const part = JSON.parse(
-    readFileSync(join(root, "parts", "sfab", "nano-ch340@1.0.0.json"), "utf8")
-  ) as PartFile;
-  const behaviour = part.axes?.behaviour?.["2"]?.variants.circuits;
-  if (!behaviour || behaviour.kind !== "firmware" || !behaviour.board) {
-    throw new Error("nano class 2 has no board netlist");
+function asPart(value: LoadedPart | { message: string }): LoadedPart {
+  if ("part" in value) return value;
+  throw new Error(value.message);
+}
+
+function asType(value: LoadedType | { message: string }): LoadedType {
+  if ("type" in value) return value;
+  throw new Error(value.message);
+}
+
+function childIds(part: PartFile): string[] {
+  const behaviour = part.axes?.behaviour;
+  if (!behaviour) return [];
+  const ids: string[] = [];
+  for (const key of CLASS_KEYS) {
+    const slot = behaviour[key];
+    if (!slot) continue;
+    for (const variant of Object.values(slot.variants)) {
+      const netlist =
+        variant.kind === "composite"
+          ? variant.netlist
+          : variant.kind === "firmware"
+            ? variant.board
+            : null;
+      if (!netlist) continue;
+      for (const inst of Object.values(netlist.instances)) ids.push(inst.part);
+    }
   }
-  const type = JSON.parse(
-    readFileSync(join(root, "types", "arduino-nano.json"), "utf8")
-  ) as {
-    ports: Record<string, PortDecl>;
-    templates?: {
-      id: string;
-      n: [number, number];
-      domain: Domain;
-      role?: PortRole;
-      direction?: PortDirection;
-    }[];
+  return ids;
+}
+
+/**
+ * The class whose `variant` is a firmware board, and that slot's key.
+ * Throws when the variant is missing or is not a board netlist.
+ */
+function firmwareClass(
+  part: PartFile,
+  variant: string
+): (typeof CLASS_KEYS)[number] {
+  const behaviour = part.axes?.behaviour;
+  if (!behaviour) throw new Error(`${part.id} has no behaviour`);
+  let saw = false;
+  for (const key of CLASS_KEYS) {
+    const impl = behaviour[key]?.variants[variant];
+    if (!impl) continue;
+    saw = true;
+    if (impl.kind === "firmware" && impl.board) return key;
+  }
+  if (!saw) throw new Error(`${part.id} has no variant ${variant}`);
+  throw new Error(`${part.id} variant ${variant} is not a firmware board`);
+}
+
+function circuitInstOf(inst: {
+  path: string;
+  params: Record<string, number | string | boolean>;
+  type: { id: string; ports: Record<string, PortDecl> };
+  axes: { behaviour: { impl: unknown } };
+}): CircuitInst | null {
+  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+  if (
+    !behaviour ||
+    behaviour.kind !== "form" ||
+    !isCircuitForm(behaviour.form)
+  ) {
+    return null;
+  }
+  const params = circuitNumbers(behaviour, inst.params);
+  if (!params) return null;
+  const ports: Record<string, string> = {};
+  for (const [name, decl] of Object.entries(inst.type.ports)) {
+    if (decl.internal) continue;
+    ports[name] = `${inst.path}.${name}`;
+  }
+  return {
+    path: inst.path,
+    form: behaviour.form,
+    typeId: inst.type.id,
+    params,
+    ports,
   };
-  const ports = expandNano(type);
-  const boardId = "nano";
-  const parts = instancesOf(root, boardId, behaviour.board);
-  const nets = netsOf(boardId, behaviour.board, parts, ports);
+}
+
+/**
+ * Resolve one firmware board and stamp its netlist.
+ * Parts and types come from the library (project, then personal, then
+ * catalog), with template expansion and `buildNets`. `boardId` is the
+ * instance path, so a world that names the board `nano` matches.
+ */
+export function boardStampOf(
+  partId: string,
+  variant: string,
+  opts: BoardStampOptions = {}
+): BoardStamp {
+  const catalogDir = opts.catalogDir ?? defaultCatalog();
+  const worldDir = opts.worldDir ?? join(catalogDir, ".board-stamp-world");
+  const assetRoot = opts.assetRoot ?? catalogDir;
+  const boardId = opts.boardId ?? "board";
+  const libOpts: LibraryOptions = {
+    catalogDir,
+    assetRoot,
+    ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),
+  };
+  const parts = new Map<string, LoadedPart>();
+  const types = new Map<string, LoadedType>();
+  const queue = [partId];
+  while (queue.length > 0) {
+    const id = queue.shift();
+    if (!id || parts.has(id)) continue;
+    const found = asPart(loadPartById(worldDir, libOpts, id));
+    parts.set(id, found);
+    const typeId = found.part.type;
+    if (typeof typeId === "string" && !types.has(typeId)) {
+      types.set(typeId, asType(loadTypeById(worldDir, libOpts, typeId)));
+    }
+    for (const child of childIds(found.part)) {
+      if (!parts.has(child)) queue.push(child);
+    }
+  }
+  const loaded = parts.get(partId);
+  if (!loaded) throw new Error(`${partId} did not load`);
+  const classKey = firmwareClass(loaded.part, variant);
+  const part = structuredClone(loaded.part);
+  const slot = part.axes?.behaviour?.[classKey];
+  if (slot) slot.default = variant;
+  parts.set(partId, { ...loaded, part });
+
+  const wrapper: PartFile = {
+    format: PART_FORMAT,
+    id: "sfab/board-stamp@0",
+    type: {
+      format: PART_TYPE_FORMAT,
+      id: "board-stamp-root",
+      ports: {},
+    },
+    axes: {
+      behaviour: {
+        "2": {
+          default: "netlist",
+          variants: {
+            netlist: {
+              kind: "composite",
+              omits: ["stamp root"],
+              netlist: {
+                instances: { [boardId]: { part: partId } },
+                wires: [],
+                expose: {},
+              },
+            },
+          },
+        },
+      },
+      body: {
+        "0": {
+          default: "none",
+          variants: { none: { kind: "none", omits: ["none"] } },
+        },
+      },
+      visual: {
+        "0": {
+          default: "none",
+          variants: { none: { kind: "none", omits: ["none"] } },
+        },
+      },
+    },
+  };
+  const lib: Library = {
+    worldDir,
+    worldName: "board-stamp",
+    assetRoot,
+    parts,
+    types,
+    world: {
+      version: 2,
+      environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+      run: {
+        seed: 1,
+        levels: {
+          default: { behaviour: 2, body: 0, visual: 0 },
+          paths: { [boardId]: { behaviour: Number(classKey) as LevelClass } },
+        },
+      },
+      root: { id: "stamp", part: wrapper },
+    },
+  };
+  const errors = lintLibrary(lib).filter((diag) => diag.severity === "error");
+  if (errors.length > 0) {
+    throw new Error(errors.map((diag) => diag.message).join("; "));
+  }
+  const { instances } = resolveLevels(lib, compileRules(lib.world));
+  const board = instances.find((inst) => inst.path === boardId);
+  if (!board || !netlistOf(board)) {
+    throw new Error(`${partId} variant ${variant} is not a firmware board`);
+  }
+  const circuitParts: CircuitInst[] = [];
+  for (const inst of instances) {
+    const row = circuitInstOf(inst);
+    if (row) circuitParts.push(row);
+  }
+  const built = buildNets(instances, undefined);
   const stamp = stampBoard({
     boardId,
     netlist: true,
-    ports,
+    ports: board.type.ports,
     supplyGround: `${boardId}.GND`,
-    parts,
-    nets,
+    parts: circuitParts,
+    nets: liveNets(built.nets),
   });
-  if (!stamp) throw new Error("nano board stamp is empty");
+  if (!stamp) throw new Error(`${partId} variant ${variant} stamped nothing`);
   return stamp;
 }
 
-function expandNano(type: {
-  ports: Record<string, PortDecl>;
-  templates?: {
-    id: string;
-    n: [number, number];
-    domain: PortDecl["domain"];
-    role?: PortDecl["role"];
-    direction?: PortDecl["direction"];
-  }[];
-}): Record<string, PortDecl> {
-  const ports: Record<string, PortDecl> = { ...type.ports };
-  for (const template of type.templates ?? []) {
-    const [lo, hi] = template.n;
-    for (let n = lo; n <= hi; n++) {
-      const id = template.id.replaceAll("{n}", String(n));
-      if (ports[id]) continue;
-      ports[id] = {
-        domain: template.domain,
-        ...(template.role ? { role: template.role } : {}),
-        ...(template.direction ? { direction: template.direction } : {}),
-      };
-    }
-  }
-  return ports;
-}
-
-function instancesOf(
-  root: string,
-  boardId: string,
-  netlist: Netlist
-): CircuitInst[] {
-  const out: CircuitInst[] = [];
-  for (const [id, child] of Object.entries(netlist.instances)) {
-    const loaded = JSON.parse(
-      readFileSync(join(root, "parts", `${child.part}.json`), "utf8")
-    ) as PartFile;
-    const slot = loaded.axes?.behaviour?.["1"];
-    const variant = slot?.variants[slot.default];
-    if (!variant || variant.kind !== "form" || !isCircuitForm(variant.form)) {
-      throw new Error(`${child.part} is not a circuit part`);
-    }
-    const form = FORM_PARAMS[variant.form];
-    const params: Record<string, number> = {};
-    for (const key of Object.keys(form.params)) {
-      const value = variant.params[key];
-      if (typeof value === "number") params[key] = value;
-    }
-    for (const [key, value] of Object.entries(child.params ?? {})) {
-      if (typeof value === "number" && form.params[key]) params[key] = value;
-    }
-    const typeName =
-      typeof loaded.type === "string" ? loaded.type : loaded.type.id;
-    const type = JSON.parse(
-      readFileSync(join(root, "types", `${typeName}.json`), "utf8")
-    ) as { ports: Record<string, PortDecl> };
-    const path = `${boardId}.${id}`;
-    const ports: Record<string, string> = {};
-    for (const name of Object.keys(type.ports)) ports[name] = `${path}.${name}`;
-    out.push({ path, form: variant.form, typeId: typeName, params, ports });
-  }
-  return out;
-}
-
-function netsOf(
-  boardId: string,
-  netlist: Netlist,
-  parts: readonly CircuitInst[],
-  boardPorts: Record<string, PortDecl>
-): NetPorts[] {
-  const parent = new Map<string, string>();
-  const add = (full: string) => {
-    if (!parent.has(full)) parent.set(full, full);
-  };
-  const find = (full: string): string => {
-    const p = parent.get(full);
-    if (p === undefined) throw new Error(`unknown port ${full}`);
-    if (p !== full) {
-      const root = find(p);
-      parent.set(full, root);
-      return root;
-    }
-    return p;
-  };
-  const union = (a: string, b: string) => {
-    add(a);
-    add(b);
-    const pa = find(a);
-    const pb = find(b);
-    if (pa === pb) return;
-    if (pa < pb) parent.set(pb, pa);
-    else parent.set(pa, pb);
-  };
-  for (const part of parts) {
-    for (const full of Object.values(part.ports)) add(full);
-  }
-  for (const name of Object.keys(boardPorts)) add(`${boardId}.${name}`);
-  const endOf = (ref: string): string => {
-    const dot = ref.indexOf(".");
-    const inst = ref.slice(0, dot);
-    const port = ref.slice(dot + 1);
-    return `${boardId}.${inst}.${port}`;
-  };
-  for (const [outer, inner] of Object.entries(netlist.expose)) {
-    union(`${boardId}.${outer}`, endOf(inner));
-  }
-  for (const [a, b] of netlist.wires) union(endOf(a), endOf(b));
-  const groups = new Map<string, string[]>();
-  for (const full of [...parent.keys()].sort()) {
-    const root = find(full);
-    const list = groups.get(root);
-    if (list) list.push(full);
-    else groups.set(root, [full]);
-  }
-  const nets: NetPorts[] = [];
-  for (const members of groups.values()) {
-    if (members.length < 2) continue;
-    members.sort();
-    nets.push({
-      ports: members.map((full) => {
-        const port = full.slice(full.lastIndexOf(".") + 1);
-        const path = full.slice(0, full.lastIndexOf("."));
-        return { full, path, port };
-      }),
-    });
-  }
-  return nets;
-}
-
-/** USB trace stimulus on the netlist. Capacitors stay; the probe is named by the caller. */
-export function nanoTraceStimulus(kind: "usb" | "d13"): {
-  elements: Element[];
-  probe: string;
-} {
-  const stamp = catalogNanoStamp();
-  const realized = realize(stamp, "usb", AVR_PIN, { pins: false });
-  const d13 = stamp.pins.find((pin) => pin.port === "D13")?.node;
-  if (!d13) throw new Error("nano trace has no D13");
-  const board = realized.boardNode;
-  const leak = new Resistor("d13leak", d13, "0", AVR_PIN.rLeak);
-  const head: Element[] = [
-    new VSource("vusb", "src", "0", { kind: "dc", value: 5 }),
-    new Resistor("rs", "src", realized.feedNode, 0.5),
-    ...realized.elements,
-    leak,
-  ];
-  if (kind === "usb") {
-    return {
-      probe: board,
-      elements: [
-        ...head,
-        new Resistor("roh", board, d13, PIN_ROH),
-        new ISource("iboard", board, "0", { kind: "dc", value: 0.0252 }),
-        new ISource("iload", board, "0", {
-          kind: "step",
-          t0: 1e-3,
-          v0: 0,
-          v1: 0.7,
-        }),
-      ],
-    };
-  }
-  const period = 1e-3;
-  return {
-    probe: d13,
-    elements: [
-      ...head,
-      new Switch("d13h", board, d13, PIN_ROH, PIN_ROFF, {
-        kind: "pwm",
-        period,
-        duty: 0.5,
-        low: 0,
-        high: 1,
-      }),
-      new Switch("d13l", d13, "0", PIN_ROL, PIN_ROFF, {
-        kind: "pwm",
-        period,
-        duty: 0.5,
-        low: 1,
-        high: 0,
-      }),
-      new ISource("iboard", board, "0", { kind: "dc", value: 0.0252 }),
-    ],
-  };
-}
-
-/** Flattened USB front end, capacitors included. They are open at DC. */
-export function describeNetlist(rSeries: number): unknown {
-  const stamp = catalogNanoStamp();
-  const realized = realize(stamp, "usb", AVR_PIN);
+/** Flattened front end. Capacitors are included; they are open at DC. */
+export function describeNetlist(
+  stamp: BoardStamp,
+  rSeries: number,
+  feed: "usb" | "header"
+): unknown {
+  const realized = realize(stamp, feed, AVR_PIN);
   return {
     rSeries,
     feed: realized.feedNode,

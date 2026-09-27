@@ -1,6 +1,8 @@
 /**
- * Ported from layered-sim E4 (fd10742). Fit the Nano USB input and write its snapshot.
- * This captures that one case. Other parts need their own case.
+ * Ported from layered-sim E4 (fd10742). Fit a firmware board's input and
+ * write its snapshot. The DC table and `from.hash` come from that part's
+ * board netlist. Free-run cases stay Nano scenes: they boot a sketch and
+ * a servo, and the config names the firmware, the servo, and the duration.
  */
 import {
   cpSync,
@@ -26,25 +28,40 @@ import {
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
-import { describeNetlist } from "./world/circuit-stamp";
+import { boardStampOf, describeNetlist } from "./world/circuit-stamp";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
-import { nanoUsbDc, USB_RS } from "./world/nano-usb-dc";
+import { netlistDc } from "./world/nano-usb-dc";
+import { loadPartById } from "./world/parts/library";
 import { contentHash, sortValue } from "./world/parts/si";
 import { catalogRoot } from "./world/plan";
 import { type TableLaw, tableVoltage } from "./world/snapshot-law";
 import { lintSnapshot } from "./world/snapshot-lint";
 
-const PART_ID = "sfab/nano-ch340@1.0.0";
+type FreeCase = {
+  firmware: string;
+  source: string;
+  flag: string;
+  ms: number;
+  servo: string;
+};
 
-type CaptureConfig = {
+export type CaptureConfig = {
   created: string;
   tool: { name: string; version: string };
   part: string;
   variant: string;
+  /** Instance path. Node names in the provenance hash use it. */
+  instance: string;
   feedPort: string;
   loadPort: string;
+  /** Ohms. The cable resistance stamped in front of `feedPort`. */
+  rSeries: number;
   sweep: { fixture: string };
-  cases: string[];
+  /**
+   * Free-run scenes, keyed by case. Each one is a Nano, a servo, and a
+   * sketch. Absent, the capture writes the DC table only.
+   */
+  cases?: Record<string, FreeCase>;
 };
 /** Stop the envelope this far under the port's current limit. The clone has no polyfuse. */
 const TRIP_MARGIN_A = 0.01;
@@ -52,7 +69,7 @@ const TRIP_MARGIN_A = 0.01;
 const FIT_V = 0.002;
 
 export type CaptureCase = {
-  name: "hold" | "move" | "stall";
+  name: string;
   maxAbsMv: number;
   rmsMv: number;
   firstRmsMv: number;
@@ -78,32 +95,60 @@ export type CaptureStats = {
 
 type Sweep = { supply: number[]; current: number[] };
 
+export type CaptureRun = {
+  /** Overrides the fixture path in the config. The committed Nano capture uses this. */
+  fixtureFile?: string;
+  config?: CaptureConfig;
+  catalogDir?: string;
+  libraryDir?: string;
+  /** Where to write. Absent, the fixture id names the catalog snapshot. */
+  outFile?: string;
+  /** Default true when `config.cases` has scenes. */
+  freeRun?: boolean;
+};
+
 export async function captureNanoUsb(
   fixtureFile?: string
 ): Promise<CaptureStats> {
-  const catalog = catalogRoot();
-  const config = JSON.parse(
-    readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
-  ) as CaptureConfig;
-  if (
-    config.part !== PART_ID ||
-    config.variant !== "circuits" ||
-    config.feedPort !== "VBUS" ||
-    config.loadPort !== "5V" ||
-    config.cases.join(",") !== "hold,move,stall"
-  ) {
-    throw new Error(
-      "capture.config.json names a case this tool does not build yet"
-    );
+  return captureFromConfig({ ...(fixtureFile ? { fixtureFile } : {}) });
+}
+
+/** DC table from `boardStampOf`, plus free-run when the config has scenes. */
+export async function captureFromConfig(
+  opts: CaptureRun = {}
+): Promise<CaptureStats> {
+  const catalog = opts.catalogDir ?? catalogRoot();
+  const config =
+    opts.config ??
+    (JSON.parse(
+      readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
+    ) as CaptureConfig);
+  const stamp = boardStampOf(config.part, config.variant, {
+    catalogDir: catalog,
+    boardId: config.instance,
+    ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),
+  });
+  const feed =
+    stamp.vbusNode !== null &&
+    stamp.portNodes[config.feedPort] === stamp.vbusNode
+      ? "usb"
+      : "header";
+  if (!stamp.portNodes[config.feedPort]) {
+    throw new Error(`${config.part} has no ${config.feedPort} node`);
   }
+  if (!stamp.portNodes[config.loadPort]) {
+    throw new Error(`${config.part} has no ${config.loadPort} node`);
+  }
+  const dc = (supply: number, amps: number) =>
+    netlistDc(stamp, supply, amps, config.rSeries, feed, config.loadPort);
   const fixturePath =
-    fixtureFile ??
+    opts.fixtureFile ??
     join(catalog, "fixtures", `${config.sweep.fixture}.fixture.json`);
   const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as FixtureFile;
   if (fixture.format !== FIXTURE_FORMAT) {
     throw new Error(`fixture format ${fixture.format}`);
   }
-  const sweep = sweepsOf(fixture);
+  const sweep = sweepsOf(fixture, config.loadPort);
   const tripA = usbTrip(catalog);
   const envelopeMaxA = sweep.current.find(
     (amps) => Math.abs(amps - (tripA - TRIP_MARGIN_A)) < 1e-6
@@ -113,62 +158,88 @@ export async function captureNanoUsb(
       "fixture current sweep must start at 0 and include the point 0.01 A below the usb-a-port trip"
     );
   }
-  const atTyp = sweep.current.map((amps) => nanoUsbDc(5, amps));
+  const atTyp = sweep.current.map((amps) => dc(5, amps));
   const lineMaxAbsMv = lineError(sweep.current, atTyp) * 1000;
   const knots = fitKnots(sweep.current, atTyp);
   const law: TableLaw = {
     iAxis: knots,
-    vAxis: knots.map((amps) => round9(nanoUsbDc(5, amps))),
+    vAxis: knots.map((amps) => round9(dc(5, amps))),
     supplyRef: 5,
     supplyAffine: 1,
   };
   let staticMax = 0;
   for (const supply of sweep.supply) {
     for (const amps of sweep.current) {
-      const err = Math.abs(
-        nanoUsbDc(supply, amps) - tableVoltage(law, supply, amps)
-      );
+      const err = Math.abs(dc(supply, amps) - tableVoltage(law, supply, amps));
       if (err > staticMax) staticMax = err;
     }
   }
 
+  const partType = partTypeOf(config.part, catalog, opts.libraryDir);
+  const hash = contentHash(describeNetlist(stamp, config.rSeries, feed));
   const bench = benchVersions();
-  const base = snapshotOf({
+  const scenes = Object.entries(config.cases ?? {}).map(([name, row]) => ({
+    name,
+    ...row,
+  }));
+  const runFree = opts.freeRun ?? scenes.length > 0;
+  const outPath = opts.outFile ?? snapshotPath(catalog, config.sweep.fixture);
+  const shared = {
     law,
     fixture,
-    fixtureRef: "sfab/nano-usb-5v",
+    fixtureRef: config.sweep.fixture,
     config,
+    partType,
+    hash,
     bench,
     envelopeMaxA,
     tripA,
-    error: "none-available",
-    quality: "Q1",
-  });
-  const outPath = join(catalog, "snapshots", "sfab", "nano-usb-5v@1.0.0.json");
-  writeSnapshot(outPath, base);
-
-  const free = await freeRun();
+  };
+  if (!runFree) {
+    const base = snapshotOf({
+      ...shared,
+      error: "none-available",
+      quality: "Q1",
+    });
+    const lint = lintBoard(base, partType, catalog);
+    if (lint.diagnostics.length > 0) {
+      throw new Error(
+        `snapshot lint ${lint.quality}: ${lint.diagnostics.map((d) => d.message).join("; ")}`
+      );
+    }
+    base.quality = lint.quality;
+    const json = writeSnapshot(outPath, base);
+    return {
+      staticMaxAbsMv: staticMax * 1000,
+      lineMaxAbsMv,
+      knots: knots.length,
+      tripA,
+      envelopeMaxA,
+      cases: [],
+      moveUsPerMs: { class1: 0, class2: 0 },
+      json,
+    };
+  }
+  writeSnapshot(
+    outPath,
+    snapshotOf({ ...shared, error: "none-available", quality: "Q1" })
+  );
+  const free = await runScenes(scenes);
   const worstAbs = Math.max(...free.cases.map((row) => row.maxAbsMv)) / 1000;
   const worstRms = Math.max(...free.cases.map((row) => row.rmsMv)) / 1000;
   const done = snapshotOf({
-    law,
-    fixture,
-    fixtureRef: "sfab/nano-usb-5v",
-    config,
-    bench,
-    envelopeMaxA,
-    tripA,
+    ...shared,
     error: [
       {
         metric: "free-run-max-abs",
-        quantity: "5V.voltage",
+        quantity: `${config.loadPort}.voltage`,
         value: round9(worstAbs),
         heldOut: "use-like",
         baseline: { level: "2", value: 0 },
       },
       {
         metric: "free-run-rms",
-        quantity: "5V.voltage",
+        quantity: `${config.loadPort}.voltage`,
         value: round9(worstRms),
         heldOut: "use-like",
         baseline: { level: "2", value: 0 },
@@ -176,13 +247,7 @@ export async function captureNanoUsb(
     ],
     quality: "Q2a",
   });
-  const type = JSON.parse(
-    readFileSync(join(catalog, "types", "arduino-nano.json"), "utf8")
-  ) as PartTypeFile;
-  const lint = lintSnapshot(done, {
-    plausible: type.plausible,
-    actuator: false,
-  });
+  const lint = lintBoard(done, partType, catalog);
   if (lint.diagnostics.length > 0 || lint.quality !== "Q2a") {
     const text = lint.diagnostics.map((diag) => diag.message).join("; ");
     throw new Error(`snapshot lint ${lint.quality}: ${text}`);
@@ -201,26 +266,63 @@ export async function captureNanoUsb(
   };
 }
 
+function snapshotPath(catalog: string, fixtureRef: string): string {
+  const slash = fixtureRef.indexOf("/");
+  const publisher = fixtureRef.slice(0, slash);
+  const name = fixtureRef.slice(slash + 1);
+  return join(catalog, "snapshots", publisher, `${name}@1.0.0.json`);
+}
+
+function partTypeOf(
+  partId: string,
+  catalog: string,
+  libraryDir?: string
+): string {
+  const worldDir = join(catalog, ".board-stamp-world");
+  const loaded = loadPartById(
+    worldDir,
+    {
+      catalogDir: catalog,
+      assetRoot: catalog,
+      ...(libraryDir ? { libraryDir } : {}),
+    },
+    partId
+  );
+  if (!("part" in loaded)) throw new Error(loaded.message);
+  const type = loaded.part.type;
+  return typeof type === "string" ? type : type.id;
+}
+
+function lintBoard(snap: SnapshotFile, partType: string, catalog: string) {
+  const type = JSON.parse(
+    readFileSync(join(catalog, "types", `${partType}.json`), "utf8")
+  ) as PartTypeFile;
+  return lintSnapshot(snap, { plausible: type.plausible, actuator: false });
+}
+
 function snapshotOf(input: {
   law: TableLaw;
   fixture: FixtureFile;
   fixtureRef: string;
-  config: { created: string; tool: { name: string; version: string } };
+  config: CaptureConfig;
+  partType: string;
+  hash: string;
   bench: { version: string; mujoco: string; avr8js: string };
   envelopeMaxA: number;
   tripA: number;
   error: SnapshotFile["error"];
   quality: SnapshotFile["quality"];
 }): SnapshotFile {
+  const load = input.config.loadPort;
   return {
     format: SNAPSHOT_FORMAT,
-    partType: "arduino-nano",
-    part: PART_ID,
+    partType: input.partType,
+    part: input.config.part,
     axis: "behaviour",
     form: "table@1",
     ports: {
-      inputs: ["5V.current", "supply.voltage"],
-      outputs: ["5V.voltage"],
+      inputs: [`${load}.current`, "supply.voltage"],
+      outputs: [`${load}.voltage`],
     },
     params: {
       iAxis: [...input.law.iAxis],
@@ -231,8 +333,8 @@ function snapshotOf(input: {
     envelope: {
       bounds: {
         "supply.voltage": [4.75, 5.25],
-        "5V.current": [0, input.envelopeMaxA],
-        "supply.resistance": [USB_RS, USB_RS],
+        [`${load}.current`]: [0, input.envelopeMaxA],
+        "supply.resistance": [input.config.rSeries, input.config.rSeries],
         "supply.currentLimit": [input.tripA, input.tripA],
       },
     },
@@ -241,9 +343,9 @@ function snapshotOf(input: {
     provenance: {
       source: "captured",
       from: {
-        part: PART_ID,
+        part: input.config.part,
         level: "2",
-        hash: contentHash(describeNetlist(USB_RS)),
+        hash: input.hash,
       },
       fixture: {
         ref: input.fixtureRef,
@@ -270,12 +372,12 @@ function writeSnapshot(file: string, snap: SnapshotFile): string {
   return json;
 }
 
-function sweepsOf(fixture: FixtureFile): Sweep {
+function sweepsOf(fixture: FixtureFile, loadPort: string): Sweep {
   const supply = fixture.sweeps.find(
     (row) => row.port === "supply" && row.quantity === "Voltage"
   );
   const current = fixture.sweeps.find(
-    (row) => row.port === "5V" && row.quantity === "Current"
+    (row) => row.port === loadPort && row.quantity === "Current"
   );
   if (!supply || !current) {
     throw new Error("fixture needs supply Voltage and 5V Current sweeps");
@@ -377,52 +479,23 @@ function round9(n: number): number {
   return Math.round(n * 1e9) / 1e9;
 }
 
-type FreeScene = {
-  name: CaptureCase["name"];
-  firmware: string;
-  source: string;
-  flag: string;
-  ms: number;
-  servo: string;
-};
+type FreeScene = FreeCase & { name: string };
 
-const SG90 = "sfab/sg90@1.0.0";
+/** The comparison servo. The snapshot's own scenes stay the config's servo. */
 const MG90S = "sfab/mg90s@1.0.0";
 
-const CASES: FreeScene[] = [
-  {
-    name: "hold",
-    firmware: "firmware/hold/hold.hex",
-    source: "firmware/hold/hold.ino",
-    flag: "sfab/flag@1.0.0",
-    ms: 1200,
-    servo: SG90,
-  },
-  {
-    name: "move",
-    firmware: "firmware/vcc/vcc.hex",
-    source: "firmware/vcc/vcc.ino",
-    flag: "sfab/flag@1.0.0",
-    ms: 2500,
-    servo: SG90,
-  },
-  {
-    name: "stall",
-    firmware: "firmware/stall/stall.hex",
-    source: "firmware/stall/stall.ino",
-    flag: "sfab/flag-stop@1.0.0",
-    ms: 1000,
-    servo: SG90,
-  },
-];
+function readCaptureConfig(catalog: string): CaptureConfig {
+  return JSON.parse(
+    readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
+  ) as CaptureConfig;
+}
 
-/**
- * Same scenes as `CASES`, with an MG90S on the Nano rail.
- * Kept off `CASES` so the snapshot's free-run error rows stay the SG90 figures.
- */
-const MG90S_FREE_RUN: FreeScene[] = CASES.filter(
-  (spec) => spec.name !== "move"
-).map((spec) => ({ ...spec, servo: MG90S }));
+function scenesOf(config: CaptureConfig): FreeScene[] {
+  return Object.entries(config.cases ?? {}).map(([name, row]) => ({
+    name,
+    ...row,
+  }));
+}
 
 export type ServoFreeRun = CaptureCase & {
   /** Last-frame Nano 5V node, volts. */
@@ -433,18 +506,13 @@ export type ServoFreeRun = CaptureCase & {
   current2: number;
 };
 
-/** Class 1 (snapshot) against class 2 for `MG90S_FREE_RUN`. Does not write the snapshot. */
+/** Class 1 against class 2 for the config scenes, with an MG90S. Does not write the snapshot. */
 export async function compareMg90sFreeRun(): Promise<ServoFreeRun[]> {
-  const ran = await runScenes(MG90S_FREE_RUN);
+  const scenes = scenesOf(readCaptureConfig(catalogRoot()))
+    .filter((spec) => spec.name !== "move")
+    .map((spec) => ({ ...spec, servo: MG90S }));
+  const ran = await runScenes(scenes);
   return ran.cases;
-}
-
-async function freeRun(): Promise<{
-  cases: CaptureCase[];
-  moveUsPerMs: { class1: number; class2: number };
-}> {
-  const ran = await runScenes(CASES);
-  return { cases: ran.cases, moveUsPerMs: ran.moveUsPerMs };
 }
 
 async function runScenes(specs: readonly FreeScene[]): Promise<{
@@ -643,6 +711,11 @@ function writeStop(dir: string): void {
   );
 }
 
+/**
+ * A Nano, the scene's servo, and the scene's sketch. Free-run needs
+ * firmware and a body, so this stays the Nano even when the DC table
+ * is some other board.
+ */
 function writeScene(
   dir: string,
   name: string,

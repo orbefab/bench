@@ -23,6 +23,7 @@ import type {
 
 import { captureNanoUsb, compareMg90sFreeRun } from "./capture";
 import { closeRootWatches } from "./projects";
+import { boardStampOf } from "./world/circuit-stamp";
 import { attachWorld, stopWorld } from "./world/host";
 import { canonicalJson } from "./world/parts/si";
 import { catalogRoot, planWorld } from "./world/plan";
@@ -33,6 +34,9 @@ import { lintSnapshot } from "./world/snapshot-lint";
 import { loadSnapshot } from "./world/snapshot-load";
 
 const SNAPSHOT_ID = "sfab/nano-usb-5v@1.0.0";
+const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
+  boardId: "nano",
+});
 const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
@@ -443,7 +447,7 @@ function overLimit(file: SnapshotFile): void {
       resistance: 6.5,
       k: 0.3,
     }));
-    const usb = stalledRail("nano-usb", motors);
+    const usb = stalledRail("usb", motors);
     const snap = stalledRail("nano-snapshot", motors, law);
     const dvMv = Math.abs(usb - snap) * 1000;
     console.log(
@@ -454,7 +458,7 @@ function overLimit(file: SnapshotFile): void {
 }
 
 function stalledRail(
-  boardPath: "nano-usb" | "nano-snapshot",
+  boardPath: "usb" | "nano-snapshot",
   motors: { resistance: number; k: number }[],
   law?: NonNullable<ReturnType<typeof tableLawOf>>
 ): number {
@@ -463,8 +467,9 @@ function stalledRail(
     rSeries: 0.5,
     iLimit: 0.9,
     motors,
-    boardPath,
-    ...(boardPath === "nano-snapshot" && law ? { law } : {}),
+    ...(boardPath === "nano-snapshot"
+      ? { boardPath, ...(law ? { law } : {}) }
+      : { stamp: NANO_STAMP, feed: "usb" as const }),
   });
   circuit.setFixed(NANO_BOARD_A + 0.0252);
   for (let i = 0; i < motors.length; i++) circuit.setMotor(i, 1, 0, true);

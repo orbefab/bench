@@ -112,15 +112,15 @@ export const UNO_DECOUPLE_C = 100e-9;
 const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;
 
 /**
- * A cable or header network between the supply terminal and the board node.
- * `nano-5v` is the clone's onboard network with no diode: the terminal is
- * the board node.
+ * A cable network that is still a named path. A firmware board netlist
+ * is not one of these: the caller passes the stamp and `feed`.
  */
-export type BoardPathName =
-  | "uno-usb"
-  | "nano-usb"
-  | "nano-5v"
-  | "nano-snapshot";
+export type BoardPathName = "uno-usb" | "nano-snapshot";
+
+/** What `usbPathFor` tells the worker to put on the rail. */
+export type UsbPath =
+  | { kind: "path"; path: BoardPathName }
+  | { kind: "netlist"; feed: "usb" | "header" };
 
 /** `snapshot:<publisher/name@version>` on a firmware variant's `boardCircuit`. */
 export function snapshotRefOf(boardCircuit: string | null): string | null {
@@ -130,11 +130,11 @@ export function snapshotRefOf(boardCircuit: string | null): string | null {
 }
 
 /**
- * Boards the run executes. `uno-usb` is always the cable when a
- * `usb-a-port` feeds that board. `part` reads the firmware variant's
- * `boardCircuit` (`snapshot:<ref>` at class 1, `nano-usb` at class 2).
+ * Boards the run executes. `uno-usb` is the cable when a `usb-a-port`
+ * feeds that board. `part` reads the firmware variant: `snapshot:<ref>`
+ * at class 1, or the board netlist's feed at class 2.
  */
-const FIRMWARE_BOARDS: Record<string, BoardPathName | "part"> = {
+const FIRMWARE_BOARDS: Record<string, "uno-usb" | "part"> = {
   "arduino-uno-r3": "uno-usb",
   "arduino-nano": "part",
 };
@@ -150,29 +150,37 @@ export function isFirmwareBoard(typeId: string): boolean {
  * this supply feeds that board.
  *
  * An Uno takes the cable only from a `usb-a-port`. A bench supply on its
- * `5V` is the header, with no path. A class-2 Nano (`hasNetlist`) takes
- * the diode path from a `usb-a-port` on `5V` (the cable lands on VBUS)
- * and the onboard network without that diode from any other supply.
- * A class-1 snapshot is `snapshot:<ref>` and runs only when a matching
- * `usb-a-port` feeds `5V`. The plan drops that circuit when the port is
- * outside the captured resistance and current limit, so this function
- * then sees no circuit.
+ * `5V` is the header, with no path. A class-2 board (`hasNetlist`) takes
+ * `feed: "usb"` from a `usb-a-port` on `5V` (the cable lands on VBUS)
+ * and `feed: "header"` from any other supply. A class-1 snapshot is
+ * `snapshot:<ref>` and runs only when a matching `usb-a-port` feeds `5V`.
+ * The plan drops that circuit when the port is outside the captured
+ * resistance and current limit, so this function then sees no circuit.
  */
 export function usbPathFor(
   supplyType: string,
   boardType: string | null,
   boardCircuit: string | null,
   hasNetlist = false
-): BoardPathName | null {
+): UsbPath | null {
   if (!boardType || supplyType.length === 0) return null;
   const row = FIRMWARE_BOARDS[boardType];
   if (!row) return null;
-  if (row === "uno-usb") return supplyType === "usb-a-port" ? "uno-usb" : null;
+  if (row === "uno-usb") {
+    return supplyType === "usb-a-port"
+      ? { kind: "path", path: "uno-usb" }
+      : null;
+  }
   if (snapshotRefOf(boardCircuit)) {
-    return supplyType === "usb-a-port" ? "nano-snapshot" : null;
+    return supplyType === "usb-a-port"
+      ? { kind: "path", path: "nano-snapshot" }
+      : null;
   }
   if (!hasNetlist) return null;
-  return supplyType === "usb-a-port" ? "nano-usb" : "nano-5v";
+  return {
+    kind: "netlist",
+    feed: supplyType === "usb-a-port" ? "usb" : "header",
+  };
 }
 
 /**
@@ -184,7 +192,8 @@ export function unoUsbPathFor(
   supplyType: string,
   boardType: string | null
 ): boolean {
-  return usbPathFor(supplyType, boardType, null) === "uno-usb";
+  const path = usbPathFor(supplyType, boardType, null);
+  return path?.kind === "path" && path.path === "uno-usb";
 }
 
 /**

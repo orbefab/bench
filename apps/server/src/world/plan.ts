@@ -26,6 +26,7 @@ import {
   isCircuitForm,
   liveNets,
   stampBoard,
+  touches,
 } from "./circuit-stamp";
 import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
@@ -774,6 +775,23 @@ function build(
   }
 
   const nets = liveNets(loaded.nets);
+  const crowded = new Set<string>();
+  for (const part of circuits) {
+    const hit = boards.filter((board) => touches(part, board.id, nets));
+    if (hit.length < 2) continue;
+    crowded.add(part.path);
+    const names = hit.map((board) => board.id).join(" and ");
+    diags.push({
+      severity: "error",
+      path: part.path,
+      port: "nets",
+      quantity: "Part",
+      left: names,
+      right: "one board",
+      message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
+    });
+  }
+  const stampParts = circuits.filter((part) => !crowded.has(part.path));
   for (const board of boards) {
     const inst = loaded.resolved.find((item) => item.path === board.id);
     if (!inst) continue;
@@ -782,7 +800,7 @@ function build(
       netlist: board.hasNetlist,
       ports: inst.type.ports,
       supplyGround: supplyGround(board.id, supplies, loaded.nets),
-      parts: circuits,
+      parts: stampParts,
       nets,
     });
     if (stamp) board.stamp = stamp;

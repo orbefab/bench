@@ -24,7 +24,7 @@ import {
 import { Engine } from "./circuit/engine";
 import { LawTable } from "./circuit/law-table";
 import { AVR_PIN, type AvrPinParams, type PinMode } from "./circuit/pin";
-import { type BoardStamp, catalogNanoStamp, realize } from "./circuit-stamp";
+import { type BoardStamp, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,
   type BoardPathName,
@@ -55,10 +55,9 @@ export type RailCircuitSpec = {
   braking?: Braking;
   /**
    * Default `none`: the supply terminal is the rail, as in the closed form.
-   * `uno-usb` inserts the Uno cable. `nano-usb` inserts the clone Nano's
-   * diode, capacitors, D13 LED, and reset network. `nano-5v` inserts that
-   * network without the diode: the terminal is the board node.
-   * `nano-snapshot` is the class-1 USB law: a Thevenin table, no capacitors.
+   * `uno-usb` inserts the Uno cable. `nano-snapshot` is the class-1 USB
+   * law: a Thevenin table, no capacitors. A class-2 board passes `stamp`
+   * and `feed` instead of a path name.
    */
   boardPath?: "none" | BoardPathName;
   /** Diode-law table for `nano-snapshot`. The supply setpoint is `vNom`. */
@@ -66,11 +65,15 @@ export type RailCircuitSpec = {
   /** D13 `avr-pin@1` numbers. Absent uses the datasheet fits. */
   pin?: AvrPinParams;
   /**
-   * Circuit parts for this rail. Absent on `nano-usb` and `nano-5v`
-   * uses the catalog Nano board, so a direct rail matches a world
-   * whose only circuit parts are that netlist.
+   * Circuit parts for this rail, from the plan or from `boardStampOf`.
+   * Required together with `feed`. The rail does not load a catalog.
    */
   stamp?: BoardStamp;
+  /**
+   * Where the supply attaches when `stamp` is set. `usb` uses `VBUS`
+   * when the stamp has that node. `header` uses the board 5V node.
+   */
+  feed?: "usb" | "header";
   /** `leds` key copied onto `ledCurrent`. Default `nano.led`. */
   ledAlias?: string;
 };
@@ -135,15 +138,15 @@ export class RailCircuit {
   constructor(spec: RailCircuitSpec) {
     const braking = spec.braking ?? "clip";
     const uno = spec.boardPath === "uno-usb";
-    const nanoUsb = spec.boardPath === "nano-usb";
-    const nano5v = spec.boardPath === "nano-5v";
     const snap = spec.boardPath === "nano-snapshot";
-    const stamp = spec.stamp ?? (nanoUsb || nano5v ? catalogNanoStamp() : null);
+    const stamp = spec.stamp ?? null;
+    if (stamp && spec.feed !== "usb" && spec.feed !== "header") {
+      throw new Error("a board stamp needs feed usb or header");
+    }
     const realized = stamp
-      ? realize(stamp, nanoUsb ? "usb" : "header", spec.pin ?? AVR_PIN)
+      ? realize(stamp, spec.feed ?? "header", spec.pin ?? AVR_PIN)
       : null;
-    const nano =
-      realized !== null && (stamp?.netlist === true || nanoUsb || nano5v);
+    const nano = realized !== null && stamp?.netlist === true;
     const board = uno || nano;
     this.path = board;
     this.termNode = realized

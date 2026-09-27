@@ -38,8 +38,11 @@ import {
   TRACE_CASES,
   vSource,
 } from "./world/circuit";
-import { nanoTraceStimulus } from "./world/circuit-stamp";
-import { nanoD13Deck, nanoUsbDeck } from "./world/nano-reference";
+import {
+  nanoD13Deck,
+  nanoTraceStimulus,
+  nanoUsbDeck,
+} from "./world/nano-reference";
 
 const LINE = 0.005;
 const POWER_W = 1e-9;

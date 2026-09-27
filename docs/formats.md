@@ -314,7 +314,7 @@ Quality in the file is a claim. The linter grants Q0, Q1, Q2a, Q2b, or Q3 from t
 
 The Nano USB snapshot `sfab/nano-usb-5v@1.0.0` is `table@1`. Its ports are `5V.current` and `supply.voltage` in, and `5V.voltage` out (the board port is `5V`). `vAxis` is the node voltage at `supplyRef` (5 V). `supplyAffine` is 1, so `V(supply, I) = interp(vAxis, I) + (supply − supplyRef)`. The envelope is `supply.voltage` in [4.75, 5.25] V and `5V.current` from 0 up to 0.01 A below the `sfab/usb-port-500ma@1.0.0` thevenin `Ilimit` (0.9 A), so the current bound is 0.89 A. It also records that port: `supply.resistance` is [0.5, 0.5] Ω and `supply.currentLimit` is [0.9, 0.9] A, the `Rs` and `Ilimit` the capture used. A class-1 Nano whose `usb-a-port` is outside those two bounds does not run the snapshot. It runs the ideal terminal, the report says why, and the lock does not pin the snapshot. Outside the voltage or current envelope during a run, the run continues, raises one warning per instance, and lists it on the snapshot row. It does not fall back mid-run. `baseline.level` is the level the error was measured against, and `value` is that level's own error on the same metric, which is 0 for the capture source.
 
-Rebuild the file with `pnpm --filter @sfab-bench/server capture`. That command captures the Nano USB input; other parts need their own case. The timestamp comes from `apps/server/catalog/fixtures/capture.config.json`, not the wall clock.
+Rebuild the file with `pnpm --filter @sfab-bench/server capture`. The config names the part, the firmware variant, the instance path, the feed port, and the load port. The DC table and `from.hash` come from that variant's board netlist, for any part that has one. The timestamp comes from `apps/server/catalog/fixtures/capture.config.json`, not the wall clock. Free-run cases in that config are Nano scenes (`firmware`, `servo`, `ms`): they boot a sketch and a servo, and they are how the Nano snapshot earns Q2a. A board with no cases still gets a DC snapshot.
 
 ## 7. Fixture
 
@@ -330,7 +330,7 @@ type Fixture = {
 };
 ```
 
-Sweeps over `Inertia` or `Torque` replace `mount.load` per run, and sweeps are crossed. Captured and measured snapshots use the same fixture. A real rig runs the same script by hand (E10).
+Sweeps over `Inertia` or `Torque` replace `mount.load` per run, and sweeps are crossed. Captured and measured snapshots use the same fixture. A real rig runs the same script by hand (E10). The Nano USB fixture is the current and voltage sweep. Its free-run scenes are not in the fixture; they are the capture config's cases, because each one needs a sketch and a servo.
 
 ## 8. Run report (D-008)
 

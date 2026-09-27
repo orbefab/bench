@@ -1027,7 +1027,7 @@ function bindRails() {
   for (const supply of supplySpecs) {
     const members = groups.get(supply.id) ?? [];
     const fed = boardOn(supply.id);
-    const path = fed
+    const chosen = fed
       ? usbPathFor(
           supplyTypeOf(supply.id),
           fed.type,
@@ -1035,6 +1035,13 @@ function bindRails() {
           fed.hasNetlist
         )
       : null;
+    const path = chosen?.kind === "path" ? chosen.path : null;
+    const feed =
+      chosen?.kind === "netlist"
+        ? chosen.feed
+        : fed?.stamp
+          ? "header"
+          : undefined;
     const circuit = createRailCircuit({
       vNom: supply.voltage,
       rSeries: supply.rSeries,
@@ -1049,7 +1056,7 @@ function bindRails() {
       }),
       ...(path ? { boardPath: path } : {}),
       ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
-      ...(fed?.stamp ? { stamp: fed.stamp } : {}),
+      ...(fed?.stamp && feed ? { stamp: fed.stamp, feed } : {}),
       ...(path === "nano-snapshot" && fed?.powerSnapshot
         ? { law: fed.powerSnapshot.law }
         : {}),

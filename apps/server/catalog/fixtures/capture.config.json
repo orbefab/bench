@@ -6,10 +6,34 @@
   },
   "part": "sfab/nano-ch340@1.0.0",
   "variant": "circuits",
+  "instance": "nano",
   "feedPort": "VBUS",
   "loadPort": "5V",
+  "rSeries": 0.5,
   "sweep": {
     "fixture": "sfab/nano-usb-5v"
   },
-  "cases": ["hold", "move", "stall"]
+  "cases": {
+    "hold": {
+      "firmware": "firmware/hold/hold.hex",
+      "source": "firmware/hold/hold.ino",
+      "flag": "sfab/flag@1.0.0",
+      "ms": 1200,
+      "servo": "sfab/sg90@1.0.0"
+    },
+    "move": {
+      "firmware": "firmware/vcc/vcc.hex",
+      "source": "firmware/vcc/vcc.ino",
+      "flag": "sfab/flag@1.0.0",
+      "ms": 2500,
+      "servo": "sfab/sg90@1.0.0"
+    },
+    "stall": {
+      "firmware": "firmware/stall/stall.hex",
+      "source": "firmware/stall/stall.ino",
+      "flag": "sfab/flag-stop@1.0.0",
+      "ms": 1000,
+      "servo": "sfab/sg90@1.0.0"
+    }
+  }
 }

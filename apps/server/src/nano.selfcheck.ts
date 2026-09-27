@@ -25,6 +25,7 @@ import {
 import { closeRootWatches } from "./projects";
 import { SS14 } from "./world/circuit/circuits";
 import { thermalVoltage } from "./world/circuit/elements";
+import { boardStampOf } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,
   attachWorld,
@@ -101,8 +102,12 @@ function ss14Drop(amps: number): number {
   return vj + amps * SS14.Rs;
 }
 
+const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
+  boardId: "nano",
+});
+
 function rail(
-  path: "none" | "nano-usb" | "nano-5v" | "nano-snapshot",
+  path: "none" | "usb" | "header" | "nano-snapshot",
   rSeries: number
 ): RailCircuit {
   return createRailCircuit({
@@ -112,10 +117,9 @@ function rail(
     motors: [{ resistance: law.resistance, k: law.k }],
     ...(path === "none"
       ? {}
-      : {
-          boardPath: path,
-          ...(path === "nano-snapshot" ? { law: nanoUsbLaw() } : {}),
-        }),
+      : path === "nano-snapshot"
+        ? { boardPath: path, law: nanoUsbLaw() }
+        : { stamp: NANO_STAMP, feed: path }),
   });
 }
 
@@ -150,7 +154,7 @@ function settle(
 }
 
 function point(
-  path: "none" | "nano-usb" | "nano-5v" | "nano-snapshot",
+  path: "none" | "usb" | "header" | "nano-snapshot",
   rSeries: number,
   fraction: number,
   connected: boolean
@@ -161,7 +165,7 @@ function point(
 }
 
 {
-  const stall = point("nano-usb", usb.rSeries, 1, true);
+  const stall = point("usb", usb.rSeries, 1, true);
   const board = stall.boardVoltage;
   const terminal = stall.voltage;
   const amps = stall.current;
@@ -191,7 +195,7 @@ function point(
 }
 
 {
-  const header = rail("nano-5v", usb.rSeries);
+  const header = rail("header", usb.rSeries);
   settle(header, 0, false, "high");
   expect(
     Math.abs(header.voltage - header.boardVoltage) <= 0.001,
@@ -214,7 +218,7 @@ function point(
   for (const [level, path] of [
     ["ideal terminal", "none"],
     ["snapshot", "nano-snapshot"],
-    ["class 2", "nano-usb"],
+    ["class 2", "usb"],
   ] as const) {
     const bits: string[] = [];
     for (const [name, fraction, connected] of rows) {
@@ -227,8 +231,8 @@ function point(
 }
 
 {
-  const sag = point("nano-usb", BROWN_RS, 1, true);
-  const idle = point("nano-usb", BROWN_RS, 0, false);
+  const sag = point("usb", BROWN_RS, 1, true);
+  const idle = point("usb", BROWN_RS, 0, false);
   expect(
     sag.boardVoltage < BOD_ASSERT_V,
     `brownout stall ${sag.boardVoltage} V stayed above ${BOD_ASSERT_V} V`
@@ -244,7 +248,7 @@ function point(
 }
 
 {
-  const cost = rail("nano-usb", usb.rSeries);
+  const cost = rail("usb", usb.rSeries);
   settle(cost, 1, true, "high");
   const n = 200;
   const t0 = performance.now();
@@ -503,7 +507,7 @@ try {
   const tail1 = stalled1.read.frames[stalled1.read.frames.length - 1];
   const live2 = tail2?.boards.nano?.voltage ?? Number.NaN;
   const live1 = tail1?.boards.nano?.voltage ?? Number.NaN;
-  const circuit2 = point("nano-usb", usb.rSeries, 1, true).boardVoltage;
+  const circuit2 = point("usb", usb.rSeries, 1, true).boardVoltage;
   const circuit1 = point("nano-snapshot", usb.rSeries, 1, true).boardVoltage;
   expect(
     Math.abs(live2 - circuit2) <= 0.001,

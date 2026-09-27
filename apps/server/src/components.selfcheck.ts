@@ -3,6 +3,7 @@
  */
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -15,15 +16,17 @@ import { fileURLToPath } from "node:url";
 import {
   arduinoPinBit,
   type RecordingRead,
+  type SnapshotFile,
   type WorldState,
 } from "@sfab-bench/contract";
 
+import { type CaptureConfig, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { LED_RED } from "./world/circuit/circuits";
 import { Diode, Resistor, VSource } from "./world/circuit/elements";
 import { Engine } from "./world/circuit/engine";
 import { PIN_ROH } from "./world/circuit/pin";
-import { catalogNanoStamp, realize } from "./world/circuit-stamp";
+import { boardStampOf, realize } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,
   attachWorld,
@@ -36,8 +39,11 @@ import { sortValue } from "./world/parts/si";
 import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit } from "./world/rail-circuit";
-import { tableLawOf } from "./world/snapshot-law";
+import { tableLawOf, tableVoltage } from "./world/snapshot-law";
 
+const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
+  boardId: "nano",
+});
 const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
@@ -75,7 +81,7 @@ function nanoLaw() {
 }
 
 {
-  const stamp = catalogNanoStamp();
+  const stamp = NANO_STAMP;
   const ids = stamp.parts.map((part) => part.path).join(",");
   expect(ids.includes("nano.s4"), `stamp missing s4: ${ids}`);
   expect(ids.includes("nano.c106"), `stamp missing c106: ${ids}`);
@@ -116,7 +122,8 @@ function nanoLaw() {
     rSeries: 0.5,
     iLimit: 0.9,
     motors: [],
-    boardPath: "nano-5v",
+    stamp: NANO_STAMP,
+    feed: "header",
   });
   rail.setFixed(NANO_BOARD_A);
   rail.setD13("high");
@@ -156,8 +163,8 @@ function nanoLaw() {
     rSeries: 0.5,
     iLimit: 0.9,
     motors: [],
-    boardPath: "nano-usb",
     stamp: board.stamp,
+    feed: "usb",
     pin: board.pin,
     ledAlias: "nano.led",
   });
@@ -288,6 +295,7 @@ async function runLed(
       boardPath: "nano-snapshot",
       law: nanoLaw(),
       stamp: board1.stamp,
+      feed: "header",
       pin: board1.pin,
       ledAlias: "nano.led",
     });
@@ -302,6 +310,86 @@ async function runLed(
       "breadboard LED worlds: class 2 and class 1 record leds.led; " +
         `class 1 on ${(snapOn * 1000).toFixed(2)} mA ` +
         `(${(snapErr * 100).toFixed(3)}%); leds nano.led equals ledCurrent`
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+{
+  const catalog = catalogRoot();
+  const part = JSON.parse(
+    readFileSync(
+      join(catalog, "parts", "sfab", "nano-ch340@1.0.0.json"),
+      "utf8"
+    )
+  ) as {
+    id: string;
+    axes: {
+      behaviour: {
+        "2": {
+          variants: {
+            circuits: {
+              board: {
+                instances: Record<
+                  string,
+                  { part: string; params?: { R: number } }
+                >;
+                wires: string[][];
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+  const id = "sfab/nano-1n4148@1.0.0";
+  part.id = id;
+  const board = part.axes.behaviour["2"].variants.circuits.board;
+  // The 1N4148's open-circuit point does not return from gmin. A 1 MΩ
+  // on the rail is about 5 µA at 5 V, far below the 0.1 A comparison.
+  board.instances.s4.part = "sfab/diode-1n4148@1.0.0";
+  board.instances.bleed = { part: "sfab/resistor@1.0.0", params: { R: 1e6 } };
+  board.wires.push(["c106.A", "bleed.A"], ["c106.B", "bleed.B"]);
+  const root = mkdtempSync(join(tmpdir(), "sfab-capture-board-"));
+  try {
+    const dir = join(root, "parts", "sfab");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "nano-1n4148@1.0.0.json"), JSON.stringify(part));
+    const config = JSON.parse(
+      readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
+    ) as CaptureConfig;
+    config.part = id;
+    config.cases = {};
+    const out = join(root, "snap.json");
+    await captureFromConfig({
+      config,
+      libraryDir: root,
+      outFile: out,
+      freeRun: false,
+    });
+    const snap = JSON.parse(readFileSync(out, "utf8")) as SnapshotFile;
+    const nano = JSON.parse(
+      readFileSync(
+        join(catalog, "snapshots", "sfab", "nano-usb-5v@1.0.0.json"),
+        "utf8"
+      )
+    ) as SnapshotFile;
+    const testLaw = tableLawOf(snap);
+    const nanoLaw = tableLawOf(nano);
+    expect(testLaw && nanoLaw, "capture table");
+    if (!testLaw || !nanoLaw) throw new Error("capture table");
+    const testV = tableVoltage(testLaw, 5, 0.1);
+    const nanoV = tableVoltage(nanoLaw, 5, 0.1);
+    expect(
+      testV < nanoV - 0.05,
+      `1N4148 board ${testV} V is not below the SS14 board ${nanoV} V`
+    );
+    expect(snap.quality === "Q1", `lint granted ${snap.quality}`);
+    console.log(
+      `capture 1n4148 board: lint ${snap.quality}, ` +
+        `0.1 A ${testV.toFixed(3)} V vs nano ${nanoV.toFixed(3)} V ` +
+        `(s4 is 1N4148; 1 MΩ holds the open point)`
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
