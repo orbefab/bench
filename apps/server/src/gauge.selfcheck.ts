@@ -311,11 +311,7 @@ function assertGaugeMatrix(
     variant: "avr8js",
     reason: "type rule arduino-nano",
   };
-  const sensor1 = {
-    class: 1,
-    variant: "datasheet",
-    reason: "fallback from 2 to 1 (cheaper)",
-  };
+  const sensor1 = { class: 1, variant: "datasheet", reason: "default" };
   const sensor0 = {
     class: 0,
     variant: "ideal",

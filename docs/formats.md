@@ -231,7 +231,7 @@ type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual",
 
 **Level resolution** (D-005, amended by D-023.3):
 1. Per axis, a path rule beats a type rule, which beats the default.
-2. A nested instance, when that request is still the default, is requested at its parent's resolved behaviour class. The report source is `parent`. A root instance stays on the world default. A leaf that lacks the parent's class falls back, and the report says so.
+2. Children of the world root use the world default. The scene composite is a container, not a parent. Below that, a nested instance whose request is still the default takes its parent's resolved behaviour class when the parent has that class, whether the parent is a firmware board or a composite. A parent that only reached its class by fallback does not pass it down. The report source is `parent`. A leaf that lacks the parent's class falls back, and the report says so. A part with no behaviour class stays on the world default.
 3. A missing class falls back to the nearest **cheaper** class.
 4. If there is none, it uses the nearest **deeper** class and reports "capture suggested".
 5. The class's default variant runs.

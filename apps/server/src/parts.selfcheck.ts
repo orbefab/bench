@@ -240,11 +240,11 @@ const rootBeh = fleet?.levels.find(
   (level) => level.path === "$root" && level.axis === "behaviour"
 );
 line(
-  reasons.default === 4 &&
+  reasons.default === 10 &&
     reasons.type === 2 &&
     reasons.path === 2 &&
-    reasons.parent === 3 &&
-    reasons.fallback === 25 &&
+    reasons.parent === 0 &&
+    reasons.fallback === 22 &&
     reasons.none === 12 &&
     rig1?.class === 0 &&
     rig1.reason === "type rule hobby-servo-3wire" &&
@@ -261,7 +261,7 @@ line(
       false &&
     fleet?.foreign.some((part) => part.path === "fleet.rig2.servo.control") ===
       true,
-  `fleet resolver (default=${reasons.default}, type=${reasons.type}, path=${reasons.path}, parent=${reasons.parent}, fallback=${reasons.fallback}, no-level=${reasons.none})`
+  `fleet resolver (default=${reasons.default}, type=${reasons.type}, path=${reasons.path}, fallback=${reasons.fallback}, no-level=${reasons.none})`
 );
 
 const lockDir = mkdtempSync(path.join(tmpdir(), "sfab-lock-"));

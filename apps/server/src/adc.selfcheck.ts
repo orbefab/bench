@@ -325,7 +325,7 @@ async function assertTraceOff(project: string, world: string): Promise<void> {
       `{
   "version": 2,
   "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },
-  "run": { "seed": 1, "levels": { "default": 1, "types": { "hobby-servo-3wire": { "behaviour": 1 } }, "paths": { "nano": { "behaviour": 1 } } } },
+  "run": { "seed": 1, "levels": { "default": 1 } },
   "root": { "id": "scene", "part": "sfab/nano-vcc-scene@1.0.0" }
 }
 `

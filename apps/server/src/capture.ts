@@ -943,7 +943,10 @@ function writeScene(
   behaviour: 1 | 2,
   scene: FreeRunSpec
 ): void {
-  const levels = `"default": 1, "paths": { "${scene.board}": { "behaviour": ${behaviour} }, "${scene.currentPart}": { "behaviour": 1 } }`;
+  const levels =
+    behaviour === 2
+      ? `"default": 1, "paths": { "${scene.board}": { "behaviour": 2 } }`
+      : `"default": 1`;
   const wires = scene.wires
     .map((pair) => JSON.stringify(pair))
     .join(",\n                ");

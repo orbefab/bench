@@ -9,13 +9,7 @@
   "run": {
     "seed": 1,
     "levels": {
-      "default": 1,
-      "types": {
-        "hobby-servo-3wire": { "behaviour": 1 }
-      },
-      "paths": {
-        "nano": { "behaviour": 1 }
-      }
+      "default": 1
     }
   },
   "root": {

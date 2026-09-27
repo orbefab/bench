@@ -138,16 +138,17 @@ function resolveAxis(
   const asked = request(rules, axis, instancePath, typeId);
   let requested = asked.class;
   let by = asked.by;
+  const map = part.axes?.[axis];
+  const available = classesOf(map);
   if (
     axis === "behaviour" &&
     parentClass !== undefined &&
-    by.kind === "default"
+    by.kind === "default" &&
+    available.length > 0
   ) {
     requested = parentClass;
     by = { kind: "parent", class: parentClass };
   }
-  const map = part.axes?.[axis];
-  const available = classesOf(map);
   let chosen: LevelClass | null = null;
   let reason = reasonOf(by);
   let source = sourceOf(by);
@@ -277,8 +278,15 @@ export function resolveLevels(
           ? (behaviour.board ?? null)
           : null;
     if (netlist) {
+      // The world root is the scene container. Its children use the world
+      // default. A shell that only reached its class by fallback does not
+      // pass that class down either: the default still applies underneath.
       const nextParent =
-        axes.behaviour.class !== null ? axes.behaviour.class : undefined;
+        instancePath !== "$root" &&
+        axes.behaviour.class !== null &&
+        axes.behaviour.source !== "fallback"
+          ? axes.behaviour.class
+          : undefined;
       for (const [id, child] of Object.entries(netlist.instances)) {
         const childPart = lib.parts.get(child.part);
         if (!childPart) {
