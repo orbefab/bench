@@ -26,7 +26,7 @@ import {
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
-import { SS14 } from "./world/circuit/circuits";
+import { describeNetlist } from "./world/circuit-stamp";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { nanoUsbDc, USB_RS } from "./world/nano-usb-dc";
 import { contentHash, sortValue } from "./world/parts/si";
@@ -35,6 +35,17 @@ import { type TableLaw, tableVoltage } from "./world/snapshot-law";
 import { lintSnapshot } from "./world/snapshot-lint";
 
 const PART_ID = "sfab/nano-ch340@1.0.0";
+
+type CaptureConfig = {
+  created: string;
+  tool: { name: string; version: string };
+  part: string;
+  variant: string;
+  feedPort: string;
+  loadPort: string;
+  sweep: { fixture: string };
+  cases: string[];
+};
 /** Stop the envelope this far under the port's current limit. The clone has no polyfuse. */
 const TRIP_MARGIN_A = 0.01;
 /** Insert knots until the sweep sits inside this band, then the 10 mV check is the bound. */
@@ -71,9 +82,23 @@ export async function captureNanoUsb(
   fixtureFile?: string
 ): Promise<CaptureStats> {
   const catalog = catalogRoot();
+  const config = JSON.parse(
+    readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
+  ) as CaptureConfig;
+  if (
+    config.part !== PART_ID ||
+    config.variant !== "circuits" ||
+    config.feedPort !== "VBUS" ||
+    config.loadPort !== "5V" ||
+    config.cases.join(",") !== "hold,move,stall"
+  ) {
+    throw new Error(
+      "capture.config.json names a case this tool does not build yet"
+    );
+  }
   const fixturePath =
     fixtureFile ??
-    join(catalog, "fixtures", "sfab", "nano-usb-5v.fixture.json");
+    join(catalog, "fixtures", `${config.sweep.fixture}.fixture.json`);
   const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as FixtureFile;
   if (fixture.format !== FIXTURE_FORMAT) {
     throw new Error(`fixture format ${fixture.format}`);
@@ -88,10 +113,6 @@ export async function captureNanoUsb(
       "fixture current sweep must start at 0 and include the point 0.01 A below the usb-a-port trip"
     );
   }
-  const config = JSON.parse(
-    readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
-  ) as { created: string; tool: { name: string; version: string } };
-
   const atTyp = sweep.current.map((amps) => nanoUsbDc(5, amps));
   const lineMaxAbsMv = lineError(sweep.current, atTyp) * 1000;
   const knots = fitKnots(sweep.current, atTyp);
@@ -222,11 +243,7 @@ function snapshotOf(input: {
       from: {
         part: PART_ID,
         level: "2",
-        hash: contentHash({
-          boardCircuit: "nano-usb",
-          rSeries: USB_RS,
-          diode: { id: "SS14", Is: SS14.Is, N: SS14.N, Rs: SS14.Rs },
-        }),
+        hash: contentHash(describeNetlist(USB_RS)),
       },
       fixture: {
         ref: input.fixtureRef,

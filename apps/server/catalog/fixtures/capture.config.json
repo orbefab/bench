@@ -3,5 +3,13 @@
   "tool": {
     "name": "sfab-bench-capture",
     "version": "1"
-  }
+  },
+  "part": "sfab/nano-ch340@1.0.0",
+  "variant": "circuits",
+  "feedPort": "VBUS",
+  "loadPort": "5V",
+  "sweep": {
+    "fixture": "sfab/nano-usb-5v"
+  },
+  "cases": ["hold", "move", "stall"]
 }
