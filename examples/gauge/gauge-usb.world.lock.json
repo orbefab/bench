@@ -18,7 +18,7 @@
     {
       "id": "sfab/hc-sr04@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/hc-sr04@1.0.0.json",
-      "sha256": "f3b26a9abbab4470c59719d696302e77696979e04b089ba2972b5e1d0f6084c7",
+      "sha256": "447b43fd75ece4d397adf2e656ad1b4be5c05d2c814d8170c4fcdb910c50405d",
       "source": "catalog",
       "version": "1.0.0"
     },

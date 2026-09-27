@@ -367,6 +367,8 @@ let supplyLive: Record<string, WorldSupplyState> = {};
  * after the solve, before a board that just left reset executes.
  */
 let latchedNode = new Map<string, number>();
+/** Terminal of a supply that feeds no board. Latched with the board nodes. */
+let latchedTerminal = new Map<string, number>();
 let adcNodes: AdcNodeStamp[] = [];
 let adcSamples: AdcSampleStamp[] = [];
 /** Test only. Absent on load, stamps and samples are not allocated. */
@@ -533,7 +535,7 @@ function sample(): WorldState | null {
       commandDeg: null,
       state: "idle",
       current: ranger.current,
-      voltage: ranger.supplyId ? rangerNode(ranger.supplyId) : 0,
+      voltage: ranger.supplyId ? boardNodeOf(ranger.supplyId) : 0,
       distanceM: ranger.distanceM,
       echoS: ranger.echoS,
       hit: ranger.hit,
@@ -627,7 +629,7 @@ function fillRecorder(full: boolean) {
     const index = lay.parts.length + i;
     rec.state[index] = 0;
     rec.partCurrent[index] = ranger.current;
-    rec.partVoltage[index] = ranger.supplyId ? rangerNode(ranger.supplyId) : 0;
+    rec.partVoltage[index] = ranger.supplyId ? boardNodeOf(ranger.supplyId) : 0;
   }
   for (let i = 0; i < lay.supplies.length; i++) {
     const spec = lay.supplies[i];
@@ -1154,20 +1156,15 @@ function sampleLoad(load: Load) {
 }
 
 /**
- * Rail for this step, from the latched command and the joint velocity.
- * A powered servo always contributes its quiescent current. A driven
- * one also contributes `max(0, s·I_motor)`.
+ * Volts the ranger may read. A board on the same supply contributes its
+ * latched node. A supply with no board contributes its latched terminal,
+ * so a bench supply can feed the sensor on its own.
  */
-/** Board node of the supply that feeds a ranger. The latch, not this step. */
 function latchedSupplyNode(supplyId: string): number {
   for (const [boardId, power] of boardPower) {
     if (power.supplyId === supplyId) return latchedBoardNode(boardId);
   }
-  return 0;
-}
-
-function rangerNode(supplyId: string): number {
-  return boardNodeOf(supplyId);
+  return latchedTerminal.get(supplyId) ?? 0;
 }
 
 function bindRangers(plan: RunPlan) {
@@ -1201,6 +1198,11 @@ function rearmRangers(boardId: string, board: AvrBoard) {
         };
 }
 
+/**
+ * Rail for this step, from the latched command and the joint velocity.
+ * A powered servo always contributes its quiescent current. A driven
+ * one also contributes `max(0, s·I_motor)`.
+ */
 function solveSupplies() {
   for (const load of loads) sampleLoad(load);
   const rangerFixed = new Map<string, number>();
@@ -1357,6 +1359,9 @@ function latchSupplyNodes() {
   for (const board of runPlan.boards) {
     const supplyId = boardPower.get(board.id)?.supplyId;
     latchedNode.set(board.id, supplyId ? boardNodeOf(supplyId) : 0);
+  }
+  for (const supply of supplySpecs) {
+    latchedTerminal.set(supply.id, rails.get(supply.id)?.circuit.voltage ?? 0);
   }
 }
 
@@ -1625,6 +1630,7 @@ function dispose() {
   partFeeds = {};
   supplyLive = {};
   latchedNode = new Map();
+  latchedTerminal = new Map();
   adcNodes = [];
   adcSamples = [];
   rails = new Map();
@@ -1812,6 +1818,22 @@ function step(n: number, pauseBy?: WorldSender, request?: number) {
  * command, the same input a pulse would be. A signal wire owns the
  * servo, so this leaves that joint alone.
  */
+function setTarget(partId: string, radians: number) {
+  if (!sim) return;
+  if (!Number.isFinite(radians)) {
+    fail([], `target for "${partId}" is not a finite angle.`);
+    return;
+  }
+  const id = sim.index.parts[partId];
+  if (id === undefined) {
+    fail([], `no actuator for part "${partId}".`);
+    return;
+  }
+  const drive = loads.find((item) => item.partId === partId)?.drive;
+  if (!drive || drive.board) return;
+  drive.manualDeg = (radians * 180) / Math.PI;
+}
+
 /**
  * Write each target's mocap pose for the physics step about to run.
  * `data.time` is still the time of the state the CPU just finished on.
@@ -1856,22 +1878,6 @@ function moveTarget(id: string, position: [number, number, number]) {
     id,
     position: next,
   });
-}
-
-function setTarget(partId: string, radians: number) {
-  if (!sim) return;
-  if (!Number.isFinite(radians)) {
-    fail([], `target for "${partId}" is not a finite angle.`);
-    return;
-  }
-  const id = sim.index.parts[partId];
-  if (id === undefined) {
-    fail([], `no actuator for part "${partId}".`);
-    return;
-  }
-  const drive = loads.find((item) => item.partId === partId)?.drive;
-  if (!drive || drive.board) return;
-  drive.manualDeg = (radians * 180) / Math.PI;
 }
 
 function answerRecord(message: Extract<ToWorker, { type: "record" }>) {

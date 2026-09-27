@@ -59,7 +59,7 @@
               "rangeMax": 0,
               "beamHalf": 0,
               "trigMin": 0,
-              "echoDelay": 0,
+              "echoDelay": 0.0002,
               "echoTimeout": 0,
               "working": 0,
               "quiescent": 0,
@@ -70,9 +70,10 @@
               "beam",
               "range limits",
               "trigger timing",
-              "echo delay",
               "timeout pulse",
-              "supply current"
+              "supply current",
+              "robots and ground are not seen",
+              "sensor fixed at its scene pose"
             ]
           }
         }
@@ -102,7 +103,9 @@
               "temperature",
               "humidity",
               "noise",
-              "supply sensitivity"
+              "supply sensitivity",
+              "robots and ground are not seen",
+              "sensor fixed at its scene pose"
             ]
           }
         }

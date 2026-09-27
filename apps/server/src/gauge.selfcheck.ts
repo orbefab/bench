@@ -131,7 +131,12 @@ async function run(
   root: string,
   world: string,
   ms: number
-): Promise<{ read: RecordingRead; echoS: number | null; current: number }> {
+): Promise<{
+  read: RecordingRead;
+  echoS: number | null;
+  current: number;
+  voltage: number;
+}> {
   const events: { type: string; message?: string }[] = [];
   const attached = await attachWorld(root, world, {
     sender,
@@ -155,6 +160,7 @@ async function run(
       read,
       echoS: sensor?.echoS ?? null,
       current: sensor?.current ?? -1,
+      voltage: sensor?.voltage ?? -1,
     };
   } finally {
     handle.detach();
@@ -235,13 +241,11 @@ try {
       );
       const ran = await run(root, "beam.world.json", 250);
       const last = linesOf(serialOf(ran.read)).at(-1);
-      // Class 0 raises Echo one cycle after Trig falls, before pulseIn
-      // samples, so the sketch reads 0. The part's width is the echo.
-      const echoed =
-        level === 0
-          ? ran.echoS !== null && ran.echoS > 0
-          : last !== undefined && last !== "-1";
-      if (echoed) hit.push(x);
+      if (level === 0 && x === 0) {
+        console.log(`class 0 on axis: sketch ${last} us`);
+        expect(Number(last) > 0, `class 0 on axis printed ${last}`);
+      }
+      if (last !== undefined && last !== "-1") hit.push(x);
     }
     return hit;
   }
@@ -310,6 +314,20 @@ try {
     `unpowered ${openLast} current ${open.current}`
   );
   console.log(`unpowered: ${openLast}, current ${open.current} A`);
+
+  writeFileSync(
+    path.join(root, "bench.world.json"),
+    `${JSON.stringify(worldFile("sfab/bench-scene@1.0.0", 1, card(0.1)), null, 2)}\n`
+  );
+  const bench = await run(root, "bench.world.json", 250);
+  const benchUs = Number(linesOf(serialOf(bench.read)).at(-1));
+  expect(
+    benchUs > 0 && bench.current > 0 && bench.voltage > 4,
+    `bench supply ${benchUs} us, ${bench.voltage} V, ${bench.current} A`
+  );
+  console.log(
+    `bench supply: sketch ${benchUs} us, ${bench.voltage.toFixed(3)} V, current ${bench.current} A`
+  );
 
   async function gaugeOnce(): Promise<RecordingRead> {
     const events: { type: string; message?: string }[] = [];

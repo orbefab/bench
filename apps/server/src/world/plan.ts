@@ -591,6 +591,8 @@ function build(
         diags.push(cannot(inst, "the run needs ranger@1"));
         continue;
       }
+      // The ray uses this scene pose for the whole run. A sensor on a
+      // moving link is not supported yet.
       rangers.push({
         id: inst.path,
         model: shortName(inst.part.id),

@@ -11,7 +11,7 @@ import type { Pose } from "@sfab-bench/contract";
 import type { AvrBoard } from "./board";
 import { CPU_HZ } from "./board";
 
-/** Include geom group 0 only. Device geoms are moved to group 1. */
+/** Include geom group 0 only: targets and static primitives. */
 export const RANGER_GEOM_GROUP = [1, 0, 0, 0, 0, 0];
 
 /**
@@ -132,9 +132,10 @@ const geomid = new Int32Array(1);
 const normal = new Float64Array(3);
 
 /**
- * Nearest hit in metres, or null. Group 0 only, so the device's own
- * geoms (group 1, including the ground) are skipped. `bodyexclude` is
- * -1: the gauge is many bodies, and the group split covers all of them.
+ * Nearest hit in metres, or null. Group 0 only, so robots and the
+ * ground are skipped. The pose is the part's scene pose, fixed for
+ * the run. `bodyexclude` is -1: a robot is many bodies, and the group
+ * split covers all of them.
  */
 export function castRanger(
   physics: RangerPhysics,

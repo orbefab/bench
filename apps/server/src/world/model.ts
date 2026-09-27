@@ -576,9 +576,9 @@ export async function compileWorld(
     applyServoTorqueClamp(mj, model, worldDoc);
     applyServoDynamics(mj, model, worldDoc);
     applyLimitSolref(mj, model, urdfLimitSolref(worldDoc, files));
-    // Rays test group 0. Device geoms, including the ground, move to
-    // group 1 so the sensor does not see itself. A world with no ranger
-    // keeps every geom in the default group.
+    // Rays test group 0. With a ranger in the run, only targets and
+    // static primitives stay there. Robots and the ground move to
+    // group 1. A world with no ranger keeps every geom in the default group.
     if ((worldDoc.rangers?.length ?? 0) > 0) {
       const geomModel = model;
       const groups = geomModel.geom_group as Uint8Array;
