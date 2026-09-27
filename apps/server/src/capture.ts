@@ -162,8 +162,11 @@ export async function captureFromConfig(
   const lineMaxAbsMv = lineError(sweep.current, atTyp) * 1000;
   const knots = fitKnots(sweep.current, atTyp);
   const law: TableLaw = {
+    across: [config.loadPort, "GND"],
+    iSense: -1,
     iAxis: knots,
     vAxis: knots.map((amps) => round9(dc(5, amps))),
+    supplyPort: "supply",
     supplyRef: 5,
     supplyAffine: 1,
   };
@@ -325,10 +328,17 @@ function snapshotOf(input: {
       outputs: [`${load}.voltage`],
     },
     params: {
+      across: [...input.law.across],
+      iSense: input.law.iSense,
       iAxis: [...input.law.iAxis],
       vAxis: [...input.law.vAxis],
-      supplyRef: input.law.supplyRef,
-      supplyAffine: input.law.supplyAffine,
+      ...(input.law.supplyPort ? { supplyPort: input.law.supplyPort } : {}),
+      ...(input.law.supplyRef !== undefined
+        ? { supplyRef: input.law.supplyRef }
+        : {}),
+      ...(input.law.supplyAffine !== undefined
+        ? { supplyAffine: input.law.supplyAffine }
+        : {}),
     },
     envelope: {
       bounds: {
@@ -465,11 +475,14 @@ function lawFrom(
   volts: number[]
 ): TableLaw {
   return {
+    across: ["5V", "GND"],
+    iSense: -1,
     iAxis: knots,
     vAxis: knots.map((amps) => {
       const at = current.indexOf(amps);
       return volts[at] ?? 0;
     }),
+    supplyPort: "supply",
     supplyRef: 5,
     supplyAffine: 1,
   };

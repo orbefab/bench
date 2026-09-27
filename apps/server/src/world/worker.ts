@@ -1126,14 +1126,15 @@ function noteSnapshotEnvelope(supplyId: string, amps: number): void {
   const snap = board?.powerSnapshot;
   if (!board || !snap || envelopeWarned.has(board.id)) return;
   const volts = supplySpecs.find((item) => item.id === supplyId)?.voltage ?? 0;
-  if (!outsideEnvelope(snap.envelope, volts, amps)) return;
+  const supply = snap.envelope.supply;
+  if (!supply || !outsideEnvelope(snap.envelope, volts, amps)) return;
   envelopeWarned.add(board.id);
   const current =
     amps < snap.envelope.current[0] || amps > snap.envelope.current[1];
   const message =
     `${board.id} port 5V quantity ${current ? "Current" : "Voltage"}: ` +
     `snapshot ${snap.ref} envelope exceeded; run continues ` +
-    `(${amps} A at ${volts} V vs supply ${snap.envelope.supply[0]}..${snap.envelope.supply[1]} V, ` +
+    `(${amps} A at ${volts} V vs supply ${supply[0]}..${supply[1]} V, ` +
     `current ${snap.envelope.current[0]}..${snap.envelope.current[1]} A)`;
   if (!runReport) return;
   runReport.warnings.push({

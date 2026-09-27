@@ -161,16 +161,19 @@ function tableCoverage(snap: SnapshotFile): string | null {
       return "table does not cover its envelope";
     }
   }
+  if (law.supplyPort === undefined) return null;
+  const supply = env.supply;
+  const ref = law.supplyRef;
+  if (!supply || ref === undefined || law.supplyAffine === undefined) {
+    return "table does not cover its envelope";
+  }
   if (law.supplyAffine === 1) {
-    if (law.supplyRef < env.supply[0] || law.supplyRef > env.supply[1]) {
+    if (ref < supply[0] || ref > supply[1]) {
       return "table does not cover its envelope";
     }
     return null;
   }
-  if (
-    env.supply[0] < law.supplyRef - 1e-12 ||
-    env.supply[1] > law.supplyRef + 1e-12
-  ) {
+  if (supply[0] < ref - 1e-12 || supply[1] > ref + 1e-12) {
     return "table does not cover its envelope";
   }
   return null;
@@ -179,7 +182,7 @@ function tableCoverage(snap: SnapshotFile): string | null {
 function nonPhysical(snap: SnapshotFile): boolean {
   const law = tableLawOf(snap);
   const env = envelopeOf(snap);
-  if (!law || !env) return false;
+  if (!law || !env || !env.supply) return false;
   if (!(env.supply[0] <= 0 && env.supply[1] >= 0)) return false;
   for (const amps of law.iAxis) {
     if (amps < env.current[0] || amps > env.current[1]) continue;

@@ -45,6 +45,10 @@
   "form": "table@1",
   "format": "sfab.snapshot@1",
   "params": {
+    "across": [
+      "5V",
+      "GND"
+    ],
     "iAxis": [
       0,
       0.001,
@@ -65,7 +69,9 @@
       0.6,
       0.89
     ],
+    "iSense": -1,
     "supplyAffine": 1,
+    "supplyPort": "supply",
     "supplyRef": 5,
     "vAxis": [
       4.999999996,

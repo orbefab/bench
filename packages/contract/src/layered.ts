@@ -543,7 +543,11 @@ export type SnapshotFile = {
   axis: "behaviour" | "body";
   form: FormId;
   ports: { inputs: string[]; outputs: string[] };
-  params: Record<string, number | number[]>;
+  /**
+   * Numbers, port names, and short lists. `across` is two port names.
+   * `iSense` is 1 (current into the first port) or -1 (current out of it).
+   */
+  params: Record<string, number | string | (number | string)[]>;
   envelope: {
     bounds: Record<string, Range>;
     data?: {
@@ -556,7 +560,7 @@ export type SnapshotFile = {
   error:
     | "none-available"
     | {
-        metric: "free-run-max-abs" | "free-run-rms";
+        metric: "static-max-abs" | "free-run-max-abs" | "free-run-rms";
         quantity: string;
         value: number;
         corner?: "typ" | "min" | "max";

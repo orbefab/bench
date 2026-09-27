@@ -14,14 +14,18 @@ import type { Element } from "./element";
 type Region = "cv" | "cc" | "floor";
 
 /**
- * Piecewise-linear `V(supply, I)` as a Thevenin branch.
- * Inside a segment the stamp is `v = Voc − R·I`. Above `iLimit` the
- * branch holds that current, with the same enter, leave, and floor
- * rules as `thevenin-limit@1`.
+ * Piecewise-linear `V(p) − V(m)` as one branch.
+ * Feed replacement (`iLimit` set) is a Thevenin segment. Above `iLimit`
+ * the branch holds that current, with the same enter, leave, and floor
+ * rules as `thevenin-limit@1`. The axis for that path is current out of
+ * `p` (`iSense` -1).
+ * A plain branch (`iLimit` null) has no limit and no floor. Past the
+ * knots it extrapolates the end segments.
  */
 export class LawTable implements Element {
   readonly form = "table@1";
   readonly nonlinear = true;
+  readonly use: "feed" | "branch";
   ip = -1;
   im = -1;
   ibr = -1;
@@ -34,6 +38,8 @@ export class LawTable implements Element {
    * exactly `iLimit`). The next stamp holds the rail at 0 V.
    */
   private holdFloor = false;
+  /** Delivered-current limit. 0 on a plain branch, which never reads it. */
+  private readonly limit: number;
 
   constructor(
     readonly id: string,
@@ -41,10 +47,15 @@ export class LawTable implements Element {
     private readonly mName: string,
     private readonly law: TableLaw,
     private readonly supply: number,
-    readonly iLimit: number
+    /** Null is a plain branch. A feed passes the source current limit. */
+    readonly iLimit: number | null
   ) {
     if (law.iAxis.length < 2) throw new Error(`${id}: table needs two knots`);
-    if (!(iLimit > 0)) throw new Error(`${id}: Ilim > 0`);
+    this.use = iLimit === null ? "branch" : "feed";
+    this.limit = iLimit ?? 0;
+    if (this.use === "feed" && !(this.limit > 0)) {
+      throw new Error(`${id}: Ilim > 0`);
+    }
   }
 
   nodes(): readonly string[] {
@@ -67,12 +78,21 @@ export class LawTable implements Element {
 
   /** The current-limit row conflicted with the load. Hold 0 V next stamp. */
   fallToFloor(): boolean {
-    if (this.region !== "cc") return false;
+    if (this.use === "branch" || this.region !== "cc") return false;
     this.holdFloor = true;
     return true;
   }
 
+  /** Stored-axis current for branch current `i` (leaves `p` into the element). */
+  private axisAmps(branchI: number): number {
+    return this.law.iSense === 1 ? branchI : -branchI;
+  }
+
   private desired(ctx: StampCtx): { region: Region; segment: number } {
+    if (this.use === "branch") {
+      const axis = this.axisAmps((ctx.x[this.ibr] as number) ?? 0);
+      return { region: "cv", segment: segmentIndex(this.law.iAxis, axis) };
+    }
     const tol = 1e-9;
     if (this.holdFloor) {
       this.holdFloor = false;
@@ -83,7 +103,7 @@ export class LawTable implements Element {
     if (vt < -tol) return { region: "floor", segment: this.segment };
     if (this.region === "floor") {
       const vCv = tableVoltage(this.law, this.supply, iLoad);
-      if (iLoad <= this.iLimit + tol && vCv > tol) {
+      if (iLoad <= this.limit + tol && vCv > tol) {
         return {
           region: "cv",
           segment: segmentIndex(this.law.iAxis, iLoad),
@@ -92,14 +112,14 @@ export class LawTable implements Element {
       return { region: "floor", segment: this.segment };
     }
     if (this.region === "cv") {
-      if (iLoad > this.iLimit + tol) {
+      if (iLoad > this.limit + tol) {
         return { region: "cc", segment: this.segment };
       }
       return { region: "cv", segment: segmentIndex(this.law.iAxis, iLoad) };
     }
     const volts = shiftedVoltage(this.law, this.supply);
     const iUnc = unconstrainedAmps(volts, this.law.iAxis, vt);
-    if (iUnc < this.iLimit - tol) {
+    if (iUnc < this.limit - tol) {
       return { region: "cv", segment: segmentIndex(this.law.iAxis, iUnc) };
     }
     return { region: "cc", segment: this.segment };
@@ -123,14 +143,20 @@ export class LawTable implements Element {
     if (next.region === "cc") {
       if (!ctx.rhsOnly) {
         vBranch(ctx, this.ip, this.im, this.ibr, 0, 0);
-        currentRow(ctx, this.ibr, -this.iLimit);
+        currentRow(ctx, this.ibr, -this.limit);
       } else {
-        ctx.z[this.ibr] = -this.iLimit;
+        ctx.z[this.ibr] = -this.limit;
       }
       return;
     }
     const volts = shiftedVoltage(this.law, this.supply);
     const { r, voc } = segmentThevenin(volts, this.law.iAxis, next.segment);
+    if (this.use === "branch" && this.law.iSense === 1) {
+      // Axis current is the branch current. `v = voc − r·i` becomes
+      // `v + r·i = voc` in the stamp, so the resistance sign flips.
+      vBranch(ctx, this.ip, this.im, this.ibr, -r, voc);
+      return;
+    }
     vBranch(ctx, this.ip, this.im, this.ibr, r, voc);
   }
 
