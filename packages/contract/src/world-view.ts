@@ -31,6 +31,15 @@ export type WorldViewSupply = {
   rSeries: number;
 };
 
+/** A part or supply whose resolved visual is a box. A URDF body is not one. */
+export type WorldViewBox = {
+  id: string;
+  pose: Pose;
+  size: [number, number, number];
+  /** A click selects this part or supply. */
+  pick: "part" | "supply";
+};
+
 export type WorldViewPart = {
   id: string;
   /** Short name the card shows, for example `sg90`. */
@@ -61,6 +70,8 @@ export type WorldView = {
   boards: WorldViewBoard[];
   supplies: WorldViewSupply[];
   parts: WorldViewPart[];
+  /** Visual boxes. Empty when no running part resolved a box. */
+  boxes: WorldViewBox[];
   wires: [string, string][];
   feeds: WorldViewFeeds;
 };

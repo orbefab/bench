@@ -6,6 +6,7 @@ import {
   type WorldPrimitive,
   type WorldTarget,
   type WorldView,
+  type WorldViewBox,
 } from "@sfab-bench/contract";
 import * as THREE from "three";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
@@ -30,7 +31,7 @@ export type LoadedVisual = {
   mesh: WorldMesh;
 };
 
-/** What the scene draws. Supplies, parts, wires, and step props are not. */
+/** What the scene draws. Wires and step props are not. */
 export type WorldSceneDocument = {
   environment: {
     ground: { plane: boolean };
@@ -38,6 +39,8 @@ export type WorldSceneDocument = {
     targets: WorldTarget[];
   };
   boards: WorldView["boards"];
+  /** Part and supply visual boxes. A URDF body is not in this list. */
+  boxes: WorldViewBox[];
 };
 
 export type WorldAssetProblem = {
@@ -209,6 +212,7 @@ export async function loadWorldAssets(
       targets: read.environment.targets ?? [],
     },
     boards: read.boards,
+    boxes: read.boxes ?? [],
   };
 
   const visuals: LoadedVisual[] = [];

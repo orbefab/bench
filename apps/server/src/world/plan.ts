@@ -142,6 +142,18 @@ export type RunSupply = {
   pins: Record<string, RunPin>;
 };
 
+/**
+ * A part visual `{ kind: "box", size }` drawn at the instance pose.
+ * A URDF body is not here: those meshes are already the robot. A board
+ * is not here either: its box is `RunBoard.size`.
+ */
+export type RunBox = {
+  id: string;
+  pose: Pose;
+  size: [number, number, number];
+  pick: "part" | "supply";
+};
+
 export type RunPart = {
   id: string;
   /** Short name the cards and the recording already use, for example `sg90`. */
@@ -176,6 +188,11 @@ export type RunPlan = {
   boards: RunBoard[];
   supplies: RunSupply[];
   parts: RunPart[];
+  /**
+   * Visual boxes for parts and supplies. Absent on a hand-built plan.
+   * A body that is a URDF is omitted so the robot meshes are not drawn twice.
+   */
+  boxes?: RunBox[];
   /**
    * Ultrasonic rangers. Absent on a plan built by hand for a pin test.
    * `build` always sets this, possibly empty.
@@ -316,6 +333,31 @@ function formNumbers(inst: LiveInstance): Record<string, number> | null {
     if (typeof value === "number" && Object.hasOwn(out, key)) out[key] = value;
   }
   return out;
+}
+
+/**
+ * A lumped servo wired to another part's URDF still gets this box: the
+ * robot meshes belong to that other part. When this part's own body is
+ * a URDF, the meshes are already drawn, so the visual box is skipped.
+ */
+function pushBox(
+  boxes: RunBox[],
+  inst: LiveInstance,
+  pick: RunBox["pick"]
+) {
+  const body = inst.axes.body.impl as BodyImpl | null;
+  if (body?.kind === "urdf") return;
+  const visual = inst.axes.visual.impl as VisualImpl | null;
+  if (visual?.kind !== "box") return;
+  if (!visual.size.every((n) => typeof n === "number" && Number.isFinite(n))) {
+    return;
+  }
+  boxes.push({
+    id: inst.path,
+    pose: poseOf(inst),
+    size: [visual.size[0], visual.size[1], visual.size[2]],
+    pick,
+  });
 }
 
 function poseOf(inst: LiveInstance): Pose {
@@ -464,6 +506,7 @@ function build(
   const supplies: RunSupply[] = [];
   const parts: RunPart[] = [];
   const rangers: RunRanger[] = [];
+  const boxes: RunBox[] = [];
 
   for (const inst of loaded.resolved) {
     if (inst.path === "$root") continue;
@@ -590,6 +633,7 @@ function build(
         groundPin: ground,
         pins,
       });
+      pushBox(boxes, inst, "supply");
       continue;
     }
     if (typeId === "hobby-servo-3wire") {
@@ -635,6 +679,7 @@ function build(
         },
         ...(drives ? { drives } : {}),
       });
+      pushBox(boxes, inst, "part");
       continue;
     }
     if (typeId === "ultrasonic-ranger-4pin") {
@@ -658,6 +703,7 @@ function build(
         trig: digitalPeer(inst, "Trig", loaded),
         echo: digitalPeer(inst, "Echo", loaded),
       });
+      pushBox(boxes, inst, "part");
       continue;
     }
     diags.push(cannot(inst, `the run has no ${typeId}`));
@@ -700,6 +746,7 @@ function build(
       supplies,
       parts,
       rangers,
+      boxes,
       wires: electricalWires(loaded.nets),
       shownWires: authoredWires(loaded.nets, loaded.wires),
       levels: loaded.resolved.flatMap((inst) =>

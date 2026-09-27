@@ -53,6 +53,12 @@ export function viewOf(plan: RunPlan): WorldView {
         ranger: true as const,
       })),
     ],
+    boxes: (plan.boxes ?? []).map((box) => ({
+      id: box.id,
+      pose: box.pose,
+      size: box.size,
+      pick: box.pick,
+    })),
     wires: plan.shownWires.map((wire) => [wire[0], wire[1]]),
     feeds: powerFeedsOf(plan),
   };

@@ -328,13 +328,28 @@ export function WorldScene({
     }
     return map;
   }, [loaded]);
+  const partMaterials = useMemo(() => {
+    const map = new Map<string, THREE.MeshStandardMaterial>();
+    for (const box of loaded?.document.boxes ?? []) {
+      map.set(
+        box.id,
+        new THREE.MeshStandardMaterial({
+          color: 0xb08968,
+          metalness: 0.08,
+          roughness: 0.7,
+        })
+      );
+    }
+    return map;
+  }, [loaded]);
   useEffect(() => {
     return () => {
       clearHighlights();
       for (const material of linkMaterials.values()) material.dispose();
       for (const material of boardMaterials.values()) material.dispose();
+      for (const material of partMaterials.values()) material.dispose();
     };
-  }, [linkMaterials, boardMaterials]);
+  }, [linkMaterials, boardMaterials, partMaterials]);
   const primitiveMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -376,7 +391,7 @@ export function WorldScene({
       paintRef.current();
       invalidateSceneNow();
     });
-  }, [loaded, session, linkMaterials, boardMaterials]);
+  }, [loaded, session, linkMaterials, boardMaterials, partMaterials]);
 
   const bindPick = (pick: NonNullable<WorldSelection>) => {
     if (session) return {};
@@ -564,6 +579,36 @@ export function WorldScene({
                   text={board.id}
                   color={theme.text}
                   z={board.size[2] / 2 + 0.008}
+                />
+              </group>
+            </Body>
+          );
+        })}
+        {doc.boxes.map((box) => {
+          const material = partMaterials.get(box.id);
+          if (!box.pose || !finiteVec(box.size, 3) || !material) return null;
+          const pick =
+            box.pick === "supply"
+              ? { kind: "supply" as const, supply: box.id }
+              : { kind: "part" as const, part: box.id };
+          return (
+            <Body key={`${box.pick}:${box.id}`} pose={box.pose}>
+              <group
+                userData={{ worldPick: pick }}
+                {...bindPick(pick)}
+                ref={(node) => {
+                  const key = selectionKey(pick);
+                  if (node) pickRoots.current.set(key, node);
+                  else pickRoots.current.delete(key);
+                }}
+              >
+                <mesh material={material}>
+                  <boxGeometry args={box.size} />
+                </mesh>
+                <BoardLabel
+                  text={box.id}
+                  color={theme.text}
+                  z={box.size[2] / 2 + 0.008}
                 />
               </group>
             </Body>
