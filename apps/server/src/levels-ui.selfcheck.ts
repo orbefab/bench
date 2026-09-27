@@ -276,13 +276,16 @@ try {
         replaceLevels(after, originalLevels) === before,
         "the edit changed more than run.levels"
       );
-      // The host has no reload counter. Subscribers see `reloaded`, and the
-      // project watcher debounces at 250 ms, so a second load would arrive
-      // before this wait ends.
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const reloads = events.filter(
-        (event) => event.type === "reloaded"
-      ).length;
+      // The host has no reload counter. Subscribers see `reloaded`. Wait for
+      // the first one, then well past the watcher's 250 ms debounce, so a
+      // slow runner cannot pass or fail on timing alone.
+      const reloadCount = () =>
+        events.filter((event) => event.type === "reloaded").length;
+      for (let i = 0; i < 100 && reloadCount() === reloadsAt; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const reloads = reloadCount();
       expect(reloads - reloadsAt === 1, `reloads ${reloads - reloadsAt}`);
 
       const cleared = await call(worldTools.world_set_level, {

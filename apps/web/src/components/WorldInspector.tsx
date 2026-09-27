@@ -1,6 +1,7 @@
 import {
   ARDUINO_PINS,
   maskHasPin,
+  type RunReport,
   type WorldPinState,
 } from "@sfab-bench/contract";
 import { useEffect } from "react";
@@ -65,6 +66,7 @@ function useWorldSelectionEsc() {
 }
 
 const EMPTY_PARTS: readonly WorldOutlinePart[] = [];
+const EMPTY_NETS: RunReport["nets"] = [];
 
 function transcriptText(entries: readonly BoardConsoleEntry[]): string {
   let text = "";
@@ -163,7 +165,7 @@ function OutlineBody({ outline }: { outline: WorldOutline | null }) {
   const failed = useWorld(
     (s) => s.assets === "error" || s.runErrors.length > 0
   );
-  const nets = useWorld((s) => s.report?.nets ?? []);
+  const nets = useWorld((s) => s.report?.nets ?? EMPTY_NETS);
   const select = (selection: NonNullable<WorldSelection>) => {
     worldStore.getState().select(selection);
   };
