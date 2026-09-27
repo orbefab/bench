@@ -79,14 +79,15 @@ export function attachBoardAdc(cpu: CPU, hooks: BoardAdcHooks): AVRADC {
     adc.avcc = hooks.supply();
     adc.aref = hooks.aref();
     const count = adcCount(voltage, ref.voltage);
-    const sample: AdcConversion = {
-      mux: source.mux,
-      ref: ref.name,
-      vRef: ref.voltage,
-      voltage,
-      count,
-    };
-    hooks.converted?.(sample);
+    if (hooks.converted) {
+      hooks.converted({
+        mux: source.mux,
+        ref: ref.name,
+        vRef: ref.voltage,
+        voltage,
+        count,
+      });
+    }
     cpu.addClockEvent(() => adc.completeADCRead(count), adc.sampleCycles);
   };
   return adc;

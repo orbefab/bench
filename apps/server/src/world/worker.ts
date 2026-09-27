@@ -165,8 +165,11 @@ export type AdcTrace = {
   samples: AdcSampleStamp[];
 };
 
-/** Ten minutes, the same window as a recording. */
-const ADC_TRACE_MS = 600_000;
+/**
+ * Test-only window. The self-check runs 3 s, so 4 s covers every node it
+ * reads. Older rows drop with one slice, not a shift of the whole array.
+ */
+const ADC_TRACE_MS = 4_000;
 
 export type ToWorker =
   | {
@@ -179,6 +182,10 @@ export type ToWorker =
        * `"tripped"` opens the Uno fuse before the first solve.
        */
       fuseStart?: "cold" | "tripped";
+      /**
+       * Test only. Absent, the worker records no ADC trace.
+       */
+      adcTrace?: boolean;
     }
   | { type: "reload"; generation: number }
   | { type: "play"; generation: number; by?: WorldSender }
@@ -350,6 +357,8 @@ let supplyLive: Record<string, WorldSupplyState> = {};
 let latchedNode = new Map<string, number>();
 let adcNodes: AdcNodeStamp[] = [];
 let adcSamples: AdcSampleStamp[] = [];
+/** Test only. Absent on load, stamps and samples are not allocated. */
+let adcTrace = false;
 /** Test only. A tripped fuse starts hot, before the first solve. */
 let fuseStart: "cold" | "tripped" = "cold";
 type RailGroup = {
@@ -1244,7 +1253,7 @@ function latchSupplyNodes() {
 
 /** Record the board nodes at `ms`. A second stamp at the same ms replaces it. */
 function stampNodes(ms: number) {
-  if (!runPlan) return;
+  if (!adcTrace || !runPlan) return;
   const boards: Record<string, number> = {};
   for (const spec of runPlan.boards) {
     const supplyId = boardPower.get(spec.id)?.supplyId;
@@ -1254,12 +1263,15 @@ function stampNodes(ms: number) {
   if (last && last.ms === ms) last.boards = boards;
   else adcNodes.push({ ms, boards });
   const cutoff = ms - ADC_TRACE_MS;
-  while (adcNodes.length > 1 && (adcNodes[0]?.ms ?? 0) < cutoff) {
-    adcNodes.shift();
-  }
-  while (adcSamples.length > 0 && (adcSamples[0]?.ms ?? 0) < cutoff) {
-    adcSamples.shift();
-  }
+  adcNodes = dropOlder(adcNodes, cutoff);
+  adcSamples = dropOlder(adcSamples, cutoff);
+}
+
+function dropOlder<T extends { ms: number }>(rows: T[], cutoff: number): T[] {
+  if (rows.length === 0 || (rows[0]?.ms ?? 0) >= cutoff) return rows;
+  let drop = 0;
+  while (drop < rows.length && (rows[drop]?.ms ?? 0) < cutoff) drop += 1;
+  return rows.slice(drop);
 }
 
 function noteAdc(boardId: string, sample: AdcConversion) {
@@ -1299,7 +1311,9 @@ function attachAnalog(board: AvrBoard) {
         supplyVolts: (supplyId) => supplyLive[supplyId]?.voltage ?? 0,
       });
     },
-    converted: (sample) => noteAdc(board.id, sample),
+    ...(adcTrace
+      ? { converted: (sample: AdcConversion) => noteAdc(board.id, sample) }
+      : {}),
   });
 }
 
@@ -1726,6 +1740,10 @@ function answerRecord(message: Extract<ToWorker, { type: "record" }>) {
     return;
   }
   if (query.op === "adc") {
+    if (!adcTrace) {
+      reply({ op: "error", message: "ADC trace is off" });
+      return;
+    }
     reply({
       op: "adc",
       trace: { nodes: adcNodes, samples: adcSamples },
@@ -1788,6 +1806,7 @@ async function handle(message: ToWorker) {
     project = message.project;
     worldRel = message.world;
     fuseStart = message.fuseStart === "tripped" ? "tripped" : "cold";
+    adcTrace = message.adcTrace === true;
     await build();
     return;
   }

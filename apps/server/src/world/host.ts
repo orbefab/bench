@@ -57,6 +57,11 @@ export type AttachWorldOptions = {
    * first solve.
    */
   fuseStart?: "cold" | "tripped";
+  /**
+   * Test only. Record each board node and each ADC sample. Absent, the
+   * worker keeps no trace and the adc query errors.
+   */
+  adcTrace?: boolean;
 };
 
 export type WorldHandle = {
@@ -93,6 +98,8 @@ type Doc = {
   world: string;
   /** Test only. A tripped fuse starts hot. */
   fuseStart: "cold" | "tripped";
+  /** Test only. Absent, the ADC query errors. */
+  adcTrace: boolean;
   subs: Set<Sub>;
   worker: Worker | null;
   generation: number;
@@ -525,6 +532,7 @@ async function spawn(doc: Doc): Promise<void> {
     world: doc.world,
     generation,
     ...(doc.fuseStart === "tripped" ? { fuseStart: "tripped" as const } : {}),
+    ...(doc.adcTrace ? { adcTrace: true as const } : {}),
   } satisfies ToWorker);
   tie(doc);
   try {
@@ -678,6 +686,7 @@ function ensure(project: string, worldRel: string): Doc | { error: string } {
       project: named.project,
       world: named.world,
       fuseStart: "cold",
+      adcTrace: false,
       subs: new Set(),
       worker: null,
       generation: 0,
@@ -724,6 +733,9 @@ export async function attachWorld(
   const doc = found;
   if (options?.fuseStart && !doc.worker) {
     doc.fuseStart = options.fuseStart === "tripped" ? "tripped" : "cold";
+  }
+  if (options?.adcTrace !== undefined && !doc.worker) {
+    doc.adcTrace = options.adcTrace;
   }
   const sub: Sub = { ...subscription, delivered: false, detached: false };
   doc.subs.add(sub);
@@ -1052,9 +1064,10 @@ export async function readRecording(
 }
 
 /**
- * Board nodes and ADC samples since the run started, capped at ten minutes.
+ * Test only. Board nodes and ADC samples for a run opened with `adcTrace`.
  * A sample's `ms` is the step it completed in. Its reference is the board
  * node stamped at `ms - 1`, except a CPU that booted in that same quantum.
+ * Without the option the worker answers "ADC trace is off".
  */
 export async function readAdcTrace(
   project: string,

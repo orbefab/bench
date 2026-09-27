@@ -126,16 +126,22 @@ async function runWorld(
     state: null,
     failed: null,
   };
-  const attached = await attachWorld(project, world, {
-    sender: { kind: "loopback", label: "Mac" },
-    onEvent(event) {
-      if (event.type === "error") {
-        seen.failed =
-          event.message ?? event.errors.map((item) => item.message).join("; ");
-      }
-      if (event.type === "state") seen.state = event.state;
+  const attached = await attachWorld(
+    project,
+    world,
+    {
+      sender: { kind: "loopback", label: "Mac" },
+      onEvent(event) {
+        if (event.type === "error") {
+          seen.failed =
+            event.message ??
+            event.errors.map((item) => item.message).join("; ");
+        }
+        if (event.type === "state") seen.state = event.state;
+      },
     },
-  });
+    { adcTrace: true }
+  );
   if ("error" in attached) throw new Error(attached.error);
   try {
     attached.step(ms);
@@ -242,7 +248,51 @@ function writeUno(dir: string): void {
 const limpCount = adcCount(BANDGAP_V, LIMP_V);
 const limpMv = sketchMv(limpCount);
 
+/** A run that never asked for the trace. */
+async function assertTraceOff(project: string, world: string): Promise<void> {
+  const seen: { state: WorldState | null; failed: string | null } = {
+    state: null,
+    failed: null,
+  };
+  const attached = await attachWorld(project, world, {
+    sender: { kind: "loopback", label: "Mac" },
+    onEvent(event) {
+      if (event.type === "error") {
+        seen.failed =
+          event.message ?? event.errors.map((item) => item.message).join("; ");
+      }
+      if (event.type === "state") seen.state = event.state;
+    },
+  });
+  if ("error" in attached) throw new Error(attached.error);
+  try {
+    attached.step(50);
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      if (seen.failed) throw new Error(seen.failed);
+      if ((seen.state?.simTime ?? -1) >= 0.05 - 1e-3) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(
+      (seen.state?.simTime ?? -1) >= 0.05 - 1e-3,
+      "trace-off run did not start"
+    );
+    const trace = await readAdcTrace(project, world);
+    expect(
+      "error" in trace && trace.error === "ADC trace is off",
+      `adc query without the option: ${"error" in trace ? trace.error : "a trace"}`
+    );
+    console.log("ADC trace off: query errors");
+  } finally {
+    attached.detach();
+    await stopWorld(project, world);
+    closeRootWatches();
+  }
+}
+
 {
+  await assertTraceOff(nanoDir, "nano-vcc-usb.world.json");
+
   const first = await runWorld(nanoDir, "nano-vcc-usb.world.json", 3000);
   const second = await runWorld(nanoDir, "nano-vcc-usb.world.json", 3000);
   expect(
