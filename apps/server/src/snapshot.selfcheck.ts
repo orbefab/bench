@@ -21,7 +21,7 @@ import type {
   WorldState,
 } from "@sfab-bench/contract";
 
-import { captureNanoUsb, compareMg90sFreeRun } from "./capture";
+import { captureCatalog, compareLoadFreeRun } from "./capture";
 import { closeRootWatches } from "./projects";
 import { boardStampOf } from "./world/circuit-stamp";
 import { attachWorld, stopWorld } from "./world/host";
@@ -73,7 +73,7 @@ function mustFail(snap: SnapshotFile, needle: string, label: string): void {
 }
 
 const before = readFileSync(snapFile(), "utf8");
-const stats = await captureNanoUsb();
+const stats = await captureCatalog();
 const after = readFileSync(snapFile(), "utf8");
 expect(before === after, "capture did not reproduce the committed snapshot");
 console.log("capture reproducible: byte-identical");
@@ -175,7 +175,7 @@ for (const row of stats.cases) {
   );
 }
 
-const mg90s = await compareMg90sFreeRun();
+const mg90s = await compareLoadFreeRun();
 for (const row of mg90s) {
   expect(row.maxAbsMv <= 50, `mg90s ${row.name} max-abs ${row.maxAbsMv} mV`);
   expect(row.rmsMv <= 10, `mg90s ${row.name} rms ${row.rmsMv} mV`);

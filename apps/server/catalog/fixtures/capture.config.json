@@ -4,36 +4,79 @@
     "name": "sfab-bench-capture",
     "version": "1"
   },
-  "part": "sfab/nano-ch340@1.0.0",
-  "variant": "circuits",
-  "instance": "nano",
-  "feedPort": "VBUS",
-  "loadPort": "5V",
-  "rSeries": 0.5,
-  "sweep": {
-    "fixture": "sfab/nano-usb-5v"
-  },
-  "cases": {
-    "hold": {
-      "firmware": "firmware/hold/hold.hex",
-      "source": "firmware/hold/hold.ino",
-      "flag": "sfab/flag@1.0.0",
-      "ms": 1200,
-      "servo": "sfab/sg90@1.0.0"
-    },
-    "move": {
-      "firmware": "firmware/vcc/vcc.hex",
-      "source": "firmware/vcc/vcc.ino",
-      "flag": "sfab/flag@1.0.0",
-      "ms": 2500,
-      "servo": "sfab/sg90@1.0.0"
-    },
-    "stall": {
-      "firmware": "firmware/stall/stall.hex",
-      "source": "firmware/stall/stall.ino",
-      "flag": "sfab/flag-stop@1.0.0",
-      "ms": 1000,
-      "servo": "sfab/sg90@1.0.0"
+  "entries": [
+    {
+      "id": "sfab/nano-usb-5v@1.0.0",
+      "part": "sfab/nano-ch340@1.0.0",
+      "variant": "circuits",
+      "instance": "nano",
+      "across": ["5V", "GND"],
+      "through": "5V",
+      "iSense": -1,
+      "supply": { "port": "supply", "ref": 5, "affine": 1 },
+      "fitV": 0.002,
+      "baseline": { "level": "2", "value": 0 },
+      "heldOut": "use-like",
+      "sweep": {
+        "fixture": "sfab/nano-usb-5v",
+        "supplyPort": "supply",
+        "supplyQuantity": "Voltage",
+        "currentPort": "5V",
+        "currentQuantity": "Current"
+      },
+      "envelope": { "supplyVoltage": [4.75, 5.25], "marginA": 0.01 },
+      "feed": {
+        "part": "sfab/usb-port-500ma@1.0.0",
+        "port": "VBUS",
+        "rSeries": 0.5,
+        "citationTitle": "usb-a-port current limit"
+      },
+      "freeRun": {
+        "project": "nano",
+        "board": "nano",
+        "currentPart": "servo",
+        "boardPart": "sfab/nano-ch340@1.0.0",
+        "supplyInstance": "usb",
+        "supplyPart": "sfab/usb-port-500ma@1.0.0",
+        "flagInstance": "flag",
+        "class2Type": "arduino-nano",
+        "comparePart": "sfab/mg90s@1.0.0",
+        "compareSkip": ["move"],
+        "stallFrom": "arm",
+        "stallDir": "firmware/stall",
+        "wires": [
+          ["usb.5V", "nano.5V"],
+          ["usb.GND", "nano.GND"],
+          ["nano.D9", "servo.signal"],
+          ["nano.5V", "servo.V+"],
+          ["nano.GND", "servo.GND"],
+          ["servo.shaft", "flag.hinge"],
+          ["servo.mount", "flag.base"]
+        ]
+      },
+      "cases": {
+        "hold": {
+          "firmware": "firmware/hold/hold.hex",
+          "source": "firmware/hold/hold.ino",
+          "flag": "sfab/flag@1.0.0",
+          "ms": 1200,
+          "load": "sfab/sg90@1.0.0"
+        },
+        "move": {
+          "firmware": "firmware/vcc/vcc.hex",
+          "source": "firmware/vcc/vcc.ino",
+          "flag": "sfab/flag@1.0.0",
+          "ms": 2500,
+          "load": "sfab/sg90@1.0.0"
+        },
+        "stall": {
+          "firmware": "firmware/stall/stall.hex",
+          "source": "firmware/stall/stall.ino",
+          "flag": "sfab/flag-stop@1.0.0",
+          "ms": 1000,
+          "load": "sfab/sg90@1.0.0"
+        }
+      }
     }
-  }
+  ]
 }

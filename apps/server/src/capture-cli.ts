@@ -1,8 +1,8 @@
 /** Ported from layered-sim E4 (fd10742). `pnpm --filter @sfab-bench/server capture`. */
-import { captureNanoUsb } from "./capture";
+import { captureCatalog } from "./capture";
 
 const fixture = process.argv[2];
-const stats = await captureNanoUsb(fixture);
+const stats = await captureCatalog(fixture);
 process.stdout.write(
   `capture knots=${stats.knots} static=${stats.staticMaxAbsMv.toFixed(3)} mV line=${stats.lineMaxAbsMv.toFixed(3)} mV trip=${stats.tripA} A envelope<=${stats.envelopeMaxA} A\n`
 );

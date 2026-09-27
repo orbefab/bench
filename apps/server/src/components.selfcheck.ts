@@ -20,7 +20,7 @@ import {
   type WorldState,
 } from "@sfab-bench/contract";
 
-import { type CaptureConfig, captureFromConfig } from "./capture";
+import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { LED_RED } from "./world/circuit/circuits";
 import { Diode, Resistor, VSource } from "./world/circuit/elements";
@@ -358,9 +358,11 @@ async function runLed(
     writeFileSync(join(dir, "nano-1n4148@1.0.0.json"), JSON.stringify(part));
     const config = JSON.parse(
       readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
-    ) as CaptureConfig;
-    config.part = id;
-    config.cases = {};
+    ) as CaptureFile;
+    const entry = config.entries[0];
+    if (!entry) throw new Error("capture config has no entries");
+    entry.part = id;
+    entry.cases = {};
     const out = join(root, "snap.json");
     await captureFromConfig({
       config,

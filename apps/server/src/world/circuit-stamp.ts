@@ -546,13 +546,13 @@ function childIds(part: PartFile): string[] {
 }
 
 /**
- * The class whose `variant` is a firmware board, and that slot's key.
- * Throws when the variant is missing or is not a board netlist.
+ * The class whose `variant` is a firmware board or a circuit composite.
+ * Throws when the variant is missing or is neither.
  */
-function firmwareClass(
+function variantSlot(
   part: PartFile,
   variant: string
-): (typeof CLASS_KEYS)[number] {
+): { key: (typeof CLASS_KEYS)[number]; kind: "firmware" | "composite" } {
   const behaviour = part.axes?.behaviour;
   if (!behaviour) throw new Error(`${part.id} has no behaviour`);
   let saw = false;
@@ -560,10 +560,12 @@ function firmwareClass(
     const impl = behaviour[key]?.variants[variant];
     if (!impl) continue;
     saw = true;
-    if (impl.kind === "firmware" && impl.board) return key;
+    if (impl.kind === "firmware" && impl.board)
+      return { key, kind: "firmware" };
+    if (impl.kind === "composite") return { key, kind: "composite" };
   }
   if (!saw) throw new Error(`${part.id} has no variant ${variant}`);
-  throw new Error(`${part.id} variant ${variant} is not a firmware board`);
+  throw new Error(`${part.id} variant ${variant} is not a circuit assembly`);
 }
 
 function circuitInstOf(inst: {
@@ -602,10 +604,32 @@ function circuitInstOf(inst: {
  * catalog), with template expansion and `buildNets`. `boardId` is the
  * instance path, so a world that names the board `nano` matches.
  */
+/** Firmware board. A composite variant is `assemblyStampOf`. */
 export function boardStampOf(
   partId: string,
   variant: string,
   opts: BoardStampOptions = {}
+): BoardStamp {
+  return stampOf(partId, variant, opts, true);
+}
+
+/**
+ * Circuit leaves of a firmware board or a composite, one loader.
+ * A composite leaf that is not a circuit part throws, naming the path.
+ */
+export function assemblyStampOf(
+  partId: string,
+  variant: string,
+  opts: BoardStampOptions = {}
+): BoardStamp {
+  return stampOf(partId, variant, opts, false);
+}
+
+function stampOf(
+  partId: string,
+  variant: string,
+  opts: BoardStampOptions,
+  firmwareOnly: boolean
 ): BoardStamp {
   const catalogDir = opts.catalogDir ?? defaultCatalog();
   const worldDir = opts.worldDir ?? join(catalogDir, ".board-stamp-world");
@@ -634,10 +658,14 @@ export function boardStampOf(
   }
   const loaded = parts.get(partId);
   if (!loaded) throw new Error(`${partId} did not load`);
-  const classKey = firmwareClass(loaded.part, variant);
+  const slot = variantSlot(loaded.part, variant);
+  if (firmwareOnly && slot.kind !== "firmware") {
+    throw new Error(`${partId} variant ${variant} is not a firmware board`);
+  }
+  const classKey = slot.key;
   const part = structuredClone(loaded.part);
-  const slot = part.axes?.behaviour?.[classKey];
-  if (slot) slot.default = variant;
+  const chosen = part.axes?.behaviour?.[classKey];
+  if (chosen) chosen.default = variant;
   parts.set(partId, { ...loaded, part });
 
   const wrapper: PartFile = {
@@ -705,7 +733,11 @@ export function boardStampOf(
   const { instances } = resolveLevels(lib, compileRules(lib.world));
   const board = instances.find((inst) => inst.path === boardId);
   if (!board || !netlistOf(board)) {
-    throw new Error(`${partId} variant ${variant} is not a firmware board`);
+    throw new Error(
+      firmwareOnly
+        ? `${partId} variant ${variant} is not a firmware board`
+        : `${partId} variant ${variant} is not a circuit assembly`
+    );
   }
   const circuitParts: CircuitInst[] = [];
   for (const inst of instances) {
@@ -713,25 +745,44 @@ export function boardStampOf(
     if (row) circuitParts.push(row);
   }
   const built = buildNets(instances, undefined);
+  if (slot.kind === "composite") {
+    for (const inst of instances) {
+      if (inst.path === "$root" || inst.path === boardId) continue;
+      const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+      if (!behaviour || behaviour.kind === "composite") continue;
+      if (circuitParts.some((part) => part.path === inst.path)) continue;
+      throw new Error(`${partId}: ${inst.path} is not a circuit leaf`);
+    }
+  }
   const behaviour = board.axes.behaviour.impl as BehaviourImpl | null;
   const facts =
     behaviour?.kind === "firmware" ? chipFacts(behaviour.chip) : null;
-  if (!facts) throw new Error(`${partId} has no chip rail`);
-  const powerPort = railPowerPorts(board.type.ports, facts.railVoltage)[0];
-  if (!powerPort) throw new Error(`${partId} has no power port`);
   const ground = groundPorts(board.type.ports)[0];
   if (!ground) throw new Error(`${partId} has no ground port`);
+  let powerPort: string | undefined;
+  let resetFraction: number | null = null;
+  if (slot.kind === "firmware") {
+    if (!facts) throw new Error(`${partId} has no chip rail`);
+    powerPort = railPowerPorts(board.type.ports, facts.railVoltage)[0];
+    resetFraction = facts.resetFraction;
+  } else {
+    powerPort = Object.entries(board.type.ports)
+      .filter(([, decl]) => decl.role === "power")
+      .map(([name]) => name)
+      .sort()[0];
+  }
+  if (!powerPort) throw new Error(`${partId} has no power port`);
   const resetPort =
     behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
   const stamp = stampBoard({
     boardId,
-    netlist: true,
+    netlist: slot.kind === "firmware",
     ports: board.type.ports,
     supplyGround: `${boardId}.${ground}`,
     powerPort,
     resetPort,
     usbPort: connectorPort(board.type.ports, "usb"),
-    resetFraction: facts.resetFraction,
+    resetFraction,
     parts: circuitParts,
     nets: liveNets(built.nets),
   });
