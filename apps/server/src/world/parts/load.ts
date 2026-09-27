@@ -193,10 +193,11 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     diagnostics.push(...found.diagnostics);
     if (!found.loaded) continue;
     const foundFeed = feedOf(inst, resolved.instances, nets);
-    const feed = foundFeed?.feed ?? null;
-    const feedPortName = foundFeed?.port ?? powerPortName(inst);
-    const usb = feed !== null && connectorOf(feed) === "usb";
-    if (usb && feed) {
+    if (!foundFeed) continue;
+    const feed = foundFeed.feed;
+    const feedPortName = foundFeed.port;
+    const usb = connectorOf(feed) === "usb";
+    if (usb) {
       const port = portNumbers(feed);
       const bounds = sourceBoundsOf(found.loaded.file);
       const covered =
@@ -230,7 +231,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
           })
         );
       }
-    } else if (feed) {
+    } else {
       diagnostics.push(
         makeDiag({
           severity: "warning",
@@ -302,15 +303,6 @@ function behaviourSnapshot(inst: LiveInstance): string | null {
   const impl = inst.axes.behaviour.impl as BehaviourImpl | null;
   if (impl?.kind !== "firmware") return null;
   return snapshotRefOf(impl.boardCircuit ?? null);
-}
-
-function powerPortName(inst: LiveInstance): string {
-  for (const [name, decl] of Object.entries(inst.type.ports)) {
-    if (!decl.internal && decl.role === "power" && decl.direction === "in") {
-      return name;
-    }
-  }
-  return "5V";
 }
 
 function connectorOf(inst: LiveInstance): string | null {

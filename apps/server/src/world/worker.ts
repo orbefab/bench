@@ -1077,8 +1077,8 @@ function supplyConnectorOf(supplyId: string): string | null {
 
 /**
  * The fed board, when this supply powers a firmware board.
- * Two boards on one supply are allowed only when they name the same
- * power path, so either one carries that path. The plan rejects a mix.
+ * Two boards on one supply reach this only when neither has a stamp
+ * or a snapshot, so the first board is the same path as the rest.
  */
 function boardOn(supplyId: string): RunBoard | null {
   if (!runPlan) return null;

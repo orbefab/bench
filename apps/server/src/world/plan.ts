@@ -698,6 +698,11 @@ function build(
   const boxes: RunBox[] = [];
   const circuits: CircuitInst[] = [];
 
+  // An if-chain on the selected behaviour. A composite is a shell and
+  // is skipped. What runs: firmware; form resistor@1, capacitor@1 and
+  // diode@1; form multibody@1 with a urdf body; form thevenin-limit@1;
+  // form dc-motor@1 with a lumped joint; form ranger@1. Anything else
+  // is a plan error that names the path.
   for (const inst of loaded.resolved) {
     if (inst.path === "$root") continue;
     const behaviour = selectedBehaviour(inst);
@@ -782,7 +787,11 @@ function build(
         diags.push(cannot(inst, "the board has no power input"));
         continue;
       }
-      const groundName = groundPorts(inst.type.ports)[0] ?? "GND";
+      const groundName = groundPorts(inst.type.ports)[0];
+      if (!groundName) {
+        diags.push(cannot(inst, "the board has no ground port"));
+        continue;
+      }
       const rail = rangePair(inst.type.ports[powerName]?.ratings?.voltage) ?? [
         facts.railVoltage,
         facts.railVoltage,
@@ -974,31 +983,23 @@ function build(
     list.push(board);
     boardsOn.set(supplyId, list);
   }
-  for (const [supplyId, group] of boardsOn) {
-    if (group.length < 2) continue;
-    // Two Unos on one USB or bench rail already run as one path
-    // (pin.selfcheck, power.selfcheck, world-runtime). Different paths
-    // would make boardOn pick one and drop the other.
-    const keys = new Set(
-      group.map((board) => `${board.boardCircuit ?? ""}|${board.hasNetlist}`)
-    );
-    if (keys.size < 2) continue;
-    const names = group.map((board) => board.id).join(" and ");
-    diags.push({
-      severity: "error",
-      path: supplyId,
-      port: "nets",
-      quantity: "Part",
-      left: names,
-      right: "one power path",
-      message: `${names} share ${supplyId} with different power paths`,
-    });
-  }
   const stampParts = circuits.filter((part) => !crowded.has(part.path));
+  const alsoByBoard = new Map<string, CircuitInst[]>();
   for (const supply of supplies) {
-    if (boardsOn.has(supply.id)) continue;
-    const mine = loose.get(supply.id);
-    if (!mine || mine.length === 0) continue;
+    const group = boardsOn.get(supply.id) ?? [];
+    const mine = loose.get(supply.id) ?? [];
+    if (mine.length === 0) continue;
+    if (group.length === 1) {
+      const only = group[0];
+      if (only) alsoByBoard.set(only.id, mine);
+      continue;
+    }
+    // No board, or several boards with neither a netlist nor a snapshot.
+    // The supply stamp is the rail. A heavy pair is rejected below, and
+    // those parts stay unstamped so the check names them.
+    if (group.some((board) => board.hasNetlist || board.powerSnapshot)) {
+      continue;
+    }
     const stamp = stampSupply(supply, mine, nets);
     if (stamp) supply.stamp = stamp;
   }
@@ -1019,9 +1020,58 @@ function build(
       usbPort: connectorPort(inst.type.ports, "usb"),
       resetFraction: facts?.resetFraction ?? null,
       parts: stampParts,
+      also: alsoByBoard.get(board.id),
       nets,
     });
     if (stamp) board.stamp = stamp;
+  }
+  for (const [supplyId, group] of boardsOn) {
+    if (group.length < 2) continue;
+    // Two Unos on one USB or bench rail already run (pin.selfcheck,
+    // power.selfcheck, world-runtime). Neither has a stamp or a snapshot.
+    // A class-2 netlist or a class-1 snapshot is one law, so a second
+    // board would lose its circuit.
+    if (!group.some((board) => board.stamp || board.powerSnapshot)) continue;
+    const names = group
+      .map((board) => board.id)
+      .sort()
+      .join(" and ");
+    diags.push({
+      severity: "error",
+      path: supplyId,
+      port: "nets",
+      quantity: "Part",
+      left: names,
+      right: "one board",
+      message: `${names} share ${supplyId}; two boards on one supply is not in this run when one has a stamp or a snapshot`,
+    });
+  }
+  // realize prunes a dangling part later. It still counts as placed
+  // while its path is in exactly one stamp.
+  const placed = new Map<string, number>();
+  const note = (parts: { path: string }[] | undefined) => {
+    if (!parts) return;
+    for (const part of parts) {
+      placed.set(part.path, (placed.get(part.path) ?? 0) + 1);
+    }
+  };
+  for (const board of boards) note(board.stamp?.parts);
+  for (const supply of supplies) note(supply.stamp?.parts);
+  for (const part of stampParts) {
+    const count = placed.get(part.path) ?? 0;
+    if (count === 1) continue;
+    diags.push({
+      severity: "error",
+      path: part.path,
+      port: "nets",
+      quantity: "Part",
+      left: part.path,
+      right: "one stamp",
+      message:
+        count === 0
+          ? `${part.path} is not in a stamp`
+          : `${part.path} is in ${count} stamps`,
+    });
   }
 
   if (diags.length > 0) return { plan: null, diags };

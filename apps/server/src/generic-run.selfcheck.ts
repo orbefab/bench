@@ -46,6 +46,61 @@ function writeJson(file: string, value: unknown): void {
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function copyVcc(dir: string): void {
+  mkdirSync(join(dir, "firmware", "vcc"), { recursive: true });
+  cpSync(
+    join(nanoExample, "firmware", "vcc", "vcc.hex"),
+    join(dir, "firmware", "vcc", "vcc.hex")
+  );
+  cpSync(
+    join(nanoExample, "firmware", "vcc", "vcc.ino"),
+    join(dir, "firmware", "vcc", "vcc.ino")
+  );
+}
+
+function sceneWorld(
+  instances: Record<
+    string,
+    { part: string; params?: Record<string, string | number> }
+  >,
+  wires: [string, string][]
+): unknown {
+  return {
+    version: 2,
+    environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+    run: { seed: 1, levels: { default: 2 } },
+    root: {
+      id: "scene",
+      part: {
+        format: "sfab.part@1",
+        id: "sfab/scene@1.0.0",
+        type: "assembly",
+        axes: {
+          behaviour: {
+            "2": {
+              default: "netlist",
+              variants: {
+                netlist: {
+                  kind: "composite",
+                  omits: ["test scene"],
+                  netlist: { instances, wires, expose: {} },
+                },
+              },
+            },
+          },
+          body: noneAxis("none"),
+          visual: noneAxis("none"),
+        },
+      },
+    },
+  };
+}
+
+const nanoParams = {
+  firmware: "firmware/vcc/vcc.hex",
+  source: "firmware/vcc/vcc.ino",
+};
+
 function noneAxis(kind: "none"): {
   "0": {
     default: "none";
@@ -685,6 +740,82 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     const named = messages.find((item) => item.includes("r reaches no supply"));
     expect(named, messages.join("; "));
     console.log("open resistor: r reaches no supply");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-two-nano-"));
+  try {
+    copyVcc(dir);
+    writeJson(
+      join(dir, "pair.world.json"),
+      sceneWorld(
+        {
+          bench: { part: "sfab/bench-supply@1.0.0" },
+          left: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+          right: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+        },
+        [
+          ["bench.5V", "left.5V"],
+          ["bench.GND", "left.GND"],
+          ["bench.5V", "right.5V"],
+          ["bench.GND", "right.GND"],
+        ]
+      )
+    );
+    const planned = planWorld(dir, "pair.world.json");
+    expect(!planned.ok, "two class-2 boards planned");
+    const messages = planned.errors.map((item) => item.message);
+    const named = messages.find(
+      (item) =>
+        item.includes("left") &&
+        item.includes("right") &&
+        item.includes("bench")
+    );
+    expect(named, messages.join("; "));
+    console.log("two class-2 boards: left and right share bench");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-loose-"));
+  try {
+    copyVcc(dir);
+    writeJson(
+      join(dir, "loose.world.json"),
+      sceneWorld(
+        {
+          bench: { part: "sfab/bench-supply@1.0.0" },
+          nano: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+          r: { part: "sfab/resistor@1.0.0", params: { R: 1000 } },
+        },
+        [
+          ["bench.5V", "nano.5V"],
+          ["bench.GND", "r.A"],
+        ]
+      )
+    );
+    const planned = planWorld(dir, "loose.world.json");
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((item) => item.message).join("; "));
+    }
+    const stamp = planned.plan.boards.find(
+      (board) => board.id === "nano"
+    )?.stamp;
+    expect(stamp, "nano has no stamp");
+    expect(
+      stamp.parts.some((part) => part.path === "r"),
+      "r was not stamped on nano"
+    );
+    expect(
+      planned.plan.supplies.every((supply) => !supply.stamp),
+      "the loose part was stamped on the supply"
+    );
+    console.log("loose part: r is on nano");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

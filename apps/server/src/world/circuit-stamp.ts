@@ -201,6 +201,11 @@ export function stampBoard(input: {
   /** V_RST / VCC. Null when this stamp has no reset threshold. */
   resetFraction: number | null;
   parts: readonly CircuitInst[];
+  /**
+   * Parts on this supply that share no net with the board. They still
+   * belong to this rail. `realize` may prune one whose node is open.
+   */
+  also?: readonly CircuitInst[];
   nets: readonly NetPorts[];
 }): BoardStamp | null {
   const groundNet = netContaining(input.nets, input.supplyGround);
@@ -216,9 +221,14 @@ export function stampBoard(input: {
     for (const port of net.ports) nodeByFull.set(port.full, node);
   }
 
-  const mine = input.parts.filter((part) =>
+  const touched = input.parts.filter((part) =>
     touches(part, input.boardId, input.nets)
   );
+  const seen = new Set(touched.map((part) => part.path));
+  const mine = [
+    ...touched,
+    ...(input.also ?? []).filter((part) => !seen.has(part.path)),
+  ];
   if (mine.length === 0 && !input.netlist) return null;
 
   const assigned: AssignedPart[] = mine.map((part) => ({
