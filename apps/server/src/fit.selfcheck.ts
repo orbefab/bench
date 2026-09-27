@@ -1,15 +1,26 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import type { PartFile } from "@sfab-bench/contract";
 
 import { projectReal, readerFor } from "./world/files";
 import { compileWorld } from "./world/model";
-import { planWorld } from "./world/plan";
-import { type MotorLaw, servoElectrical } from "./world/power";
+import { catalogRoot, planWorld } from "./world/plan";
+import {
+  type MotorLaw,
+  noLoadSpeedRad,
+  servoElectrical,
+  stallCurrent,
+  stallTorque,
+} from "./world/power";
 
 /**
- * SG90 fit on the fixture arm, 1 ms steps, stiff rail (the supply
+ * Servo fits on the fixture arm, 1 ms steps, stiff rail (the supply
  * resistance is not in this file). Moving current is the mean supply
  * current over the saturated cruise of a 90° no-load step: |ω| within
- * 5% of that move's peak, drive saturated.
+ * 5% of that move's peak, drive saturated. The MG90S joint matches the
+ * SG90's, so both laws run on this compiled arm.
  */
 
 const armDir = fileURLToPath(
@@ -60,6 +71,8 @@ const qvel = data.qvel as Float64Array;
 const qfrc = data.qfrc_actuator as Float64Array;
 const applied = data.qfrc_applied as Float64Array;
 const upper = (model.jnt_range as Float64Array)[1] ?? 0;
+const actRange = model.actuator_forcerange as Float64Array;
+const jointRange = model.jnt_actfrcrange as Float64Array;
 const deg = (rad: number) => (rad * 180) / Math.PI;
 const rad = (degrees: number) => (degrees * Math.PI) / 180;
 const law: MotorLaw = motor;
@@ -86,6 +99,8 @@ function run(
   vRail: number,
   n: number,
   q0: number,
+  runLaw: MotorLaw,
+  runLimit: number,
   load = 0
 ): {
   angles: number[];
@@ -95,6 +110,12 @@ function run(
   /** Mean supply current while saturated and within 5% of peak speed. */
   cruise: number | null;
 } {
+  // The compiled arm clamps at the SG90 rating. The limit argument is
+  // this call's clamp, on the same joint.
+  actRange[0] = -runLimit;
+  actRange[1] = runLimit;
+  jointRange[0] = -runLimit;
+  jointRange[1] = runLimit;
   mj.mj_resetData(model, data);
   qpos[0] = q0;
   qvel[0] = 0;
@@ -108,12 +129,12 @@ function run(
     const q = qpos[0] ?? 0;
     const w = qvel[0] ?? 0;
     const elec = servoElectrical({
-      law,
+      law: runLaw,
       vRail,
       errorRad: command - q,
       omega: w,
       limp: false,
-      torqueLimit,
+      torqueLimit: runLimit,
     });
     samples.push({
       w,
@@ -186,29 +207,29 @@ function overshootDeg(angles: number[], command: number): number {
   return max;
 }
 
-const noLoad = run(140, 4.8, 500, rad(10));
+const noLoad = run(140, 4.8, 500, rad(10), law, torqueLimit);
 const speed = deg(noLoad.peak);
 expect(speed >= 500 && speed <= 600, `no-load speed ${speed.toFixed(1)} °/s`);
 
-const stall = run(180, 5, 80, upper);
+const stall = run(180, 5, 80, upper, law, torqueLimit);
 const iStall = Math.abs(stall.iMotor);
 expect(
   iStall >= 0.7 * 0.95 && iStall <= 0.7 * 1.05,
   `stall current ${iStall.toFixed(4)} A`
 );
 
-const stall48 = run(180, 4.8, 80, upper);
+const stall48 = run(180, 4.8, 80, upper, law, torqueLimit);
 const tau = Math.abs(stall48.torque);
 expect(
   tau >= 0.177 * 0.95 && tau <= 0.177 * 1.05,
   `stall torque ${tau.toFixed(4)} N·m`
 );
 
-const step5 = run(45, 5, 400, rad(40));
-const step10 = run(50, 5, 400, rad(40));
-const step20 = run(60, 5, 500, rad(40));
-const step45 = run(85, 5, 600, rad(40));
-const step90 = run(110, 5, 500, rad(20));
+const step5 = run(45, 5, 400, rad(40), law, torqueLimit);
+const step10 = run(50, 5, 400, rad(40), law, torqueLimit);
+const step20 = run(60, 5, 500, rad(40), law, torqueLimit);
+const step45 = run(85, 5, 600, rad(40), law, torqueLimit);
+const step90 = run(110, 5, 500, rad(20), law, torqueLimit);
 const r5 = rise1090(step5.angles, rad(40), rad(45));
 const r10 = rise1090(step10.angles, rad(40), rad(50));
 const t90 = timeTo90(step90.angles, rad(20), rad(110));
@@ -231,16 +252,17 @@ expect(
   `moving current ${iMove} A`
 );
 
-const held = run(60, 5, 400, rad(60));
+const held = run(60, 5, 400, rad(60), law, torqueLimit);
 const qHold = held.angles.at(-1) ?? rad(60);
 const sag44 = deg(
-  rad(60) - (run(60, 5, 500, qHold, -0.044).angles.at(-1) ?? qHold)
+  rad(60) -
+    (run(60, 5, 500, qHold, law, torqueLimit, -0.044).angles.at(-1) ?? qHold)
 );
 const sag88 = deg(
-  rad(60) - (run(60, 5, 500, qHold, -0.088).angles.at(-1) ?? qHold)
+  rad(60) -
+    (run(60, 5, 500, qHold, law, torqueLimit, -0.088).angles.at(-1) ?? qHold)
 );
 
-data.delete();
 console.log(
   `fit: E_sat ${motor.eSat} rad, frictionloss ${motor.frictionloss} N·m, damping ${motor.damping} N·m·s/rad, armature ${motor.armature} kg·m²`
 );
@@ -253,4 +275,131 @@ console.log(
 console.log(
   `holding: sag ${sag44.toFixed(2)}° under 0.044 N·m, ${sag88.toFixed(2)}° under 0.088 N·m`
 );
+
+/**
+ * MG90S. 4.8 V uses the SG90 tolerance: no-load 60° time in 0.10–0.12 s
+ * and stall torque within ±5%. 6.0 V no-load time, analytical, is within
+ * 1% of the page. Stall torque at 6.0 V is within 5% of the 4.8 V torque
+ * scaled by 6/4.8. The simulated 6.0 V no-load time uses the same 1.2×
+ * window (0.08–0.096 s), and the simulated stall torque is within ±5%
+ * of the unclamped 6.0 V law.
+ */
+const KGF_CM_NM = 0.0980665;
+const TORQUE_48 = 1.8 * KGF_CM_NM;
+const TORQUE_22 = 2.2 * KGF_CM_NM;
+const PAGE_SPEED_60 = Math.PI / 3 / 0.08;
+
+function num(value: unknown, label: string): number {
+  expect(typeof value === "number", label);
+  return value as number;
+}
+
+const mg90s = JSON.parse(
+  readFileSync(path.join(catalogRoot(), "parts/sfab/mg90s@1.0.0.json"), "utf8")
+) as PartFile;
+const datasheet = mg90s.axes?.behaviour?.["1"]?.variants.datasheet;
+const lumped = mg90s.axes?.body?.["1"]?.variants.lumped;
+expect(datasheet?.kind === "form", "mg90s law");
+expect(lumped?.kind === "lumped" && lumped.joint, "mg90s joint");
+if (datasheet?.kind !== "form" || lumped?.kind !== "lumped" || !lumped.joint) {
+  throw new Error("unreachable");
+}
+const mgJoint = lumped.joint;
+expect(
+  mgJoint.armature === motor.armature &&
+    mgJoint.frictionloss === motor.frictionloss &&
+    mgJoint.damping === motor.damping,
+  "MG90S joint differs from the arm; compile that world instead"
+);
+const mgLaw: MotorLaw = {
+  k: num(datasheet.params.K, "K"),
+  resistance: num(datasheet.params.R, "R"),
+  efficiency: num(datasheet.params.efficiency, "efficiency"),
+  eSat: num(datasheet.params.eSat, "eSat"),
+  quiescent: num(datasheet.params.quiescent, "quiescent"),
+};
+const mgLimit = num(mg90s.ratings?.shaft?.torque?.[1], "shaft torque");
+
+const t60 = (omega: number) => Math.PI / 3 / omega;
+const noLoad48 = run(140, 4.8, 500, rad(10), mgLaw, mgLimit);
+const noLoad6 = run(140, 6, 500, rad(10), mgLaw, mgLimit);
+const mgStall48 = run(180, 4.8, 80, upper, mgLaw, mgLimit);
+const mgStall6 = run(180, 6, 80, upper, mgLaw, mgLimit);
+const moving = run(110, 4.8, 500, rad(20), mgLaw, mgLimit);
+
+const time48 = t60(noLoad48.peak);
+const time6 = t60(noLoad6.peak);
+const tau48 = Math.abs(mgStall48.torque);
+const tau6 = Math.abs(mgStall6.torque);
+const i48 = Math.abs(mgStall48.iMotor);
+const i6 = Math.abs(mgStall6.iMotor);
+const law48 = stallTorque(4.8, mgLaw);
+const law6 = stallTorque(6, mgLaw);
+const law66 = stallTorque(6.6, mgLaw);
+const speed6 = noLoadSpeedRad(6, mgLaw.k);
+const timeMiss = ((t60(speed6) - 0.08) / 0.08) * 100;
+const sellerMiss = ((law6 - TORQUE_22) / TORQUE_22) * 100;
+const pageMiss = ((law66 - TORQUE_22) / TORQUE_22) * 100;
+const sign = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+
+console.log(
+  `mg90s 6 V: no-load ${t60(speed6).toFixed(4)} s vs page 0.0800 s (${sign(timeMiss)}); ` +
+    `stall torque ${law6.toFixed(4)} N·m, ${sign(sellerMiss)} from a seller 2.2 kgf·cm at 6 V; ` +
+    `at 6.6 V the law is ${law66.toFixed(4)} N·m, ${sign(pageMiss)} from the page's 2.2 kgf·cm`
+);
+console.log(
+  `mg90s stall current: 4.8 V ${(i48 * 1000).toFixed(0)} mA, 6 V ${(i6 * 1000).toFixed(0)} mA`
+);
+console.log(
+  `mg90s moving current: ${moving.cruise === null ? "none" : `${(moving.cruise * 1000).toFixed(0)} mA`}`
+);
+
+expect(
+  time48 >= 0.1 && time48 <= 0.12,
+  `4.8 V no-load 60° ${time48.toFixed(4)} s`
+);
+expect(
+  tau48 >= TORQUE_48 * 0.95 && tau48 <= TORQUE_48 * 1.05,
+  `4.8 V stall torque ${tau48.toFixed(4)} N·m`
+);
+expect(
+  Math.abs(speed6 - PAGE_SPEED_60) / PAGE_SPEED_60 <= 0.01,
+  `6 V analytical speed ${speed6.toFixed(3)} rad/s`
+);
+expect(
+  Math.abs(law6 - law48 * (6 / 4.8)) / law6 <= 0.001,
+  "6 V torque is not proportional to 4.8 V"
+);
+expect(
+  Math.abs(law6 - TORQUE_48 * (6 / 4.8)) / (TORQUE_48 * (6 / 4.8)) <= 0.05,
+  `6 V law torque ${law6.toFixed(4)} N·m`
+);
+expect(
+  time6 >= 0.08 && time6 <= 0.096,
+  `6 V no-load 60° ${time6.toFixed(4)} s`
+);
+expect(
+  tau6 >= law6 * 0.95 && tau6 <= law6 * 1.05,
+  `6 V stall torque ${tau6.toFixed(4)} N·m`
+);
+expect(
+  Math.abs(i48 - stallCurrent(4.8, mgLaw.resistance)) < 0.02,
+  `4.8 V stall current ${i48.toFixed(4)} A`
+);
+expect(
+  Math.abs(i6 - stallCurrent(6, mgLaw.resistance)) < 0.02,
+  `6 V stall current ${i6.toFixed(4)} A`
+);
+expect(
+  moving.cruise !== null && moving.cruise > 0.02 && moving.cruise < i48,
+  `moving current ${moving.cruise} A`
+);
+
+console.log(
+  `mg90s fit: 4.8 V no-load ${time48.toFixed(3)} s/60°, stall ${tau48.toFixed(4)} N·m; ` +
+    `6 V no-load ${time6.toFixed(3)} s/60°, stall ${tau6.toFixed(4)} N·m ` +
+    `(rating clamp; unclamped law ${law6.toFixed(4)} N·m)`
+);
+
+data.delete();
 console.log("fit.selfcheck ok");
