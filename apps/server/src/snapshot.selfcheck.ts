@@ -353,7 +353,13 @@ function writeWorld(
       {
         version: 2,
         environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
-        run: { seed: 1, levels },
+        run: {
+          seed: 1,
+          levels: {
+            ...levels,
+            types: { "hobby-servo-3wire": { behaviour: 1 } },
+          },
+        },
         root: { id: "scene", part: "sfab/nano-vcc-scene@1.0.0" },
       },
       null,
@@ -393,7 +399,7 @@ function writeBench(dir: string): void {
     `{
   "version": 2,
   "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },
-  "run": { "seed": 1, "levels": { "default": 1 } },
+  "run": { "seed": 1, "levels": { "default": 1, "paths": { "nano": { "behaviour": 1 } } } },
   "root": { "id": "scene", "part": "sfab/bench-scene@1.0.0" }
 }
 `
@@ -431,7 +437,7 @@ function writeMismatch(dir: string): void {
     `{
   "version": 2,
   "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },
-  "run": { "seed": 1, "levels": { "default": 1 } },
+  "run": { "seed": 1, "levels": { "default": 1, "paths": { "nano": { "behaviour": 1 } } } },
   "root": { "id": "scene", "part": "sfab/mismatch-scene@1.0.0" }
 }
 `
@@ -536,11 +542,11 @@ async function envelopeRun(dir: string): Promise<{
   );
   writeFileSync(
     join(dir, "over-1.world.json"),
-    `{"version":2,"environment":{"ground":{"plane":true},"gravity":[0,0,-9.81]},"run":{"seed":1,"levels":{"default":1}},"root":{"id":"scene","part":"sfab/over-scene@1.0.0"}}`
+    `{"version":2,"environment":{"ground":{"plane":true},"gravity":[0,0,-9.81]},"run":{"seed":1,"levels":{"default":1,"types":{"hobby-servo-3wire":{"behaviour":1}},"paths":{"nano":{"behaviour":1}}}},"root":{"id":"scene","part":"sfab/over-scene@1.0.0"}}`
   );
   writeFileSync(
     join(dir, "over-2.world.json"),
-    `{"version":2,"environment":{"ground":{"plane":true},"gravity":[0,0,-9.81]},"run":{"seed":1,"levels":{"default":1,"paths":{"nano":{"behaviour":2}}}},"root":{"id":"scene","part":"sfab/over-scene@1.0.0"}}`
+    `{"version":2,"environment":{"ground":{"plane":true},"gravity":[0,0,-9.81]},"run":{"seed":1,"levels":{"default":1,"types":{"hobby-servo-3wire":{"behaviour":1}},"paths":{"nano":{"behaviour":2}}}},"root":{"id":"scene","part":"sfab/over-scene@1.0.0"}}`
   );
   const low = await runStall(dir, "over-1.world.json");
   const high = await runStall(dir, "over-2.world.json");

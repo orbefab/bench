@@ -98,7 +98,7 @@
       "seed": 20260927
     },
     "from": {
-      "hash": "dd5f1c7818a084adad572183b6077053f6e21bd265d39ebffedbcd945714cc87",
+      "hash": "c9d48041156ee9329a03d102376bcf4aea67b4b82d621890078c2394316a9354",
       "level": "2",
       "part": "sfab/nano-power-input@1.0.0"
     },

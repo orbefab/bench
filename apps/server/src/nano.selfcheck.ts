@@ -390,8 +390,10 @@ function writeVariant(
   const levels =
     behaviour === 2
       ? `"default": 1,
-      "types": { "arduino-nano": { "behaviour": 2 } }`
-      : `"default": 1`;
+      "types": { "arduino-nano": { "behaviour": 2 }, "hobby-servo-3wire": { "behaviour": 1 } }`
+      : `"default": 1,
+      "types": { "hobby-servo-3wire": { "behaviour": 1 } },
+      "paths": { "nano": { "behaviour": 1 } }`;
   writeFileSync(
     join(dir, "parts", "sfab", `${name}-scene@1.0.0.json`),
     `{

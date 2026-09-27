@@ -63,7 +63,6 @@ export type FreeRunSpec = {
   supplyInstance: string;
   supplyPart: string;
   flagInstance: string;
-  class2Type: string;
   comparePart?: string;
   compareSkip?: string[];
   stallFrom?: string;
@@ -192,15 +191,17 @@ async function captureEntry(
   opts: CaptureRun
 ): Promise<CaptureStats> {
   const across = acrossOf(config, catalog, opts.libraryDir);
-  const stamp = (config.feed ? boardStampOf : assemblyStampOf)(
-    config.part,
-    config.variant,
-    {
-      catalogDir: catalog,
-      boardId: config.instance,
-      ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),
-    }
-  );
+  const stampOpts = {
+    catalogDir: catalog,
+    boardId: config.instance,
+    ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),
+  };
+  const stamp = config.feed
+    ? boardStampOf(config.part, config.variant, stampOpts)
+    : assemblyStampOf(config.part, config.variant, {
+        ...stampOpts,
+        across,
+      });
   const feedPort = config.feed?.port;
   const onConnector = Boolean(
     feedPort &&
@@ -942,10 +943,7 @@ function writeScene(
   behaviour: 1 | 2,
   scene: FreeRunSpec
 ): void {
-  const levels =
-    behaviour === 2
-      ? `"default": 1, "types": { "${scene.class2Type}": { "behaviour": 2 } }`
-      : `"default": 1`;
+  const levels = `"default": 1, "paths": { "${scene.board}": { "behaviour": ${behaviour} }, "${scene.currentPart}": { "behaviour": 1 } }`;
   const wires = scene.wires
     .map((pair) => JSON.stringify(pair))
     .join(",\n                ");

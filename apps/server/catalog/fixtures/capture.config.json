@@ -39,7 +39,6 @@
         "supplyInstance": "usb",
         "supplyPart": "sfab/usb-port-500ma@1.0.0",
         "flagInstance": "flag",
-        "class2Type": "arduino-nano",
         "comparePart": "sfab/mg90s@1.0.0",
         "compareSkip": ["move"],
         "stallFrom": "arm",

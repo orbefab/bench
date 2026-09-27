@@ -208,11 +208,19 @@ broken(
 );
 
 const fleet = load("fleet").report;
-const reasons = { default: 0, type: 0, path: 0, fallback: 0, none: 0 };
+const reasons = {
+  default: 0,
+  type: 0,
+  path: 0,
+  parent: 0,
+  fallback: 0,
+  none: 0,
+};
 for (const level of fleet?.levels ?? []) {
   if (level.reason === "default") reasons.default += 1;
   else if (level.reason.startsWith("type rule")) reasons.type += 1;
   else if (level.reason.startsWith("path rule")) reasons.path += 1;
+  else if (level.reason.startsWith("parent class")) reasons.parent += 1;
   else if (level.reason.startsWith("fallback")) reasons.fallback += 1;
   else reasons.none += 1;
 }
@@ -232,10 +240,11 @@ const rootBeh = fleet?.levels.find(
   (level) => level.path === "$root" && level.axis === "behaviour"
 );
 line(
-  reasons.default === 10 &&
+  reasons.default === 4 &&
     reasons.type === 2 &&
     reasons.path === 2 &&
-    reasons.fallback === 22 &&
+    reasons.parent === 3 &&
+    reasons.fallback === 25 &&
     reasons.none === 12 &&
     rig1?.class === 0 &&
     rig1.reason === "type rule hobby-servo-3wire" &&
@@ -252,7 +261,7 @@ line(
       false &&
     fleet?.foreign.some((part) => part.path === "fleet.rig2.servo.control") ===
       true,
-  `fleet resolver (default=${reasons.default}, type=${reasons.type}, path=${reasons.path}, fallback=${reasons.fallback}, no-level=${reasons.none})`
+  `fleet resolver (default=${reasons.default}, type=${reasons.type}, path=${reasons.path}, parent=${reasons.parent}, fallback=${reasons.fallback}, no-level=${reasons.none})`
 );
 
 const lockDir = mkdtempSync(path.join(tmpdir(), "sfab-lock-"));

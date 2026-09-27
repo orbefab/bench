@@ -9,7 +9,7 @@
   "ports": {
     "IN": {
       "domain": "electrical",
-      "role": "power",
+      "role": "logic",
       "direction": "in"
     },
     "GND": {

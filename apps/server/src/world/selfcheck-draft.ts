@@ -527,7 +527,13 @@ export function writeDraft(
       {
         version: 2,
         environment,
-        run: { seed: 1, levels: { default: 1 } },
+        run: {
+          seed: 1,
+          levels: {
+            default: 1,
+            types: { "hobby-servo-3wire": { behaviour: 1 } },
+          },
+        },
         root: { id: "scene", part: partId },
       },
       null,

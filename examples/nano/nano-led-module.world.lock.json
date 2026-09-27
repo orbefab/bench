@@ -107,7 +107,7 @@
     {
       "id": "led-module",
       "path": "../../apps/server/catalog/types/led-module.json",
-      "sha256": "bd7203cf0cc1a0789cfd949e405a175ba69a76c62c2b848a834fe5bb13d67c74",
+      "sha256": "cb9e3910c0cce0b7a5aea96baf184aa66c3d98a1cc7aec223c44a943008f121c",
       "source": "catalog"
     },
     {

@@ -6,7 +6,7 @@ export type LevelAxisLine = {
   axis: AxisName;
   /** `behaviour 1 · avr8js` */
   line: string;
-  /** `path rule nano`, `type rule arduino-nano`, `default`, or `fallback from 2`. */
+  /** `path rule nano`, `type rule arduino-nano`, `parent class 2`, `default`, or `fallback from 2`. */
   reason: string;
 };
 

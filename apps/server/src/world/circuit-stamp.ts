@@ -507,6 +507,11 @@ export type BoardStampOptions = {
    * Default `board`.
    */
   boardId?: string;
+  /**
+   * Composite port pair. The first port is the anchored node. A firmware
+   * board ignores this and uses its declared power port.
+   */
+  across?: readonly [string, string];
 };
 
 const CLASS_KEYS = ["0", "1", "2", "3"] as const;
@@ -766,13 +771,19 @@ function stampOf(
     if (!facts) throw new Error(`${partId} has no chip rail`);
     powerPort = railPowerPorts(board.type.ports, facts.railVoltage)[0];
     resetFraction = facts.resetFraction;
+    if (!powerPort) throw new Error(`${partId} has no power port`);
   } else {
-    powerPort = Object.entries(board.type.ports)
-      .filter(([, decl]) => decl.role === "power")
-      .map(([name]) => name)
-      .sort()[0];
+    const across = opts.across;
+    if (!across) throw new Error(`${partId} has no across pair`);
+    for (const name of across) {
+      if (!board.type.ports[name]) {
+        throw new Error(
+          `${partId} across port ${name} is not on ${board.type.id}`
+        );
+      }
+    }
+    powerPort = across[0];
   }
-  if (!powerPort) throw new Error(`${partId} has no power port`);
   const resetPort =
     behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
   const stamp = stampBoard({

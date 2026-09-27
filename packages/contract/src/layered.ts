@@ -495,7 +495,7 @@ export type RunReport = {
     variant: string | null;
     impl: string;
     reason: string;
-    source: "default" | "type" | "path" | "fallback" | "board";
+    source: "default" | "type" | "path" | "fallback" | "parent";
   }[];
   nets: {
     id: string;

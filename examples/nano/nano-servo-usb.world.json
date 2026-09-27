@@ -13,6 +13,9 @@
       "types": {
         "arduino-nano": {
           "behaviour": 2
+        },
+        "hobby-servo-3wire": {
+          "behaviour": 1
         }
       }
     }

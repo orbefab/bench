@@ -10,6 +10,9 @@
       "default": 1,
       "types": {
         "arduino-nano": { "behaviour": 2 }
+      },
+      "paths": {
+        "module": { "behaviour": 1 }
       }
     }
   },

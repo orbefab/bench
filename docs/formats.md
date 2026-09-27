@@ -231,7 +231,7 @@ type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual",
 
 **Level resolution** (D-005, amended by D-023.3):
 1. Per axis, a path rule beats a type rule, which beats the default.
-2. A child of a firmware board, when that request is still the default, is requested at the board's behaviour class. The report source is `board`. Children of a composite stay on the world default.
+2. A nested instance, when that request is still the default, is requested at its parent's resolved behaviour class. The report source is `parent`. A root instance stays on the world default. A leaf that lacks the parent's class falls back, and the report says so.
 3. A missing class falls back to the nearest **cheaper** class.
 4. If there is none, it uses the nearest **deeper** class and reports "capture suggested".
 5. The class's default variant runs.
@@ -375,7 +375,7 @@ Sweeps over `Inertia` or `Torque` replace `mount.load` per run, and sweeps are c
 
 Each run's report contains:
 - a lock summary;
-- the level per instance per axis, with the reason (default / type / path / board class / fallback from X / capture suggested);
+- the level per instance per axis, with the reason (default / type / path / parent class / fallback from X / capture suggested);
 - the nets with their level and the reason;
 - the errors and warnings;
 - the quality of each snapshot used, and when one ran, its path, axis, and ref, its free-run or static error, envelope warnings (an empty list when the run stayed inside), and provenance for the card: `source`, `from` (`part` and `level` only), `fixture` (the ref), and `tool` (`name` and `version`). Hashes stay in the snapshot file.

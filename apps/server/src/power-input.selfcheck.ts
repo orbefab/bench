@@ -84,6 +84,7 @@ function nodeAt(fraction: number, connected: boolean): number {
   if (!table) throw new Error("power-input snapshot has no table");
   const stamp = assemblyStampOf("sfab/nano-power-input@1.0.0", "netlist", {
     boardId: "power",
+    across: table.across,
   });
   let knot = 0;
   for (let i = 0; i < table.iAxis.length; i++) {
@@ -114,6 +115,8 @@ type Ran = {
   serial: string;
   voltages: number[];
   leds: number[];
+  angles: number[];
+  resets: number;
   report: RunReport;
 };
 
@@ -143,7 +146,7 @@ async function runProject(
   if ("error" in attached) throw new Error(attached.error);
   try {
     attached.step(ms);
-    const deadline = Date.now() + 180_000;
+    const deadline = Date.now() + Math.max(180_000, ms * 40);
     while (Date.now() < deadline) {
       if (seen.failed) throw new Error(seen.failed);
       if ((seen.state?.simTime ?? -1) >= ms / 1000 - 1e-3) break;
@@ -162,6 +165,10 @@ async function runProject(
       leds: read.frames.map(
         (frame) => frame.boards.nano?.leds?.["nano.led"] ?? Number.NaN
       ),
+      angles: read.frames.map(
+        (frame) => frame.joints.gauge?.servo ?? Number.NaN
+      ),
+      resets: seen.state.boards.nano?.resets ?? 0,
       report: seen.report ?? failReport(world),
     };
   } finally {
@@ -272,8 +279,12 @@ function seriesDelta(a: number[], b: number[]): { max: number; rms: number } {
       join(dir, "gauge-usb.world.json"),
       join(dir, "gauge-mixed.world.json")
     );
-    const full = await runProject(dir, "gauge-usb.world.json", 1500);
-    const mixed = await runProject(dir, "gauge-mixed.world.json", 1500);
+    const started = Date.now();
+    const full = await runProject(dir, "gauge-usb.world.json", 7000);
+    const mixed = await runProject(dir, "gauge-mixed.world.json", 7000);
+    console.log(
+      `INFO mixed gauge: ${((Date.now() - started) / 1000).toFixed(1)} s wall`
+    );
     const measure = (text: string) =>
       text
         .split(/\r?\n/)
@@ -282,8 +293,30 @@ function seriesDelta(a: number[], b: number[]): { max: number; rms: number } {
     const a = measure(full.serial);
     const b = measure(mixed.serial);
     expect(a.length > 0 && a.join("\n") === b.join("\n"), "gauge lines differ");
+    const counts = vccCounts(full.serial);
+    const mixedCounts = vccCounts(mixed.serial);
+    expect(
+      counts.length > 0 && counts.length === mixedCounts.length,
+      "vcc lines"
+    );
+    let countDelta = 0;
+    for (let i = 0; i < counts.length; i++) {
+      countDelta = Math.max(
+        countDelta,
+        Math.abs((counts[i] ?? 0) - (mixedCounts[i] ?? 0))
+      );
+    }
+    expect(countDelta <= 1, `vcc ADC counts differ by ${countDelta}`);
+    const rail = seriesDelta(full.voltages, mixed.voltages);
+    const flag = seriesDelta(full.angles, mixed.angles);
+    const warned =
+      mixed.report.warnings.length > 0 ||
+      (mixed.report.snapshots.find((item) => item.path === "nano.power")
+        ?.envelope?.length ?? 0) > 0;
+    expect(!warned, "mixed gauge warned");
+    expect(full.resets === 0 && mixed.resets === 0, "gauge reset");
     console.log(
-      `power-input mixed gauge: ${a.length} us,d_cm,angle lines identical`
+      `power-input mixed gauge: ${a.length} us,d_cm,angle lines identical, vcc within ${countDelta} ADC count, 5V max-abs ${(rail.max * 1000).toFixed(3)} mV, rms ${(rail.rms * 1000).toFixed(3)} mV, flag max Δ ${((flag.max * 180) / Math.PI).toFixed(3)} deg, no warning, no resets`
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
