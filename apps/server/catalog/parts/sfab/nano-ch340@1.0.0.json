@@ -38,7 +38,7 @@
     },
     {
       "title": "Reset network",
-      "ref": "Nano Rev 3.2 schematic, NanoV3.2.sch: C4 is 100 nF from DTR to RESET, and the pull-up is RP1 at 1 kohm. This part uses 10 kohm, assumed. DTR idle high is the +5V node"
+      "ref": "Nano Rev 3.2 schematic, NanoV3.2.sch: C4 is 100 nF from DTR to RESET, and the pull-up is RP1 at 1 kohm. The clone is assumed to match. DTR idle high is the +5V node"
     }
   ],
   "axes": {

@@ -357,12 +357,12 @@ const NANO_DECOUPLE = ["cvcc", "cavcc"] as const;
 
 /**
  * RESET pull-up and the DTR capacitor. Nano Rev 3.2 (NanoV3.2.sch) has
- * C4, 100 nF, from DTR to RESET, and RP1 at 1 kΩ as the pull-up. This
- * path uses 10 kΩ, assumed. DTR idles high at the bridge VCC, modeled as
+ * C4, 100 nF, from DTR to RESET, and RP1 at 1 kΩ as the pull-up; the
+ * clone is assumed to match. DTR idles high at the bridge VCC, modeled as
  * the +5V node, so the capacitor sits from that node to RESET. Upload
  * auto-reset is not modelled.
  */
-export const NANO_RESET_R = 10e3;
+export const NANO_RESET_R = 1e3;
 export const NANO_RESET_C = 100e-9;
 /**
  * External reset threshold, fraction of VCC. DS40002061 V_RST maximum:
