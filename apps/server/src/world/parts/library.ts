@@ -257,7 +257,7 @@ function embeddedType(part: PartFile): LoadedType | Diagnostic | null {
   };
 }
 
-function compositeRefs(part: PartFile): string[] {
+function childRefs(part: PartFile): string[] {
   const refs: string[] = [];
   const behaviour = part.axes?.behaviour;
   if (!behaviour) return refs;
@@ -265,11 +265,14 @@ function compositeRefs(part: PartFile): string[] {
     const slot = behaviour[String(cls) as "0"];
     if (!slot) continue;
     for (const variant of Object.values(slot.variants)) {
-      if (variant.kind === "composite") {
-        for (const inst of Object.values(variant.netlist.instances)) {
-          refs.push(inst.part);
-        }
-      }
+      const netlist =
+        variant.kind === "composite"
+          ? variant.netlist
+          : variant.kind === "firmware"
+            ? variant.board
+            : null;
+      if (!netlist) continue;
+      for (const inst of Object.values(netlist.instances)) refs.push(inst.part);
     }
   }
   return refs;
@@ -377,7 +380,7 @@ export function loadLibrary(
         else types.set(found.type.id, found);
       }
     }
-    for (const ref of compositeRefs(loaded.part)) {
+    for (const ref of childRefs(loaded.part)) {
       if (!parts.has(ref)) queue.push({ id: ref, inline: null });
     }
   }
@@ -615,8 +618,14 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
     const slot = behaviour[String(cls) as "0"];
     if (!slot) continue;
     for (const variant of Object.values(slot.variants)) {
-      if (variant.kind !== "composite") continue;
-      const { instances, wires, expose } = variant.netlist;
+      const netlist =
+        variant.kind === "composite"
+          ? variant.netlist
+          : variant.kind === "firmware"
+            ? variant.board
+            : null;
+      if (!netlist) continue;
+      const { instances, wires, expose } = netlist;
       for (const [outer, inner] of Object.entries(expose)) {
         if (!parentType.ports[outer]) {
           diags.push(

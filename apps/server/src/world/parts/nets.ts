@@ -3,6 +3,7 @@
 import {
   type BehaviourImpl,
   DOMAIN_QUANTITIES,
+  type Netlist,
   type Ratings,
 } from "@sfab-bench/contract";
 
@@ -104,6 +105,15 @@ function behaviourOf(inst: LiveInstance): BehaviourImpl | null {
   return impl as BehaviourImpl;
 }
 
+/** Composite children, or a firmware variant's board netlist. */
+export function netlistOf(inst: LiveInstance): Netlist | null {
+  const behaviour = behaviourOf(inst);
+  if (!behaviour) return null;
+  if (behaviour.kind === "composite") return behaviour.netlist;
+  if (behaviour.kind === "firmware" && behaviour.board) return behaviour.board;
+  return null;
+}
+
 export function buildNets(
   instances: LiveInstance[],
   netRules: Record<string, "digital" | "analog"> | undefined
@@ -126,16 +136,16 @@ export function buildNets(
   };
 
   for (const inst of instances) {
-    const behaviour = behaviourOf(inst);
-    if (behaviour?.kind !== "composite") continue;
-    for (const [outer, inner] of Object.entries(behaviour.netlist.expose)) {
+    const netlist = netlistOf(inst);
+    if (!netlist) continue;
+    for (const [outer, inner] of Object.entries(netlist.expose)) {
       const outerFull = `${inst.path}.${outer}`;
       const innerEnd = locate(inst.path, inner);
       if (innerEnd && ports.has(outerFull) && ports.has(innerEnd.full)) {
         uf.union(outerFull, innerEnd.full);
       }
     }
-    for (const [a, b] of behaviour.netlist.wires) {
+    for (const [a, b] of netlist.wires) {
       const fa = locate(inst.path, a);
       const fb = locate(inst.path, b);
       if (!fa || !fb) continue;

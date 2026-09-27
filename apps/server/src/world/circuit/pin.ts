@@ -1,6 +1,6 @@
 // Ported from layered-sim E3 src/pin.ts @ fc7e8d3. Rail voltage is the rail node.
 import type { Element } from "./element";
-import { Switch } from "./elements";
+import { Resistor, Switch } from "./elements";
 import type { Waveform } from "./wave";
 
 /**
@@ -95,6 +95,8 @@ export class Pin {
   readonly high: Gate;
   readonly low: Gate;
   readonly pullup: Gate;
+  /** Input leakage to ground. Absent when this pin was built without `rLeak`. */
+  readonly leak: Resistor | null;
   mode: PinMode = "input";
 
   constructor(
@@ -103,11 +105,16 @@ export class Pin {
     readonly railNode: string,
     readonly roh = PIN_ROH,
     readonly rol = PIN_ROL,
-    readonly rpu = PIN_RPU
+    readonly rpu = PIN_RPU,
+    rLeak?: number
   ) {
     this.high = new Gate(`${id}.h`, railNode, pinNode, roh);
     this.low = new Gate(`${id}.l`, pinNode, "0", rol);
     this.pullup = new Gate(`${id}.pu`, railNode, pinNode, rpu);
+    this.leak =
+      rLeak !== undefined && rLeak > 0
+        ? new Resistor(`${id}.leak`, pinNode, "0", rLeak)
+        : null;
   }
 
   setMode(mode: PinMode): void {
@@ -119,7 +126,9 @@ export class Pin {
 
   /** Stamps this pin contributes. The pin does not own a solver. */
   elements(): Element[] {
-    return [this.high, this.low, this.pullup];
+    return this.leak
+      ? [this.high, this.low, this.pullup, this.leak]
+      : [this.high, this.low, this.pullup];
   }
 }
 

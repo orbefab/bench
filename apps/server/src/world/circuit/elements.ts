@@ -371,6 +371,8 @@ export class Diode implements Element {
   /** Junction conductance (plus gmin) stored in the factored Jacobian. */
   frozenG = 0;
   frozen = false;
+  /** Shockley current from the last accepted step, anode toward cathode. */
+  amps = 0;
   constructor(
     readonly id: string,
     readonly aName: string,
@@ -455,6 +457,7 @@ export class Diode implements Element {
   }
   commit(ctx: StampCtx): void {
     this.vLimit = this.junctionVoltage(ctx);
+    this.amps = this.shockley(ctx);
   }
   /**
    * False while limiting is still walking the junction up to the solved

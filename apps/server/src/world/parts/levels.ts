@@ -243,8 +243,14 @@ export function resolveLevels(
       declaredOnly: part.declaredOnly === true,
     });
     const behaviour = axes.behaviour.impl as BehaviourImpl | null;
-    if (behaviour?.kind === "composite") {
-      for (const [id, child] of Object.entries(behaviour.netlist.instances)) {
+    const netlist =
+      behaviour?.kind === "composite"
+        ? behaviour.netlist
+        : behaviour?.kind === "firmware"
+          ? (behaviour.board ?? null)
+          : null;
+    if (netlist) {
+      for (const [id, child] of Object.entries(netlist.instances)) {
         const childPart = lib.parts.get(child.part);
         if (!childPart) {
           throw new Error(
