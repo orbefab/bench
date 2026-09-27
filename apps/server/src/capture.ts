@@ -360,19 +360,26 @@ function round9(n: number): number {
   return Math.round(n * 1e9) / 1e9;
 }
 
-const CASES: {
+type FreeScene = {
   name: CaptureCase["name"];
   firmware: string;
   source: string;
   flag: string;
   ms: number;
-}[] = [
+  servo: string;
+};
+
+const SG90 = "sfab/sg90@1.0.0";
+const MG90S = "sfab/mg90s@1.0.0";
+
+const CASES: FreeScene[] = [
   {
     name: "hold",
     firmware: "firmware/hold/hold.hex",
     source: "firmware/hold/hold.ino",
     flag: "sfab/flag@1.0.0",
     ms: 1200,
+    servo: SG90,
   },
   {
     name: "move",
@@ -380,6 +387,7 @@ const CASES: {
     source: "firmware/vcc/vcc.ino",
     flag: "sfab/flag@1.0.0",
     ms: 2500,
+    servo: SG90,
   },
   {
     name: "stall",
@@ -387,11 +395,58 @@ const CASES: {
     source: "firmware/stall/stall.ino",
     flag: "sfab/flag-stop@1.0.0",
     ms: 1000,
+    servo: SG90,
   },
 ];
 
+/**
+ * Same scenes as `CASES`, with an MG90S on the Nano rail.
+ * Kept off `CASES` so the snapshot's free-run error rows stay the SG90 figures.
+ */
+const MG90S_FREE_RUN: FreeScene[] = [
+  {
+    name: "hold",
+    firmware: "firmware/hold/hold.hex",
+    source: "firmware/hold/hold.ino",
+    flag: "sfab/flag@1.0.0",
+    ms: 1200,
+    servo: MG90S,
+  },
+  {
+    name: "stall",
+    firmware: "firmware/stall/stall.hex",
+    source: "firmware/stall/stall.ino",
+    flag: "sfab/flag-stop@1.0.0",
+    ms: 1000,
+    servo: MG90S,
+  },
+];
+
+export type ServoFreeRun = CaptureCase & {
+  /** Last-frame Nano 5V node, volts. */
+  voltage1: number;
+  voltage2: number;
+  /** Last-frame servo supply current, amperes. */
+  current1: number;
+  current2: number;
+};
+
+/** Class 1 (snapshot) against class 2 for `MG90S_FREE_RUN`. Does not write the snapshot. */
+export async function compareMg90sFreeRun(): Promise<ServoFreeRun[]> {
+  const ran = await runScenes(MG90S_FREE_RUN);
+  return ran.cases;
+}
+
 async function freeRun(): Promise<{
   cases: CaptureCase[];
+  moveUsPerMs: { class1: number; class2: number };
+}> {
+  const ran = await runScenes(CASES);
+  return { cases: ran.cases, moveUsPerMs: ran.moveUsPerMs };
+}
+
+async function runScenes(specs: readonly FreeScene[]): Promise<{
+  cases: ServoFreeRun[];
   moveUsPerMs: { class1: number; class2: number };
 }> {
   const examples = fileURLToPath(
@@ -400,7 +455,7 @@ async function freeRun(): Promise<{
   const nanoDir = join(examples, "nano");
   const armStall = join(examples, "arm", "firmware", "stall");
   const root = mkdtempSync(join(tmpdir(), "sfab-capture-"));
-  const cases: CaptureCase[] = [];
+  const cases: ServoFreeRun[] = [];
   const moveUsPerMs = { class1: 0, class2: 0 };
   try {
     cpSync(nanoDir, root, { recursive: true });
@@ -414,7 +469,7 @@ async function freeRun(): Promise<{
       join(root, "firmware", "stall", "stall.ino")
     );
     writeStop(root);
-    for (const spec of CASES) {
+    for (const spec of specs) {
       writeScene(root, `${spec.name}-c1`, spec, 1);
       writeScene(root, `${spec.name}-c2`, spec, 2);
       const t1 = performance.now();
@@ -428,6 +483,8 @@ async function freeRun(): Promise<{
         moveUsPerMs.class2 = (wall2 * 1000) / spec.ms;
       }
       const err = voltageError(low.read, high.read);
+      const end1 = railEnd(low.read);
+      const end2 = railEnd(high.read);
       cases.push({
         name: spec.name,
         maxAbsMv: err.maxAbs * 1000,
@@ -436,6 +493,10 @@ async function freeRun(): Promise<{
         secondRmsMv: err.second * 1000,
         resets1: low.state.boards.nano?.resets ?? 0,
         resets2: high.state.boards.nano?.resets ?? 0,
+        voltage1: end1.voltage,
+        voltage2: end2.voltage,
+        current1: end1.current,
+        current2: end2.current,
       });
     }
   } finally {
@@ -473,6 +534,18 @@ function rms(values: number[]): number {
   let sum = 0;
   for (const value of values) sum += value * value;
   return Math.sqrt(sum / values.length);
+}
+
+function railEnd(read: RecordingRead): { voltage: number; current: number } {
+  const frame = read.frames[read.frames.length - 1];
+  const voltage = frame?.boards.nano?.voltage;
+  const current = frame?.parts.servo?.current;
+  if (voltage === undefined || current === undefined) {
+    throw new Error(
+      "recording is missing the Nano 5V node or the servo current"
+    );
+  }
+  return { voltage, current };
 }
 
 async function runWorld(
@@ -571,7 +644,7 @@ function writeStop(dir: string): void {
 function writeScene(
   dir: string,
   name: string,
-  spec: (typeof CASES)[number],
+  spec: FreeScene,
   behaviour: 1 | 2
 ): void {
   const levels =
@@ -598,7 +671,7 @@ function writeScene(
                 "flag": { "part": "${spec.flag}" },
                 "nano": { "part": "sfab/nano-ch340@1.0.0", "params": { "firmware": "${spec.firmware}", "source": "${spec.source}" } },
                 "usb": { "part": "sfab/usb-port-500ma@1.0.0" },
-                "servo": { "part": "sfab/sg90@1.0.0" }
+                "servo": { "part": "${spec.servo}" }
               },
               "wires": [
                 ["usb.5V", "nano.5V"],

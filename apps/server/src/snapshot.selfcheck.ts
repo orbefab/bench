@@ -21,7 +21,7 @@ import type {
   WorldState,
 } from "@sfab-bench/contract";
 
-import { captureNanoUsb } from "./capture";
+import { captureNanoUsb, compareMg90sFreeRun } from "./capture";
 import { closeRootWatches } from "./projects";
 import { attachWorld, stopWorld } from "./world/host";
 import { canonicalJson } from "./world/parts/si";
@@ -168,6 +168,27 @@ for (const row of stats.cases) {
   );
   console.log(
     `free-run ${row.name}: max-abs ${row.maxAbsMv.toFixed(3)} mV, rms ${row.rmsMv.toFixed(3)} mV, half ${row.firstRmsMv.toFixed(3)}/${row.secondRmsMv.toFixed(3)} mV, resets ${row.resets1}/${row.resets2}`
+  );
+}
+
+const mg90s = await compareMg90sFreeRun();
+for (const row of mg90s) {
+  expect(row.maxAbsMv <= 50, `mg90s ${row.name} max-abs ${row.maxAbsMv} mV`);
+  expect(row.rmsMv <= 10, `mg90s ${row.name} rms ${row.rmsMv} mV`);
+  expect(
+    row.resets1 === row.resets2,
+    `mg90s ${row.name} resets ${row.resets1}/${row.resets2}`
+  );
+  expect(
+    row.secondRmsMv <= 1.5 * row.firstRmsMv + 1e-9,
+    `mg90s ${row.name} rms grew ${row.firstRmsMv} -> ${row.secondRmsMv}`
+  );
+  const stalled =
+    row.name === "stall"
+      ? `, class 1 ${row.voltage1.toFixed(4)} V, class 2 ${row.voltage2.toFixed(4)} V, servo current class 1 ${row.current1.toFixed(4)} A, class 2 ${row.current2.toFixed(4)} A`
+      : "";
+  console.log(
+    `free-run mg90s ${row.name}: max-abs ${row.maxAbsMv.toFixed(3)} mV, rms ${row.rmsMv.toFixed(3)} mV, half ${row.firstRmsMv.toFixed(3)}/${row.secondRmsMv.toFixed(3)} mV, resets ${row.resets1}/${row.resets2}${stalled}`
   );
 }
 
