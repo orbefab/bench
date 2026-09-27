@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "environment": {
+    "ground": {
+      "plane": true
+    },
+    "gravity": [0, 0, -9.81],
+    "targets": [
+      {
+        "id": "card",
+        "shape": "box",
+        "size": [0.3, 0.005, 0.3],
+        "pose": {
+          "position": [0, 0.5601, 0.15],
+          "rotation": [1, 0, 0, 0]
+        },
+        "path": [
+          { "t": 0, "position": [0, 0.5601, 0.15] },
+          { "t": 0.999, "position": [0, 0.5601, 0.15] },
+          { "t": 1, "position": [0, 0.1601, 0.15] },
+          { "t": 2.499, "position": [0, 0.1601, 0.15] },
+          { "t": 2.5, "position": [0, 0.9601, 0.15] },
+          { "t": 3.999, "position": [0, 0.9601, 0.15] },
+          { "t": 4, "position": [0, 0.3601, 0.15] },
+          { "t": 5.499, "position": [0, 0.3601, 0.15] },
+          { "t": 5.5, "position": [0.4, 0.3601, 0.15] }
+        ]
+      }
+    ]
+  },
+  "run": {
+    "seed": 1,
+    "levels": {
+      "default": 1,
+      "types": {
+        "arduino-nano": {
+          "behaviour": 2
+        }
+      }
+    }
+  },
+  "root": {
+    "id": "scene",
+    "part": "sfab/gauge-scene@1.0.0"
+  }
+}

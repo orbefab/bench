@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<!--
+  robot: gauge | consumers: MuJoCo (sfab-bench world)
+  units: meters, kilograms, radians
+  root: base
+  links:
+  - base | printed base plus dial | visual meshes, one collision box
+  - flag | horn plus flag | visual meshes, one collision box
+  joints:
+  - servo | revolute | parent base | child flag
+    origin xyz 0 0 0 | axis 0 0 1
+    limits 0 .. pi rad
+    the flag's collision box is above the base box for the whole turn:
+    MuJoCo does not filter contacts between a joint's child and a
+    parent welded to the world
+  masses: flag link is the solid flag plus the horn at 1240 kg/m3.
+  The base link is 15% of the solid base plus the solid dial.
+  Both are assumed until M10. Inertia is about the centre of mass.
+-->
+<robot name="gauge">
+  <mujoco>
+    <compiler fusestatic="false" discardvisual="false"/>
+  </mujoco>
+  <link name="base">
+    <inertial>
+      <origin xyz="-0.0007381878 0.006833675 0.01236394" rpy="0 0 0"/>
+      <mass value="0.01513040"/>
+      <inertia ixx="1.129046e-5" ixy="-8.907313e-8" ixz="-8.871960e-8" iyy="8.949768e-6" iyz="-1.307020e-6" izz="1.750418e-5"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/base.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.0202" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/dial.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.0037 0.013" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.048 0.0557 0.013"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="flag">
+    <inertial>
+      <origin xyz="0.008680005 0 0.03064496" rpy="0 0 0"/>
+      <mass value="0.002051646"/>
+      <inertia ixx="2.646026e-8" ixy="0" ixz="-5.603454e-10" iyy="2.546021e-7" iyz="0" izz="2.728465e-7"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.0029" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/horn.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.0283" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/flag.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0.0165 0 0.030675" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.0165 0.002375 0.002375"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="servo" type="revolute">
+    <parent link="base"/>
+    <child link="flag"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="3.141592653589793" effort="0.22" velocity="10.472"/>
+    <dynamics damping="0.001" friction="0"/>
+  </joint>
+</robot>

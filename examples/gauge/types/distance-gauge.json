@@ -1,0 +1,20 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "distance-gauge",
+  "ports": {
+    "servo": {
+      "domain": "rotational",
+      "direction": "passive",
+      "frame": "horn"
+    },
+    "base": {
+      "domain": "mount",
+      "direction": "passive",
+      "frame": "base"
+    }
+  },
+  "plausible": {
+    "Torque": [-5, 5],
+    "AngularVelocity": [-100, 100]
+  }
+}

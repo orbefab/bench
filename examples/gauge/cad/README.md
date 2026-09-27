@@ -15,6 +15,7 @@
 | hcsr04.py | STEP/hcsr04.step | Bought HC-SR04, outline only |
 | gauge.py | STEP/gauge.step | Assembly at 0°. Sidecar `STEP/gauge.step.json` |
 | check.py | — | Closed solids, clearances, flag sweep, Dupont keep-outs |
+| meshes.py | ../robot/meshes/*.stl | STL for the URDF. Does not change the STEP |
 
 Build, from this directory:
 
