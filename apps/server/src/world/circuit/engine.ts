@@ -11,6 +11,7 @@ import {
   Switch,
   TheveninLimit,
 } from "./elements";
+import { LawTable } from "./law-table";
 import { luFactor, luSolve } from "./lu";
 
 export type Method = "be" | "trap";
@@ -83,6 +84,7 @@ export class Engine {
   private readonly thevenins: TheveninLimit[];
   /** Board-node loads with a compliance knee. Ideal current sources are absent. */
   private readonly knees: CurrentLoad[];
+  private readonly laws: LawTable[];
   private readonly nonlinear: boolean;
   private readonly xSave: Float64Array;
   private readonly diodeLimit: Float64Array;
@@ -162,6 +164,7 @@ export class Engine {
     this.knees = elements.filter(
       (el): el is CurrentLoad => el instanceof CurrentLoad && el.knee > 0
     );
+    this.laws = elements.filter((el): el is LawTable => el instanceof LawTable);
     this.nonlinear = elements.some((el) => el.nonlinear);
     this.xSave = new Float64Array(n);
     this.diodeLimit = new Float64Array(this.diodes.length);
@@ -332,6 +335,9 @@ export class Engine {
     }
     for (let i = 0; i < this.knees.length; i++) {
       if (!this.knees[i]!.accepted(ctx)) return false;
+    }
+    for (let i = 0; i < this.laws.length; i++) {
+      if (!this.laws[i]!.accepted(ctx)) return false;
     }
     return true;
   }
