@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import {
   AXES,
   type BehaviourImpl,
+  type BodyImpl,
   type Diagnostic,
   type LockFile,
   type LockSnapshot,
@@ -50,7 +51,7 @@ export type LoadResult = {
   /** Snapshots an instance actually runs. Others stay off the lock. */
   snapshots: LoadedSnapshot[];
   /** Path, axis and ref of each snapshot the resolved levels run. */
-  snapshotRuns: { path: string; axis: "behaviour"; ref: string }[];
+  snapshotRuns: { path: string; axis: "behaviour" | "body"; ref: string }[];
 };
 
 export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
@@ -193,82 +194,113 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   const snapshotRuns: LoadResult["snapshotRuns"] = [];
   const ran: {
     path: string;
-    axis: "behaviour";
+    axis: "behaviour" | "body";
     ref: string;
     quality: string;
     error: LoadedSnapshot["file"]["error"];
     provenance: RunReport["snapshots"][number]["provenance"];
   }[] = [];
   for (const inst of resolved.instances) {
-    const ask = snapshotAsk(inst);
-    if (!ask) continue;
-    let type = null;
-    try {
-      type = typeOf(lib, inst.part);
-    } catch {
-      type = null;
-    }
-    const found = loadSnapshot(lib.worldDir, opts, ask.ref, type);
-    diagnostics.push(...found.diagnostics);
-    if (!found.loaded) continue;
-    if (ask.use === "branch") {
-      remember(snapshots, found.loaded);
-      snapshotRuns.push({
-        path: inst.path,
-        axis: "behaviour",
-        ref: ask.ref,
-      });
-      ran.push({
-        path: inst.path,
-        axis: "behaviour",
-        ref: ask.ref,
-        quality: inst.foreign ? "Q1" : found.loaded.quality,
-        error: found.loaded.file.error,
-        provenance: provenanceOf(found.loaded.file),
-      });
-      continue;
-    }
-    const foundFeed = feedOf(inst, resolved.instances, nets);
-    if (!foundFeed) continue;
-    const feed = foundFeed.feed;
-    const feedPortName = foundFeed.port;
-    const port = portNumbers(feed);
-    const bounds = sourceBoundsOf(found.loaded.file);
-    const sameConnector = connectorOf(feed) === boardConnector(inst);
-    const covered =
-      port !== null &&
-      bounds !== null &&
-      sameConnector &&
-      !sourceOutside(bounds, port.rs, port.ilimit);
-    if (covered) {
-      remember(snapshots, found.loaded);
-      snapshotRuns.push({
-        path: inst.path,
-        axis: "behaviour",
-        ref: ask.ref,
-      });
-      ran.push({
-        path: inst.path,
-        axis: "behaviour",
-        ref: ask.ref,
-        quality: inst.foreign ? "Q1" : found.loaded.quality,
-        error: found.loaded.file.error,
-        provenance: provenanceOf(found.loaded.file),
-      });
-    } else {
-      diagnostics.push(
-        makeDiag({
-          severity: "warning",
+    for (const ask of snapshotAsks(inst)) {
+      let type = null;
+      try {
+        type = typeOf(lib, inst.part);
+      } catch {
+        type = null;
+      }
+      const found = loadSnapshot(lib.worldDir, opts, ask.ref, type);
+      diagnostics.push(...found.diagnostics);
+      if (!found.loaded) continue;
+      if (ask.use === "body") {
+        const file = found.loaded.file;
+        if (file.form !== "hinge@1" || file.axis !== "body") {
+          diagnostics.push(
+            makeDiag({
+              severity: "error",
+              path: inst.path,
+              port: "body",
+              quantity: "Form",
+              left: file.form,
+              right: "hinge@1",
+              detail: `snapshot ${ask.ref} is not a body hinge`,
+            })
+          );
+          continue;
+        }
+        if (type && file.partType !== type.id) {
+          diagnostics.push(
+            makeDiag({
+              severity: "error",
+              path: inst.path,
+              port: "body",
+              quantity: "PartType",
+              left: file.partType,
+              right: type.id,
+              detail: `snapshot ${ask.ref} partType ${file.partType} is not ${type.id}`,
+            })
+          );
+          continue;
+        }
+      }
+      if (ask.use === "branch" || ask.use === "body") {
+        remember(snapshots, found.loaded);
+        snapshotRuns.push({
           path: inst.path,
-          port: feedPortName,
-          quantity: "Resistance",
-          left: port ? `${port.rs} Ω, ${port.ilimit} A` : feed.type.id,
-          right: bounds
-            ? `${bounds.resistance[0]} Ω, ${bounds.currentLimit[0]} A`
-            : "captured port",
-          detail: `snapshot ${ask.ref} does not cover this ${feed.type.id}; ideal terminal`,
-        })
-      );
+          axis: ask.axis,
+          ref: ask.ref,
+        });
+        ran.push({
+          path: inst.path,
+          axis: ask.axis,
+          ref: ask.ref,
+          quality: inst.foreign ? "Q1" : found.loaded.quality,
+          error: found.loaded.file.error,
+          provenance: provenanceOf(found.loaded.file),
+        });
+        continue;
+      }
+      const foundFeed = feedOf(inst, resolved.instances, nets);
+      if (!foundFeed) continue;
+      const feed = foundFeed.feed;
+      const feedPortName = foundFeed.port;
+      const port = portNumbers(feed);
+      const bounds = sourceBoundsOf(found.loaded.file);
+      const sameConnector = connectorOf(feed) === boardConnector(inst);
+      const covered =
+        port !== null &&
+        bounds !== null &&
+        sameConnector &&
+        !sourceOutside(bounds, port.rs, port.ilimit);
+      if (covered) {
+        remember(snapshots, found.loaded);
+        snapshotRuns.push({
+          path: inst.path,
+          axis: "behaviour",
+          ref: ask.ref,
+        });
+        ran.push({
+          path: inst.path,
+          axis: "behaviour",
+          ref: ask.ref,
+          quality: inst.foreign ? "Q1" : found.loaded.quality,
+          error: found.loaded.file.error,
+          provenance: provenanceOf(found.loaded.file),
+        });
+      } else {
+        diagnostics.push(
+          makeDiag({
+            severity: "warning",
+            path: inst.path,
+            port: feedPortName,
+            quantity: "Resistance",
+            left: port ? `${port.rs} Ω, ${port.ilimit} A` : feed.type.id,
+            right: bounds
+              ? `${bounds.resistance[0]} Ω, ${bounds.currentLimit[0]} A`
+              : "captured port",
+            detail: `snapshot ${ask.ref} does not cover this ${feed.type.id}; ideal terminal`,
+          })
+        );
+      }
     }
   }
 
@@ -329,16 +361,27 @@ function remember(rows: LoadedSnapshot[], loaded: LoadedSnapshot): void {
   if (!rows.some((row) => row.id === loaded.id)) rows.push(loaded);
 }
 
-/** The snapshot this instance's selected behaviour runs, if it names one. */
-function snapshotAsk(
-  inst: LiveInstance
-): { ref: string; use: "feed" | "branch" } | null {
+type SnapshotAsk = {
+  ref: string;
+  use: "feed" | "branch" | "body";
+  axis: "behaviour" | "body";
+};
+
+/** Snapshots this instance's selected behaviour and body run. */
+function snapshotAsks(inst: LiveInstance): SnapshotAsk[] {
+  const asks: SnapshotAsk[] = [];
   const impl = inst.axes.behaviour.impl as BehaviourImpl | null;
-  if (!impl) return null;
-  if (impl.kind === "snapshot") return { ref: impl.ref, use: "branch" };
-  if (impl.kind !== "firmware") return null;
-  const ref = snapshotRefOf(impl.boardCircuit ?? null);
-  return ref ? { ref, use: "feed" } : null;
+  if (impl?.kind === "snapshot") {
+    asks.push({ ref: impl.ref, use: "branch", axis: "behaviour" });
+  } else if (impl?.kind === "firmware") {
+    const ref = snapshotRefOf(impl.boardCircuit ?? null);
+    if (ref) asks.push({ ref, use: "feed", axis: "behaviour" });
+  }
+  const body = inst.axes.body.impl as BodyImpl | null;
+  if (body?.kind === "snapshot") {
+    asks.push({ ref: body.ref, use: "body", axis: "body" });
+  }
+  return asks;
 }
 
 function boardConnector(inst: LiveInstance): string | null {

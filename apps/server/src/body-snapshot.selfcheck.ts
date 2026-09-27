@@ -169,6 +169,62 @@ try {
     `reason ${body?.reason}`
   );
   console.log(`variant rule: ${body?.variant} · ${body?.reason}`);
+
+  const snapDir = join(root, "snapshots", "sfab");
+  mkdirSync(snapDir, { recursive: true });
+  writeFileSync(
+    join(snapDir, "wrong-hinge@1.0.0.json"),
+    JSON.stringify(hingeFile("other-type"))
+  );
+  writeFileSync(
+    join(partDir, "wrong-body@1.0.0.json"),
+    JSON.stringify(
+      snapshotBody("sfab/wrong-body@1.0.0", "sfab/wrong-hinge@1.0.0")
+    )
+  );
+  writeFileSync(
+    join(root, "wrong-type.world.json"),
+    JSON.stringify(partScene("sfab/wrong-body@1.0.0"))
+  );
+  const wrongType = planWorld(root, "wrong-type.world.json");
+  expect(!wrongType.ok, "wrong partType loaded");
+  if (wrongType.ok) throw new Error("unreachable");
+  const typeMessage = wrongType.errors.map((error) => error.message).join("; ");
+  expect(
+    typeMessage.includes("partType other-type") &&
+      typeMessage.includes("hobby-servo-3wire"),
+    typeMessage
+  );
+  console.log(`reject hinge partType: ${typeMessage}`);
+
+  writeFileSync(
+    join(snapDir, "ok-hinge@1.0.0.json"),
+    JSON.stringify(hingeFile("hobby-servo-3wire"))
+  );
+  writeFileSync(
+    join(partDir, "ok-body@1.0.0.json"),
+    JSON.stringify(snapshotBody("sfab/ok-body@1.0.0", "sfab/ok-hinge@1.0.0"))
+  );
+  writeFileSync(
+    join(root, "ok-hinge.world.json"),
+    JSON.stringify(partScene("sfab/ok-body@1.0.0"))
+  );
+  const hinged = planWorld(root, "ok-hinge.world.json");
+  expect(
+    hinged.ok,
+    hinged.ok ? "" : hinged.errors.map((error) => error.message).join("; ")
+  );
+  if (!hinged.ok) throw new Error("unreachable");
+  const snapRow = hinged.plan.report?.snapshots.find(
+    (row) => row.path === "servo"
+  );
+  expect(snapRow?.axis === "body", `axis ${snapRow?.axis}`);
+  expect(snapRow?.ref === "sfab/ok-hinge@1.0.0", `ref ${snapRow?.ref}`);
+  const motor = hinged.plan.parts.find((part) => part.id === "servo")?.motor;
+  expect(motor?.armature === 0.00037, `armature ${motor?.armature}`);
+  console.log(
+    `body snapshot ${snapRow?.ref} axis ${snapRow?.axis} quality ${snapRow?.quality} armature ${motor?.armature}`
+  );
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
@@ -206,6 +262,74 @@ expect(
 console.log(
   "world_set_level: setting a class replaces that axis's variant rule with the class alone"
 );
+
+function hingeFile(partType: string) {
+  return {
+    format: "sfab.snapshot@1",
+    partType,
+    part: "sfab/sg90@1.0.0",
+    axis: "body",
+    form: "hinge@1",
+    ports: { inputs: ["shaft.torque"], outputs: ["shaft.angle"] },
+    params: { armature: 0.00037, damping: 0.0025, frictionloss: 0.002 },
+    envelope: {
+      bounds: { "shaft.speed": [-1, 1], "shaft.torque": [-0.05, 0.05] },
+    },
+    error: "none-available",
+    quality: "Q1",
+    provenance: {
+      source: "authored",
+      bench: { version: "0.2.2" },
+      created: "2026-09-27T00:00:00.000Z",
+    },
+  };
+}
+
+function snapshotBody(id: string, ref: string) {
+  return {
+    format: "sfab.part@1",
+    id,
+    type: "hobby-servo-3wire",
+    axes: {
+      behaviour: {
+        "1": {
+          default: "datasheet",
+          variants: {
+            datasheet: {
+              kind: "form",
+              form: "dc-motor@1",
+              params: {
+                K: 0.458,
+                R: 7.1,
+                efficiency: 0.57,
+                eSat: 0.3,
+                quiescent: 0.01,
+              },
+              omits: ["test"],
+            },
+          },
+        },
+      },
+      body: {
+        "1": {
+          default: "hinge",
+          variants: {
+            hinge: { kind: "snapshot", ref, omits: ["test"] },
+          },
+        },
+      },
+    },
+  };
+}
+
+function partScene(part: string) {
+  return {
+    version: 2,
+    environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+    run: { seed: 1, levels: { default: 1 } },
+    root: { id: "scene", part: shell(part) },
+  };
+}
 
 function badServo(form: string) {
   return {

@@ -18,6 +18,7 @@ import {
   type WorldStepProp,
   type WorldTarget,
 } from "@sfab-bench/contract";
+import { collapse, gearTrainErrors } from "./body/gear-train";
 import { type AvrPinParams, avrPinParams } from "./circuit/pin";
 import {
   type BoardStamp,
@@ -192,6 +193,14 @@ export type RunPart = {
   torqueNm?: number;
   motor?: RunMotor;
   drives?: { robot: string; joint: string };
+  /**
+   * Set when the body is a `hinge@1` snapshot. The run checks joint
+   * speed and actuator torque against these bounds.
+   */
+  bodySnapshot?: {
+    ref: string;
+    bounds: Record<string, [number, number]>;
+  };
 };
 
 export type { RunRanger };
@@ -584,6 +593,75 @@ function chosenPowerPort(
   return candidates[0] ?? null;
 }
 
+type JointTerms = {
+  armature: number;
+  damping: number;
+  frictionloss: number;
+  bodySnapshot?: RunPart["bodySnapshot"];
+};
+
+/** Lumped joint, hinge@1 snapshot, or the rigid collapse of a gear train. */
+function jointOf(inst: LiveInstance, loaded: LoadResult): JointTerms | null {
+  const body = inst.axes.body.impl as BodyImpl | null;
+  if (!body) return null;
+  if (body.kind === "lumped" && body.joint) {
+    return {
+      armature: body.joint.armature ?? 0,
+      damping: body.joint.damping ?? 0,
+      frictionloss: body.joint.frictionloss ?? 0,
+    };
+  }
+  if (body.kind === "gear-train") {
+    if (gearTrainErrors(inst.part.id, body).length > 0) return null;
+    const lumped = collapse(body);
+    return {
+      armature: lumped.armature,
+      damping: lumped.damping,
+      frictionloss: lumped.frictionloss,
+    };
+  }
+  if (body.kind !== "snapshot") return null;
+  const found = loaded.snapshots.find((row) => row.id === body.ref);
+  const ran = loaded.snapshotRuns.some(
+    (row) =>
+      row.path === inst.path && row.axis === "body" && row.ref === body.ref
+  );
+  if (!found || !ran || found.file.form !== "hinge@1") return null;
+  const armature = numberParam(found.file.params.armature);
+  const damping = numberParam(found.file.params.damping);
+  const frictionloss = numberParam(found.file.params.frictionloss);
+  if (armature === null || damping === null || frictionloss === null) {
+    return null;
+  }
+  return {
+    armature,
+    damping,
+    frictionloss,
+    bodySnapshot: {
+      ref: body.ref,
+      bounds: boundPairs(found.file.envelope.bounds),
+    },
+  };
+}
+
+function numberParam(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function boundPairs(
+  bounds: Record<string, unknown>
+): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  for (const [key, range] of Object.entries(bounds)) {
+    if (!Array.isArray(range) || range.length < 2) continue;
+    const lo = range[0];
+    const hi = range[1];
+    if (typeof lo !== "number" || typeof hi !== "number") continue;
+    out[key] = [siValue(lo), siValue(hi)];
+  }
+  return out;
+}
+
 function selectedBehaviour(inst: LiveInstance): BehaviourImpl | null {
   const behaviour = inst.axes.behaviour.impl;
   if (!behaviour || typeof behaviour !== "object") return null;
@@ -708,8 +786,9 @@ function build(
   // An if-chain on the selected behaviour. A composite is a shell and
   // is skipped. What runs: firmware; form resistor@1, capacitor@1 and
   // diode@1; form multibody@1 with a urdf body; form thevenin-limit@1;
-  // form dc-motor@1 with a lumped joint; form ranger@1. Anything else
-  // is a plan error that names the path.
+  // form dc-motor@1 with a lumped joint, a hinge@1 snapshot, or the
+  // collapse of a gear train; form ranger@1. Anything else is a plan
+  // error that names the path.
   for (const inst of loaded.resolved) {
     if (inst.path === "$root") continue;
     const behaviour = selectedBehaviour(inst);
@@ -875,14 +954,15 @@ function build(
     }
     if (behaviour?.kind === "form" && behaviour.form === "dc-motor@1") {
       const numbers = formNumbers(inst);
-      const body = inst.axes.body.impl as BodyImpl | null;
+      const hinge = jointOf(inst, loaded);
       if (
         !numbers ||
         inst.axes.behaviour.label !== "form dc-motor@1" ||
-        body?.kind !== "lumped" ||
-        !body.joint
+        !hinge
       ) {
-        diags.push(cannot(inst, "the run needs dc-motor@1 and a lumped joint"));
+        diags.push(
+          cannot(inst, "the run needs dc-motor@1 and a lumped joint or a hinge")
+        );
         continue;
       }
       const torque = rangePair(inst.part.ratings?.shaft?.torque);
@@ -910,10 +990,11 @@ function build(
           efficiency: numbers.efficiency ?? 0,
           eSat: numbers.eSat ?? 0,
           quiescent: numbers.quiescent ?? 0,
-          armature: body.joint.armature ?? 0,
-          frictionloss: body.joint.frictionloss ?? 0,
-          damping: body.joint.damping ?? 0,
+          armature: hinge.armature,
+          frictionloss: hinge.frictionloss,
+          damping: hinge.damping,
         },
+        ...(hinge.bodySnapshot ? { bodySnapshot: hinge.bodySnapshot } : {}),
         ...(drives ? { drives } : {}),
       });
       pushBox(boxes, inst, "part");

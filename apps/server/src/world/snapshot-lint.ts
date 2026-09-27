@@ -76,6 +76,11 @@ function paramQuantity(
     return domainQuantity(ctx.ports?.[law.across[0]]?.domain ?? "", "across");
   }
   if (law && key === "supplyRef") return "Voltage";
+  if (snap.form === "hinge@1") {
+    if (key === "armature") return "Inertia";
+    if (key === "damping") return "TorquePerAngularVelocity";
+    if (key === "frictionloss") return "Torque";
+  }
   if (key === "drop" || key === "V") return "Voltage";
   if (key === "Rs" || key === "R") return "Resistance";
   if (key === "Ilimit") return "Current";
@@ -103,6 +108,8 @@ function boundQuantity(
     return domain ? domainQuantity(domain, "across") : "Voltage";
   }
   if (field === "torque") return "Torque";
+  if (field === "speed") return "AngularVelocity";
+  if (field === "angle") return "Angle";
   return null;
 }
 
@@ -322,6 +329,107 @@ function tablePorts(
   return diags;
 }
 
+const ROTATIONAL_FIELD: Record<string, Quantity> = {
+  angle: "Angle",
+  speed: "AngularVelocity",
+  torque: "Torque",
+};
+
+function hingeErrors(
+  snap: SnapshotFile,
+  ctx: SnapshotLintContext
+): Diagnostic[] {
+  if (snap.form !== "hinge@1" && snap.axis !== "body") return [];
+  const path = snap.part || "snapshot";
+  const diags: Diagnostic[] = [];
+  if (snap.form === "hinge@1" && snap.axis !== "body") {
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path,
+        port: "axis",
+        quantity: "Form",
+        left: snap.form,
+        right: String(snap.axis),
+        detail: "hinge@1 is a body-axis form",
+      })
+    );
+  }
+  if (snap.axis === "body" && snap.form !== "hinge@1") {
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path,
+        port: "axis",
+        quantity: "Form",
+        left: snap.form,
+        right: "body",
+        detail: `${snap.form} is a behaviour form on the body axis`,
+      })
+    );
+  }
+  if (snap.form !== "hinge@1") return diags;
+  for (const key of ["armature", "damping", "frictionloss"] as const) {
+    const value = numeric(snap.params[key]);
+    const ok =
+      value !== null &&
+      Number.isFinite(value) &&
+      value >= 0 &&
+      (key !== "armature" || value > 0);
+    if (ok) continue;
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path,
+        port: key,
+        quantity: key === "armature" ? "Inertia" : "Torque",
+        left: String(snap.params[key]),
+        right: key === "armature" ? "> 0" : ">= 0",
+        detail: `hinge param ${key} must be finite and non-negative`,
+      })
+    );
+  }
+  if (!ctx.ports) return diags;
+  for (const item of [...snap.ports.inputs, ...snap.ports.outputs]) {
+    const dot = item.lastIndexOf(".");
+    const port = dot > 0 ? item.slice(0, dot) : "";
+    const field = dot > 0 ? item.slice(dot + 1) : "";
+    const decl = ctx.ports[port];
+    const quantity =
+      decl?.domain === "rotational" ? ROTATIONAL_FIELD[field] : undefined;
+    if (decl && quantity) continue;
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path,
+        port: port || item,
+        quantity: "Snapshot",
+        left: item,
+        right: snap.partType,
+        detail: `port quantity ${item} is not on ${snap.partType}`,
+      })
+    );
+  }
+  for (const key of Object.keys(snap.envelope.bounds)) {
+    const dot = key.lastIndexOf(".");
+    const port = dot > 0 ? key.slice(0, dot) : "";
+    const decl = ctx.ports[port];
+    if (decl?.domain === "rotational") continue;
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path,
+        port: port || key,
+        quantity: "Snapshot",
+        left: key,
+        right: "shaft",
+        detail: `envelope ${key} is not on the shaft`,
+      })
+    );
+  }
+  return diags;
+}
+
 export function lintSnapshot(
   snap: SnapshotFile,
   ctx: SnapshotLintContext
@@ -369,6 +477,7 @@ export function lintSnapshot(
     );
   }
   diagnostics.push(...tablePorts(snap, ctx));
+  diagnostics.push(...hingeErrors(snap, ctx));
   diagnostics.push(...plausibleErrors(snap, ctx));
   if (nonPhysical(snap)) {
     diagnostics.push(

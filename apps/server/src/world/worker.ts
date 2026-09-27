@@ -1200,7 +1200,13 @@ function boundName(key: string): { port: string; quantity: string } {
         ? "Current"
         : field === "resistance"
           ? "Resistance"
-          : field;
+          : field === "torque"
+            ? "Torque"
+            : field === "speed"
+              ? "AngularVelocity"
+              : field === "angle"
+                ? "Angle"
+                : field;
   return { port, quantity };
 }
 
@@ -1657,7 +1663,27 @@ function classifyLoads() {
       omega,
       stallForMs: load.stallMs,
     });
+    noteBodyEnvelope(load.partId, omega);
   }
+}
+
+/** Joint speed and applied torque against a body snapshot's shaft bounds. */
+function noteBodyEnvelope(partId: string, speed: number): void {
+  if (!sim) return;
+  const snap = runPlan?.parts.find((part) => part.id === partId)?.bodySnapshot;
+  if (!snap) return;
+  const torque = sim.data.actuator(partId).ctrl as number;
+  const observed: Record<string, number> = {};
+  for (const key of Object.keys(snap.bounds)) {
+    if (key.endsWith(".speed")) observed[key] = speed;
+    else if (key.endsWith(".torque")) observed[key] = torque;
+  }
+  warnEnvelope(
+    partId,
+    snap.ref,
+    { bounds: snap.bounds, current: [0, 0], supply: null },
+    observed
+  );
 }
 
 function stepBoard(board: AvrBoard) {
