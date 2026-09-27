@@ -541,6 +541,8 @@ function BoardBody({
   const scrub = useWorldTimeline();
   const recorded =
     scrub.playhead !== null ? scrub.frame?.boards[id] : undefined;
+  const ledCurrent =
+    scrub.playhead !== null ? recorded?.ledCurrent : live?.ledCurrent;
   const markers = scrub.data?.markers ?? [];
   const pins = recorded?.pins ?? livePins;
   const pastFault =
@@ -603,6 +605,9 @@ function BoardBody({
       {recorded ? (
         <Field label="Min" value={voltsText(recorded.minVoltage)} />
       ) : null}
+      {ledCurrent === undefined ? null : (
+        <Field label="D13 LED" value={ampsText(ledCurrent)} />
+      )}
       <SoaLine
         text={
           recorded

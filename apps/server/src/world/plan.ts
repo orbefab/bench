@@ -20,6 +20,7 @@ import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
 import { siValue } from "./parts/si";
+import { isFirmwareBoard } from "./power-path";
 
 /** Shown where a world fails to load, in the UI and in the agent tools. */
 export const WORLD_V1_MESSAGE = "World v1 is no longer supported";
@@ -82,6 +83,11 @@ export type RunBoard = {
   groundPin: string;
   /** Amperes drawn by the board, independent of voltage. */
   current: number;
+  /**
+   * Onboard circuit from the firmware variant. Null means no cable:
+   * the 5V pin is the supply terminal. `nano-usb` is the clone's diode path.
+   */
+  boardCircuit: string | null;
   brownoutVoltage: number;
   brownoutAssertVoltage: number;
   brownoutReleaseVoltage: number;
@@ -395,10 +401,15 @@ function build(
       });
       continue;
     }
-    if (typeId === "arduino-uno-r3") {
+    if (isFirmwareBoard(typeId)) {
       const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
       if (behaviour?.kind !== "firmware") {
         diags.push(cannot(inst, "the run needs the firmware level"));
+        continue;
+      }
+      const boardCircuit = behaviour.boardCircuit ?? null;
+      if (boardCircuit !== null && boardCircuit !== "nano-usb") {
+        diags.push(cannot(inst, `unknown board circuit ${boardCircuit}`));
         continue;
       }
       const params = behaviour.params ?? {};
@@ -431,6 +442,7 @@ function build(
         voltagePin: "5V",
         groundPin: "GND",
         current: params.quiescent ?? 0,
+        boardCircuit,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
           params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,

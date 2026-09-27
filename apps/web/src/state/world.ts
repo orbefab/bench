@@ -295,6 +295,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
           next.brownout === old.brownout &&
           next.resets === old.resets &&
           next.voltage === old.voltage &&
+          next.ledCurrent === old.ledCurrent &&
           next.warnings?.[0]?.message === old.warnings?.[0]?.message
         );
       })

@@ -61,6 +61,7 @@ const BOARD_FIELDS = new Set([
   "brownout",
   "voltage",
   "minVoltage",
+  "ledCurrent",
 ]);
 
 type Loaded = {
@@ -105,6 +106,8 @@ type AgentFrame = {
       voltage?: number;
       /** Lowest 5V-node voltage in the window. */
       minVoltage?: number;
+      /** Amperes through the D13 LED. Absent when that board has no LED stamp. */
+      ledCurrent?: number;
     }
   >;
 };
@@ -329,6 +332,8 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       pins: string[];
       /** Volts on the 5V node. Null when no supply reaches the board. */
       voltage: number | null;
+      /** Amperes through the D13 LED. Absent when that board has no LED stamp. */
+      ledCurrent?: number;
     }
   > = {};
   for (const [id, board] of Object.entries(state.boards)) {
@@ -343,6 +348,9 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
         unpowered || board.voltage === undefined
           ? null
           : round(board.voltage, 3),
+      ...(board.ledCurrent !== undefined
+        ? { ledCurrent: round(board.ledCurrent, 6) }
+        : {}),
     };
   }
   const parts: Record<
@@ -630,6 +638,9 @@ function trimFrame(
       if (all || fields.has("voltage")) board.voltage = row.voltage;
       if (all || fields.has("minVoltage")) board.minVoltage = row.minVoltage;
     }
+    if (row.ledCurrent !== undefined && (all || fields.has("ledCurrent"))) {
+      board.ledCurrent = row.ledCurrent;
+    }
     boards[id] = board;
   }
   if (Object.keys(boards).length > 0) out.boards = boards;
@@ -832,7 +843,7 @@ function commandAck(view: {
 export const worldTools = {
   world_status: tool({
     description:
-      'Read a world\'s shared run. world is the project-relative .world.json path from get_viewer. Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, driven pins such as "D9: out H"), each part (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin), each supply (terminal voltage and current), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null.',
+      'Read a world\'s shared run. world is the project-relative .world.json path from get_viewer. Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H"), each part (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin), each supply (terminal voltage and current), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null.',
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);

@@ -13,6 +13,7 @@
  * ω = 0 and add B(s) on the joint.
  */
 
+import { LED_RED, SS14 } from "./circuit/circuits";
 import {
   type Braking,
   BridgeMotor,
@@ -20,9 +21,17 @@ import {
   TheveninLimit,
 } from "./circuit/elements";
 import { Engine } from "./circuit/engine";
+import type { PinMode } from "./circuit/pin";
 import {
   BOARD_LOAD_KNEE_V,
+  type BoardPathName,
+  createNanoUsbPath,
   createUnoUsbPath,
+  NANO_D13_NODE,
+  NANO_D13_R,
+  NANO_LED_NODE,
+  NANO_RESET_NODE,
+  NANO_VRST_MAX,
   type PtcFuse,
   UNO_BOARD_NODE,
   UNO_TERM_NODE,
@@ -47,9 +56,10 @@ export type RailCircuitSpec = {
   braking?: Braking;
   /**
    * Default `none`: the supply terminal is the rail, as in the closed form.
-   * `uno-usb` inserts the Uno cable between the terminal and the board node.
+   * `uno-usb` inserts the Uno cable. `nano-usb` inserts the clone Nano's
+   * diode, capacitors, D13 LED, and reset network.
    */
-  boardPath?: "none" | "uno-usb";
+  boardPath?: "none" | BoardPathName;
 };
 
 const MASTER_S = 0.001;
@@ -70,6 +80,15 @@ export class RailCircuit {
   readonly substeps: number;
   /** Frozen-factor steps during the last master step. */
   lastFrozen = 0;
+  /** Amperes through the D13 LED. 0 when this rail has no Nano path. */
+  ledCurrent = 0;
+  /** Volts on the RESET node. 0 when this rail has no Nano path. */
+  resetVoltage = 0;
+  /**
+   * Lowest `V_reset − 0.9·V_board` over this step's sub-steps.
+   * Positive means RESET stayed above the external threshold.
+   */
+  resetMarginMin = 0;
   private readonly engine: Engine;
   private readonly load: CurrentLoad;
   private readonly motors: BridgeMotor[];
@@ -77,11 +96,16 @@ export class RailCircuit {
   private readonly boardNode: string;
   private readonly fuse: PtcFuse | null;
   private readonly fuseR: { ohms: number } | null;
+  private readonly nano: boolean;
+  private readonly nanoPin: { setMode(mode: PinMode): void } | null;
   private ready = false;
 
   constructor(spec: RailCircuitSpec) {
     const braking = spec.braking ?? "clip";
-    const board = spec.boardPath === "uno-usb";
+    const uno = spec.boardPath === "uno-usb";
+    const nano = spec.boardPath === "nano-usb";
+    const board = uno || nano;
+    this.nano = nano;
     this.path = board;
     this.termNode = board ? UNO_TERM_NODE : "rail";
     this.boardNode = board ? UNO_BOARD_NODE : "rail";
@@ -118,12 +142,19 @@ export class RailCircuit {
       spec.rSeries,
       spec.iLimit
     );
-    const path = board ? createUnoUsbPath() : null;
-    this.fuse = path?.fuse ?? null;
-    this.fuseR = path?.resistor ?? null;
+    const unoPath = uno ? createUnoUsbPath() : null;
+    const nanoPath = nano ? createNanoUsbPath(SS14, LED_RED) : null;
+    this.fuse = unoPath?.fuse ?? null;
+    this.fuseR = unoPath?.resistor ?? null;
+    this.nanoPin = nanoPath?.pin ?? null;
     this.winding = new Float64Array(motors.length);
     this.engine = new Engine(
-      [supply, this.load, ...motors, ...(path?.elements ?? [])],
+      [
+        supply,
+        this.load,
+        ...motors,
+        ...(unoPath?.elements ?? nanoPath?.elements ?? []),
+      ],
       {
         method: "be",
         h: MASTER_S / this.substeps,
@@ -154,9 +185,26 @@ export class RailCircuit {
     return this.fuse?.tripped ?? false;
   }
 
-  /** Open the fuse before the next solve. No effect without a board path. */
+  /** Open the fuse before the next solve. No effect without the Uno path. */
   tripFuse(): void {
     this.fuse?.trip();
+  }
+
+  /** D13 drive for the Nano LED. No effect without the Nano path. */
+  setD13(mode: "high" | "low" | "input"): void {
+    this.nanoPin?.setMode(mode);
+  }
+
+  private noteNano(): void {
+    if (!this.nano) return;
+    const board = this.engine.voltage(this.boardNode);
+    const reset = this.engine.voltage(NANO_RESET_NODE);
+    const margin = reset - NANO_VRST_MAX * board;
+    if (margin < this.resetMarginMin) this.resetMarginMin = margin;
+    const pin = this.engine.voltage(NANO_D13_NODE);
+    const anode = this.engine.voltage(NANO_LED_NODE);
+    this.ledCurrent = (pin - anode) / NANO_D13_R;
+    this.resetVoltage = reset;
   }
 
   /**
@@ -172,16 +220,19 @@ export class RailCircuit {
     }
     const frozen = this.engine.frozenSteps;
     let min = Number.POSITIVE_INFINITY;
+    this.resetMarginMin = Number.POSITIVE_INFINITY;
     if (!this.ready) {
       this.engine.operatingPoint();
       this.ready = true;
       min = this.engine.voltage(this.boardNode);
+      this.noteNano();
     } else {
       const n = this.substeps;
       for (let k = 0; k < n; k++) {
         this.engine.stepFast();
         const v = this.engine.voltage(this.boardNode);
         if (v < min) min = v;
+        this.noteNano();
       }
     }
     this.lastFrozen = this.engine.frozenSteps - frozen;

@@ -296,6 +296,12 @@ export type BehaviourImpl = { omits: string[] } & (
       imageParam?: string;
       params?: Record<string, number>;
       fuses?: Record<string, string>;
+      /**
+       * Onboard circuit inserted when a `usb-a-port` feeds `5V`.
+       * Absent means the 5V pin is the supply terminal.
+       * `nano-usb` is the clone Nano's diode path.
+       */
+      boardCircuit?: string;
     }
   | { kind: "script"; script: string }
 );

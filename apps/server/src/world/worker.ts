@@ -44,7 +44,7 @@ import {
   runningBrownout,
   stepBrownout,
 } from "./power";
-import { unoUsbPathFor } from "./power-path";
+import { type BoardPathName, isFirmwareBoard, usbPathFor } from "./power-path";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
 import { blankTrack, type ServoTrack, trackServo } from "./servo";
@@ -314,7 +314,7 @@ let fuseStart: "cold" | "tripped" = "cold";
 type RailGroup = {
   circuit: RailCircuit;
   loads: Load[];
-  path: boolean;
+  path: BoardPathName | null;
   /** Sub-step minimum of the board node. Unused when `path` is false. */
   boardMin: number;
 };
@@ -446,6 +446,7 @@ function sample(): WorldState | null {
       resets: power?.resets ?? 0,
       brownout: board.brownout,
       ...(power?.supplyId ? { voltage: node } : {}),
+      ...ledReading(power?.supplyId),
       ...(soa ? { warnings: [soa] } : {}),
     };
   }
@@ -545,6 +546,11 @@ function fillRecorder(full: boolean) {
     const board = boards.find((item) => item.id === id);
     const power = id ? boardPower.get(id) : undefined;
     rec.boardVoltage[i] = power?.supplyId ? boardNodeOf(power.supplyId) : 0;
+    if (rec.ledOn[i]) {
+      rec.ledCurrent[i] = power?.supplyId
+        ? (ledCurrentOf(power.supplyId) ?? 0)
+        : 0;
+    }
     rec.brownout[i] = board?.brownout ? 1 : 0;
     rec.belowSoa[i] = board && boardInSoa(board) ? 1 : 0;
   }
@@ -608,6 +614,11 @@ function openRecorder() {
     parts: parts.map((load) => load.partId),
     supplies: supplySpecs.map((supply) => supply.id),
     boards: boardIds,
+    boardLed: boardIds.map(
+      (id) =>
+        runPlan?.boards.find((board) => board.id === id)?.boardCircuit ===
+        "nano-usb"
+    ),
   });
   fillRecorder(true);
   recorder.commit(simMs());
@@ -881,7 +892,10 @@ function bindRails() {
   }
   for (const supply of supplySpecs) {
     const members = groups.get(supply.id) ?? [];
-    const path = unoUsbPathFor(supplyTypeOf(supply.id), unoBoardOn(supply.id));
+    const fed = boardOn(supply.id);
+    const path = fed
+      ? usbPathFor(supplyTypeOf(supply.id), fed.type, fed.circuit)
+      : null;
     const circuit = createRailCircuit({
       vNom: supply.voltage,
       rSeries: supply.rSeries,
@@ -894,9 +908,9 @@ function bindRails() {
           k: drive.law.k,
         };
       }),
-      ...(path ? { boardPath: "uno-usb" as const } : {}),
+      ...(path ? { boardPath: path } : {}),
     });
-    if (path && fuseStart === "tripped") circuit.tripFuse();
+    if (path === "uno-usb" && fuseStart === "tripped") circuit.tripFuse();
     for (let i = 0; i < members.length; i++) {
       const load = members[i];
       if (load) load.railSlot = i;
@@ -909,14 +923,44 @@ function supplyTypeOf(supplyId: string): string {
   return runPlan?.supplies.find((item) => item.id === supplyId)?.type ?? "";
 }
 
-/** The fed board's part type, when this supply powers an Uno. */
-function unoBoardOn(supplyId: string): string | null {
+/** The fed board, when this supply powers a firmware board. */
+function boardOn(
+  supplyId: string
+): { type: string; circuit: string | null } | null {
   if (!runPlan) return null;
   for (const board of runPlan.boards) {
-    if (board.type !== "arduino-uno-r3") continue;
-    if (boardPower.get(board.id)?.supplyId === supplyId) return board.type;
+    if (!isFirmwareBoard(board.type)) continue;
+    if (boardPower.get(board.id)?.supplyId === supplyId) {
+      return { type: board.type, circuit: board.boardCircuit };
+    }
   }
   return null;
+}
+
+/** The Nano whose class-2 path this supply inserted, if it did. */
+function nanoBoard(supplyId: string): AvrBoard | null {
+  if (!runPlan) return null;
+  for (const board of runPlan.boards) {
+    if (board.boardCircuit !== "nano-usb") continue;
+    if (boardPower.get(board.id)?.supplyId !== supplyId) continue;
+    return boards.find((item) => item.id === board.id) ?? null;
+  }
+  return null;
+}
+
+/** D13 LED current, present only while the Nano USB path is in the rail. */
+function ledCurrentOf(supplyId: string): number | undefined {
+  const group = rails.get(supplyId);
+  if (group?.path !== "nano-usb") return undefined;
+  return group.circuit.ledCurrent;
+}
+
+function ledReading(
+  supplyId: string | null | undefined
+): { ledCurrent: number } | Record<string, never> {
+  if (!supplyId) return {};
+  const current = ledCurrentOf(supplyId);
+  return current === undefined ? {} : { ledCurrent: current };
 }
 
 function solveOneRail(
@@ -927,6 +971,14 @@ function solveOneRail(
   if (!group) return { voltage: 0, current: 0, board: 0, boardMin: 0 };
   const { circuit, loads: members } = group;
   circuit.setFixed(fixed);
+  const avr = nanoBoard(supplyId);
+  if (avr) {
+    const bit = arduinoPinBit("D13");
+    const pins = avr.peekPins();
+    const driving = bit !== undefined && (pins.ddr & (1 << bit)) !== 0;
+    const high = bit !== undefined && (pins.level & (1 << bit)) !== 0;
+    circuit.setD13(!driving ? "input" : high ? "high" : "low");
+  }
   for (let i = 0; i < members.length; i++) {
     const load = members[i];
     const sample = load?.sample ?? null;

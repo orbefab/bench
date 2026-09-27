@@ -1,6 +1,6 @@
-// Uno R3 USB path for the circuit rail (ADR 0010, D-020). Not ported from an experiment file.
-// The Nano USB function is `nanoRail` in circuit/circuits.ts (E1 @ 031dc5e). World v1
-// has no Nano board, so that function waits for one.
+// Uno R3 USB path and the clone Nano USB path (ADR 0010, D-020, D-022).
+// Not ported from an experiment file. The SS14 law is the E1 fit in circuit/circuits.ts
+// (031dc5e). `nanoRail` there stays the older test circuit, not this board.
 /**
  * A `usb-a-port` wired to an Uno's `5V` is the cable into the USB connector.
  * That is how the arm examples are drawn. A bench supply on `5V` is the
@@ -27,9 +27,11 @@ import {
   diode,
   iSource,
   resistor,
+  sw,
   thermalVoltage,
   vSource,
 } from "./circuit/elements";
+import { PIN_ROFF, PIN_ROH, PIN_ROL, Pin } from "./circuit/pin";
 
 /** Supply side of F1. The rail's Thevenin terminal when the path is on. */
 export const UNO_TERM_NODE = "term";
@@ -111,17 +113,51 @@ export const UNO_PC2_ESR = PC2_TAN_DELTA / (2 * Math.PI * 120 * UNO_PC2_C);
 export const UNO_DECOUPLE_C = 100e-9;
 const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;
 
+/** A cable the circuit inserts between the supply terminal and the board node. */
+export type BoardPathName = "uno-usb" | "nano-usb";
+
+/**
+ * Boards the run executes. `uno-usb` is always the cable when a
+ * `usb-a-port` feeds that board. `part` reads the firmware variant's
+ * `boardCircuit` (`nano-usb` at class 2, absent at class 1).
+ */
+const FIRMWARE_BOARDS: Record<string, BoardPathName | "part"> = {
+  "arduino-uno-r3": "uno-usb",
+  "arduino-nano": "part",
+};
+
+/** True for a board type the run boots as an ATmega328P. */
+export function isFirmwareBoard(typeId: string): boolean {
+  return Object.hasOwn(FIRMWARE_BOARDS, typeId);
+}
+
+/**
+ * The cable between this supply and the board it feeds, or null when
+ * the 5V pin is the supply terminal. A bench supply on `5V` is the
+ * header. The caller has already checked that this supply feeds that board.
+ */
+export function usbPathFor(
+  supplyType: string,
+  boardType: string | null,
+  boardCircuit: string | null
+): BoardPathName | null {
+  if (supplyType !== "usb-a-port" || !boardType) return null;
+  const row = FIRMWARE_BOARDS[boardType];
+  if (!row) return null;
+  if (row === "uno-usb") return "uno-usb";
+  return boardCircuit === "nano-usb" ? "nano-usb" : null;
+}
+
 /**
  * True when this supply is the USB cable into an Uno. A `usb-a-port`
  * wired to an `arduino-uno-r3`'s `5V` is the cable. A bench supply on
- * `5V` is the header. The caller has already checked that this supply
- * feeds that board.
+ * `5V` is the header.
  */
 export function unoUsbPathFor(
   supplyType: string,
   boardType: string | null
 ): boolean {
-  return supplyType === "usb-a-port" && boardType === "arduino-uno-r3";
+  return usbPathFor(supplyType, boardType, null) === "uno-usb";
 }
 
 /**
@@ -265,6 +301,159 @@ export function unoUsbTrace(): Element[] {
       t0: 1e-3,
       v0: 0,
       v1: 0.714,
+    }),
+  ];
+}
+
+/**
+ * Clone Nano on USB. The chip, the CH340G, and the power LED. The D13
+ * LED is not in this sum: class 2 stamps it. Each term is cited on the part.
+ * MCU 0.010 A is read from DS40002061's active-current figure at 5 V, 16 MHz.
+ * CH340G 0.012 A is the datasheet's USB working current. The power LED is
+ * (5 − 1.8) / 1000; 1.8 V is assumed, and the 1 kΩ resistor is from the board.
+ */
+export const NANO_MCU_A = 0.01;
+export const NANO_CH340_A = 0.012;
+export const NANO_POWER_LED_A = 0.0032;
+export const NANO_BOARD_A = NANO_MCU_A + NANO_CH340_A + NANO_POWER_LED_A;
+
+/** D13 series resistor. Assumed: the code on the board is unknown. */
+export const NANO_D13_R = 1e3;
+/** Pin node of the D13 stamp. */
+export const NANO_D13_NODE = "d13";
+/** Anode of the D13 LED. */
+export const NANO_LED_NODE = "leda";
+/** RESET pin. The pull-up and the DTR capacitor meet here. */
+export const NANO_RESET_NODE = "nrst";
+
+/**
+ * C106, 10 µF. Position on +5V after the diode is assumed. ESR is assumed
+ * at 5 Ω, inside the 4–8 Ω maxima of a 10 µF / 16 V case-A tantalum
+ * (Kemet T491, AVX TAJ) at 100 kHz. The second C106 on the board is the
+ * VIN-side capacitor and is not on this net. C106 is the AMS1117's output
+ * capacitor; the regulator itself is not in the USB path.
+ */
+export const NANO_C106_C = 10e-6;
+export const NANO_C106_ESR = 5;
+const C106_NODE = "c106";
+
+/**
+ * 100 nF on MCU VCC and AVCC. The Nano 3.x schematic decouples those pins.
+ * AREF's capacitor is not on +5V. Further ceramics, if the board has them,
+ * are the same value.
+ */
+export const NANO_DECOUPLE_C = 100e-9;
+const NANO_DECOUPLE = ["cvcc", "cavcc"] as const;
+
+/**
+ * RESET pull-up and the DTR capacitor, from the Nano 3.x schematic
+ * (A000005): 10 kΩ to +5V, 100 nF from the USB bridge's DTR pin.
+ * DTR idles high at the CH340's VCC, which is the +5V node, so the
+ * capacitor sits from that node to RESET. Upload auto-reset is not modelled.
+ */
+export const NANO_RESET_R = 10e3;
+export const NANO_RESET_C = 100e-9;
+/**
+ * External reset threshold, fraction of VCC. DS40002061 V_RST maximum:
+ * RESET can be recognised as low up to this fraction. Staying above it
+ * means the pin never crosses into reset.
+ */
+export const NANO_VRST_MAX = 0.9;
+
+/** S4, the +5V capacitors, the reset network, and the D13 LED to ground. */
+function nanoOnboard(ss14: DiodeParams, led: DiodeParams): Element[] {
+  return [
+    diode("s4", UNO_TERM_NODE, UNO_BOARD_NODE, ss14),
+    resistor("c106r", UNO_BOARD_NODE, C106_NODE, NANO_C106_ESR),
+    capacitor("c106", C106_NODE, "0", NANO_C106_C),
+    ...NANO_DECOUPLE.map((id) =>
+      capacitor(id, UNO_BOARD_NODE, "0", NANO_DECOUPLE_C)
+    ),
+    resistor("rrst", UNO_BOARD_NODE, NANO_RESET_NODE, NANO_RESET_R),
+    capacitor("crst", UNO_BOARD_NODE, NANO_RESET_NODE, NANO_RESET_C),
+    resistor("rled", NANO_D13_NODE, NANO_LED_NODE, NANO_D13_R),
+    diode("led", NANO_LED_NODE, "0", led),
+    // DS40002061 Iin max 1 µA at 5 V. A DC path for D13 while the pin is an input.
+    resistor("d13leak", NANO_D13_NODE, "0", 5e6),
+  ];
+}
+
+export type NanoUsbPath = {
+  /** D13. High connects the pin to the board node through `PIN_ROH`. */
+  pin: Pin;
+  elements: Element[];
+};
+
+/**
+ * S4 from the supply terminal to +5V, the capacitors, the reset network,
+ * and the D13 LED. The board's constant draw is the rail's load, not a
+ * stamp here. `ss14` is the Vishay fit; `led` is the red indicator.
+ */
+export function createNanoUsbPath(
+  ss14: DiodeParams,
+  led: DiodeParams
+): NanoUsbPath {
+  const pin = new Pin("d13pin", NANO_D13_NODE, UNO_BOARD_NODE);
+  return {
+    pin,
+    elements: [...nanoOnboard(ss14, led), ...pin.elements()],
+  };
+}
+
+/** USB preset, S4, the +5V network, the board load, D13 held on, and a 0.7 A step. */
+export function nanoUsbDeck(ss14: DiodeParams, led: DiodeParams): Element[] {
+  return [
+    vSource("vusb", "src", "0", { kind: "dc", value: 5 }),
+    resistor("rs", "src", UNO_TERM_NODE, 0.5),
+    ...nanoOnboard(ss14, led),
+    resistor("roh", UNO_BOARD_NODE, NANO_D13_NODE, PIN_ROH),
+    iSource("iboard", UNO_BOARD_NODE, "0", {
+      kind: "dc",
+      value: NANO_BOARD_A,
+    }),
+    iSource("iload", UNO_BOARD_NODE, "0", {
+      kind: "step",
+      t0: 1e-3,
+      v0: 0,
+      v1: 0.7,
+    }),
+  ];
+}
+
+/**
+ * The same +5V node with D13 switching at 1 kHz. The high switch is
+ * `PIN_ROH` from the board node for the first half of each period. The
+ * low switch is `PIN_ROL` to ground for the second half. Its waveform
+ * swaps the levels (`high` 0, `low` 1) instead of a phase offset: a
+ * `t0` on `pwm` does not shift the ngspice PULSE the way `waveAt` does.
+ *
+ * Step 20 ns, the same choice as `uno-usb`. The 100 nF ceramics against
+ * the tantalum's 5 Ω ESR settle in about C·ESR = 0.5 µs, and a coarser
+ * step smears that edge. Three milliseconds is three cycles of the 1 kHz pin.
+ */
+export function nanoD13Deck(ss14: DiodeParams, led: DiodeParams): Element[] {
+  const period = 1e-3;
+  return [
+    vSource("vusb", "src", "0", { kind: "dc", value: 5 }),
+    resistor("rs", "src", UNO_TERM_NODE, 0.5),
+    ...nanoOnboard(ss14, led),
+    sw("d13h", UNO_BOARD_NODE, NANO_D13_NODE, PIN_ROH, PIN_ROFF, {
+      kind: "pwm",
+      period,
+      duty: 0.5,
+      low: 0,
+      high: 1,
+    }),
+    sw("d13l", NANO_D13_NODE, "0", PIN_ROL, PIN_ROFF, {
+      kind: "pwm",
+      period,
+      duty: 0.5,
+      low: 1,
+      high: 0,
+    }),
+    iSource("iboard", UNO_BOARD_NODE, "0", {
+      kind: "dc",
+      value: NANO_BOARD_A,
     }),
   ];
 }

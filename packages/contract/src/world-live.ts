@@ -150,6 +150,11 @@ export type WorldBoardState = {
    */
   voltage?: number;
   /**
+   * Amperes through the D13 LED. Present only on a board whose class-2
+   * circuit stamps that LED. The recording uses the same name.
+   */
+  ledCurrent?: number;
+  /**
    * Set while a running ATmega328P supply is above brownout and below
    * 3.78 V. Reporting only: the step does not change.
    */
@@ -484,6 +489,8 @@ export type RecordedFrame = {
       voltage: number;
       /** Lowest 5V-node voltage in the window. */
       minVoltage: number;
+      /** Amperes through the D13 LED. Absent when that board has no LED stamp. */
+      ledCurrent?: number;
     }
   >;
 };

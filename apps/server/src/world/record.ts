@@ -82,6 +82,8 @@ export type RecordSpec = {
   parts: string[];
   supplies: string[];
   boards: string[];
+  /** Parallel to `boards`. True when that board records D13 LED current. */
+  boardLed?: boolean[];
 };
 
 type Chunk = {
@@ -104,6 +106,8 @@ type Chunk = {
   supplyMax: Float32Array;
   boardVoltage: Float32Array;
   boardMinVoltage: Float32Array;
+  /** Null when no board on this run records D13 LED current. */
+  boardLed: Float32Array | null;
   ddr: Uint32Array;
   level: Uint32Array;
   toggled: Uint32Array;
@@ -153,6 +157,10 @@ export class RunRecorder {
   readonly supplyCurrent: Float64Array;
   /** Volts on each board's 5V node. */
   readonly boardVoltage: Float64Array;
+  /** Amperes through each board's D13 LED. Read only where `ledOn` is set. */
+  readonly ledCurrent: Float64Array;
+  /** True when this board's frames carry `ledCurrent`. */
+  readonly ledOn: readonly boolean[];
   readonly ddr: Uint32Array;
   readonly level: Uint32Array;
   readonly toggled: Uint32Array;
@@ -221,6 +229,8 @@ export class RunRecorder {
     this.voltage = new Float64Array(nS);
     this.supplyCurrent = new Float64Array(nS);
     this.boardVoltage = new Float64Array(nD);
+    this.ledCurrent = new Float64Array(nD);
+    this.ledOn = spec.boardLed ?? this.boards.map(() => false);
     this.ddr = new Uint32Array(nD);
     this.level = new Uint32Array(nD);
     this.toggled = new Uint32Array(nD);
@@ -438,6 +448,9 @@ export class RunRecorder {
       chunk.belowSoa[channel(i, slot)] = this.soaAny[i] ?? 0;
       chunk.boardVoltage[channel(i, slot)] = this.boardVoltage[i] ?? 0;
       chunk.boardMinVoltage[channel(i, slot)] = this.minBoardV[i] ?? 0;
+      if (chunk.boardLed) {
+        chunk.boardLed[channel(i, slot)] = this.ledCurrent[i] ?? 0;
+      }
     }
     chunk.count += 1;
   }
@@ -449,6 +462,7 @@ export class RunRecorder {
       parts: this.parts.length,
       supplies: this.supplies.length,
       boards: this.boards.length,
+      boardLed: this.ledOn.some(Boolean),
     };
   }
 
@@ -748,6 +762,11 @@ export class RunRecorder {
         belowSoa: (slot.chunk.belowSoa[channel(i, slot.slot)] ?? 0) !== 0,
         voltage: slot.chunk.boardVoltage[channel(i, slot.slot)] ?? 0,
         minVoltage: slot.chunk.boardMinVoltage[channel(i, slot.slot)] ?? 0,
+        ...(this.ledOn[i]
+          ? {
+              ledCurrent: slot.chunk.boardLed?.[channel(i, slot.slot)] ?? 0,
+            }
+          : {}),
       };
     }
     // Envelope flags survive a track filter. A pulse-only read still
@@ -768,6 +787,9 @@ export class RunRecorder {
         belowSoa: (slot.chunk.belowSoa[at] ?? 0) !== 0,
         voltage: slot.chunk.boardVoltage[at] ?? 0,
         minVoltage: slot.chunk.boardMinVoltage[at] ?? 0,
+        ...(this.ledOn[i]
+          ? { ledCurrent: slot.chunk.boardLed?.[at] ?? 0 }
+          : {}),
       };
     }
     return {
@@ -868,6 +890,7 @@ function createChunk(counts: {
   parts: number;
   supplies: number;
   boards: number;
+  boardLed?: boolean;
 }): Chunk {
   return {
     start: 0,
@@ -889,6 +912,7 @@ function createChunk(counts: {
     supplyMax: new Float32Array(counts.supplies * CHUNK),
     boardVoltage: new Float32Array(counts.boards * CHUNK),
     boardMinVoltage: new Float32Array(counts.boards * CHUNK),
+    boardLed: counts.boardLed ? new Float32Array(counts.boards * CHUNK) : null,
     ddr: new Uint32Array(counts.boards * CHUNK),
     level: new Uint32Array(counts.boards * CHUNK),
     toggled: new Uint32Array(counts.boards * CHUNK),
