@@ -159,6 +159,11 @@ export type RunSupply = {
   groundPin: string;
   /** Cable family on the positive port. Null is the header. */
   connector: string | null;
+  /**
+   * Circuit parts on this supply when no firmware board feeds it.
+   * Absent when a board stamp already holds those parts, or there are none.
+   */
+  stamp?: BoardStamp;
   pins: Record<string, RunPin>;
 };
 
@@ -588,6 +593,79 @@ function runtimeGap(inst: LiveInstance): string {
   return `no runtime for ${behaviour.kind}`;
 }
 
+function suppliesReached(
+  part: CircuitInst,
+  supplies: RunSupply[],
+  nets: { ports: { full: string; path: string; port: string }[] }[]
+): string[] {
+  const fulls = new Set(Object.values(part.ports));
+  const ids = new Set<string>();
+  for (const net of nets) {
+    if (!net.ports.some((port) => fulls.has(port.full))) continue;
+    for (const supply of supplies) {
+      const hit = net.ports.some(
+        (port) =>
+          port.path === supply.id &&
+          (port.port === supply.positivePin || port.port === supply.groundPin)
+      );
+      if (hit) ids.add(supply.id);
+    }
+  }
+  return [...ids].sort();
+}
+
+function boardSupplyId(
+  board: RunBoard,
+  supplies: RunSupply[],
+  nets: { ports: { path: string; port: string }[] }[]
+): string | null {
+  for (const net of nets) {
+    const onBoard = net.ports.some(
+      (port) => port.path === board.id && port.port === board.voltagePin
+    );
+    if (!onBoard) continue;
+    for (const supply of supplies) {
+      const hit = net.ports.some(
+        (port) => port.path === supply.id && port.port === supply.positivePin
+      );
+      if (hit) return supply.id;
+    }
+  }
+  return null;
+}
+
+/** A supply with circuit parts and no firmware board. Ground is `"0"`. */
+function stampSupply(
+  supply: RunSupply,
+  parts: readonly CircuitInst[],
+  nets: Parameters<typeof stampBoard>[0]["nets"]
+): BoardStamp | null {
+  const ports: Record<string, PortDecl> = {
+    [supply.positivePin]: {
+      domain: "electrical",
+      role: "power",
+      direction: "out",
+    },
+    [supply.groundPin]: {
+      domain: "electrical",
+      role: "ground",
+      direction: "passive",
+    },
+  };
+  return stampBoard({
+    boardId: supply.id,
+    netlist: false,
+    ports,
+    supplyGround: `${supply.id}.${supply.groundPin}`,
+    powerPort: supply.positivePin,
+    resetPort: null,
+    usbPort: null,
+    resetFraction: null,
+    parts,
+    nets,
+  });
+}
+
 function rangerLaw(numbers: Record<string, number>): RangerLaw {
   return {
     c: numbers.c ?? 0,
@@ -837,22 +915,93 @@ function build(
 
   const nets = liveNets(loaded.nets);
   const crowded = new Set<string>();
+  const loose = new Map<string, CircuitInst[]>();
   for (const part of circuits) {
     const hit = boards.filter((board) => touches(part, board.id, nets));
-    if (hit.length < 2) continue;
-    crowded.add(part.path);
-    const names = hit.map((board) => board.id).join(" and ");
+    if (hit.length >= 2) {
+      crowded.add(part.path);
+      const names = hit.map((board) => board.id).join(" and ");
+      diags.push({
+        severity: "error",
+        path: part.path,
+        port: "nets",
+        quantity: "Part",
+        left: names,
+        right: "one board",
+        message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
+      });
+      continue;
+    }
+    const reached = suppliesReached(part, supplies, nets);
+    if (reached.length >= 2) {
+      crowded.add(part.path);
+      const names = reached.join(" and ");
+      diags.push({
+        severity: "error",
+        path: part.path,
+        port: "nets",
+        quantity: "Part",
+        left: names,
+        right: "one supply",
+        message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
+      });
+      continue;
+    }
+    if (reached.length === 0 && hit.length === 0) {
+      crowded.add(part.path);
+      diags.push({
+        severity: "error",
+        path: part.path,
+        port: "nets",
+        quantity: "Part",
+        left: part.path,
+        right: "a supply",
+        message: `${part.path} reaches no supply`,
+      });
+      continue;
+    }
+    if (hit.length === 0 && reached[0]) {
+      const list = loose.get(reached[0]) ?? [];
+      list.push(part);
+      loose.set(reached[0], list);
+    }
+  }
+  const boardsOn = new Map<string, RunBoard[]>();
+  for (const board of boards) {
+    const supplyId = boardSupplyId(board, supplies, nets);
+    if (!supplyId) continue;
+    const list = boardsOn.get(supplyId) ?? [];
+    list.push(board);
+    boardsOn.set(supplyId, list);
+  }
+  for (const [supplyId, group] of boardsOn) {
+    if (group.length < 2) continue;
+    // Two Unos on one USB or bench rail already run as one path
+    // (pin.selfcheck, power.selfcheck, world-runtime). Different paths
+    // would make boardOn pick one and drop the other.
+    const keys = new Set(
+      group.map((board) => `${board.boardCircuit ?? ""}|${board.hasNetlist}`)
+    );
+    if (keys.size < 2) continue;
+    const names = group.map((board) => board.id).join(" and ");
     diags.push({
       severity: "error",
-      path: part.path,
+      path: supplyId,
       port: "nets",
       quantity: "Part",
       left: names,
-      right: "one board",
-      message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
+      right: "one power path",
+      message: `${names} share ${supplyId} with different power paths`,
     });
   }
   const stampParts = circuits.filter((part) => !crowded.has(part.path));
+  for (const supply of supplies) {
+    if (boardsOn.has(supply.id)) continue;
+    const mine = loose.get(supply.id);
+    if (!mine || mine.length === 0) continue;
+    const stamp = stampSupply(supply, mine, nets);
+    if (stamp) supply.stamp = stamp;
+  }
   for (const board of boards) {
     const inst = loaded.resolved.find((item) => item.path === board.id);
     if (!inst) continue;

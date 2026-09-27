@@ -1035,12 +1035,12 @@ function bindRails() {
         )
       : null;
     const path = chosen?.kind === "path" ? chosen.path : null;
+    const supplyStamp = runPlan?.supplies.find(
+      (item) => item.id === supply.id
+    )?.stamp;
+    const stamp = fed?.stamp ?? supplyStamp;
     const feed =
-      chosen?.kind === "netlist"
-        ? chosen.feed
-        : fed?.stamp
-          ? "header"
-          : undefined;
+      chosen?.kind === "netlist" ? chosen.feed : stamp ? "header" : undefined;
     const circuit = createRailCircuit({
       vNom: supply.voltage,
       rSeries: supply.rSeries,
@@ -1055,7 +1055,7 @@ function bindRails() {
       }),
       ...(path ? { boardPath: path } : {}),
       ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
-      ...(fed?.stamp && feed ? { stamp: fed.stamp, feed } : {}),
+      ...(stamp && feed ? { stamp, feed } : {}),
       ...(path === "nano-snapshot" && fed?.powerSnapshot
         ? { law: fed.powerSnapshot.law }
         : {}),
@@ -1075,7 +1075,11 @@ function supplyConnectorOf(supplyId: string): string | null {
   );
 }
 
-/** The fed board, when this supply powers a firmware board. */
+/**
+ * The fed board, when this supply powers a firmware board.
+ * Two boards on one supply are allowed only when they name the same
+ * power path, so either one carries that path. The plan rejects a mix.
+ */
 function boardOn(supplyId: string): RunBoard | null {
   if (!runPlan) return null;
   for (const board of runPlan.boards) {

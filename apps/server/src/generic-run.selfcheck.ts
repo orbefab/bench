@@ -16,8 +16,16 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { PartFile } from "@sfab-bench/contract";
-
-import { boardStampOf } from "./world/circuit-stamp";
+import { LED_RED } from "./world/circuit/circuits";
+import {
+  CurrentLoad,
+  Diode,
+  Resistor,
+  TheveninLimit,
+} from "./world/circuit/elements";
+import { Engine } from "./world/circuit/engine";
+import { AVR_PIN } from "./world/circuit/pin";
+import { boardStampOf, realize } from "./world/circuit-stamp";
 import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
@@ -522,6 +530,161 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     const messages = planned.errors.map((item) => item.message).join("; ");
     expect(messages.includes('unknown chip "no-such"'), messages);
     console.log('unknown chip: unknown chip "no-such"');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-boardless-"));
+  try {
+    writeJson(join(dir, "led.world.json"), {
+      version: 2,
+      environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+      run: { seed: 1, levels: { default: 2 } },
+      root: {
+        id: "scene",
+        part: {
+          format: "sfab.part@1",
+          id: "sfab/led-scene@1.0.0",
+          type: "assembly",
+          axes: {
+            behaviour: {
+              "2": {
+                default: "netlist",
+                variants: {
+                  netlist: {
+                    kind: "composite",
+                    omits: ["test scene"],
+                    netlist: {
+                      instances: {
+                        bench: {
+                          part: "sfab/bench-supply@1.0.0",
+                          params: { V: 5, Rs: 0.05, Ilimit: 1 },
+                        },
+                        r: {
+                          part: "sfab/resistor@1.0.0",
+                          params: { R: 220 },
+                        },
+                        led: { part: "sfab/led-red@1.0.0" },
+                      },
+                      wires: [
+                        ["bench.5V", "r.A"],
+                        ["r.B", "led.A"],
+                        ["led.K", "bench.GND"],
+                      ],
+                      expose: {},
+                    },
+                  },
+                },
+              },
+            },
+            body: noneAxis("none"),
+            visual: noneAxis("none"),
+          },
+        },
+      },
+    });
+    const planned = planWorld(dir, "led.world.json");
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((item) => item.message).join("; "));
+    }
+    expect(planned.plan.boards.length === 0, "a board was planned");
+    const stamp = planned.plan.supplies.find(
+      (item) => item.id === "bench"
+    )?.stamp;
+    expect(stamp, "bench has no stamp");
+    const anode = stamp.parts.find((part) => part.path === "led")?.nodes.A;
+    expect(anode, "led anode has no node");
+    const opts = {
+      method: "be" as const,
+      h: 0.001,
+      atol: 1e-14,
+      rtol: 1e-12,
+    };
+    const realized = realize(stamp, "header", AVR_PIN, { pins: false });
+    const plannedEngine = new Engine(
+      [
+        new TheveninLimit("src", realized.feedNode, "0", 5, 0.05, 1),
+        new CurrentLoad("load", realized.boardNode, "0", 0),
+        ...realized.elements,
+      ],
+      opts
+    );
+    const hand = new Engine(
+      [
+        new TheveninLimit("src", "vp", "0", 5, 0.05, 1),
+        new CurrentLoad("load", "vp", "0", 0),
+        new Resistor("r", "vp", "mid", 220),
+        new Diode("led", "mid", "0", LED_RED),
+      ],
+      opts
+    );
+    plannedEngine.operatingPoint();
+    hand.operatingPoint();
+    const iPlan = -plannedEngine.branchCurrent("src");
+    const iHand = -hand.branchCurrent("src");
+    const vPlan = plannedEngine.voltage(anode);
+    const vHand = hand.voltage("mid");
+    const dI = Math.abs(iPlan - iHand);
+    const dV = Math.abs(vPlan - vHand);
+    expect(dI <= 1e-12, `board-less current Δ ${dI} A`);
+    expect(dV <= 1e-12, `board-less anode Δ ${dV} V`);
+    console.log(
+      `board-less rail: ${(iPlan * 1000).toFixed(4)} mA, anode ${vPlan.toFixed(6)} V, ΔI ${dI.toExponential(2)} A, ΔV ${dV.toExponential(2)} V`
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-open-r-"));
+  try {
+    writeJson(join(dir, "open.world.json"), {
+      version: 2,
+      environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+      run: { seed: 1, levels: { default: 2 } },
+      root: {
+        id: "scene",
+        part: {
+          format: "sfab.part@1",
+          id: "sfab/open-scene@1.0.0",
+          type: "assembly",
+          axes: {
+            behaviour: {
+              "2": {
+                default: "netlist",
+                variants: {
+                  netlist: {
+                    kind: "composite",
+                    omits: ["test scene"],
+                    netlist: {
+                      instances: {
+                        r: {
+                          part: "sfab/resistor@1.0.0",
+                          params: { R: 1000 },
+                        },
+                      },
+                      wires: [],
+                      expose: {},
+                    },
+                  },
+                },
+              },
+            },
+            body: noneAxis("none"),
+            visual: noneAxis("none"),
+          },
+        },
+      },
+    });
+    const planned = planWorld(dir, "open.world.json");
+    expect(!planned.ok, "an unwired resistor planned");
+    const messages = planned.errors.map((item) => item.message);
+    const named = messages.find((item) => item.includes("r reaches no supply"));
+    expect(named, messages.join("; "));
+    console.log("open resistor: r reaches no supply");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
