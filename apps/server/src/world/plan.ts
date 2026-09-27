@@ -84,8 +84,9 @@ export type RunBoard = {
   /** Amperes drawn by the board, independent of voltage. */
   current: number;
   /**
-   * Onboard circuit from the firmware variant. Null means no cable:
-   * the 5V pin is the supply terminal. `nano-usb` is the clone's diode path.
+   * Onboard circuit from the firmware variant. Null means the 5V pin is
+   * the supply terminal. `nano-usb` is the clone's network: the diode
+   * only when a `usb-a-port` feeds `5V`.
    */
   boardCircuit: string | null;
   brownoutVoltage: number;

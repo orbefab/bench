@@ -297,9 +297,10 @@ export type BehaviourImpl = { omits: string[] } & (
       params?: Record<string, number>;
       fuses?: Record<string, string>;
       /**
-       * Onboard circuit inserted when a `usb-a-port` feeds `5V`.
-       * Absent means the 5V pin is the supply terminal.
-       * `nano-usb` is the clone Nano's diode path.
+       * Onboard circuit for this board's `5V`. Absent means the pin is
+       * the supply terminal: no capacitors, D13 LED, or reset network.
+       * `nano-usb` inserts the Schottky when a `usb-a-port` feeds `5V`,
+       * and the same network without the Schottky from any other supply.
        */
       boardCircuit?: string;
     }

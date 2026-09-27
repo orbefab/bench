@@ -18,7 +18,7 @@
     },
     {
       "title": "Power LED",
-      "ref": "1 kohm series resistor on the board photograph. Forward drop 1.8 V assumed, so 0.0032 A at 5 V"
+      "ref": "Arduino Nano Rev 3.2 schematic, NanoV3.2.sch: RP1 is a 1 kohm pack (CAY16-102J4LF), and element C is from +5V to the power LED. The clone is assumed to match. Forward drop 1.8 V assumed, so 0.0032 A at 5 V"
     },
     {
       "title": "USB diode S4",
@@ -26,7 +26,7 @@
     },
     {
       "title": "C106",
-      "ref": "10 uF, 16 V tantalum on +5V after the diode. Position assumed. ESR 5 ohm assumed, inside the 4-8 ohm maxima of a case-A part of that rating (Kemet T491, AVX TAJ)"
+      "ref": "A part marked C106, most likely a 10 uF / 16 V tantalum, placed on +5V after the diode. Position assumed. ESR 5 ohm assumed, inside the 4-8 ohm maxima of a case-A part of that rating (Kemet T491, AVX TAJ)"
     },
     {
       "title": "D13 LED resistor",
@@ -38,7 +38,7 @@
     },
     {
       "title": "Reset network",
-      "ref": "Arduino Nano 3.x schematic (A000005): 10 kohm from RESET to +5V, and 100 nF from the USB-bridge DTR pin"
+      "ref": "Nano Rev 3.2 schematic, NanoV3.2.sch: C4 is 100 nF from DTR to RESET, and the pull-up is RP1 at 1 kohm. This part uses 10 kohm, assumed. DTR idle high is the +5V node"
     }
   ],
   "axes": {
@@ -107,6 +107,7 @@
             },
             "omits": [
               "VIN and the AMS1117",
+              "USB Schottky when the 5V header feeds the board",
               "3.3 V rail",
               "auto-reset on upload",
               "CH340 serial",

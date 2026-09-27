@@ -948,10 +948,10 @@ function nanoBoard(supplyId: string): AvrBoard | null {
   return null;
 }
 
-/** D13 LED current, present only while the Nano USB path is in the rail. */
+/** D13 LED current, present while a class-2 Nano path is in the rail. */
 function ledCurrentOf(supplyId: string): number | undefined {
   const group = rails.get(supplyId);
-  if (group?.path !== "nano-usb") return undefined;
+  if (group?.path !== "nano-usb" && group?.path !== "nano-5v") return undefined;
   return group.circuit.ledCurrent;
 }
 

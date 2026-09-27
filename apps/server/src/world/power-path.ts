@@ -113,8 +113,12 @@ export const UNO_PC2_ESR = PC2_TAN_DELTA / (2 * Math.PI * 120 * UNO_PC2_C);
 export const UNO_DECOUPLE_C = 100e-9;
 const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;
 
-/** A cable the circuit inserts between the supply terminal and the board node. */
-export type BoardPathName = "uno-usb" | "nano-usb";
+/**
+ * A cable or header network between the supply terminal and the board node.
+ * `nano-5v` is the clone's onboard network with no diode: the terminal is
+ * the board node.
+ */
+export type BoardPathName = "uno-usb" | "nano-usb" | "nano-5v";
 
 /**
  * Boards the run executes. `uno-usb` is always the cable when a
@@ -132,20 +136,26 @@ export function isFirmwareBoard(typeId: string): boolean {
 }
 
 /**
- * The cable between this supply and the board it feeds, or null when
- * the 5V pin is the supply terminal. A bench supply on `5V` is the
- * header. The caller has already checked that this supply feeds that board.
+ * The network between this supply and the board it feeds, or null when
+ * the 5V pin is the supply terminal. The caller has already checked that
+ * this supply feeds that board.
+ *
+ * An Uno takes the cable only from a `usb-a-port`. A bench supply on its
+ * `5V` is the header, with no path. A class-2 Nano takes the diode path
+ * from a `usb-a-port`, and the same onboard network without the diode
+ * from any other supply on `5V`.
  */
 export function usbPathFor(
   supplyType: string,
   boardType: string | null,
   boardCircuit: string | null
 ): BoardPathName | null {
-  if (supplyType !== "usb-a-port" || !boardType) return null;
+  if (!boardType || supplyType.length === 0) return null;
   const row = FIRMWARE_BOARDS[boardType];
   if (!row) return null;
-  if (row === "uno-usb") return "uno-usb";
-  return boardCircuit === "nano-usb" ? "nano-usb" : null;
+  if (row === "uno-usb") return supplyType === "usb-a-port" ? "uno-usb" : null;
+  if (boardCircuit !== "nano-usb") return null;
+  return supplyType === "usb-a-port" ? "nano-usb" : "nano-5v";
 }
 
 /**
@@ -310,7 +320,8 @@ export function unoUsbTrace(): Element[] {
  * LED is not in this sum: class 2 stamps it. Each term is cited on the part.
  * MCU 0.010 A is read from DS40002061's active-current figure at 5 V, 16 MHz.
  * CH340G 0.012 A is the datasheet's USB working current. The power LED is
- * (5 − 1.8) / 1000; 1.8 V is assumed, and the 1 kΩ resistor is from the board.
+ * (5 − 1.8) / 1000. The 1 kΩ is RP1 on the Nano Rev 3.2 schematic
+ * (NanoV3.2.sch); the clone is assumed to match. 1.8 V is assumed.
  */
 export const NANO_MCU_A = 0.01;
 export const NANO_CH340_A = 0.012;
@@ -327,11 +338,10 @@ export const NANO_LED_NODE = "leda";
 export const NANO_RESET_NODE = "nrst";
 
 /**
- * C106, 10 µF. Position on +5V after the diode is assumed. ESR is assumed
- * at 5 Ω, inside the 4–8 Ω maxima of a 10 µF / 16 V case-A tantalum
- * (Kemet T491, AVX TAJ) at 100 kHz. The second C106 on the board is the
- * VIN-side capacitor and is not on this net. C106 is the AMS1117's output
- * capacitor; the regulator itself is not in the USB path.
+ * A part marked C106, most likely a 10 µF / 16 V tantalum, placed on +5V
+ * after the diode. Position assumed. ESR is assumed at 5 Ω, inside the
+ * 4–8 Ω maxima of a 10 µF / 16 V case-A tantalum (Kemet T491, AVX TAJ)
+ * at 100 kHz.
  */
 export const NANO_C106_C = 10e-6;
 export const NANO_C106_ESR = 5;
@@ -346,10 +356,11 @@ export const NANO_DECOUPLE_C = 100e-9;
 const NANO_DECOUPLE = ["cvcc", "cavcc"] as const;
 
 /**
- * RESET pull-up and the DTR capacitor, from the Nano 3.x schematic
- * (A000005): 10 kΩ to +5V, 100 nF from the USB bridge's DTR pin.
- * DTR idles high at the CH340's VCC, which is the +5V node, so the
- * capacitor sits from that node to RESET. Upload auto-reset is not modelled.
+ * RESET pull-up and the DTR capacitor. Nano Rev 3.2 (NanoV3.2.sch) has
+ * C4, 100 nF, from DTR to RESET, and RP1 at 1 kΩ as the pull-up. This
+ * path uses 10 kΩ, assumed. DTR idles high at the bridge VCC, modeled as
+ * the +5V node, so the capacitor sits from that node to RESET. Upload
+ * auto-reset is not modelled.
  */
 export const NANO_RESET_R = 10e3;
 export const NANO_RESET_C = 100e-9;
@@ -360,10 +371,9 @@ export const NANO_RESET_C = 100e-9;
  */
 export const NANO_VRST_MAX = 0.9;
 
-/** S4, the +5V capacitors, the reset network, and the D13 LED to ground. */
-function nanoOnboard(ss14: DiodeParams, led: DiodeParams): Element[] {
+/** +5V capacitors, the reset network, and the D13 LED to ground. No diode. */
+function nanoBoardNetwork(led: DiodeParams): Element[] {
   return [
-    diode("s4", UNO_TERM_NODE, UNO_BOARD_NODE, ss14),
     resistor("c106r", UNO_BOARD_NODE, C106_NODE, NANO_C106_ESR),
     capacitor("c106", C106_NODE, "0", NANO_C106_C),
     ...NANO_DECOUPLE.map((id) =>
@@ -378,6 +388,14 @@ function nanoOnboard(ss14: DiodeParams, led: DiodeParams): Element[] {
   ];
 }
 
+/** S4 plus the onboard network. The decks use this; the header omits S4. */
+function nanoOnboard(ss14: DiodeParams, led: DiodeParams): Element[] {
+  return [
+    diode("s4", UNO_TERM_NODE, UNO_BOARD_NODE, ss14),
+    ...nanoBoardNetwork(led),
+  ];
+}
+
 export type NanoUsbPath = {
   /** D13. High connects the pin to the board node through `PIN_ROH`. */
   pin: Pin;
@@ -385,18 +403,25 @@ export type NanoUsbPath = {
 };
 
 /**
- * S4 from the supply terminal to +5V, the capacitors, the reset network,
- * and the D13 LED. The board's constant draw is the rail's load, not a
- * stamp here. `ss14` is the Vishay fit; `led` is the red indicator.
+ * The capacitors, the reset network, and the D13 LED. `withDiode` adds
+ * S4 from the supply terminal to +5V. The header path leaves it off and
+ * the caller ties the terminal to the board node. The board's constant
+ * draw is the rail's load, not a stamp here. `ss14` is the Vishay fit;
+ * `led` is the red indicator.
  */
 export function createNanoUsbPath(
   ss14: DiodeParams,
-  led: DiodeParams
+  led: DiodeParams,
+  withDiode = true
 ): NanoUsbPath {
   const pin = new Pin("d13pin", NANO_D13_NODE, UNO_BOARD_NODE);
   return {
     pin,
-    elements: [...nanoOnboard(ss14, led), ...pin.elements()],
+    elements: [
+      ...(withDiode ? [diode("s4", UNO_TERM_NODE, UNO_BOARD_NODE, ss14)] : []),
+      ...nanoBoardNetwork(led),
+      ...pin.elements(),
+    ],
   };
 }
 

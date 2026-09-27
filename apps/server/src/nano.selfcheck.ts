@@ -74,13 +74,16 @@ function ss14Drop(amps: number): number {
   return vj + amps * SS14.Rs;
 }
 
-function rail(path: "none" | "nano-usb", rSeries: number): RailCircuit {
+function rail(
+  path: "none" | "nano-usb" | "nano-5v",
+  rSeries: number
+): RailCircuit {
   return createRailCircuit({
     vNom: usb.voltage,
     rSeries,
     iLimit: usb.currentLimit,
     motors: [{ resistance: law.resistance, k: law.k }],
-    ...(path === "nano-usb" ? { boardPath: path } : {}),
+    ...(path === "none" ? {} : { boardPath: path }),
   });
 }
 
@@ -103,7 +106,7 @@ function settle(
 }
 
 function point(
-  path: "none" | "nano-usb",
+  path: "none" | "nano-usb" | "nano-5v",
   rSeries: number,
   fraction: number,
   connected: boolean
@@ -140,6 +143,20 @@ function point(
       `terminal ${terminal.toFixed(4)} V, ` +
       `supply ${amps.toFixed(4)} A, ` +
       `diode drop ${drop.toFixed(4)} V`
+  );
+}
+
+{
+  const header = rail("nano-5v", usb.rSeries);
+  settle(header, 0, false, "high");
+  expect(
+    Math.abs(header.voltage - header.boardVoltage) <= 0.001,
+    `header board ${header.boardVoltage} V is not the terminal ${header.voltage} V`
+  );
+  expect(header.ledCurrent > 0.001, `header D13 drew ${header.ledCurrent} A`);
+  console.log(
+    `bench on 5V at class 2: board ${header.boardVoltage.toFixed(4)} V ` +
+      `equals the terminal, D13 ${(header.ledCurrent * 1000).toFixed(2)} mA, no diode`
   );
 }
 

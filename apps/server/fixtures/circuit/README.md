@@ -5,7 +5,9 @@ ngspice 45.2, inside `eecircuit-engine` 1.8.0. The decks use gear,
 step. The run header was `Command: ngspice-45.2, Build Sat Sep  5 01:00:10 UTC 2026`.
 
 Generator: `scratch/layered-sim/port-circuit-ref` @
-`f6492d67f0bcd3526b8726311a9a2d070f2e6830`.
+`824160f3622de960420a3bf657702f2cb9d0d2f5`.
+It reads `SFAB_BENCH` or `--checkout`, and otherwise
+`../../../repos/sfab-bench` relative to the generator.
 
 ```bash
 cd /abs/path/port-circuit-ref

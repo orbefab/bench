@@ -57,7 +57,8 @@ export type RailCircuitSpec = {
   /**
    * Default `none`: the supply terminal is the rail, as in the closed form.
    * `uno-usb` inserts the Uno cable. `nano-usb` inserts the clone Nano's
-   * diode, capacitors, D13 LED, and reset network.
+   * diode, capacitors, D13 LED, and reset network. `nano-5v` inserts that
+   * network without the diode: the terminal is the board node.
    */
   boardPath?: "none" | BoardPathName;
 };
@@ -103,11 +104,13 @@ export class RailCircuit {
   constructor(spec: RailCircuitSpec) {
     const braking = spec.braking ?? "clip";
     const uno = spec.boardPath === "uno-usb";
-    const nano = spec.boardPath === "nano-usb";
+    const nanoUsb = spec.boardPath === "nano-usb";
+    const nano5v = spec.boardPath === "nano-5v";
+    const nano = nanoUsb || nano5v;
     const board = uno || nano;
     this.nano = nano;
     this.path = board;
-    this.termNode = board ? UNO_TERM_NODE : "rail";
+    this.termNode = nano5v ? UNO_BOARD_NODE : board ? UNO_TERM_NODE : "rail";
     this.boardNode = board ? UNO_BOARD_NODE : "rail";
     let inductive = false;
     const motors: BridgeMotor[] = [];
@@ -143,7 +146,7 @@ export class RailCircuit {
       spec.iLimit
     );
     const unoPath = uno ? createUnoUsbPath() : null;
-    const nanoPath = nano ? createNanoUsbPath(SS14, LED_RED) : null;
+    const nanoPath = nano ? createNanoUsbPath(SS14, LED_RED, nanoUsb) : null;
     this.fuse = unoPath?.fuse ?? null;
     this.fuseR = unoPath?.resistor ?? null;
     this.nanoPin = nanoPath?.pin ?? null;
