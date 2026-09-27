@@ -84,8 +84,10 @@ export type RecordSpec = {
   partRanger?: boolean[];
   supplies: string[];
   boards: string[];
-  /** Parallel to `boards`. True when that board records D13 LED current. */
+  /** Parallel to `boards`. True when that board records `leds[`${id}.led`]`. */
   boardLed?: boolean[];
+  /** LED paths on each board. Frames store one ampere sample per entry. */
+  leds?: { board: string; path: string }[];
 };
 
 type Chunk = {
@@ -110,6 +112,8 @@ type Chunk = {
   boardMinVoltage: Float32Array;
   /** Null when no board on this run records D13 LED current. */
   boardLed: Float32Array | null;
+  /** Null when this run stamps no LED. One sample per `ledPaths` entry. */
+  leds: Float32Array | null;
   /** Null when no part on this run is a ranger. Metres; NaN is no echo. */
   rangerDistance: Float32Array | null;
   /** 1 when the last trigger hit. Null when no part is a ranger. */
@@ -165,10 +169,14 @@ export class RunRecorder {
   readonly supplyCurrent: Float64Array;
   /** Volts on each board's 5V node. */
   readonly boardVoltage: Float64Array;
-  /** Amperes through each board's D13 LED. Read only where `ledOn` is set. */
+  /** Amperes through each board's onboard LED. Read only where `ledOn` is set. */
   readonly ledCurrent: Float64Array;
   /** True when this board's frames carry `ledCurrent`. */
   readonly ledOn: readonly boolean[];
+  /** LED instance paths, in record order. */
+  readonly ledPaths: readonly { board: string; path: string }[];
+  /** Forward current of each `ledPaths` entry, amperes. */
+  readonly ledAmps: Float64Array;
   readonly ddr: Uint32Array;
   readonly level: Uint32Array;
   readonly toggled: Uint32Array;
@@ -250,6 +258,8 @@ export class RunRecorder {
     this.boardVoltage = new Float64Array(nD);
     this.ledCurrent = new Float64Array(nD);
     this.ledOn = spec.boardLed ?? this.boards.map(() => false);
+    this.ledPaths = spec.leds ?? [];
+    this.ledAmps = new Float64Array(this.ledPaths.length);
     this.ddr = new Uint32Array(nD);
     this.level = new Uint32Array(nD);
     this.toggled = new Uint32Array(nD);
@@ -478,6 +488,11 @@ export class RunRecorder {
         chunk.boardLed[channel(i, slot)] = this.ledCurrent[i] ?? 0;
       }
     }
+    if (chunk.leds) {
+      for (let i = 0; i < this.ledPaths.length; i++) {
+        chunk.leds[channel(i, slot)] = this.ledAmps[i] ?? 0;
+      }
+    }
     chunk.count += 1;
   }
 
@@ -489,6 +504,7 @@ export class RunRecorder {
       supplies: this.supplies.length,
       boards: this.boards.length,
       boardLed: this.ledOn.some(Boolean),
+      leds: this.ledPaths.length,
       ranger: this.hasRanger,
     };
   }
@@ -830,6 +846,7 @@ export class RunRecorder {
           : {}),
       };
     }
+    this.attachLeds(boards, slot);
     return {
       t: slot.timeMs / 1000,
       joints,
@@ -839,6 +856,18 @@ export class RunRecorder {
       supplies,
       boards,
     };
+  }
+
+  private attachLeds(boards: RecordedFrame["boards"], slot: Slot): void {
+    if (!slot.chunk.leds) return;
+    for (let k = 0; k < this.ledPaths.length; k++) {
+      const row = this.ledPaths[k];
+      if (!row) continue;
+      const board = boards[row.board];
+      if (!board) continue;
+      const amps = slot.chunk.leds[channel(k, slot.slot)] ?? 0;
+      board.leds = { ...(board.leds ?? {}), [row.path]: amps };
+    }
   }
 
   private eventsBetween(fromMs: number, toMs: number): RecordingEvent[] {
@@ -942,6 +971,7 @@ function createChunk(counts: {
   supplies: number;
   boards: number;
   boardLed?: boolean;
+  leds?: number;
   ranger?: boolean;
 }): Chunk {
   return {
@@ -965,6 +995,7 @@ function createChunk(counts: {
     boardVoltage: new Float32Array(counts.boards * CHUNK),
     boardMinVoltage: new Float32Array(counts.boards * CHUNK),
     boardLed: counts.boardLed ? new Float32Array(counts.boards * CHUNK) : null,
+    leds: counts.leds ? new Float32Array(counts.leds * CHUNK) : null,
     rangerDistance: counts.ranger
       ? new Float32Array(counts.parts * CHUNK)
       : null,

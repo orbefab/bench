@@ -18,6 +18,7 @@ import {
   Engine,
   inductor,
   iSource,
+  LED_RED,
   ladder,
   PIN_ROH,
   PIN_ROL,
@@ -31,11 +32,14 @@ import {
   potDivider,
   resistor,
   type Sample,
+  SS14,
   simulatePinPwm,
   sw,
   TRACE_CASES,
   vSource,
 } from "./world/circuit";
+import { nanoTraceStimulus } from "./world/circuit-stamp";
+import { nanoD13Deck, nanoUsbDeck } from "./world/nano-reference";
 
 const LINE = 0.005;
 const POWER_W = 1e-9;
@@ -173,6 +177,38 @@ for (const spec of TRACE_CASES) {
   const err = rangeError(ours, trace.v);
   expect(err <= LINE, `${spec.id} ${pct(err)} of span exceeds 0.5%`);
   console.log(`circuit ${spec.id}: ${pct(err)} of span`);
+}
+
+for (const kind of ["usb", "d13"] as const) {
+  const id = kind === "usb" ? "nano-usb" : "nano-d13";
+  const h = 2e-8;
+  const steps = 150000;
+  const trace = loadCsv(`${id}.csv`);
+  const reference =
+    kind === "usb" ? nanoUsbDeck(SS14, LED_RED) : nanoD13Deck(SS14, LED_RED);
+  const refProbe = kind === "usb" ? "v5" : "d13";
+  const net = nanoTraceStimulus(kind);
+  for (const [label, elements, probe] of [
+    ["reference", reference, refProbe],
+    ["netlist", net.elements, net.probe],
+  ] as const) {
+    const eng = new Engine(elements, { method: "be", h });
+    const samples = eng.run(steps, [probe]);
+    notePower(samples);
+    const ours = trace.t.map((t) =>
+      interp(
+        samples.map((s) => s.t),
+        samples.map((s) => s.v[probe] ?? 0),
+        t
+      )
+    );
+    const err = rangeError(ours, trace.v);
+    expect(
+      err <= LINE,
+      `circuit ${id} ${label} ${pct(err)} of span exceeds 0.5%`
+    );
+    console.log(`circuit ${id} ${label}: ${pct(err)} of span`);
+  }
 }
 
 {

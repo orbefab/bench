@@ -27,19 +27,9 @@ import {
   diode,
   iSource,
   resistor,
-  sw,
   thermalVoltage,
   vSource,
 } from "./circuit/elements";
-import {
-  AVR_PIN,
-  type AvrPinParams,
-  PIN_LEAK,
-  PIN_ROFF,
-  PIN_ROH,
-  PIN_ROL,
-  Pin,
-} from "./circuit/pin";
 
 /** Supply side of F1. The rail's Thevenin terminal when the path is on. */
 export const UNO_TERM_NODE = "term";
@@ -160,17 +150,19 @@ export function isFirmwareBoard(typeId: string): boolean {
  * this supply feeds that board.
  *
  * An Uno takes the cable only from a `usb-a-port`. A bench supply on its
- * `5V` is the header, with no path. A class-2 Nano takes the diode path
- * from a `usb-a-port`, and the same onboard network without the diode
- * from any other supply on `5V`. A class-1 snapshot is
- * `snapshot:<ref>` and runs only when a matching `usb-a-port` feeds `5V`.
- * The plan drops that circuit when the port is outside the captured
- * resistance and current limit, so this function then sees no circuit.
+ * `5V` is the header, with no path. A class-2 Nano (`hasNetlist`) takes
+ * the diode path from a `usb-a-port` on `5V` (the cable lands on VBUS)
+ * and the onboard network without that diode from any other supply.
+ * A class-1 snapshot is `snapshot:<ref>` and runs only when a matching
+ * `usb-a-port` feeds `5V`. The plan drops that circuit when the port is
+ * outside the captured resistance and current limit, so this function
+ * then sees no circuit.
  */
 export function usbPathFor(
   supplyType: string,
   boardType: string | null,
-  boardCircuit: string | null
+  boardCircuit: string | null,
+  hasNetlist = false
 ): BoardPathName | null {
   if (!boardType || supplyType.length === 0) return null;
   const row = FIRMWARE_BOARDS[boardType];
@@ -179,7 +171,7 @@ export function usbPathFor(
   if (snapshotRefOf(boardCircuit)) {
     return supplyType === "usb-a-port" ? "nano-snapshot" : null;
   }
-  if (boardCircuit !== "nano-usb") return null;
+  if (!hasNetlist) return null;
   return supplyType === "usb-a-port" ? "nano-usb" : "nano-5v";
 }
 
@@ -353,165 +345,9 @@ export const NANO_CH340_A = 0.012;
 export const NANO_POWER_LED_A = 0.0032;
 export const NANO_BOARD_A = NANO_MCU_A + NANO_CH340_A + NANO_POWER_LED_A;
 
-/** D13 series resistor. Assumed: the code on the board is unknown. */
-export const NANO_D13_R = 1e3;
-/** Pin node of the D13 stamp. */
-export const NANO_D13_NODE = "d13";
-/** Anode of the D13 LED. */
-export const NANO_LED_NODE = "leda";
-/** RESET pin. The pull-up and the DTR capacitor meet here. */
-export const NANO_RESET_NODE = "nrst";
-
-/**
- * A part marked C106, most likely a 10 µF / 16 V tantalum, placed on +5V
- * after the diode. Position assumed. ESR is assumed at 5 Ω, inside the
- * 4–8 Ω maxima of a 10 µF / 16 V case-A tantalum (Kemet T491, AVX TAJ)
- * at 100 kHz.
- */
-export const NANO_C106_C = 10e-6;
-export const NANO_C106_ESR = 5;
-const C106_NODE = "c106";
-
-/**
- * 100 nF on MCU VCC and AVCC. The Nano 3.x schematic decouples those pins.
- * AREF's capacitor is not on +5V. Further ceramics, if the board has them,
- * are the same value.
- */
-export const NANO_DECOUPLE_C = 100e-9;
-const NANO_DECOUPLE = ["cvcc", "cavcc"] as const;
-
-/**
- * RESET pull-up and the DTR capacitor. Nano Rev 3.2 (NanoV3.2.sch) has
- * C4, 100 nF, from DTR to RESET, and RP1 at 1 kΩ as the pull-up; the
- * clone is assumed to match. DTR idles high at the bridge VCC, modeled as
- * the +5V node, so the capacitor sits from that node to RESET. Upload
- * auto-reset is not modelled.
- */
-export const NANO_RESET_R = 1e3;
-export const NANO_RESET_C = 100e-9;
 /**
  * External reset threshold, fraction of VCC. DS40002061 V_RST maximum:
  * RESET can be recognised as low up to this fraction. Staying above it
  * means the pin never crosses into reset.
  */
 export const NANO_VRST_MAX = 0.9;
-
-/** +5V capacitors, the reset network, and the D13 LED to ground. No diode. */
-function nanoBoardNetwork(led: DiodeParams, rLeak = PIN_LEAK): Element[] {
-  return [
-    resistor("c106r", UNO_BOARD_NODE, C106_NODE, NANO_C106_ESR),
-    capacitor("c106", C106_NODE, "0", NANO_C106_C),
-    ...NANO_DECOUPLE.map((id) =>
-      capacitor(id, UNO_BOARD_NODE, "0", NANO_DECOUPLE_C)
-    ),
-    resistor("rrst", UNO_BOARD_NODE, NANO_RESET_NODE, NANO_RESET_R),
-    capacitor("crst", UNO_BOARD_NODE, NANO_RESET_NODE, NANO_RESET_C),
-    resistor("rled", NANO_D13_NODE, NANO_LED_NODE, NANO_D13_R),
-    diode("led", NANO_LED_NODE, "0", led),
-    // DS40002061 Iin max 1 µA at 5 V. A DC path for D13 while the pin is an input.
-    resistor("d13leak", NANO_D13_NODE, "0", rLeak),
-  ];
-}
-
-/** S4 plus the onboard network. The decks use this; the header omits S4. */
-function nanoOnboard(ss14: DiodeParams, led: DiodeParams): Element[] {
-  return [
-    diode("s4", UNO_TERM_NODE, UNO_BOARD_NODE, ss14),
-    ...nanoBoardNetwork(led),
-  ];
-}
-
-export type NanoUsbPath = {
-  /** D13. High connects the pin to the board node through `PIN_ROH`. */
-  pin: Pin;
-  elements: Element[];
-};
-
-/**
- * The capacitors, the reset network, and the D13 LED. `withDiode` adds
- * S4 from the supply terminal to +5V. The header path leaves it off and
- * the caller ties the terminal to the board node. The board's constant
- * draw is the rail's load, not a stamp here. `ss14` is the Vishay fit;
- * `led` is the red indicator.
- */
-export function createNanoUsbPath(
-  ss14: DiodeParams,
-  led: DiodeParams,
-  withDiode = true,
-  drive: AvrPinParams = AVR_PIN
-): NanoUsbPath {
-  const pin = new Pin(
-    "d13pin",
-    NANO_D13_NODE,
-    UNO_BOARD_NODE,
-    drive.roh,
-    drive.rol,
-    drive.rpu
-  );
-  return {
-    pin,
-    elements: [
-      ...(withDiode ? [diode("s4", UNO_TERM_NODE, UNO_BOARD_NODE, ss14)] : []),
-      ...nanoBoardNetwork(led, drive.rLeak),
-      ...pin.elements(),
-    ],
-  };
-}
-
-/** USB preset, S4, the +5V network, the board load, D13 held on, and a 0.7 A step. */
-export function nanoUsbDeck(ss14: DiodeParams, led: DiodeParams): Element[] {
-  return [
-    vSource("vusb", "src", "0", { kind: "dc", value: 5 }),
-    resistor("rs", "src", UNO_TERM_NODE, 0.5),
-    ...nanoOnboard(ss14, led),
-    resistor("roh", UNO_BOARD_NODE, NANO_D13_NODE, PIN_ROH),
-    iSource("iboard", UNO_BOARD_NODE, "0", {
-      kind: "dc",
-      value: NANO_BOARD_A,
-    }),
-    iSource("iload", UNO_BOARD_NODE, "0", {
-      kind: "step",
-      t0: 1e-3,
-      v0: 0,
-      v1: 0.7,
-    }),
-  ];
-}
-
-/**
- * The same +5V node with D13 switching at 1 kHz. The high switch is
- * `PIN_ROH` from the board node for the first half of each period. The
- * low switch is `PIN_ROL` to ground for the second half. Its waveform
- * swaps the levels (`high` 0, `low` 1) instead of a phase offset: a
- * `t0` on `pwm` does not shift the ngspice PULSE the way `waveAt` does.
- *
- * Step 20 ns, the same choice as `uno-usb`. The 100 nF ceramics against
- * the tantalum's 5 Ω ESR settle in about C·ESR = 0.5 µs, and a coarser
- * step smears that edge. Three milliseconds is three cycles of the 1 kHz pin.
- */
-export function nanoD13Deck(ss14: DiodeParams, led: DiodeParams): Element[] {
-  const period = 1e-3;
-  return [
-    vSource("vusb", "src", "0", { kind: "dc", value: 5 }),
-    resistor("rs", "src", UNO_TERM_NODE, 0.5),
-    ...nanoOnboard(ss14, led),
-    sw("d13h", UNO_BOARD_NODE, NANO_D13_NODE, PIN_ROH, PIN_ROFF, {
-      kind: "pwm",
-      period,
-      duty: 0.5,
-      low: 0,
-      high: 1,
-    }),
-    sw("d13l", NANO_D13_NODE, "0", PIN_ROL, PIN_ROFF, {
-      kind: "pwm",
-      period,
-      duty: 0.5,
-      low: 1,
-      high: 0,
-    }),
-    iSource("iboard", UNO_BOARD_NODE, "0", {
-      kind: "dc",
-      value: NANO_BOARD_A,
-    }),
-  ];
-}

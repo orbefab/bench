@@ -137,7 +137,6 @@
             "kind": "firmware",
             "chip": "atmega328p",
             "imageParam": "firmware",
-            "boardCircuit": "nano-usb",
             "params": {
               "brownoutVoltage": 2.7,
               "brownoutAssertVoltage": 2.675,
@@ -151,6 +150,72 @@
             },
             "fuses": {
               "extended": "0xFD"
+            },
+            "board": {
+              "instances": {
+                "s4": {
+                  "part": "sfab/diode-ss14@1.0.0"
+                },
+                "c106": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 0.00001,
+                    "esr": 5
+                  }
+                },
+                "cvcc": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "cavcc": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "rrst": {
+                  "part": "sfab/resistor@1.0.0",
+                  "params": {
+                    "R": 1000
+                  }
+                },
+                "crst": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "rled": {
+                  "part": "sfab/resistor@1.0.0",
+                  "params": {
+                    "R": 1000
+                  }
+                },
+                "led": {
+                  "part": "sfab/led-red@1.0.0"
+                }
+              },
+              "wires": [
+                ["s4.K", "c106.A"],
+                ["c106.A", "cvcc.A"],
+                ["c106.A", "cavcc.A"],
+                ["c106.A", "rrst.A"],
+                ["c106.A", "crst.A"],
+                ["c106.B", "cvcc.B"],
+                ["c106.B", "cavcc.B"],
+                ["c106.B", "led.K"],
+                ["rrst.B", "crst.B"],
+                ["rled.B", "led.A"]
+              ],
+              "expose": {
+                "VBUS": "s4.A",
+                "5V": "c106.A",
+                "GND": "c106.B",
+                "RESET": "rrst.B",
+                "D13": "rled.A"
+              }
             },
             "omits": [
               "VIN and the AMS1117",

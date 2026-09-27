@@ -1,5 +1,5 @@
 // Ported from layered-sim E1 src/circuits.ts @ 031dc5e and E3 src/circuits.ts @ fc7e8d3.
-import { nanoD13Deck, nanoUsbDeck, unoUsbTrace } from "../power-path";
+import { unoUsbTrace } from "../power-path";
 import type { Element } from "./element";
 import {
   capacitor,
@@ -99,20 +99,6 @@ export const TRACE_CASES: readonly TraceCase[] = [
     h: 2e-8,
     steps: 150000,
     elements: unoUsbTrace,
-  },
-  {
-    id: "nano-usb",
-    probe: "v5",
-    h: 2e-8,
-    steps: 150000,
-    elements: () => nanoUsbDeck(SS14, LED_RED),
-  },
-  {
-    id: "nano-d13",
-    probe: "d13",
-    h: 2e-8,
-    steps: 150000,
-    elements: () => nanoD13Deck(SS14, LED_RED),
   },
 ];
 

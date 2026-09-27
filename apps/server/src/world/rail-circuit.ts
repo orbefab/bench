@@ -13,25 +13,22 @@
  * ω = 0 and add B(s) on the joint.
  */
 
-import { LED_RED, SS14 } from "./circuit/circuits";
+import { arduinoPinBit } from "@sfab-bench/contract";
 import {
   type Braking,
   BridgeMotor,
   CurrentLoad,
+  type Diode,
   TheveninLimit,
 } from "./circuit/elements";
 import { Engine } from "./circuit/engine";
 import { LawTable } from "./circuit/law-table";
 import { AVR_PIN, type AvrPinParams, type PinMode } from "./circuit/pin";
+import { type BoardStamp, catalogNanoStamp, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,
   type BoardPathName,
-  createNanoUsbPath,
   createUnoUsbPath,
-  NANO_D13_NODE,
-  NANO_D13_R,
-  NANO_LED_NODE,
-  NANO_RESET_NODE,
   NANO_VRST_MAX,
   type PtcFuse,
   UNO_BOARD_NODE,
@@ -68,6 +65,14 @@ export type RailCircuitSpec = {
   law?: TableLaw;
   /** D13 `avr-pin@1` numbers. Absent uses the datasheet fits. */
   pin?: AvrPinParams;
+  /**
+   * Circuit parts for this rail. Absent on `nano-usb` and `nano-5v`
+   * uses the catalog Nano board, so a direct rail matches a world
+   * whose only circuit parts are that netlist.
+   */
+  stamp?: BoardStamp;
+  /** `leds` key copied onto `ledCurrent`. Default `nano.led`. */
+  ledAlias?: string;
 };
 
 const MASTER_S = 0.001;
@@ -92,8 +97,18 @@ export class RailCircuit {
   readonly substeps: number;
   /** Frozen-factor steps during the last master step. */
   lastFrozen = 0;
-  /** Amperes through the D13 LED. 0 when this rail has no Nano path. */
+  /**
+   * Amperes through `ledAlias`. 0 when that LED is not on this rail.
+   * Prefer `leds`. This field stays for the D13 card and the gauge.
+   */
   ledCurrent = 0;
+  /** Forward current of every LED on this rail, keyed by instance path. */
+  leds: Record<string, number> = {};
+  readonly ledPaths: readonly string[];
+  /** Arduino bits that have a pin element on this rail. */
+  get driveBits(): readonly number[] {
+    return this.drives.map((row) => row.bit);
+  }
   /** Volts on the RESET node. 0 when this rail has no Nano path. */
   resetVoltage = 0;
   /**
@@ -108,8 +123,13 @@ export class RailCircuit {
   private readonly boardNode: string;
   private readonly fuse: PtcFuse | null;
   private readonly fuseR: { ohms: number } | null;
-  private readonly nano: boolean;
-  private readonly nanoPin: { setMode(mode: PinMode): void } | null;
+  private readonly drives: {
+    bit: number;
+    pin: { setMode(mode: PinMode): void };
+  }[];
+  private readonly ledDiodes: { path: string; diode: Diode }[];
+  private readonly ledAlias: string;
+  private readonly resetNode: string | null;
   private ready = false;
 
   constructor(spec: RailCircuitSpec) {
@@ -118,13 +138,31 @@ export class RailCircuit {
     const nanoUsb = spec.boardPath === "nano-usb";
     const nano5v = spec.boardPath === "nano-5v";
     const snap = spec.boardPath === "nano-snapshot";
-    const nano = nanoUsb || nano5v;
+    const stamp = spec.stamp ?? (nanoUsb || nano5v ? catalogNanoStamp() : null);
+    const realized = stamp
+      ? realize(stamp, nanoUsb ? "usb" : "header", spec.pin ?? AVR_PIN)
+      : null;
+    const nano =
+      realized !== null && (stamp?.netlist === true || nanoUsb || nano5v);
     const board = uno || nano;
-    this.nano = nano;
     this.path = board;
-    this.termNode =
-      snap || nano5v ? UNO_BOARD_NODE : board ? UNO_TERM_NODE : "rail";
-    this.boardNode = board || snap ? UNO_BOARD_NODE : "rail";
+    this.termNode = realized
+      ? realized.feedNode
+      : snap
+        ? UNO_BOARD_NODE
+        : board
+          ? UNO_TERM_NODE
+          : "rail";
+    this.boardNode = realized
+      ? realized.boardNode
+      : board || snap
+        ? UNO_BOARD_NODE
+        : "rail";
+    this.drives = realized?.pins ?? [];
+    this.ledDiodes = realized?.leds ?? [];
+    this.ledPaths = this.ledDiodes.map((led) => led.path);
+    this.ledAlias = spec.ledAlias ?? "nano.led";
+    this.resetNode = realized?.resetNode ?? null;
     let inductive = false;
     const motors: BridgeMotor[] = [];
     for (let i = 0; i < spec.motors.length; i++) {
@@ -143,7 +181,7 @@ export class RailCircuit {
       );
     }
     this.motors = motors;
-    this.substeps = inductive || board ? SUBSTEPS : 1;
+    this.substeps = inductive || board || realized?.capacitive ? SUBSTEPS : 1;
     // The snapshot replaces the USB front end. The board load still
     // has its knee: full current down to 1 V, then linear to 0 A at 0 V.
     this.load = new CurrentLoad(
@@ -170,19 +208,15 @@ export class RailCircuit {
           spec.iLimit
         );
     const unoPath = uno ? createUnoUsbPath() : null;
-    const nanoPath = nano
-      ? createNanoUsbPath(SS14, LED_RED, nanoUsb, spec.pin ?? AVR_PIN)
-      : null;
     this.fuse = unoPath?.fuse ?? null;
     this.fuseR = unoPath?.resistor ?? null;
-    this.nanoPin = nanoPath?.pin ?? null;
     this.winding = new Float64Array(motors.length);
     this.engine = new Engine(
       [
         supply,
         this.load,
         ...motors,
-        ...(unoPath?.elements ?? nanoPath?.elements ?? []),
+        ...(unoPath?.elements ?? realized?.elements ?? []),
       ],
       {
         method: "be",
@@ -219,20 +253,29 @@ export class RailCircuit {
     this.fuse?.trip();
   }
 
-  /** D13 drive for the Nano LED. No effect without the Nano path. */
+  /** One stamped pin follows the firmware drive at this master step. */
+  setDrive(bit: number, mode: PinMode): void {
+    const found = this.drives.find((row) => row.bit === bit);
+    found?.pin.setMode(mode);
+  }
+
+  /** D13. Same as `setDrive` for that bit. */
   setD13(mode: PinMode): void {
-    this.nanoPin?.setMode(mode);
+    const bit = arduinoPinBit("D13");
+    if (bit === undefined) return;
+    this.setDrive(bit, mode);
   }
 
   private noteNano(): void {
-    if (!this.nano) return;
+    const leds: Record<string, number> = {};
+    for (const led of this.ledDiodes) leds[led.path] = led.diode.amps;
+    this.leds = leds;
+    this.ledCurrent = leds[this.ledAlias] ?? 0;
+    if (!this.resetNode) return;
     const board = this.engine.voltage(this.boardNode);
-    const reset = this.engine.voltage(NANO_RESET_NODE);
+    const reset = this.engine.voltage(this.resetNode);
     const margin = reset - NANO_VRST_MAX * board;
     if (margin < this.resetMarginMin) this.resetMarginMin = margin;
-    const pin = this.engine.voltage(NANO_D13_NODE);
-    const anode = this.engine.voltage(NANO_LED_NODE);
-    this.ledCurrent = (pin - anode) / NANO_D13_R;
     this.resetVoltage = reset;
   }
 

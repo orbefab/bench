@@ -2,6 +2,20 @@
   "format": "sfab.lock@1",
   "parts": [
     {
+      "id": "sfab/capacitor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/capacitor@1.0.0.json",
+      "sha256": "4cd09ef3beba925f97d238c6078aec4b927cc94621011cb534bb313140b60e8e",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/diode-ss14@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/diode-ss14@1.0.0.json",
+      "sha256": "fce139f01a88f129dc3bb08187ec91a7bc5c6b84c3b3a8ec2e08a785837cc059",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
       "id": "sfab/flag@1.0.0",
       "path": "parts/sfab/flag@1.0.0.json",
       "sha256": "1c20f92a1050d84cc7650d541780233667543bdaa581797f0407573c0f27be93",
@@ -9,9 +23,16 @@
       "version": "1.0.0"
     },
     {
+      "id": "sfab/led-red@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/led-red@1.0.0.json",
+      "sha256": "009dffe0e8b10c328b94459ec7eb1396ddb330fef5c95f92d7f74cf50981d9c2",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "7fd08432a14f72e4e582cbd6f79988294b7b0f0f57cf96a1786e92e179405ca6",
+      "sha256": "3d604a01090e4152854113b52d40e2e825c7b8949dfd89b2a7fe73bc21113da8",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -20,6 +41,13 @@
       "path": "parts/sfab/nano-vcc-scene@1.0.0.json",
       "sha256": "3e8af5872df6b837ffc52dd9450495a05978ceec8b1b31e9c39e8b85ffa16f83",
       "source": "world",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/resistor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/resistor@1.0.0.json",
+      "sha256": "4b38e5fa1fd847a3e8d52bfa23d65699a13bc9a9d2c62b20cf901ee222d6361a",
+      "source": "catalog",
       "version": "1.0.0"
     },
     {
@@ -69,7 +97,7 @@
     {
       "id": "arduino-nano",
       "path": "../../apps/server/catalog/types/arduino-nano.json",
-      "sha256": "2d12d8d3345bc8a170cb216fcd9e5016aef2294e0e23c88391197c0f3b78ee57",
+      "sha256": "882a79d50148a74d5c6d4b50ed0b316b20892024766d8715af19d6763715a3e9",
       "source": "catalog"
     },
     {
@@ -79,9 +107,21 @@
       "source": "catalog"
     },
     {
+      "id": "capacitor",
+      "path": "../../apps/server/catalog/types/capacitor.json",
+      "sha256": "cb8a7070edcaad83051a688cc5fefdca8a5800e597892d549cbfbccfdbb3ef13",
+      "source": "catalog"
+    },
+    {
       "id": "dc-motor-terminals",
       "path": "../../apps/server/catalog/types/dc-motor-terminals.json",
       "sha256": "dd0e94aafb85b2d9208cc7a1cf588ac35502f4047406429c22e557915588e20f",
+      "source": "catalog"
+    },
+    {
+      "id": "diode",
+      "path": "../../apps/server/catalog/types/diode.json",
+      "sha256": "2acc095e3190263e167b598d47f2917d373f1275d1adc18f8be244738794dce4",
       "source": "catalog"
     },
     {
@@ -103,9 +143,21 @@
       "source": "catalog"
     },
     {
+      "id": "led",
+      "path": "../../apps/server/catalog/types/led.json",
+      "sha256": "9a85dfd184a8511510d43d79cede9e2f01d69f3113e02b250c4c790cb47e385f",
+      "source": "catalog"
+    },
+    {
       "id": "potentiometer",
       "path": "../../apps/server/catalog/types/potentiometer.json",
       "sha256": "c3dbd8b5a5e46ad450b96003fdf8124c74feab642c0e541d9d9dca9461d08697",
+      "source": "catalog"
+    },
+    {
+      "id": "resistor",
+      "path": "../../apps/server/catalog/types/resistor.json",
+      "sha256": "bd300d9ec35ce882fb73a75fd9afb9739844b5567ec263ed41d8d7416eee04e6",
       "source": "catalog"
     },
     {

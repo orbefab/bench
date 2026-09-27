@@ -157,8 +157,13 @@ export type WorldBoardState = {
    */
   voltage?: number;
   /**
-   * Amperes through the D13 LED. Present only on a board whose class-2
-   * circuit stamps that LED. The recording uses the same name.
+   * Forward current, amperes, of each LED on this board's rail.
+   * Keyed by instance path (`nano.led`, `led`).
+   */
+  leds?: Record<string, number>;
+  /**
+   * Amperes through the onboard LED at `leds[`${id}.led`]`.
+   * @deprecated Read `leds` instead. Kept for the D13 card and the gauge.
    */
   ledCurrent?: number;
   /**
@@ -502,7 +507,12 @@ export type RecordedFrame = {
       voltage: number;
       /** Lowest 5V-node voltage in the window. */
       minVoltage: number;
-      /** Amperes through the D13 LED. Absent when that board has no LED stamp. */
+      /** Forward current of each LED on this rail, keyed by instance path. */
+      leds?: Record<string, number>;
+      /**
+       * Amperes through `leds[`${id}.led`]`.
+       * @deprecated Read `leds`. Kept for the D13 card and the gauge.
+       */
       ledCurrent?: number;
     }
   >;

@@ -19,6 +19,14 @@ import {
   type WorldTarget,
 } from "@sfab-bench/contract";
 import { type AvrPinParams, avrPinParams } from "./circuit/pin";
+import {
+  type BoardStamp,
+  type CircuitInst,
+  circuitNumbers,
+  isCircuitForm,
+  liveNets,
+  stampBoard,
+} from "./circuit-stamp";
 import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
@@ -95,11 +103,17 @@ export type RunBoard = {
   /** Amperes drawn by the board, independent of voltage. */
   current: number;
   /**
-   * Onboard circuit from the firmware variant. Null means the 5V pin is
-   * the supply terminal. `nano-usb` is the clone's network: the diode
-   * only when a `usb-a-port` feeds `5V`.
+   * Class-1 source law, `snapshot:<ref>`, or null when the 5V pin is
+   * the supply terminal. A class-2 board carries `stamp` instead.
    */
   boardCircuit: string | null;
+  /** The selected variant has a board netlist. */
+  hasNetlist: boolean;
+  /**
+   * Circuit parts on this board's nets, including its board netlist.
+   * Absent when there are none.
+   */
+  stamp?: BoardStamp;
   brownoutVoltage: number;
   brownoutAssertVoltage: number;
   brownoutReleaseVoltage: number;
@@ -316,6 +330,7 @@ function pinOf(decl: PortDecl): RunPin | null {
 function pinsOf(ports: Record<string, PortDecl>): Record<string, RunPin> {
   const pins: Record<string, RunPin> = {};
   for (const [name, decl] of Object.entries(ports)) {
+    if (decl.internal) continue;
     const pin = pinOf(decl);
     if (pin) pins[name] = pin;
   }
@@ -473,6 +488,51 @@ function digitalPeer(
   return null;
 }
 
+function circuitInstOf(inst: LiveInstance): CircuitInst | null {
+  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+  if (
+    !behaviour ||
+    behaviour.kind !== "form" ||
+    !isCircuitForm(behaviour.form)
+  ) {
+    return null;
+  }
+  const params = circuitNumbers(behaviour, inst.params);
+  if (!params) return null;
+  const ports: Record<string, string> = {};
+  for (const [name, decl] of Object.entries(inst.type.ports)) {
+    if (decl.internal) continue;
+    ports[name] = `${inst.path}.${name}`;
+  }
+  return {
+    path: inst.path,
+    form: behaviour.form,
+    typeId: inst.type.id,
+    params,
+    ports,
+  };
+}
+
+function supplyGround(
+  boardId: string,
+  supplies: RunSupply[],
+  nets: LiveNet[]
+): string {
+  const net = nets.find((item) =>
+    item.ports.some((port) => port.path === boardId && port.port === "5V")
+  );
+  if (net) {
+    for (const supply of supplies) {
+      const hit = net.ports.some(
+        (port) => port.path === supply.id && port.port === supply.positivePin
+      );
+      if (!hit) continue;
+      return `${supply.id}.${supply.groundPin}`;
+    }
+  }
+  return `${boardId}.GND`;
+}
+
 function rangerLaw(numbers: Record<string, number>): RangerLaw {
   return {
     c: numbers.c ?? 0,
@@ -503,9 +563,16 @@ function build(
   const parts: RunPart[] = [];
   const rangers: RunRanger[] = [];
   const boxes: RunBox[] = [];
+  const circuits: CircuitInst[] = [];
 
   for (const inst of loaded.resolved) {
     if (inst.path === "$root") continue;
+    const circuit = circuitInstOf(inst);
+    if (circuit) {
+      circuits.push(circuit);
+      if (inst.pose) pushBox(boxes, inst, "part");
+      continue;
+    }
     if (inst.path.includes(".")) {
       diags.push(cannot(inst, "a nested instance is not in this run"));
       continue;
@@ -535,7 +602,7 @@ function build(
       }
       const boardCircuit = behaviour.boardCircuit ?? null;
       const snapRef = snapshotRefOf(boardCircuit);
-      if (boardCircuit !== null && boardCircuit !== "nano-usb" && !snapRef) {
+      if (boardCircuit !== null && !snapRef) {
         diags.push(cannot(inst, `unknown board circuit ${boardCircuit}`));
         continue;
       }
@@ -593,6 +660,7 @@ function build(
         groundPin: "GND",
         current: params.quiescent ?? 0,
         boardCircuit: runCircuit,
+        hasNetlist: behaviour.board !== undefined,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
           params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,
@@ -703,6 +771,21 @@ function build(
       continue;
     }
     diags.push(cannot(inst, `the run has no ${typeId}`));
+  }
+
+  const nets = liveNets(loaded.nets);
+  for (const board of boards) {
+    const inst = loaded.resolved.find((item) => item.path === board.id);
+    if (!inst) continue;
+    const stamp = stampBoard({
+      boardId: board.id,
+      netlist: board.hasNetlist,
+      ports: inst.type.ports,
+      supplyGround: supplyGround(board.id, supplies, loaded.nets),
+      parts: circuits,
+      nets,
+    });
+    if (stamp) board.stamp = stamp;
   }
 
   if (diags.length > 0) return { plan: null, diags };

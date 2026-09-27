@@ -58,6 +58,7 @@ function gpioPlan(
       groundPin: "GND",
       current: 0.05,
       boardCircuit: null,
+      hasNetlist: false,
       brownoutVoltage: 2.7,
       brownoutAssertVoltage: 2.675,
       brownoutReleaseVoltage: 2.725,
