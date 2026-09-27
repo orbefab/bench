@@ -415,11 +415,20 @@ export type LockType = {
   path: string;
 };
 
+export type LockSnapshot = {
+  id: string;
+  sha256: string;
+  source: LockSource;
+  path: string;
+};
+
 export type LockFile = {
   format: typeof LOCK_FORMAT;
   world: string;
   parts: LockPart[];
   types: LockType[];
+  /** Present when the resolved levels name a snapshot. */
+  snapshots?: LockSnapshot[];
 };
 
 export type Diagnostic = {
@@ -445,6 +454,7 @@ export type RunReport = {
       source: LockSource;
     }[];
     types: { id: string; sha256: string; source: LockSource }[];
+    snapshots?: { id: string; sha256: string; source: LockSource }[];
   };
   levels: {
     path: string;
@@ -472,6 +482,10 @@ export type RunReport = {
     axis: AxisName;
     ref: string;
     quality: string;
+    /** Free-run error rows from the snapshot file. Absent when none ran. */
+    error?: SnapshotFile["error"];
+    /** Envelope warnings for this instance. Absent when the row has none. */
+    envelope?: string[];
   }[];
   snapshotQuality: string;
   notSimulated: {

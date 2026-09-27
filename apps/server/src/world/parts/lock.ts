@@ -8,13 +8,17 @@ import {
   LOCK_FORMAT,
   type LockFile,
   type LockPart,
+  type LockSnapshot,
   type LockType,
 } from "@sfab-bench/contract";
 
 import type { Library } from "./library";
 import { canonicalJson, makeDiag, parsePartRef } from "./si";
 
-export function buildLock(lib: Library): LockFile {
+export function buildLock(
+  lib: Library,
+  snapshots: LockSnapshot[] = []
+): LockFile {
   const parts: LockPart[] = [...lib.parts.values()]
     .map((loaded) => {
       const parsed = parsePartRef(loaded.part.id);
@@ -36,7 +40,16 @@ export function buildLock(lib: Library): LockFile {
       path: loaded.path,
     }))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return { format: LOCK_FORMAT, world: lib.worldName, parts, types };
+  const pinned = [...snapshots].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  );
+  return {
+    format: LOCK_FORMAT,
+    world: lib.worldName,
+    parts,
+    types,
+    ...(pinned.length > 0 ? { snapshots: pinned } : {}),
+  };
 }
 
 /**
@@ -58,7 +71,11 @@ export function readLock(file: string): LockFile {
   return JSON.parse(readFileSync(file, "utf8")) as LockFile;
 }
 
-export function verifyLock(lib: Library, lock: LockFile): Diagnostic[] {
+export function verifyLock(
+  lib: Library,
+  lock: LockFile,
+  snapshots: LockSnapshot[] = []
+): Diagnostic[] {
   const diags: Diagnostic[] = [];
   if (lock.format !== LOCK_FORMAT) {
     diags.push(
@@ -86,7 +103,7 @@ export function verifyLock(lib: Library, lock: LockFile): Diagnostic[] {
       })
     );
   }
-  const expected = buildLock(lib);
+  const expected = buildLock(lib, snapshots);
   compareRows(
     diags,
     "part",
@@ -99,12 +116,18 @@ export function verifyLock(lib: Library, lock: LockFile): Diagnostic[] {
     expected.types.map((row) => [row.id, row.sha256]),
     lock.types.map((row) => [row.id, row.sha256])
   );
+  compareRows(
+    diags,
+    "snapshot",
+    (expected.snapshots ?? []).map((row) => [row.id, row.sha256]),
+    (lock.snapshots ?? []).map((row) => [row.id, row.sha256])
+  );
   return diags;
 }
 
 function compareRows(
   diags: Diagnostic[],
-  kind: "part" | "part type",
+  kind: "part" | "part type" | "snapshot",
   expected: [string, string][],
   got: [string, string][]
 ): void {

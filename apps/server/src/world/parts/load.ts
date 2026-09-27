@@ -3,12 +3,15 @@
 import { existsSync } from "node:fs";
 
 import type {
+  BehaviourImpl,
   Diagnostic,
   LockFile,
+  LockSnapshot,
   RunReport,
   WorldFileV2,
 } from "@sfab-bench/contract";
-
+import { snapshotRefOf } from "../power-path";
+import { type LoadedSnapshot, loadSnapshot } from "../snapshot-load";
 import { checkWorld } from "./check";
 import {
   compileRules,
@@ -22,6 +25,7 @@ import {
   loadLibrary,
   shadowWarnings,
   typeFileExists,
+  typeOf,
 } from "./library";
 import { buildLock, lockPathFor, readLock, verifyLock } from "./lock";
 import { buildNets, type LiveNet, type Wire } from "./nets";
@@ -39,6 +43,7 @@ export type LoadResult = {
   diagnostics: Diagnostic[];
   report: RunReport | null;
   lock: LockFile | null;
+  snapshots: LoadedSnapshot[];
 };
 
 export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
@@ -50,6 +55,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     diagnostics: [],
     report: null,
     lock: null,
+    snapshots: [],
   };
   const loaded = loadLibrary(worldFile, opts);
   if (!loaded.library) {
@@ -95,16 +101,16 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     }
   }
 
-  const lock = buildLock(lib);
-  const sibling = lockPathFor(worldFile);
-  if (existsSync(sibling))
-    diagnostics.push(...verifyLock(lib, readLock(sibling)));
-
   const lint = lintLibrary(lib);
   if (
     lint.some((diag) => diag.severity === "error") ||
     diagnostics.some((d) => d.severity === "error")
   ) {
+    const lock = buildLock(lib);
+    const sibling = lockPathFor(worldFile);
+    if (existsSync(sibling)) {
+      diagnostics.push(...verifyLock(lib, readLock(sibling)));
+    }
     return {
       ...empty,
       world: lib.world,
@@ -129,7 +135,12 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
         detail: message,
       })
     );
-    return { ...empty, world: lib.world, diagnostics, lock };
+    return {
+      ...empty,
+      world: lib.world,
+      diagnostics,
+      lock: buildLock(lib),
+    };
   }
 
   diagnostics.push(...shadowWarnings(lib));
@@ -148,10 +159,66 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
       );
     }
   }
+
   const { nets, wires } = buildNets(
     resolved.instances,
     lib.world.run.levels.nets
   );
+  const snapshots: LoadedSnapshot[] = [];
+  const ran: {
+    path: string;
+    ref: string;
+    quality: string;
+    error: LoadedSnapshot["file"]["error"];
+  }[] = [];
+  for (const inst of resolved.instances) {
+    const ref = behaviourSnapshot(inst);
+    if (!ref) continue;
+    let type = null;
+    try {
+      type = typeOf(lib, inst.part);
+    } catch {
+      type = null;
+    }
+    const found = loadSnapshot(lib.worldDir, opts, ref, type);
+    diagnostics.push(...found.diagnostics);
+    if (!found.loaded) continue;
+    snapshots.push(found.loaded);
+    const feed = feedType(inst, resolved.instances, nets);
+    if (feed === "usb-a-port") {
+      ran.push({
+        path: inst.path,
+        ref,
+        quality: found.loaded.quality,
+        error: found.loaded.file.error,
+      });
+    } else if (feed) {
+      diagnostics.push(
+        makeDiag({
+          severity: "warning",
+          path: inst.path,
+          port: "5V",
+          quantity: "Voltage",
+          left: feed,
+          right: "usb-a-port",
+          detail: `snapshot ${ref} does not cover this feed; ideal terminal`,
+        })
+      );
+    }
+  }
+
+  const pins: LockSnapshot[] = snapshots.map((row) => ({
+    id: row.id,
+    sha256: row.sha256,
+    source: row.source,
+    path: row.path,
+  }));
+  const lock = buildLock(lib, pins);
+  const sibling = lockPathFor(worldFile);
+  if (existsSync(sibling)) {
+    diagnostics.push(...verifyLock(lib, readLock(sibling), pins));
+  }
+
   diagnostics.push(
     ...checkWorld(resolved.instances, nets, wires, opts.assetRoot)
   );
@@ -162,6 +229,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     instances: resolved.instances,
     nets,
     diags: diagnostics,
+    ran,
   });
   return {
     world: lib.world,
@@ -171,5 +239,35 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     diagnostics,
     report: built.report,
     lock,
+    snapshots,
   };
+}
+
+function behaviourSnapshot(inst: LiveInstance): string | null {
+  const impl = inst.axes.behaviour.impl as BehaviourImpl | null;
+  if (impl?.kind !== "firmware") return null;
+  return snapshotRefOf(impl.boardCircuit ?? null);
+}
+
+function feedType(
+  inst: LiveInstance,
+  instances: LiveInstance[],
+  nets: LiveNet[]
+): string | null {
+  const net = nets.find((item) =>
+    item.ports.some((port) => port.path === inst.path && port.port === "5V")
+  );
+  if (!net) return null;
+  for (const port of net.ports) {
+    if (port.path === inst.path) continue;
+    const other = instances.find((item) => item.path === port.path);
+    if (!other) continue;
+    if (
+      other.type.id === "usb-a-port" ||
+      other.type.id === "bench-supply-cv-cc"
+    ) {
+      return other.type.id;
+    }
+  }
+  return null;
 }
