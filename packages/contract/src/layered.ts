@@ -186,6 +186,11 @@ export type PortDecl = {
    * pin is the USB connector's 5 V, reached by a cable on `5V`.
    */
   internal?: boolean;
+  /**
+   * Cable family. A supply and a board port that both say `usb` are
+   * the same connector. Absent, the feed is the header.
+   */
+  connector?: string;
 };
 
 /**
@@ -331,6 +336,8 @@ export type BehaviourImpl = { omits: string[] } & (
        * is the board's power pin.
        */
       boardCircuit?: string;
+      /** Logic port the chip uses as reset. Absent, the rail has no reset node. */
+      resetPort?: string;
       /**
        * Class-2 board. Child parts, wires, and expose from this
        * board's ports onto those children. The chip's pin drivers

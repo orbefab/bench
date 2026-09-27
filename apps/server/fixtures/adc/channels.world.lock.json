@@ -32,7 +32,7 @@
     {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "3d604a01090e4152854113b52d40e2e825c7b8949dfd89b2a7fe73bc21113da8",
+      "sha256": "79305ec48f7cb39ef859896797417c9d851bfbc155f76ebbd25d0e2a518245cd",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -55,7 +55,7 @@
     {
       "id": "arduino-nano",
       "path": "../../catalog/types/arduino-nano.json",
-      "sha256": "882a79d50148a74d5c6d4b50ed0b316b20892024766d8715af19d6763715a3e9",
+      "sha256": "a04be684c2ffb7b974c96b1cfe4861f1f4ca1b1408eb5d80b3cc33691f10d306",
       "source": "catalog"
     },
     {
@@ -91,7 +91,7 @@
     {
       "id": "usb-a-port",
       "path": "../../catalog/types/usb-a-port.json",
-      "sha256": "c5ef8da223229f1c1dea7d871144e7ee8c7334d04846b053a492320f29b6986a",
+      "sha256": "6168a3742bb9784135d8cb737bfe8b431571531e8a36d8baec0b9eb597ea2f5c",
       "source": "catalog"
     }
   ],

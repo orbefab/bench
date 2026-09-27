@@ -29,7 +29,6 @@ import {
   BOARD_LOAD_KNEE_V,
   type BoardPathName,
   createUnoUsbPath,
-  NANO_VRST_MAX,
   type PtcFuse,
   UNO_BOARD_NODE,
   UNO_TERM_NODE,
@@ -74,8 +73,10 @@ export type RailCircuitSpec = {
    * when the stamp has that node. `header` uses the board 5V node.
    */
   feed?: "usb" | "header";
-  /** `leds` key copied onto `ledCurrent`. Default `nano.led`. */
+  /** `leds` key copied onto `ledCurrent`. From the stamp when omitted. */
   ledAlias?: string;
+  /** V_RST / VCC. From the stamp when omitted. */
+  resetFraction?: number;
 };
 
 const MASTER_S = 0.001;
@@ -132,6 +133,7 @@ export class RailCircuit {
   }[];
   private readonly ledDiodes: { path: string; diode: Diode }[];
   private readonly ledAlias: string;
+  private readonly resetFraction: number | null;
   private readonly resetNode: string | null;
   private ready = false;
 
@@ -164,8 +166,9 @@ export class RailCircuit {
     this.drives = realized?.pins ?? [];
     this.ledDiodes = realized?.leds ?? [];
     this.ledPaths = this.ledDiodes.map((led) => led.path);
-    this.ledAlias = spec.ledAlias ?? "nano.led";
+    this.ledAlias = spec.ledAlias ?? stamp?.ledAlias ?? "";
     this.resetNode = realized?.resetNode ?? null;
+    this.resetFraction = spec.resetFraction ?? stamp?.resetFraction ?? null;
     let inductive = false;
     const motors: BridgeMotor[] = [];
     for (let i = 0; i < spec.motors.length; i++) {
@@ -273,13 +276,14 @@ export class RailCircuit {
     const leds: Record<string, number> = {};
     for (const led of this.ledDiodes) leds[led.path] = led.diode.amps;
     this.leds = leds;
-    this.ledCurrent = leds[this.ledAlias] ?? 0;
+    this.ledCurrent = this.ledAlias ? (leds[this.ledAlias] ?? 0) : 0;
     if (!this.resetNode) return;
     const board = this.engine.voltage(this.boardNode);
     const reset = this.engine.voltage(this.resetNode);
-    const margin = reset - NANO_VRST_MAX * board;
-    if (margin < this.resetMarginMin) this.resetMarginMin = margin;
     this.resetVoltage = reset;
+    if (this.resetFraction === null) return;
+    const margin = reset - this.resetFraction * board;
+    if (margin < this.resetMarginMin) this.resetMarginMin = margin;
   }
 
   /**

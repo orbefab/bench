@@ -245,8 +245,9 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     if (!planned.ok) {
       throw new Error(planned.errors.map((item) => item.message).join("; "));
     }
-    const stamp = planned.plan.boards.find((board) => board.id === "nano")
-      ?.stamp;
+    const stamp = planned.plan.boards.find(
+      (board) => board.id === "nano"
+    )?.stamp;
     expect(stamp, "nested nano has no stamp");
     expect(
       stamp.parts.some((part) => part.path === "nano.power.s4"),
@@ -311,10 +312,7 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     const messages = planned.errors.map((item) => item.message);
     const motor = messages.find((item) => item.includes("servo.motor"));
     expect(motor, `no servo.motor error: ${messages.join("; ")}`);
-    expect(
-      motor.includes("no runtime for a declared-only part"),
-      motor
-    );
+    expect(motor.includes("no runtime for a declared-only part"), motor);
     expect(
       messages.every((item) => !item.includes("nested instance")),
       messages.join("; ")
@@ -448,6 +446,82 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
         .join("; ")}`
     );
     console.log("nested wire: asm.inner.5V reaches bench.5V");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-unknown-chip-"));
+  try {
+    writeJson(join(dir, "chip.world.json"), {
+      version: 2,
+      environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+      run: { seed: 1, levels: { default: 1 } },
+      root: {
+        id: "scene",
+        part: {
+          format: "sfab.part@1",
+          id: "sfab/chip-scene@1.0.0",
+          type: "assembly",
+          axes: {
+            behaviour: {
+              "2": {
+                default: "netlist",
+                variants: {
+                  netlist: {
+                    kind: "composite",
+                    omits: ["test scene"],
+                    netlist: {
+                      instances: {
+                        board: {
+                          part: "sfab/odd-chip@1.0.0",
+                          params: { firmware: "missing.hex" },
+                        },
+                      },
+                      wires: [],
+                      expose: {},
+                    },
+                  },
+                },
+              },
+            },
+            body: noneAxis("none"),
+            visual: noneAxis("none"),
+          },
+        },
+      },
+    });
+    writeJson(join(dir, "parts", "sfab", "odd-chip@1.0.0.json"), {
+      format: "sfab.part@1",
+      id: "sfab/odd-chip@1.0.0",
+      type: "arduino-nano",
+      axes: {
+        behaviour: {
+          "1": {
+            default: "avr",
+            variants: {
+              avr: {
+                kind: "firmware",
+                chip: "no-such",
+                imageParam: "firmware",
+                resetPort: "RESET",
+                omits: ["test"],
+                params: { quiescent: 0.01 },
+              },
+            },
+          },
+        },
+        body: noneAxis("none"),
+        visual: noneAxis("none"),
+      },
+    });
+    writeFileSync(join(dir, "missing.hex"), ":00000001FF\n");
+    const planned = planWorld(dir, "chip.world.json");
+    expect(!planned.ok, "unknown chip planned");
+    const messages = planned.errors.map((item) => item.message).join("; ");
+    expect(messages.includes('unknown chip "no-such"'), messages);
+    console.log('unknown chip: unknown chip "no-such"');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

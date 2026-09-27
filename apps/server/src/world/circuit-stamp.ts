@@ -35,6 +35,7 @@ import {
   loadTypeById,
 } from "./parts/library";
 import { buildNets, type LiveNet, netlistOf } from "./parts/nets";
+import { chipFacts } from "./power-path";
 
 export const CIRCUIT_FORMS = ["resistor@1", "capacitor@1", "diode@1"] as const;
 export type CircuitForm = (typeof CIRCUIT_FORMS)[number];
@@ -72,9 +73,13 @@ export type BoardStamp = {
   /** The selected firmware variant carries a board netlist. */
   netlist: boolean;
   boardNode: string;
-  /** Null when the type has no `VBUS` on a net. */
+  /** Null when the type has no USB connector port on a net. */
   vbusNode: string | null;
   resetNode: string | null;
+  /** `${boardId}.led` when that part is an LED. The rail copies it onto `ledCurrent`. */
+  ledAlias: string | null;
+  /** V_RST / VCC for this chip. Null when the chip is unknown here. */
+  resetFraction: number | null;
   /** Board port → node. Absent when that port is not on a net. */
   portNodes: Record<string, string>;
   parts: AssignedPart[];
@@ -131,6 +136,51 @@ function netContaining(
 }
 
 /**
+ * Non-internal power inputs whose voltage rating holds `railVoltage`.
+ * `VIN` on these boards is 7–12 V, so a 5 V chip does not take it.
+ */
+export function railPowerPorts(
+  ports: Record<string, PortDecl>,
+  railVoltage: number
+): string[] {
+  const names: string[] = [];
+  for (const [name, decl] of Object.entries(ports)) {
+    if (decl.internal || decl.role !== "power" || decl.direction !== "in") {
+      continue;
+    }
+    const range = decl.ratings?.voltage;
+    if (!range) continue;
+    const low = typeof range[0] === "number" ? range[0] : range[0]?.v;
+    const high = typeof range[1] === "number" ? range[1] : range[1]?.v;
+    if (typeof low !== "number" || typeof high !== "number") continue;
+    if (railVoltage < low || railVoltage > high) continue;
+    names.push(name);
+  }
+  names.sort();
+  return names;
+}
+
+/** Ground ports a wire can land on. Sorted, so the choice is stable. */
+export function groundPorts(ports: Record<string, PortDecl>): string[] {
+  return Object.entries(ports)
+    .filter(([, decl]) => decl.role === "ground" && !decl.internal)
+    .map(([name]) => name)
+    .sort();
+}
+
+/** The port that says which connector it is. One connector per board today. */
+export function connectorPort(
+  ports: Record<string, PortDecl>,
+  connector: string
+): string | null {
+  return (
+    Object.entries(ports).find(
+      ([, decl]) => decl.connector === connector
+    )?.[0] ?? null
+  );
+}
+
+/**
  * Parts on this board's nets, with a node per port. Ground is every
  * port on the feeding supply's GND net. Other nodes take the first
  * sorted port name on that net.
@@ -140,8 +190,16 @@ export function stampBoard(input: {
   netlist: boolean;
   /** Expanded type ports. `internal` ports are not chip pins. */
   ports: Record<string, PortDecl>;
-  /** `usb.GND`, the feeding supply's ground port. */
+  /** The feeding supply's ground port, for example `usb.GND`. */
   supplyGround: string;
+  /** Non-internal power input whose rating holds the chip rail. */
+  powerPort: string;
+  /** Logic port the chip uses as reset. Null when the variant names none. */
+  resetPort: string | null;
+  /** Internal port with `connector: "usb"`. Null when the type has none. */
+  usbPort: string | null;
+  /** V_RST / VCC. Null when this stamp has no reset threshold. */
+  resetFraction: number | null;
   parts: readonly CircuitInst[];
   nets: readonly NetPorts[];
 }): BoardStamp | null {
@@ -201,17 +259,23 @@ export function stampBoard(input: {
   }
   pins.sort((a, b) => a.bit - b.bit || (a.port < b.port ? -1 : 1));
 
-  const boardNode = named("5V") ?? boardFull("5V");
+  const boardNode = named(input.powerPort) ?? boardFull(input.powerPort);
   const portNodes: Record<string, string> = {};
   for (const port of Object.keys(input.ports)) {
     const node = named(port);
     if (node) portNodes[port] = node;
   }
+  const ledAlias =
+    assigned.find(
+      (part) => part.path === `${input.boardId}.led` && part.typeId === "led"
+    )?.path ?? null;
   return {
     netlist: input.netlist,
     boardNode,
-    vbusNode: input.ports.VBUS ? named("VBUS") : null,
-    resetNode: named("RESET"),
+    vbusNode: input.usbPort ? named(input.usbPort) : null,
+    resetNode: input.resetPort ? named(input.resetPort) : null,
+    ledAlias,
+    resetFraction: input.resetFraction,
     portNodes,
     parts: assigned,
     pins,
@@ -608,11 +672,23 @@ export function boardStampOf(
     if (row) circuitParts.push(row);
   }
   const built = buildNets(instances, undefined);
+  const behaviour = board.axes.behaviour.impl as BehaviourImpl | null;
+  const facts =
+    behaviour?.kind === "firmware" ? chipFacts(behaviour.chip) : null;
+  const powerPort =
+    railPowerPorts(board.type.ports, facts?.railVoltage ?? 5)[0] ?? "5V";
+  const ground = groundPorts(board.type.ports)[0] ?? "GND";
+  const resetPort =
+    behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
   const stamp = stampBoard({
     boardId,
     netlist: true,
     ports: board.type.ports,
-    supplyGround: `${boardId}.GND`,
+    supplyGround: `${boardId}.${ground}`,
+    powerPort,
+    resetPort,
+    usbPort: connectorPort(board.type.ports, "usb"),
+    resetFraction: facts?.resetFraction ?? null,
     parts: circuitParts,
     nets: liveNets(built.nets),
   });

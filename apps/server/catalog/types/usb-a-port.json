@@ -5,7 +5,8 @@
     "5V": {
       "domain": "electrical",
       "role": "power",
-      "direction": "out"
+      "direction": "out",
+      "connector": "usb"
     },
     "GND": {
       "domain": "electrical",

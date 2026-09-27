@@ -23,8 +23,11 @@ import {
   type BoardStamp,
   type CircuitInst,
   circuitNumbers,
+  connectorPort,
+  groundPorts,
   isCircuitForm,
   liveNets,
+  railPowerPorts,
   stampBoard,
   touches,
 } from "./circuit-stamp";
@@ -32,7 +35,7 @@ import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
 import { siValue } from "./parts/si";
-import { pathRefOf, snapshotRefOf } from "./power-path";
+import { chipFacts, pathRefOf, snapshotRefOf } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
 import {
   envelopeOf,
@@ -154,6 +157,8 @@ export type RunSupply = {
   rSeries: number;
   positivePin: string;
   groundPin: string;
+  /** Cable family on the positive port. Null is the header. */
+  connector: string | null;
   pins: Record<string, RunPin>;
 };
 
@@ -516,12 +521,14 @@ function circuitInstOf(inst: LiveInstance): CircuitInst | null {
 }
 
 function supplyGround(
-  boardId: string,
+  board: RunBoard,
   supplies: RunSupply[],
   nets: LiveNet[]
 ): string {
   const net = nets.find((item) =>
-    item.ports.some((port) => port.path === boardId && port.port === "5V")
+    item.ports.some(
+      (port) => port.path === board.id && port.port === board.voltagePin
+    )
   );
   if (net) {
     for (const supply of supplies) {
@@ -532,7 +539,38 @@ function supplyGround(
       return `${supply.id}.${supply.groundPin}`;
     }
   }
-  return `${boardId}.GND`;
+  return `${board.id}.${board.groundPin}`;
+}
+
+/**
+ * The power input the supply is wired to, when that port's rating holds
+ * the chip rail. `VIN` is 7–12 V, so it is not a 5 V rail. With nothing
+ * wired, the matching port is still the input (today, `5V`).
+ */
+function chosenPowerPort(
+  inst: LiveInstance,
+  loaded: LoadResult,
+  railVoltage: number
+): string | null {
+  const candidates = railPowerPorts(inst.type.ports, railVoltage);
+  for (const name of candidates) {
+    const net = loaded.nets.find((item) =>
+      item.ports.some((port) => port.path === inst.path && port.port === name)
+    );
+    if (!net) continue;
+    const fed = net.ports.some((port) => {
+      if (port.path === inst.path) return false;
+      const other = loaded.resolved.find((item) => item.path === port.path);
+      const behaviour = other ? selectedBehaviour(other) : null;
+      return (
+        behaviour?.kind === "form" &&
+        (behaviour.form === "thevenin-limit@1" ||
+          behaviour.form === "ideal-voltage@1")
+      );
+    });
+    if (fed) return name;
+  }
+  return candidates[0] ?? null;
 }
 
 function selectedBehaviour(inst: LiveInstance): BehaviourImpl | null {
@@ -620,6 +658,11 @@ function build(
         diags.push(cannot(inst, `unknown board circuit ${boardCircuit}`));
         continue;
       }
+      const facts = chipFacts(behaviour.chip);
+      if (!facts) {
+        diags.push(cannot(inst, `unknown chip "${behaviour.chip}"`));
+        continue;
+      }
       let runCircuit = boardCircuit;
       let powerSnapshot: PowerSnapshot | null = null;
       if (snapRef) {
@@ -656,7 +699,16 @@ function build(
         visual?.kind === "box"
           ? ([...visual.size] as [number, number, number])
           : ([0, 0, 0] as [number, number, number]);
-      const rail = rangePair(inst.type.ports["5V"]?.ratings?.voltage) ?? [5, 5];
+      const powerName = chosenPowerPort(inst, loaded, facts.railVoltage);
+      if (!powerName) {
+        diags.push(cannot(inst, "the board has no power input"));
+        continue;
+      }
+      const groundName = groundPorts(inst.type.ports)[0] ?? "GND";
+      const rail = rangePair(inst.type.ports[powerName]?.ratings?.voltage) ?? [
+        facts.railVoltage,
+        facts.railVoltage,
+      ];
       const source = inst.params.source;
       boards.push({
         id: inst.path,
@@ -669,9 +721,9 @@ function build(
         pose: poseOf(inst),
         size,
         pins: pinsOf(inst.type.ports),
-        powerInputs: ["5V"],
-        voltagePin: "5V",
-        groundPin: "GND",
+        powerInputs: [powerName],
+        voltagePin: powerName,
+        groundPin: groundName,
         current: params.quiescent ?? 0,
         boardCircuit: runCircuit,
         hasNetlist: behaviour.board !== undefined,
@@ -709,6 +761,7 @@ function build(
         rSeries: numbers.Rs ?? 0,
         positivePin: positive,
         groundPin: ground,
+        connector: inst.type.ports[positive]?.connector ?? null,
         pins,
       });
       pushBox(boxes, inst, "supply");
@@ -803,11 +856,19 @@ function build(
   for (const board of boards) {
     const inst = loaded.resolved.find((item) => item.path === board.id);
     if (!inst) continue;
+    const behaviour = inst ? selectedBehaviour(inst) : null;
+    const facts =
+      behaviour?.kind === "firmware" ? chipFacts(behaviour.chip) : null;
     const stamp = stampBoard({
       boardId: board.id,
       netlist: board.hasNetlist,
       ports: inst.type.ports,
-      supplyGround: supplyGround(board.id, supplies, loaded.nets),
+      supplyGround: supplyGround(board, supplies, loaded.nets),
+      powerPort: board.voltagePin,
+      resetPort:
+        behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null,
+      usbPort: connectorPort(inst.type.ports, "usb"),
+      resetFraction: facts?.resetFraction ?? null,
       parts: stampParts,
       nets,
     });

@@ -141,49 +141,42 @@ export function pathRefOf(boardCircuit: string | null): string | null {
  * the supply terminal is the pin. The caller has already checked that
  * this supply feeds that board.
  *
- * `path:uno-usb` is the hand-built cable, and only from a `usb-a-port`.
- * A bench supply on that board is the header, with no path. A class-2
- * board (`hasNetlist`) takes `feed: "usb"` from a `usb-a-port` (the cable
- * lands on the connector port) and `feed: "header"` from any other supply.
- * A class-1 snapshot is `snapshot:<ref>` and runs only when a matching
- * `usb-a-port` feeds the board. The plan drops that circuit when the port
- * is outside the captured resistance and current limit, so this function
+ * `path:uno-usb` is the hand-built cable, and only from a supply whose
+ * connector is `usb`. Any other supply on that board is the header.
+ * A class-2 board (`hasNetlist`) takes `feed: "usb"` from that connector
+ * (the cable lands on the board's `usb` port) and `feed: "header"` from
+ * any other supply. A class-1 snapshot is `snapshot:<ref>` and runs only
+ * from a `usb` connector. The plan drops that circuit when the port is
+ * outside the captured resistance and current limit, so this function
  * then sees no circuit.
  */
 export function usbPathFor(
-  supplyType: string,
+  connector: string | null,
   boardCircuit: string | null,
   hasNetlist = false
 ): UsbPath | null {
-  if (supplyType.length === 0) return null;
+  const usb = connector === "usb";
   const named = pathRefOf(boardCircuit);
   if (named === "uno-usb") {
-    return supplyType === "usb-a-port"
-      ? { kind: "path", path: "uno-usb" }
-      : null;
+    return usb ? { kind: "path", path: "uno-usb" } : null;
   }
   if (named) return null;
   if (snapshotRefOf(boardCircuit)) {
-    return supplyType === "usb-a-port"
-      ? { kind: "path", path: "nano-snapshot" }
-      : null;
+    return usb ? { kind: "path", path: "nano-snapshot" } : null;
   }
   if (!hasNetlist) return null;
-  return {
-    kind: "netlist",
-    feed: supplyType === "usb-a-port" ? "usb" : "header",
-  };
+  return { kind: "netlist", feed: usb ? "usb" : "header" };
 }
 
 /**
  * True when this supply is the USB cable into a board that names
- * `path:uno-usb`. A `usb-a-port` takes the cable. A bench supply does not.
+ * `path:uno-usb`. Connector `usb` takes the cable. Any other feed does not.
  */
 export function unoUsbPathFor(
-  supplyType: string,
+  connector: string | null,
   boardCircuit: string | null
 ): boolean {
-  const path = usbPathFor(supplyType, boardCircuit, false);
+  const path = usbPathFor(connector, boardCircuit, false);
   return path?.kind === "path" && path.path === "uno-usb";
 }
 
@@ -351,3 +344,14 @@ export const NANO_BOARD_A = NANO_MCU_A + NANO_CH340_A + NANO_POWER_LED_A;
  * means the pin never crosses into reset.
  */
 export const NANO_VRST_MAX = 0.9;
+
+/**
+ * Chip facts the run knows. Pin names stay in `ARDUINO_PINS`. The rail
+ * voltage picks the board's power input. `resetFraction` is V_RST / VCC.
+ */
+export function chipFacts(
+  chip: string
+): { railVoltage: number; resetFraction: number } | null {
+  if (chip !== "atmega328p") return null;
+  return { railVoltage: 5, resetFraction: NANO_VRST_MAX };
+}

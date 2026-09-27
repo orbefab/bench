@@ -2,14 +2,15 @@
 
 import { existsSync } from "node:fs";
 
-import type {
-  BehaviourImpl,
-  Diagnostic,
-  LockFile,
-  LockSnapshot,
-  RunReport,
-  SnapshotFile,
-  WorldFileV2,
+import {
+  type BehaviourImpl,
+  type Diagnostic,
+  type LockFile,
+  type LockSnapshot,
+  type RunReport,
+  type SnapshotFile,
+  SUPPLY_FORMS,
+  type WorldFileV2,
 } from "@sfab-bench/contract";
 import { snapshotRefOf } from "../power-path";
 import { sourceBoundsOf, sourceOutside } from "../snapshot-law";
@@ -191,8 +192,11 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     const found = loadSnapshot(lib.worldDir, opts, ref, type);
     diagnostics.push(...found.diagnostics);
     if (!found.loaded) continue;
-    const feed = feedOf(inst, resolved.instances, nets);
-    if (feed?.type.id === "usb-a-port") {
+    const foundFeed = feedOf(inst, resolved.instances, nets);
+    const feed = foundFeed?.feed ?? null;
+    const feedPortName = foundFeed?.port ?? powerPortName(inst);
+    const usb = feed !== null && connectorOf(feed) === "usb";
+    if (usb && feed) {
       const port = portNumbers(feed);
       const bounds = sourceBoundsOf(found.loaded.file);
       const covered =
@@ -216,7 +220,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
           makeDiag({
             severity: "warning",
             path: inst.path,
-            port: "5V",
+            port: feedPortName,
             quantity: "Resistance",
             left: port ? `${port.rs} Ω, ${port.ilimit} A` : feed.type.id,
             right: bounds
@@ -231,7 +235,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
         makeDiag({
           severity: "warning",
           path: inst.path,
-          port: "5V",
+          port: feedPortName,
           quantity: "Voltage",
           left: feed.type.id,
           right: "usb-a-port",
@@ -300,24 +304,48 @@ function behaviourSnapshot(inst: LiveInstance): string | null {
   return snapshotRefOf(impl.boardCircuit ?? null);
 }
 
+function powerPortName(inst: LiveInstance): string {
+  for (const [name, decl] of Object.entries(inst.type.ports)) {
+    if (!decl.internal && decl.role === "power" && decl.direction === "in") {
+      return name;
+    }
+  }
+  return "5V";
+}
+
+function connectorOf(inst: LiveInstance): string | null {
+  for (const decl of Object.values(inst.type.ports)) {
+    if (decl.connector) return decl.connector;
+  }
+  return null;
+}
+
+function isSupplyInst(inst: LiveInstance): boolean {
+  const impl = inst.axes.behaviour.impl as BehaviourImpl | null;
+  if (impl?.kind !== "form") return false;
+  return (SUPPLY_FORMS as readonly string[]).includes(impl.form);
+}
+
 function feedOf(
   inst: LiveInstance,
   instances: LiveInstance[],
   nets: LiveNet[]
-): LiveInstance | null {
-  const net = nets.find((item) =>
-    item.ports.some((port) => port.path === inst.path && port.port === "5V")
-  );
-  if (!net) return null;
-  for (const port of net.ports) {
-    if (port.path === inst.path) continue;
-    const other = instances.find((item) => item.path === port.path);
-    if (!other) continue;
-    if (
-      other.type.id === "usb-a-port" ||
-      other.type.id === "bench-supply-cv-cc"
-    ) {
-      return other;
+): { feed: LiveInstance; port: string } | null {
+  const names = Object.entries(inst.type.ports)
+    .filter(
+      ([, decl]) =>
+        !decl.internal && decl.role === "power" && decl.direction === "in"
+    )
+    .map(([name]) => name);
+  for (const name of names) {
+    const net = nets.find((item) =>
+      item.ports.some((port) => port.path === inst.path && port.port === name)
+    );
+    if (!net) continue;
+    for (const port of net.ports) {
+      if (port.path === inst.path) continue;
+      const other = instances.find((item) => item.path === port.path);
+      if (other && isSupplyInst(other)) return { feed: other, port: name };
     }
   }
   return null;

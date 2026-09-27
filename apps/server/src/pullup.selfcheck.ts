@@ -74,6 +74,7 @@ function gpioPlan(
       rSeries: 0.5,
       positivePin: "5V",
       groundPin: "GND",
+      connector: "usb",
       pins: { "5V": VCC, GND: GROUND },
     })),
     parts: [],

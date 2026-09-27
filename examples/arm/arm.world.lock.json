@@ -117,7 +117,7 @@
     {
       "id": "usb-a-port",
       "path": "../../apps/server/catalog/types/usb-a-port.json",
-      "sha256": "c5ef8da223229f1c1dea7d871144e7ee8c7334d04846b053a492320f29b6986a",
+      "sha256": "6168a3742bb9784135d8cb737bfe8b431571531e8a36d8baec0b9eb597ea2f5c",
       "source": "catalog"
     }
   ],

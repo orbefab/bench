@@ -69,6 +69,7 @@
       "role": "power",
       "direction": "in",
       "internal": true,
+      "connector": "usb",
       "ratings": {
         "voltage": [5, 5],
         "absMaxVoltage": [0, 6]

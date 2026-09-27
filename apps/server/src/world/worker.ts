@@ -48,7 +48,7 @@ import {
   runningBrownout,
   stepBrownout,
 } from "./power";
-import { type BoardPathName, usbPathFor } from "./power-path";
+import { type BoardPathName, chipFacts, usbPathFor } from "./power-path";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
@@ -882,7 +882,7 @@ function bootBoard(spec: BoardSpec): AvrBoard {
   attachAnalog(board);
   // No supply: the CPU never starts. A later step does not boot it either.
   if (!boardPower.get(spec.id)?.supplyId) return board;
-  if (spec.chip !== "atmega328p") {
+  if (!chipFacts(spec.chip)) {
     board.stop(`unsupported chip "${spec.chip}"`);
     return board;
   }
@@ -1029,7 +1029,7 @@ function bindRails() {
     const fed = boardOn(supply.id);
     const chosen = fed
       ? usbPathFor(
-          supplyTypeOf(supply.id),
+          supplyConnectorOf(supply.id),
           fed.boardCircuit,
           fed.hasNetlist
         )
@@ -1069,8 +1069,10 @@ function bindRails() {
   }
 }
 
-function supplyTypeOf(supplyId: string): string {
-  return runPlan?.supplies.find((item) => item.id === supplyId)?.type ?? "";
+function supplyConnectorOf(supplyId: string): string | null {
+  return (
+    runPlan?.supplies.find((item) => item.id === supplyId)?.connector ?? null
+  );
 }
 
 /** The fed board, when this supply powers a firmware board. */
