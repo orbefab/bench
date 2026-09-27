@@ -111,7 +111,7 @@ HCSR04_HEADER_OVERLAP = 0.3  # plastic bites the PCB so the outline is one solid
 HCSR04_HEADER_BELOW_PCB = HCSR04_HEADER_BODY - HCSR04_HEADER_OVERLAP
 # Common module: the header is on the bottom edge and the pins point down,
 # in the plane of the board, past that edge. Confirm on the owner's part.
-HCSR04_PINS_DOWN = True  # verify
+HCSR04_PINS_DOWN = True  # the owner's module: pins point down
 
 # The board drops into a rear wall, side stops, end shelves and a short
 # front lip that stays below the cans. With the pins down, the shelves stop

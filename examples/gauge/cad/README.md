@@ -50,7 +50,7 @@ Wires from the sensor and the servo join the floor lane on the −X side, and ru
 
 - The dial is its own print, in a D-shaped seat, so a bad scale can be reprinted without the base.
 - The Nano sits pins-down on two end rails, component side up. That keeps the mini-USB and the D13 LED on the top face, and leaves the long edges open for female Dupont housings and the wires leaving them. The rails are tall enough for a housing plus an 8 mm bend above the floor. The floor stays closed under the pins.
-- The HC-SR04 pins point down, in the plane of the board (`HCSR04_PINS_DOWN`). The shelves stop either side of the header so the housings hang free, and the wires leave under the shelf to the −X lane. Confirm the pin direction from a photo before printing the base.
+- The HC-SR04 pins point down, in the plane of the board (`HCSR04_PINS_DOWN`). The shelves stop either side of the header so the housings hang free, and the wires leave under the shelf to the −X lane. The owner's module is this way.
 - The fit coupons are three small prints. Each one calls the same pocket or cradle as the base.
 - The scale is horizontal, under the flag. Standing in front of the sensor (+Y) and looking down, the flag and the dial are both in view. Number labels are turned so they read upright from that side. The long tick at 0° is the degree mark; 10, 50 and 100 cm are numbered. "100" sits at 168° so the glyphs stay on the plate.
 - The servo's tab holes are short slots, not round pilots, so a hole-spacing error still takes the stock screws.
@@ -104,7 +104,6 @@ These are in `lib/dimensions.py` with a `# verify` comment. Fits are loose becau
 | HCSR04_HEADER_PIN_L | 8.0 mm | right-angle posts |
 | HCSR04_HEADER_PIN | 0.64 mm | square post |
 | HCSR04_HEADER_BODY | 2.54 mm | header plastic |
-| HCSR04_PINS_DOWN | true | pins down in the board plane; confirm from a photo |
 | NANO_PCB_L | 43.2 mm | FR4; the shell makes the 45 mm overall |
 | NANO_PCB_T | 1.6 mm | board thickness |
 | NANO_ROW_SPACING | 15.24 mm | usual breadboard span |
