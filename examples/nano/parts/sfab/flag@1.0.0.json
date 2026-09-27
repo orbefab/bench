@@ -1,0 +1,57 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/flag@1.0.0",
+  "type": "flag-hinge",
+  "foreign": false,
+  "ratings": {
+    "hinge": {
+      "torque": [-0.18, 0.18],
+      "speed": [-10.472, 10.472]
+    }
+  },
+  "sources": [
+    {
+      "title": "examples/nano/robot/flag.urdf",
+      "ref": "a box vane on a hinge, so the SG90 has a joint to drive"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "rigid",
+        "variants": {
+          "rigid": {
+            "kind": "form",
+            "form": "multibody@1",
+            "params": {},
+            "omits": ["joint flexibility", "link compliance"]
+          }
+        }
+      }
+    },
+    "body": {
+      "1": {
+        "default": "urdf",
+        "variants": {
+          "urdf": {
+            "kind": "urdf",
+            "file": "robot/flag.urdf",
+            "omits": ["link flex"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.08, 0.04, 0.02],
+            "omits": ["link meshes"]
+          }
+        }
+      }
+    }
+  }
+}

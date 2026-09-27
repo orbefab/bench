@@ -1,0 +1,20 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "flag-hinge",
+  "ports": {
+    "hinge": {
+      "domain": "rotational",
+      "direction": "passive",
+      "frame": "hinge"
+    },
+    "base": {
+      "domain": "mount",
+      "direction": "passive",
+      "frame": "base"
+    }
+  },
+  "plausible": {
+    "Torque": [-5, 5],
+    "AngularVelocity": [-100, 100]
+  }
+}
