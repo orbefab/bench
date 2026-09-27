@@ -750,7 +750,7 @@ function stampOf(
     for (const inst of instances) {
       if (inst.path === "$root" || inst.path === boardId) continue;
       const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
-      if (!behaviour || behaviour.kind === "composite") continue;
+      if (behaviour?.kind === "composite") continue;
       if (circuitParts.some((part) => part.path === inst.path)) continue;
       throw new Error(`${partId}: ${inst.path} is not a circuit leaf`);
     }

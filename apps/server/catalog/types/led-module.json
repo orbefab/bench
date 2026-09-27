@@ -1,0 +1,21 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "led-module",
+  "plausible": {
+    "Voltage": [-1, 12],
+    "Current": [-0.05, 0.05],
+    "Resistance": [0, 10000]
+  },
+  "ports": {
+    "IN": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in"
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    }
+  }
+}

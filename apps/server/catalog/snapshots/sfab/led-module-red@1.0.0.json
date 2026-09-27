@@ -1,0 +1,94 @@
+{
+  "axis": "behaviour",
+  "envelope": {
+    "bounds": {
+      "IN.current": [
+        0,
+        0.02
+      ]
+    }
+  },
+  "error": [
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "static-max-abs",
+      "quantity": "IN.voltage",
+      "value": 0.001840934
+    }
+  ],
+  "form": "table@1",
+  "format": "sfab.snapshot@1",
+  "params": {
+    "across": [
+      "IN",
+      "GND"
+    ],
+    "iAxis": [
+      0,
+      0.0001,
+      0.0002,
+      0.0005,
+      0.001,
+      0.002,
+      0.003,
+      0.005,
+      0.008,
+      0.01,
+      0.014,
+      0.02
+    ],
+    "iSense": 1,
+    "vAxis": [
+      0,
+      1.527883172,
+      1.590763736,
+      1.713048669,
+      1.869277674,
+      2.142192228,
+      2.398694767,
+      2.894579133,
+      3.62150574,
+      4.10097809,
+      5.053657946,
+      6.47423255
+    ]
+  },
+  "part": "sfab/led-module-red@1.0.0",
+  "partType": "led-module",
+  "ports": {
+    "inputs": [
+      "IN.current"
+    ],
+    "outputs": [
+      "IN.voltage"
+    ]
+  },
+  "provenance": {
+    "bench": {
+      "avr8js": "0.21.1",
+      "mujoco": "3.14.0",
+      "version": "0.2.2"
+    },
+    "created": "2026-09-27T00:00:00.000Z",
+    "fixture": {
+      "hash": "5e6dd6b810255055f3094c2d193d95f772bd136e249e6e6bb3125077a98d959a",
+      "ref": "sfab/led-module-red",
+      "seed": 20260927
+    },
+    "from": {
+      "hash": "d6febbce50169e98d09c056e807d2af997bc1392d0894cc1e49dc5d4381e1474",
+      "level": "2",
+      "part": "sfab/led-module-red@1.0.0"
+    },
+    "source": "captured",
+    "tool": {
+      "name": "sfab-bench-capture",
+      "version": "1"
+    }
+  },
+  "quality": "Q1"
+}
