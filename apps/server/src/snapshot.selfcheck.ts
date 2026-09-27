@@ -61,7 +61,7 @@ function nanoType(): PartTypeFile {
 function lint(snap: SnapshotFile) {
   return lintSnapshot(snap, {
     plausible: nanoType().plausible,
-    actuator: false,
+    ports: nanoType().ports,
   });
 }
 
@@ -448,7 +448,7 @@ function overLimit(file: SnapshotFile): void {
       k: 0.3,
     }));
     const usb = stalledRail("usb", motors);
-    const snap = stalledRail("nano-snapshot", motors, law);
+    const snap = stalledRail("snapshot-feed", motors, law);
     const dvMv = Math.abs(usb - snap) * 1000;
     console.log(
       `over-limit n=${n}: class 2 ${usb.toFixed(3)} V, class 1 ${snap.toFixed(3)} V, |Δ| ${dvMv.toFixed(1)} mV`
@@ -458,7 +458,7 @@ function overLimit(file: SnapshotFile): void {
 }
 
 function stalledRail(
-  boardPath: "usb" | "nano-snapshot",
+  boardPath: "usb" | "snapshot-feed",
   motors: { resistance: number; k: number }[],
   law?: NonNullable<ReturnType<typeof tableLawOf>>
 ): number {
@@ -467,7 +467,7 @@ function stalledRail(
     rSeries: 0.5,
     iLimit: 0.9,
     motors,
-    ...(boardPath === "nano-snapshot"
+    ...(boardPath === "snapshot-feed"
       ? { boardPath, ...(law ? { law } : {}) }
       : { stamp: NANO_STAMP, feed: "usb" as const }),
   });

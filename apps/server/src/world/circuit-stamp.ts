@@ -23,6 +23,7 @@ import {
   type DiodeParams,
   Resistor,
 } from "./circuit/elements";
+import { LawTable } from "./circuit/law-table";
 import { AVR_PIN, type AvrPinParams, Pin } from "./circuit/pin";
 import { compileRules, resolveLevels } from "./parts/levels";
 import {
@@ -36,6 +37,7 @@ import {
 } from "./parts/library";
 import { buildNets, type LiveNet, netlistOf } from "./parts/nets";
 import { chipFacts } from "./power-path";
+import type { SnapshotEnvelope, TableLaw } from "./snapshot-law";
 
 export const CIRCUIT_FORMS = ["resistor@1", "capacitor@1", "diode@1"] as const;
 export type CircuitForm = (typeof CIRCUIT_FORMS)[number];
@@ -44,22 +46,33 @@ export function isCircuitForm(form: string): form is CircuitForm {
   return (CIRCUIT_FORMS as readonly string[]).includes(form);
 }
 
+/** A `table@1` branch stamped beside the resistor, capacitor and diode. */
+export type StampedTable = {
+  ref: string;
+  law: TableLaw;
+  envelope: SnapshotEnvelope;
+};
+
+export type StampedForm = CircuitForm | "table@1";
+
 export type CircuitInst = {
   path: string;
-  form: CircuitForm;
+  form: StampedForm;
   typeId: string;
   params: Record<string, number>;
   /** Port name → `path.port`. */
   ports: Record<string, string>;
+  table?: StampedTable;
 };
 
 export type AssignedPart = {
   path: string;
-  form: CircuitForm;
+  form: StampedForm;
   typeId: string;
   params: Record<string, number>;
   /** Port name → node. Ground is `"0"`. */
   nodes: Record<string, string>;
+  table?: StampedTable;
 };
 
 export type StampedPin = {
@@ -242,6 +255,7 @@ export function stampBoard(input: {
         nodeByFull.get(full) ?? `${part.path}.${name}`,
       ])
     ),
+    ...(part.table ? { table: part.table } : {}),
   }));
   assigned.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
@@ -410,6 +424,23 @@ function elementOf(part: AssignedPart): {
     const b = need(part, "B");
     return {
       elements: [new Resistor(part.path, a, b, needNum(part, "R"))],
+      capacitive: false,
+    };
+  }
+  if (part.form === "table@1") {
+    const law = part.table?.law;
+    if (!law) throw new Error(`${part.path} table is missing its law`);
+    return {
+      elements: [
+        new LawTable(
+          part.path,
+          need(part, law.across[0]),
+          need(part, law.across[1]),
+          law,
+          0,
+          null
+        ),
+      ],
       capacitive: false,
     };
   }
@@ -685,9 +716,11 @@ export function boardStampOf(
   const behaviour = board.axes.behaviour.impl as BehaviourImpl | null;
   const facts =
     behaviour?.kind === "firmware" ? chipFacts(behaviour.chip) : null;
-  const powerPort =
-    railPowerPorts(board.type.ports, facts?.railVoltage ?? 5)[0] ?? "5V";
-  const ground = groundPorts(board.type.ports)[0] ?? "GND";
+  if (!facts) throw new Error(`${partId} has no chip rail`);
+  const powerPort = railPowerPorts(board.type.ports, facts.railVoltage)[0];
+  if (!powerPort) throw new Error(`${partId} has no power port`);
+  const ground = groundPorts(board.type.ports)[0];
+  if (!ground) throw new Error(`${partId} has no ground port`);
   const resetPort =
     behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
   const stamp = stampBoard({
@@ -698,7 +731,7 @@ export function boardStampOf(
     powerPort,
     resetPort,
     usbPort: connectorPort(board.type.ports, "usb"),
-    resetFraction: facts?.resetFraction ?? null,
+    resetFraction: facts.resetFraction,
     parts: circuitParts,
     nets: liveNets(built.nets),
   });

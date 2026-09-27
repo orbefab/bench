@@ -115,7 +115,7 @@ const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;
  * A cable network that is still a named path. A firmware board netlist
  * is not one of these: the caller passes the stamp and `feed`.
  */
-export type BoardPathName = "uno-usb" | "nano-snapshot";
+export type BoardPathName = "uno-usb" | "snapshot-feed";
 
 /** What `usbPathFor` tells the worker to put on the rail. */
 export type UsbPath =
@@ -145,10 +145,9 @@ export function pathRefOf(boardCircuit: string | null): string | null {
  * connector is `usb`. Any other supply on that board is the header.
  * A class-2 board (`hasNetlist`) takes `feed: "usb"` from that connector
  * (the cable lands on the board's `usb` port) and `feed: "header"` from
- * any other supply. A class-1 snapshot is `snapshot:<ref>` and runs only
- * from a `usb` connector. The plan drops that circuit when the port is
- * outside the captured resistance and current limit, so this function
- * then sees no circuit.
+ * any other supply. A class-1 snapshot is `snapshot:<ref>`. The loader
+ * keeps that circuit only when the feed is the Thevenin the snapshot
+ * was captured through, so this function then sees no circuit.
  */
 export function usbPathFor(
   connector: string | null,
@@ -162,7 +161,8 @@ export function usbPathFor(
   }
   if (named) return null;
   if (snapshotRefOf(boardCircuit)) {
-    return usb ? { kind: "path", path: "nano-snapshot" } : null;
+    // The loader already matched this feed's connector and source bounds.
+    return { kind: "path", path: "snapshot-feed" };
   }
   if (!hasNetlist) return null;
   return { kind: "netlist", feed: usb ? "usb" : "header" };

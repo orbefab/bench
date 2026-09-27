@@ -292,7 +292,7 @@ async function runLed(
       rSeries: 0.5,
       iLimit: 0.9,
       motors: [],
-      boardPath: "nano-snapshot",
+      boardPath: "snapshot-feed",
       law: nanoLaw(),
       stamp: board1.stamp,
       feed: "header",

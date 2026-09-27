@@ -300,7 +300,7 @@ function lintBoard(snap: SnapshotFile, partType: string, catalog: string) {
   const type = JSON.parse(
     readFileSync(join(catalog, "types", `${partType}.json`), "utf8")
   ) as PartTypeFile;
-  return lintSnapshot(snap, { plausible: type.plausible, actuator: false });
+  return lintSnapshot(snap, { plausible: type.plausible, ports: type.ports });
 }
 
 function snapshotOf(input: {

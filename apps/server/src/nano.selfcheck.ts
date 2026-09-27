@@ -107,7 +107,7 @@ const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
 });
 
 function rail(
-  path: "none" | "usb" | "header" | "nano-snapshot",
+  path: "none" | "usb" | "header" | "snapshot-feed",
   rSeries: number
 ): RailCircuit {
   return createRailCircuit({
@@ -117,7 +117,7 @@ function rail(
     motors: [{ resistance: law.resistance, k: law.k }],
     ...(path === "none"
       ? {}
-      : path === "nano-snapshot"
+      : path === "snapshot-feed"
         ? { boardPath: path, law: nanoUsbLaw() }
         : { stamp: NANO_STAMP, feed: path }),
   });
@@ -154,7 +154,7 @@ function settle(
 }
 
 function point(
-  path: "none" | "usb" | "header" | "nano-snapshot",
+  path: "none" | "usb" | "header" | "snapshot-feed",
   rSeries: number,
   fraction: number,
   connected: boolean
@@ -217,7 +217,7 @@ function point(
   const lines: string[] = [];
   for (const [level, path] of [
     ["ideal terminal", "none"],
-    ["snapshot", "nano-snapshot"],
+    ["snapshot", "snapshot-feed"],
     ["class 2", "usb"],
   ] as const) {
     const bits: string[] = [];
@@ -508,7 +508,7 @@ try {
   const live2 = tail2?.boards.nano?.voltage ?? Number.NaN;
   const live1 = tail1?.boards.nano?.voltage ?? Number.NaN;
   const circuit2 = point("usb", usb.rSeries, 1, true).boardVoltage;
-  const circuit1 = point("nano-snapshot", usb.rSeries, 1, true).boardVoltage;
+  const circuit1 = point("snapshot-feed", usb.rSeries, 1, true).boardVoltage;
   expect(
     Math.abs(live2 - circuit2) <= 0.001,
     `class 2 world stall ${live2} V vs circuit ${circuit2} V`

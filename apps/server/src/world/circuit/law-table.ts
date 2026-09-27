@@ -33,6 +33,9 @@ export class LawTable implements Element {
   private segment = 0;
   factoredRegion: Region | null = null;
   factoredSegment = 0;
+  /** Axis current and port voltage after the last accepted solve. */
+  seenAxis = 0;
+  seenVolts = 0;
   /**
    * Set when a current-limit stamp is singular (the load cannot draw
    * exactly `iLimit`). The next stamp holds the rail at 0 V.
@@ -163,6 +166,9 @@ export class LawTable implements Element {
   commit(): void {}
 
   accepted(ctx: StampCtx): boolean {
+    const branchI = (ctx.x[this.ibr] as number) ?? 0;
+    this.seenAxis = this.axisAmps(branchI);
+    this.seenVolts = volt(ctx, this.ip) - volt(ctx, this.im);
     const next = this.desired(ctx);
     return next.region === this.region && next.segment === this.segment;
   }

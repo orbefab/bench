@@ -54,12 +54,12 @@ export type RailCircuitSpec = {
   braking?: Braking;
   /**
    * Default `none`: the supply terminal is the rail, as in the closed form.
-   * `uno-usb` inserts the Uno cable. `nano-snapshot` is the class-1 USB
+   * `uno-usb` inserts the Uno cable. `snapshot-feed` is the class-1 USB
    * law: a Thevenin table, no capacitors. A class-2 board passes `stamp`
    * and `feed` instead of a path name.
    */
   boardPath?: "none" | BoardPathName;
-  /** Diode-law table for `nano-snapshot`. The supply setpoint is `vNom`. */
+  /** Diode-law table for `snapshot-feed`. The supply setpoint is `vNom`. */
   law?: TableLaw;
   /** D13 `avr-pin@1` numbers. Absent uses the datasheet fits. */
   pin?: AvrPinParams;
@@ -83,7 +83,7 @@ const MASTER_S = 0.001;
 const SUBSTEPS = 10;
 
 function missingLaw(): never {
-  throw new Error("nano-snapshot needs a diode-law table");
+  throw new Error("snapshot-feed needs a diode-law table");
 }
 
 export class RailCircuit {
@@ -135,12 +135,14 @@ export class RailCircuit {
   private readonly ledAlias: string;
   private readonly resetFraction: number | null;
   private readonly resetNode: string | null;
+  /** Plain-branch tables stamped with the board. The feed table is `src`. */
+  private readonly branchLaws: LawTable[];
   private ready = false;
 
   constructor(spec: RailCircuitSpec) {
     const braking = spec.braking ?? "clip";
     const uno = spec.boardPath === "uno-usb";
-    const snap = spec.boardPath === "nano-snapshot";
+    const snap = spec.boardPath === "snapshot-feed";
     const stamp = spec.stamp ?? null;
     if (stamp && spec.feed !== "usb" && spec.feed !== "header") {
       throw new Error("a board stamp needs feed usb or header");
@@ -187,6 +189,9 @@ export class RailCircuit {
       );
     }
     this.motors = motors;
+    this.branchLaws = (realized?.elements ?? []).filter(
+      (el): el is LawTable => el instanceof LawTable
+    );
     this.substeps = inductive || board || realized?.capacitive ? SUBSTEPS : 1;
     // The snapshot replaces the USB front end. The board load still
     // has its knee: full current down to 1 V, then linear to 0 A at 0 V.
@@ -235,6 +240,13 @@ export class RailCircuit {
 
   setFixed(amps: number): void {
     this.load.amps = amps;
+  }
+
+  /** Axis current and voltage of one plain-branch table, after a solve. */
+  tableReading(id: string): { amps: number; volts: number } | null {
+    const law = this.branchLaws.find((item) => item.id === id);
+    if (!law) return null;
+    return { amps: law.seenAxis, volts: law.seenVolts };
   }
 
   setMotor(

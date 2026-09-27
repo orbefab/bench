@@ -104,7 +104,8 @@ export function loadSnapshot(
   }
   const lint = lintSnapshot(raw, {
     plausible: type?.plausible,
-    actuator: Boolean(type?.ports["V+"]),
+    ...(type ? { ports: type.ports } : {}),
+    ...(type?.requiredOutputs ? { requiredOutputs: type.requiredOutputs } : {}),
   });
   if (lint.diagnostics.length > 0) {
     return { loaded: null, diagnostics: lint.diagnostics };

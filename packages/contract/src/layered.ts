@@ -229,6 +229,11 @@ export type PartTypeFile = {
   buses?: Record<string, BusDecl>;
   /** D-023.7. Checked by the linter; dimension vectors cannot see a prefix. */
   plausible?: Partial<Record<Quantity, Range>>;
+  /**
+   * Snapshot outputs this type requires, such as `V+.current`.
+   * Absent, the linter does not demand a named output.
+   */
+  requiredOutputs?: string[];
 };
 
 export type Pose = {

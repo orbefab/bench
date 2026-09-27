@@ -42,6 +42,7 @@ import {
   type SnapshotEnvelope,
   type TableLaw,
   tableLawOf,
+  tableUseOf,
 } from "./snapshot-law";
 import { readTargets } from "./targets";
 
@@ -749,7 +750,9 @@ function build(
       let runCircuit = boardCircuit;
       let powerSnapshot: PowerSnapshot | null = null;
       if (snapRef) {
-        const runs = loaded.snapshotRuns.includes(inst.path);
+        const runs = loaded.snapshotRuns.some(
+          (row) => row.path === inst.path && row.ref === snapRef
+        );
         if (runs) {
           const found = loaded.snapshots.find((row) => row.id === snapRef);
           const law = found ? tableLawOf(found.file) : null;
@@ -833,13 +836,20 @@ function build(
         continue;
       }
       const pins = pinsOf(inst.type.ports);
-      const positive =
-        Object.entries(pins).find(
-          ([, pin]) => pin.kind === "power" && pin.output
-        )?.[0] ?? "5V";
-      const ground =
-        Object.entries(pins).find(([, pin]) => pin.kind === "ground")?.[0] ??
-        "GND";
+      const positive = Object.entries(pins).find(
+        ([, pin]) => pin.kind === "power" && pin.output
+      )?.[0];
+      const ground = Object.entries(pins).find(
+        ([, pin]) => pin.kind === "ground"
+      )?.[0];
+      if (!positive) {
+        diags.push(cannot(inst, `${inst.part.id} has no power port`));
+        continue;
+      }
+      if (!ground) {
+        diags.push(cannot(inst, `${inst.part.id} has no ground port`));
+        continue;
+      }
       supplies.push({
         id: inst.path,
         type: typeId,
@@ -917,6 +927,58 @@ function build(
         echo: digitalPeer(inst, "Echo", loaded),
       });
       pushBox(boxes, inst, "part");
+      continue;
+    }
+    if (behaviour?.kind === "snapshot") {
+      const found = loaded.snapshots.find((row) => row.id === behaviour.ref);
+      const law = found ? tableLawOf(found.file) : null;
+      const envelope = found ? envelopeOf(found.file) : null;
+      const ran = loaded.snapshotRuns.some(
+        (row) => row.path === inst.path && row.ref === behaviour.ref
+      );
+      if (
+        !found ||
+        !law ||
+        !envelope ||
+        !ran ||
+        found.file.form !== "table@1"
+      ) {
+        diags.push(
+          cannot(inst, `snapshot ${behaviour.ref} did not load as table@1`)
+        );
+        continue;
+      }
+      if (tableUseOf(found.file) === "feed") {
+        diags.push(
+          cannot(
+            inst,
+            `snapshot ${behaviour.ref} is a feed table; a part snapshot is a branch`
+          )
+        );
+        continue;
+      }
+      for (const name of law.across) {
+        if (!inst.type.ports[name]) {
+          diags.push(
+            cannot(
+              inst,
+              `snapshot ${behaviour.ref} across port ${name} is not on ${inst.type.id}`
+            )
+          );
+        }
+      }
+      if (diags.some((diag) => diag.path === inst.path)) continue;
+      const ports: Record<string, string> = {};
+      for (const name of law.across) ports[name] = `${inst.path}.${name}`;
+      circuits.push({
+        path: inst.path,
+        form: "table@1",
+        typeId: inst.type.id,
+        params: {},
+        ports,
+        table: { ref: behaviour.ref, law, envelope },
+      });
+      if (inst.pose) pushBox(boxes, inst, "part");
       continue;
     }
     diags.push(cannot(inst, runtimeGap(inst)));

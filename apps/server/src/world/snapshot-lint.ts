@@ -1,6 +1,7 @@
 /** Ported from layered-sim E4 (fd10742). Quality is granted here, never read from the file. */
 import type {
   Diagnostic,
+  PortDecl,
   Quantity,
   Range,
   SnapshotFile,
@@ -12,8 +13,10 @@ import { envelopeOf, tableLawOf, tableVoltage } from "./snapshot-law";
 
 export type SnapshotLintContext = {
   plausible?: Partial<Record<Quantity, Range>>;
-  /** A servo or motor must publish `V+.current`. */
-  actuator: boolean;
+  /** Expanded ports of the part type. Absent, port checks are skipped. */
+  ports?: Record<string, PortDecl>;
+  /** Outputs the type requires. Absent, none are required. */
+  requiredOutputs?: readonly string[];
 };
 
 const RANK: Record<SnapshotQuality, number> = {
@@ -44,12 +47,62 @@ function numeric(value: unknown): number | null {
   return null;
 }
 
-function quantityOf(key: string): Quantity | null {
-  if (key.endsWith(".voltage")) return "Voltage";
-  if (key.endsWith(".currentLimit")) return "Current";
-  if (key.endsWith(".current")) return "Current";
-  if (key.endsWith(".resistance")) return "Resistance";
-  if (key.endsWith(".torque")) return "Torque";
+function domainQuantity(
+  domain: string,
+  kind: "across" | "through"
+): Quantity | null {
+  if (domain === "electrical") return kind === "across" ? "Voltage" : "Current";
+  if (domain === "rotational") return kind === "across" ? "Angle" : "Torque";
+  if (domain === "translational") {
+    return kind === "across" ? "Position" : "Force";
+  }
+  if (domain === "thermal") {
+    return kind === "across" ? "Temperature" : "HeatFlow";
+  }
+  return null;
+}
+
+/** The form says which param is the through or across sample. The type says the quantity. */
+function paramQuantity(
+  snap: SnapshotFile,
+  key: string,
+  ctx: SnapshotLintContext
+): Quantity | null {
+  const law = snap.form === "table@1" ? tableLawOf(snap) : null;
+  if (law && key === "iAxis") {
+    return domainQuantity(ctx.ports?.[law.across[0]]?.domain ?? "", "through");
+  }
+  if (law && key === "vAxis") {
+    return domainQuantity(ctx.ports?.[law.across[0]]?.domain ?? "", "across");
+  }
+  if (law && key === "supplyRef") return "Voltage";
+  if (key === "drop" || key === "V") return "Voltage";
+  if (key === "Rs" || key === "R") return "Resistance";
+  if (key === "Ilimit") return "Current";
+  return null;
+}
+
+/**
+ * A bound key is `port.field`. A declared port takes the domain's across
+ * or through quantity. `supply` is the feed setpoint, not a part port.
+ */
+function boundQuantity(
+  key: string,
+  ports: SnapshotLintContext["ports"]
+): Quantity | null {
+  const dot = key.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const port = key.slice(0, dot);
+  const field = key.slice(dot + 1);
+  const domain = ports?.[port]?.domain;
+  if (field === "resistance") return "Resistance";
+  if (field === "current" || field === "currentLimit") {
+    return domain ? domainQuantity(domain, "through") : "Current";
+  }
+  if (field === "voltage") {
+    return domain ? domainQuantity(domain, "across") : "Voltage";
+  }
+  if (field === "torque") return "Torque";
   return null;
 }
 
@@ -95,15 +148,7 @@ function plausibleErrors(
   };
   for (const [key, value] of Object.entries(snap.params)) {
     if (Array.isArray(value)) {
-      const quantity =
-        quantityOf(key) ??
-        (key === "iAxis"
-          ? "Current"
-          : key === "vAxis"
-            ? "Voltage"
-            : key === "supplyRef"
-              ? "Voltage"
-              : null);
+      const quantity = paramQuantity(snap, key, ctx);
       if (!quantity) continue;
       for (const item of value) {
         const n = numeric(item);
@@ -113,18 +158,11 @@ function plausibleErrors(
     }
     const n = numeric(value);
     if (n === null) continue;
-    const quantity =
-      key === "supplyRef" || key === "drop" || key === "V"
-        ? "Voltage"
-        : key === "Rs" || key === "R"
-          ? "Resistance"
-          : key === "Ilimit"
-            ? "Current"
-            : null;
+    const quantity = paramQuantity(snap, key, ctx);
     if (quantity) check(key, quantity, n);
   }
   for (const [key, bound] of Object.entries(snap.envelope.bounds)) {
-    const quantity = quantityOf(key);
+    const quantity = boundQuantity(key, ctx.ports);
     if (!quantity || !Array.isArray(bound)) continue;
     for (const item of bound) {
       const n = numeric(item);
@@ -214,6 +252,76 @@ function earned(snap: SnapshotFile, blocked: boolean): SnapshotQuality {
   return "Q1";
 }
 
+function tablePorts(
+  snap: SnapshotFile,
+  ctx: SnapshotLintContext
+): Diagnostic[] {
+  if (snap.form !== "table@1") return [];
+  const law = tableLawOf(snap);
+  if (!law || !ctx.ports) return [];
+  const diags: Diagnostic[] = [];
+  const path = snap.part || "snapshot";
+  for (const name of law.across) {
+    if (ctx.ports[name]) continue;
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path,
+        port: name,
+        quantity: "Snapshot",
+        left: name,
+        right: snap.partType,
+        detail: `across port ${name} is not on ${snap.partType}`,
+      })
+    );
+  }
+  const through = `${law.across[0]}.current`;
+  const voltage = `${law.across[0]}.voltage`;
+  if (!snap.ports.inputs.includes(through)) {
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path,
+        port: law.across[0],
+        quantity: "Current",
+        left: snap.ports.inputs.join(","),
+        right: through,
+        detail: `table input is missing ${through}`,
+      })
+    );
+  }
+  if (!snap.ports.outputs.includes(voltage)) {
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path,
+        port: law.across[0],
+        quantity: "Voltage",
+        left: snap.ports.outputs.join(","),
+        right: voltage,
+        detail: `table output is missing ${voltage}`,
+      })
+    );
+  }
+  if (
+    law.supplyPort &&
+    !snap.ports.inputs.includes(`${law.supplyPort}.voltage`)
+  ) {
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path,
+        port: law.supplyPort,
+        quantity: "Voltage",
+        left: snap.ports.inputs.join(","),
+        right: `${law.supplyPort}.voltage`,
+        detail: `table input is missing ${law.supplyPort}.voltage`,
+      })
+    );
+  }
+  return diags;
+}
+
 export function lintSnapshot(
   snap: SnapshotFile,
   ctx: SnapshotLintContext
@@ -246,19 +354,21 @@ export function lintSnapshot(
       })
     );
   }
-  if (ctx.actuator && !snap.ports.outputs.includes("V+.current")) {
+  for (const name of ctx.requiredOutputs ?? []) {
+    if (snap.ports.outputs.includes(name)) continue;
     diagnostics.push(
       makeDiag({
         severity: "error",
         path: snap.part || "snapshot",
-        port: "V+",
-        quantity: "Current",
+        port: name,
+        quantity: "Snapshot",
         left: snap.ports.outputs.join(","),
-        right: "V+.current",
-        detail: "actuator is missing V+.current",
+        right: name,
+        detail: `missing required output ${name}`,
       })
     );
   }
+  diagnostics.push(...tablePorts(snap, ctx));
   diagnostics.push(...plausibleErrors(snap, ctx));
   if (nonPhysical(snap)) {
     diagnostics.push(

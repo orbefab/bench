@@ -42,6 +42,11 @@ export function buildReport(input: {
   const instances = [...input.instances].sort((a, b) =>
     a.path < b.path ? -1 : a.path > b.path ? 1 : 0
   );
+  const rated = new Set(
+    (input.ran ?? []).map(
+      (row) => `${row.path}|${row.axis ?? "behaviour"}|${row.ref}`
+    )
+  );
   for (const inst of instances) {
     if (inst.foreign) {
       foreign.push({
@@ -86,7 +91,11 @@ export function buildReport(input: {
         effects,
       });
       const impl = resolved.impl as { kind?: string; ref?: string } | null;
-      if (impl?.kind === "snapshot" && impl.ref) {
+      if (
+        impl?.kind === "snapshot" &&
+        impl.ref &&
+        !rated.has(`${inst.path}|${axis}|${impl.ref}`)
+      ) {
         snapshots.push({
           path: inst.path,
           axis,

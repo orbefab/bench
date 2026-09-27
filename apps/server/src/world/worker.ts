@@ -53,7 +53,7 @@ import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
 import { blankTrack, type ServoTrack, trackServo } from "./servo";
-import { outsideEnvelope } from "./snapshot-law";
+import { boundOutside } from "./snapshot-law";
 import { targetPosition } from "./targets";
 import {
   applyGpioDrives,
@@ -1056,7 +1056,7 @@ function bindRails() {
       ...(path ? { boardPath: path } : {}),
       ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
       ...(stamp && feed ? { stamp, feed } : {}),
-      ...(path === "nano-snapshot" && fed?.powerSnapshot
+      ...(path === "snapshot-feed" && fed?.powerSnapshot
         ? { law: fed.powerSnapshot.law }
         : {}),
     });
@@ -1119,38 +1119,89 @@ function ledReading(supplyId: string | null | undefined): {
   };
 }
 
-/** One warning per board when the USB law is used outside its envelope. */
+/** One warning per path and ref when an observed bound is outside. */
 function noteSnapshotEnvelope(supplyId: string, amps: number): void {
-  if (rails.get(supplyId)?.path !== "nano-snapshot") return;
+  const group = rails.get(supplyId);
+  if (!group) return;
   const board = boardOn(supplyId);
-  const snap = board?.powerSnapshot;
-  if (!board || !snap || envelopeWarned.has(board.id)) return;
   const volts = supplySpecs.find((item) => item.id === supplyId)?.voltage ?? 0;
-  const supply = snap.envelope.supply;
-  if (!supply || !outsideEnvelope(snap.envelope, volts, amps)) return;
-  envelopeWarned.add(board.id);
-  const current =
-    amps < snap.envelope.current[0] || amps > snap.envelope.current[1];
+  const snap = board?.powerSnapshot;
+  if (group.path === "snapshot-feed" && board && snap) {
+    const observed: Record<string, number> = {
+      [`${snap.law.across[0]}.current`]: amps,
+    };
+    if (snap.law.supplyPort) {
+      observed[`${snap.law.supplyPort}.voltage`] = volts;
+    }
+    warnEnvelope(board.id, snap.ref, snap.envelope, observed);
+  }
+  const supply = runPlan?.supplies.find((item) => item.id === supplyId);
+  const parts = [
+    ...(board?.stamp?.parts ?? []),
+    ...(supply?.stamp?.parts ?? []),
+  ];
+  for (const part of parts) {
+    if (!part.table) continue;
+    const reading = group.circuit.tableReading(part.path);
+    if (!reading) continue;
+    const port = part.table.law.across[0];
+    warnEnvelope(part.path, part.table.ref, part.table.envelope, {
+      [`${port}.current`]: reading.amps,
+      [`${port}.voltage`]: reading.volts,
+    });
+  }
+}
+
+function warnEnvelope(
+  path: string,
+  ref: string,
+  envelope: {
+    bounds: Record<string, [number, number]>;
+    current: [number, number];
+    supply: [number, number] | null;
+  },
+  observed: Readonly<Record<string, number>>
+): void {
+  const key = `${path}|${ref}`;
+  if (envelopeWarned.has(key)) return;
+  const hit = boundOutside(envelope, observed);
+  if (!hit) return;
+  envelopeWarned.add(key);
+  const named = boundName(hit.key);
   const message =
-    `${board.id} port 5V quantity ${current ? "Current" : "Voltage"}: ` +
-    `snapshot ${snap.ref} envelope exceeded; run continues ` +
-    `(${amps} A at ${volts} V vs supply ${supply[0]}..${supply[1]} V, ` +
-    `current ${snap.envelope.current[0]}..${snap.envelope.current[1]} A)`;
+    `${path} port ${named.port} quantity ${named.quantity}: ` +
+    `snapshot ${ref} envelope exceeded; run continues ` +
+    `(${hit.value} vs ${hit.range[0]}..${hit.range[1]})`;
   if (!runReport) return;
   runReport.warnings.push({
     severity: "warning",
-    path: board.id,
-    port: "5V",
-    quantity: current ? "Current" : "Voltage",
-    left: `${amps} A`,
-    right: `${snap.envelope.current[0]}..${snap.envelope.current[1]}`,
+    path,
+    port: named.port,
+    quantity: named.quantity,
+    left: `${hit.value}`,
+    right: `${hit.range[0]}..${hit.range[1]}`,
     message,
   });
   const row = runReport.snapshots.find(
-    (item) => item.path === board.id && item.ref === snap.ref
+    (item) => item.path === path && item.ref === ref
   );
   if (row) row.envelope = [...(row.envelope ?? []), message];
   reportPending = true;
+}
+
+function boundName(key: string): { port: string; quantity: string } {
+  const dot = key.lastIndexOf(".");
+  const port = dot > 0 ? key.slice(0, dot) : key;
+  const field = dot > 0 ? key.slice(dot + 1) : key;
+  const quantity =
+    field === "voltage"
+      ? "Voltage"
+      : field === "current" || field === "currentLimit"
+        ? "Current"
+        : field === "resistance"
+          ? "Resistance"
+          : field;
+  return { port, quantity };
 }
 
 function solveOneRail(
