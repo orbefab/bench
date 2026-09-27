@@ -668,6 +668,17 @@ function SupplyBody({
   );
 }
 
+function extraLeds(boardId: string, leds: Record<string, number> | undefined) {
+  if (!leds) return null;
+  const rows = Object.entries(leds).filter(
+    ([path]) => path !== `${boardId}.led`
+  );
+  if (rows.length === 0) return null;
+  return rows.map(([path, amps]) => (
+    <Field key={path} label={path} value={ampsText(amps)} />
+  ));
+}
+
 function BoardBody({
   id,
   info,
@@ -753,6 +764,7 @@ function BoardBody({
       {ledCurrent === undefined ? null : (
         <Field label="D13 LED" value={ampsText(ledCurrent)} />
       )}
+      {extraLeds(id, scrub.playhead !== null ? recorded?.leds : live?.leds)}
       <SoaLine
         text={
           recorded

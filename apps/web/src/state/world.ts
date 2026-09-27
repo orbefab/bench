@@ -310,6 +310,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
           next.resets === old.resets &&
           next.voltage === old.voltage &&
           next.ledCurrent === old.ledCurrent &&
+          sameLeds(next.leds, old.leds) &&
           next.warnings?.[0]?.message === old.warnings?.[0]?.message
         );
       })
@@ -400,6 +401,20 @@ function sameParts(
     ) {
       return false;
     }
+  }
+  return true;
+}
+
+function sameLeds(
+  a: Record<string, number> | undefined,
+  b: Record<string, number> | undefined
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    if (a[key] !== b[key]) return false;
   }
   return true;
 }
