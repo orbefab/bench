@@ -18,7 +18,9 @@ The world file is a root part plus environment and run settings:
 
 - `version` is `2`.
 - `environment` — `ground.plane`, `gravity`, optional primitives, optional
-  STEP props.
+  STEP props, optional `targets`. A target is a box, sphere or cylinder
+  on a `path`, or placed with `world_move_target` from the next step.
+  `sfab/hc-sr04@1.0.0` reads that distance on Trig and Echo.
 - `run` — `seed`, and `levels.default` (the arm uses `1`).
 - `root.part` — `publisher/name@version`, for the arm
   `sfab/arm-scene@1.0.0`.
@@ -166,8 +168,8 @@ The board status says **in reset** through the 66 ms hold.
 
 ## Not yet
 
-Sensors, ground contact, and rp2040 are later. Link meshes other than
-STL or OBJ are rejected. Do not look for a breadboard, a net name, or a
+Ground contact and rp2040 are later. The HC-SR04 is the sensor above.
+Link meshes other than STL or OBJ are rejected. Do not look for a breadboard, a net name, or a
 regulator. Do not compile inside Bench, and do not edit the world or the
 firmware through a world tool — change the files with your file tools,
 then `world_restart` or let the `.hex` watch restart the board.

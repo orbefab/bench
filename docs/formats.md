@@ -181,8 +181,13 @@ Omitted: ADC INL and DNL, ADC noise, the noise canceller, temperature drift, and
 - `transfer-fn@1`
 - `multibody@1` (a URDF/MJCF body run by MuJoCo; the arm's class-1 behaviour)
 - `mlp@1` (later)
+- `ranger@1` (c, rangeMin, rangeMax, beamHalf, trigMin, echoDelay, echoTimeout, working, quiescent, vMin, face)
 
 Each form declares its params with quantities, its ports, its engine contributions (D-014) and, where one exists, its energy function.
+
+`ranger@1` is the HC-SR04. The part `sfab/hc-sr04@1.0.0` fills the same form twice. Class 0 (`ideal`) casts one ray on the sensor axis. Echo rises one cycle after Trig falls — `addClockEvent` has a one-cycle minimum — and its width is exactly `2d/c`. No hit means no pulse. It draws nothing. Class 1 (`datasheet`) casts 41 rays: the axis, then five radial steps out to the 7.5° half-angle and eight azimuths, so the outer ring sits on the cone and two azimuths are horizontal. The nearest hit wins. A hit closer than 2 cm or past 4 m is no echo. Trig must be high for at least 10 µs, and a trigger during a measurement is ignored. Echo rises 200 µs after the falling edge (one 8-cycle 40 kHz burst; assumed until M3) and stays high for `2d/c`, or for 38 ms when nothing returns (assumed until M4). The working current is on the node that feeds `VCC` while a measurement is in progress, and the idle current while powered. Below `vMin`, or with `VCC` unwired, there is no echo and no draw. `c` is 343 m/s. The sheet uses 340 m/s, and the 58 µs/cm rule is 344.8 m/s.
+
+The ray is cast once per accepted trigger, on the physics of the previous master step. The CPU runs before `mj_step`, the same lag as the AVCC latch above. It starts at the transducer plane (`face` metres along the part's local +Y) and goes along +Y. When a ranger is in the run, the device's own geoms and the ground are geom group 1, and targets and static primitives stay group 0. The ray includes group 0 only, with `flg_static` set and `bodyexclude` −1: the gauge is many bodies, and the group split covers all of them. A world with no ranger does not change geom groups.
 
 ## 4. World
 
@@ -191,7 +196,12 @@ A world is **one root part** plus environment plus run settings (D-002).
 ```ts
 type WorldFile = {
   version: 2;
-  environment: { ground: { plane: boolean }; gravity: Vec3; air?: { density: number } };
+  environment: {
+    ground: { plane: boolean };
+    gravity: Vec3;
+    air?: { density: number };
+    targets?: WorldTarget[];
+  };
   run: {
     seed: number;                                       // D-008: all randomness from here
     levels: {
@@ -205,6 +215,8 @@ type WorldFile = {
 };
 type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual", 0 | 1 | 2 | 3>>;
 ```
+
+**Targets.** A target is a box, sphere or cylinder that moves, and that a ray can hit. It is a MuJoCo mocap body with `contype` and `conaffinity` 0, so it does not push a robot; a mocap body would not move from contact anyway. `path` is `{ t, position }[]`, times in seconds, strictly increasing. The position is linear between keyframes, the first keyframe before its time, and held after the last. With no path the target stays at `pose`. The viewer draws it where it is, and the recording keeps that pose on the robot id `target` (`target/<id>`), the same way a link pose is kept, so scrubbing shows it move. `world_move_target` sets the position from the next master step and records a `move-target` event. A world whose targets only follow `path` stays byte-identical across runs. Dragging a target in the view is later.
 
 **Paths:** the root is `$root` and does not prefix children (`fleet.rig2.servo`).
 
