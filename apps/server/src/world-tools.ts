@@ -337,6 +337,9 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       voltage: number | null;
       /** Amperes through the D13 LED. Absent when that board has no LED stamp. */
       ledCurrent?: number;
+      level?: number | null;
+      variant?: string | null;
+      reason?: string;
     }
   > = {};
   for (const [id, board] of Object.entries(state.boards)) {
@@ -354,6 +357,7 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       ...(board.ledCurrent !== undefined
         ? { ledCurrent: round(board.ledCurrent, 6) }
         : {}),
+      ...behaviourLevel(doc, id),
     };
   }
   const parts: Record<
@@ -367,6 +371,9 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       voltage: number | null;
       board: string | null;
       pin: string | null;
+      level?: number | null;
+      variant?: string | null;
+      reason?: string;
     }
   > = {};
   for (const part of doc.parts) {
@@ -380,6 +387,7 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       voltage: live?.voltage == null ? null : round(live.voltage, 3),
       board: drive?.boardId ?? null,
       pin: drive?.pin ?? null,
+      ...behaviourLevel(doc, part.id),
     };
   }
   const supplies: Record<string, { voltage: number; current: number }> = {};
@@ -422,6 +430,14 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
     ...(diagnostics.length > 0 ? { diagnostics } : {}),
     warnings: liveWarnings(loaded, state, notes),
   };
+}
+
+function behaviourLevel(doc: RunPlan, path: string) {
+  const row = doc.levels?.find(
+    (item) => item.path === path && item.axis === "behaviour"
+  );
+  if (!row) return {};
+  return { level: row.class, variant: row.variant, reason: row.reason };
 }
 
 function clampFrames(maxFrames: number | undefined): number {
@@ -854,7 +870,7 @@ function commandAck(view: {
 export const worldTools = {
   world_status: tool({
     description:
-      'Read a world\'s shared run. world is the project-relative .world.json path from get_viewer. Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H"), each part (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin), each supply (terminal voltage and current), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null.',
+      'Read a world\'s shared run. world is the project-relative .world.json path from get_viewer. Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H", and behaviour level, variant, and reason), each part (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null.',
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);

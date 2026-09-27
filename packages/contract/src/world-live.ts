@@ -7,6 +7,7 @@
  * first `[w, x, y, z]`. Joint values are radians.
  */
 
+import type { RunReport } from "./layered";
 import type { WorldError, WorldQuat, WorldVec3 } from "./world";
 
 export type WorldLinkPose = {
@@ -302,7 +303,7 @@ export type WorldClientMessage =
   | { type: "seek"; t: number; nonce: string };
 
 export type WorldServerMessage =
-  | { type: "state"; state: WorldState }
+  | { type: "state"; state: WorldState; report?: RunReport }
   | {
       type: "command";
       command: "play" | "pause";

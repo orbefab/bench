@@ -16,6 +16,7 @@ import {
   type RecordingManifest,
   type RecordingPartCatalog,
   type RecordingRead,
+  type RunReport,
   type TimelineMarker,
   type TimelineTrack,
   type WorldError,
@@ -52,6 +53,7 @@ import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
 import { blankTrack, type ServoTrack, trackServo } from "./servo";
+import { outsideEnvelope } from "./snapshot-law";
 import { targetPosition } from "./targets";
 import {
   applyGpioDrives,
@@ -233,6 +235,8 @@ export type FromWorker =
       state: WorldState;
       /** Set on the snapshot produced by a `step` that carried `request`. */
       request?: number;
+      /** Present on the first state, and again when an envelope warning lands. */
+      report?: RunReport;
     }
   | {
       type: "error";
@@ -401,6 +405,9 @@ let recorder: RunRecorder | null = null;
 let recordingSeq = 0;
 let worldSha256 = "";
 let runPlan: RunPlan | null = null;
+let runReport: RunReport | null = null;
+let reportPending = false;
+const envelopeWarned = new Set<string>();
 const firmwareSha = new Map<string, string>();
 let inputNets: ReturnType<typeof gpioInputNets> = [];
 let applyingInputs = false;
@@ -825,7 +832,9 @@ function postState(request?: number) {
     generation,
     state,
     ...(request !== undefined ? { request } : {}),
+    ...(reportPending && runReport ? { report: runReport } : {}),
   });
+  reportPending = false;
 }
 
 function noteFault(board: AvrBoard) {
@@ -1019,6 +1028,9 @@ function bindRails() {
         };
       }),
       ...(path ? { boardPath: path, ...(fed ? { pin: fed.pin } : {}) } : {}),
+      ...(path === "nano-snapshot" && fed?.powerSnapshot
+        ? { law: fed.powerSnapshot.law }
+        : {}),
     });
     if (path === "uno-usb" && fuseStart === "tripped") circuit.tripFuse();
     for (let i = 0; i < members.length; i++) {
@@ -1069,6 +1081,39 @@ function ledReading(
   return current === undefined ? {} : { ledCurrent: current };
 }
 
+/** One warning per board when the USB law is used outside its envelope. */
+function noteSnapshotEnvelope(supplyId: string, amps: number): void {
+  if (rails.get(supplyId)?.path !== "nano-snapshot") return;
+  const board = boardOn(supplyId);
+  const snap = board?.powerSnapshot;
+  if (!board || !snap || envelopeWarned.has(board.id)) return;
+  const volts = supplySpecs.find((item) => item.id === supplyId)?.voltage ?? 0;
+  if (!outsideEnvelope(snap.envelope, volts, amps)) return;
+  envelopeWarned.add(board.id);
+  const current =
+    amps < snap.envelope.current[0] || amps > snap.envelope.current[1];
+  const message =
+    `${board.id} port 5V quantity ${current ? "Current" : "Voltage"}: ` +
+    `snapshot ${snap.ref} envelope exceeded; run continues ` +
+    `(${amps} A at ${volts} V vs supply ${snap.envelope.supply[0]}..${snap.envelope.supply[1]} V, ` +
+    `current ${snap.envelope.current[0]}..${snap.envelope.current[1]} A)`;
+  if (!runReport) return;
+  runReport.warnings.push({
+    severity: "warning",
+    path: board.id,
+    port: "5V",
+    quantity: current ? "Current" : "Voltage",
+    left: `${amps} A`,
+    right: `${snap.envelope.current[0]}..${snap.envelope.current[1]}`,
+    message,
+  });
+  const row = runReport.snapshots.find(
+    (item) => item.path === board.id && item.ref === snap.ref
+  );
+  if (row) row.envelope = [...(row.envelope ?? []), message];
+  reportPending = true;
+}
+
 function solveOneRail(
   supplyId: string,
   fixed: number
@@ -1098,6 +1143,7 @@ function solveOneRail(
     );
   }
   circuit.solve();
+  noteSnapshotEnvelope(supplyId, circuit.current);
   const winding = circuit.winding;
   for (let i = 0; i < members.length; i++) {
     const load = members[i];
@@ -1707,6 +1753,9 @@ async function build(): Promise<boolean> {
   playing = false;
   // Feeds are known before boot: an unwired board does not run.
   runPlan = planned.plan;
+  runReport = planned.plan.report ? structuredClone(planned.plan.report) : null;
+  reportPending = runReport !== null;
+  envelopeWarned.clear();
   fillBoardPower(runPlan);
   loadBoards(runPlan);
   bindPower(runPlan);

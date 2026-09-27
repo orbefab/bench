@@ -2,10 +2,12 @@
 
 import {
   AXES,
+  type AxisName,
   type Diagnostic,
   type LockFile,
   RUN_REPORT_FORMAT,
   type RunReport,
+  type SnapshotFile,
 } from "@sfab-bench/contract";
 
 import type { LiveInstance } from "./levels";
@@ -22,6 +24,14 @@ export function buildReport(input: {
   instances: LiveInstance[];
   nets: LiveNet[];
   diags: Diagnostic[];
+  /** Snapshots the resolved levels actually run. */
+  ran?: {
+    path: string;
+    axis?: AxisName;
+    ref: string;
+    quality: string;
+    error?: SnapshotFile["error"];
+  }[];
 }): { report: RunReport; json: string } {
   const levels = [];
   const notSimulated = [];
@@ -85,6 +95,21 @@ export function buildReport(input: {
       }
     }
   }
+  for (const row of input.ran ?? []) {
+    snapshots.push({
+      path: row.path,
+      axis: row.axis ?? "behaviour",
+      ref: row.ref,
+      quality: row.quality,
+      ...(row.error !== undefined ? { error: row.error } : {}),
+      envelope: [],
+    });
+  }
+  snapshots.sort((a, b) => {
+    const ka = `${a.path}|${a.ref}`;
+    const kb = `${b.path}|${b.ref}`;
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
   buses.sort((a, b) => {
     const ka = `${a.path}|${a.name}`;
     const kb = `${b.path}|${b.name}`;
@@ -108,6 +133,15 @@ export function buildReport(input: {
         sha256: type.sha256,
         source: type.source,
       })),
+      ...(input.lock.snapshots && input.lock.snapshots.length > 0
+        ? {
+            snapshots: input.lock.snapshots.map((row) => ({
+              id: row.id,
+              sha256: row.sha256,
+              source: row.source,
+            })),
+          }
+        : {}),
     },
     levels,
     nets: input.nets.map((net) => ({

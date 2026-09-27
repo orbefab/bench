@@ -6,6 +6,7 @@ import {
   type RecordedFrame,
   type RecordingInfo,
   type RecordingRead,
+  type RunReport,
   SERIAL_TEXT_MAX,
   type WorldError,
   type WorldPinState,
@@ -104,6 +105,8 @@ type Doc = {
   worker: Worker | null;
   generation: number;
   lastState: WorldState | null;
+  /** Latest run report. Sent with the first state and again if it changes. */
+  report: RunReport | null;
   /** How many state snapshots this document has applied. Steps wait on it. */
   stateEpoch: number;
   /** Last play or pause, so a subscriber who attaches later can show who sent it. */
@@ -199,7 +202,13 @@ function snapshot(doc: Doc): WorldServerMessage | null {
       ...(doc.errorMessage ? { message: doc.errorMessage } : {}),
     };
   }
-  if (doc.lastState) return { type: "state", state: doc.lastState };
+  if (doc.lastState) {
+    return {
+      type: "state",
+      state: doc.lastState,
+      ...(doc.report ? { report: doc.report } : {}),
+    };
+  }
   return null;
 }
 
@@ -381,6 +390,7 @@ function markWorkerFailed(doc: Doc, worker: Worker, message: string) {
   doc.errors = [];
   doc.errorMessage = message;
   doc.lastState = null;
+  doc.report = null;
   broadcast(doc, { type: "error", errors: [], message });
 }
 
@@ -397,6 +407,7 @@ function listen(doc: Doc, worker: Worker) {
     }
     if (message.type === "state") {
       doc.lastState = message.state;
+      if (message.report) doc.report = message.report;
       doc.stateEpoch += 1;
       doc.errors = null;
       // A caught step fault stays until the run is playing again. The
@@ -409,7 +420,11 @@ function listen(doc: Doc, worker: Worker) {
           settleStep(waiter, message.state);
         }
       }
-      broadcast(doc, { type: "state", state: message.state });
+      broadcast(doc, {
+        type: "state",
+        state: message.state,
+        ...(message.report ? { report: message.report } : {}),
+      });
       return;
     }
     if (message.type === "serial") {
@@ -470,6 +485,7 @@ function listen(doc: Doc, worker: Worker) {
       if (message.errors.length > 0) {
         doc.errors = message.errors;
         doc.lastState = null;
+        doc.report = null;
       }
       broadcast(doc, {
         type: "error",
@@ -545,6 +561,7 @@ async function spawn(doc: Doc): Promise<void> {
     doc.errors = [];
     doc.errorMessage = message;
     doc.lastState = null;
+    doc.report = null;
     broadcast(doc, { type: "error", errors: [], message });
     return;
   }
@@ -691,6 +708,7 @@ function ensure(project: string, worldRel: string): Doc | { error: string } {
       worker: null,
       generation: 0,
       lastState: null,
+      report: null,
       stateEpoch: 0,
       lastCommand: null,
       errors: null,
