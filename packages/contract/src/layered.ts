@@ -326,8 +326,9 @@ export type BehaviourImpl = { omits: string[] } & (
       params?: Record<string, number>;
       fuses?: Record<string, string>;
       /**
-       * Class-1 source law. Only `snapshot:<publisher/name@version>`.
-       * Absent, the 5V pin is the supply terminal.
+       * Class-1 source law `snapshot:<publisher/name@version>`, or a
+       * named cable such as `path:uno-usb`. Absent, the supply terminal
+       * is the board's power pin.
        */
       boardCircuit?: string;
       /**

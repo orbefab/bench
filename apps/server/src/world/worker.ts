@@ -48,7 +48,7 @@ import {
   runningBrownout,
   stepBrownout,
 } from "./power";
-import { type BoardPathName, isFirmwareBoard, usbPathFor } from "./power-path";
+import { type BoardPathName, usbPathFor } from "./power-path";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
@@ -1030,7 +1030,6 @@ function bindRails() {
     const chosen = fed
       ? usbPathFor(
           supplyTypeOf(supply.id),
-          fed.type,
           fed.boardCircuit,
           fed.hasNetlist
         )
@@ -1078,7 +1077,6 @@ function supplyTypeOf(supplyId: string): string {
 function boardOn(supplyId: string): RunBoard | null {
   if (!runPlan) return null;
   for (const board of runPlan.boards) {
-    if (!isFirmwareBoard(board.type)) continue;
     if (boardPower.get(board.id)?.supplyId === supplyId) return board;
   }
   return null;

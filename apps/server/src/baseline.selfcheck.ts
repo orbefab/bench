@@ -66,7 +66,7 @@ function pathBoards(name: string): Map<string, string> {
     const supplyId = feeds.boards[board.id];
     if (!supplyId) continue;
     const supply = planned.plan.supplies.find((item) => item.id === supplyId);
-    if (!supply || !unoUsbPathFor(supply.type, board.type)) continue;
+    if (!supply || !unoUsbPathFor(supply.type, board.boardCircuit)) continue;
     boards.set(supplyId, board.id);
   }
   return boards;

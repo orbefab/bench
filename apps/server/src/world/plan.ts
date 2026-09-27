@@ -32,7 +32,7 @@ import type { LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
 import { siValue } from "./parts/si";
-import { isFirmwareBoard, snapshotRefOf } from "./power-path";
+import { pathRefOf, snapshotRefOf } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
 import {
   envelopeOf,
@@ -481,7 +481,8 @@ function digitalPeer(
           : null;
     if (!other) continue;
     const board = loaded.resolved.find((item) => item.path === other.path);
-    if (!board || !isFirmwareBoard(board.type.id)) continue;
+    const boardBehaviour = board?.axes.behaviour.impl as BehaviourImpl | null;
+    if (!board || boardBehaviour?.kind !== "firmware") continue;
     const bit = arduinoPinBit(other.port);
     if (bit === undefined) continue;
     return { boardId: board.path, bit };
@@ -534,6 +535,21 @@ function supplyGround(
   return `${boardId}.GND`;
 }
 
+function selectedBehaviour(inst: LiveInstance): BehaviourImpl | null {
+  const behaviour = inst.axes.behaviour.impl;
+  if (!behaviour || typeof behaviour !== "object") return null;
+  return behaviour as BehaviourImpl;
+}
+
+/** Why a leaf cannot run. The path is already on the diagnostic. */
+function runtimeGap(inst: LiveInstance): string {
+  if (inst.declaredOnly) return "no runtime for a declared-only part";
+  const behaviour = selectedBehaviour(inst);
+  if (!behaviour) return "no runtime";
+  if (behaviour.kind === "form") return `no runtime for form ${behaviour.form}`;
+  return `no runtime for ${behaviour.kind}`;
+}
+
 function rangerLaw(numbers: Record<string, number>): RangerLaw {
   return {
     c: numbers.c ?? 0,
@@ -579,9 +595,14 @@ function build(
       continue;
     }
     const typeId = inst.type.id;
-    if (typeId === "assembly") continue;
+    const behaviour = selectedBehaviour(inst);
+    if (behaviour?.kind === "composite") continue;
     const bodyImpl = inst.axes.body.impl as BodyImpl | null;
-    if (bodyImpl?.kind === "urdf") {
+    if (behaviour?.kind === "form" && behaviour.form === "multibody@1") {
+      if (bodyImpl?.kind !== "urdf") {
+        diags.push(cannot(inst, "the run needs a URDF body"));
+        continue;
+      }
       const override = inst.params.urdf;
       const file = typeof override === "string" ? override : bodyImpl.file;
       if (!file) {
@@ -595,15 +616,11 @@ function build(
       });
       continue;
     }
-    if (isFirmwareBoard(typeId)) {
-      const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
-      if (behaviour?.kind !== "firmware") {
-        diags.push(cannot(inst, "the run needs the firmware level"));
-        continue;
-      }
+    if (behaviour?.kind === "firmware") {
       const boardCircuit = behaviour.boardCircuit ?? null;
       const snapRef = snapshotRefOf(boardCircuit);
-      if (boardCircuit !== null && !snapRef) {
+      const pathName = pathRefOf(boardCircuit);
+      if (boardCircuit !== null && !snapRef && pathName !== "uno-usb") {
         diags.push(cannot(inst, `unknown board circuit ${boardCircuit}`));
         continue;
       }
@@ -674,7 +691,7 @@ function build(
       });
       continue;
     }
-    if (inst.axes.behaviour.label === "form thevenin-limit@1") {
+    if (behaviour?.kind === "form" && behaviour.form === "thevenin-limit@1") {
       const numbers = formNumbers(inst);
       if (!numbers) {
         diags.push(cannot(inst, "the run needs thevenin-limit@1"));
@@ -701,7 +718,7 @@ function build(
       pushBox(boxes, inst, "supply");
       continue;
     }
-    if (typeId === "hobby-servo-3wire") {
+    if (behaviour?.kind === "form" && behaviour.form === "dc-motor@1") {
       const numbers = formNumbers(inst);
       const body = inst.axes.body.impl as BodyImpl | null;
       if (
@@ -747,14 +764,9 @@ function build(
       pushBox(boxes, inst, "part");
       continue;
     }
-    if (typeId === "ultrasonic-ranger-4pin") {
+    if (behaviour?.kind === "form" && behaviour.form === "ranger@1") {
       const numbers = formNumbers(inst);
-      const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
-      if (
-        !numbers ||
-        behaviour?.kind !== "form" ||
-        behaviour.form !== "ranger@1"
-      ) {
+      if (!numbers) {
         diags.push(cannot(inst, "the run needs ranger@1"));
         continue;
       }
@@ -771,7 +783,7 @@ function build(
       pushBox(boxes, inst, "part");
       continue;
     }
-    diags.push(cannot(inst, `the run has no ${typeId}`));
+    diags.push(cannot(inst, runtimeGap(inst)));
   }
 
   const nets = liveNets(loaded.nets);

@@ -129,48 +129,40 @@ export function snapshotRefOf(boardCircuit: string | null): string | null {
   return ref.length > 0 ? ref : null;
 }
 
-/**
- * Boards the run executes. `uno-usb` is the cable when a `usb-a-port`
- * feeds that board. `part` reads the firmware variant: `snapshot:<ref>`
- * at class 1, or the board netlist's feed at class 2.
- */
-const FIRMWARE_BOARDS: Record<string, "uno-usb" | "part"> = {
-  "arduino-uno-r3": "uno-usb",
-  "arduino-nano": "part",
-};
-
-/** True for a board type the run boots as an ATmega328P. */
-export function isFirmwareBoard(typeId: string): boolean {
-  return Object.hasOwn(FIRMWARE_BOARDS, typeId);
+/** `path:<name>` on a firmware variant's `boardCircuit`. The Uno cable is `path:uno-usb`. */
+export function pathRefOf(boardCircuit: string | null): string | null {
+  if (!boardCircuit?.startsWith("path:")) return null;
+  const name = boardCircuit.slice("path:".length);
+  return name.length > 0 ? name : null;
 }
 
 /**
  * The network between this supply and the board it feeds, or null when
- * the 5V pin is the supply terminal. The caller has already checked that
+ * the supply terminal is the pin. The caller has already checked that
  * this supply feeds that board.
  *
- * An Uno takes the cable only from a `usb-a-port`. A bench supply on its
- * `5V` is the header, with no path. A class-2 board (`hasNetlist`) takes
- * `feed: "usb"` from a `usb-a-port` on `5V` (the cable lands on VBUS)
- * and `feed: "header"` from any other supply. A class-1 snapshot is
- * `snapshot:<ref>` and runs only when a matching `usb-a-port` feeds `5V`.
- * The plan drops that circuit when the port is outside the captured
- * resistance and current limit, so this function then sees no circuit.
+ * `path:uno-usb` is the hand-built cable, and only from a `usb-a-port`.
+ * A bench supply on that board is the header, with no path. A class-2
+ * board (`hasNetlist`) takes `feed: "usb"` from a `usb-a-port` (the cable
+ * lands on the connector port) and `feed: "header"` from any other supply.
+ * A class-1 snapshot is `snapshot:<ref>` and runs only when a matching
+ * `usb-a-port` feeds the board. The plan drops that circuit when the port
+ * is outside the captured resistance and current limit, so this function
+ * then sees no circuit.
  */
 export function usbPathFor(
   supplyType: string,
-  boardType: string | null,
   boardCircuit: string | null,
   hasNetlist = false
 ): UsbPath | null {
-  if (!boardType || supplyType.length === 0) return null;
-  const row = FIRMWARE_BOARDS[boardType];
-  if (!row) return null;
-  if (row === "uno-usb") {
+  if (supplyType.length === 0) return null;
+  const named = pathRefOf(boardCircuit);
+  if (named === "uno-usb") {
     return supplyType === "usb-a-port"
       ? { kind: "path", path: "uno-usb" }
       : null;
   }
+  if (named) return null;
   if (snapshotRefOf(boardCircuit)) {
     return supplyType === "usb-a-port"
       ? { kind: "path", path: "nano-snapshot" }
@@ -184,15 +176,14 @@ export function usbPathFor(
 }
 
 /**
- * True when this supply is the USB cable into an Uno. A `usb-a-port`
- * wired to an `arduino-uno-r3`'s `5V` is the cable. A bench supply on
- * `5V` is the header.
+ * True when this supply is the USB cable into a board that names
+ * `path:uno-usb`. A `usb-a-port` takes the cable. A bench supply does not.
  */
 export function unoUsbPathFor(
   supplyType: string,
-  boardType: string | null
+  boardCircuit: string | null
 ): boolean {
-  const path = usbPathFor(supplyType, boardType, null);
+  const path = usbPathFor(supplyType, boardCircuit, false);
   return path?.kind === "path" && path.path === "uno-usb";
 }
 

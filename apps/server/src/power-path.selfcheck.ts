@@ -239,11 +239,11 @@ console.log(
 );
 
 expect(
-  unoUsbPathFor("usb-a-port", "arduino-uno-r3"),
+  unoUsbPathFor("usb-a-port", "path:uno-usb"),
   "a USB port on an Uno should take the path"
 );
 expect(
-  !unoUsbPathFor("bench-supply-cv-cc", "arduino-uno-r3"),
+  !unoUsbPathFor("bench-supply-cv-cc", "path:uno-usb"),
   "a bench supply should not take the path"
 );
 {

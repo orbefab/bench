@@ -41,6 +41,7 @@
             "kind": "firmware",
             "chip": "atmega328p",
             "imageParam": "firmware",
+            "boardCircuit": "path:uno-usb",
             "params": {
               "brownoutVoltage": 2.7,
               "brownoutAssertVoltage": 2.675,
