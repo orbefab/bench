@@ -35,6 +35,8 @@ Its netlist names the instances and the wires. Instance ids stay short
 - A servo is `sfab/sg90@1.0.0`. Its shaft wire is
   `["servo.shaft", "arm.shoulder"]` and its mount wire is
   `["servo.mount", "arm.base"]`.
+- An MG90S is `sfab/mg90s@1.0.0`, the same wires, shaft and mount.
+  It has no class 2; the control-IC composite is later.
 - A supply is `sfab/usb-port-500ma@1.0.0` or `sfab/bench-supply@1.0.0`.
   Override `V`, `Ilimit`, and `Rs` in `params` when the instance is not
   the part's defaults.

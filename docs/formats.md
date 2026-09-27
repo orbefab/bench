@@ -107,7 +107,7 @@ type PartFile = {
 type AxisMap<T> = Partial<Record<"0" | "1" | "2" | "3", { default: string; variants: Record<string, T> }>>;
 ```
 
-Every implementation carries `omits: string[]`: the effects this level leaves out. It feeds the report's "not simulated" list. For example, SG90 behaviour class 1 omits gear backlash, motor inductance and winding heat.
+Every implementation carries `omits: string[]`: the effects this level leaves out. It feeds the report's "not simulated" list. For example, SG90 behaviour class 1 omits gear backlash, motor inductance and winding heat. The catalog's other hobby servo is `sfab/mg90s@1.0.0`; it stops at class 1, and its control-IC composite is later.
 
 ```ts
 type BehaviourImpl = { omits: string[] } & (
