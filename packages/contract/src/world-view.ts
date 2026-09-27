@@ -4,7 +4,7 @@
  */
 
 import type { Pose } from "./layered";
-import type { WorldPrimitive, WorldStepProp } from "./world";
+import type { WorldPrimitive, WorldStepProp, WorldTarget } from "./world";
 
 export type WorldViewRobot = {
   id: string;
@@ -38,6 +38,8 @@ export type WorldViewPart = {
   drives?: { robot: string; joint: string };
   /** Servo signal pin, or null when the part is not a servo. */
   signalPin: string | null;
+  /** Ultrasonic ranger. The card shows distance and the echo, not a pulse. */
+  ranger?: boolean;
 };
 
 /** Which supply reaches a board or a part. Null when nothing feeds it. */
@@ -53,6 +55,7 @@ export type WorldView = {
     ground: { plane: boolean };
     primitives?: WorldPrimitive[];
     stepProps?: WorldStepProp[];
+    targets?: WorldTarget[];
   };
   robots: WorldViewRobot[];
   boards: WorldViewBoard[];

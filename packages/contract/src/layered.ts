@@ -245,7 +245,8 @@ export type FormId =
   | "logic-in@1"
   | "table@1"
   | "transfer-fn@1"
-  | "multibody@1";
+  | "multibody@1"
+  | "ranger@1";
 
 export type FormDef = {
   params: Partial<Record<string, Quantity>>;
@@ -281,6 +282,21 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
   "table@1": { params: {} },
   "transfer-fn@1": { params: {} },
   "multibody@1": { params: {} },
+  "ranger@1": {
+    params: {
+      c: "Velocity",
+      rangeMin: "Position",
+      rangeMax: "Position",
+      beamHalf: "Angle",
+      trigMin: "Time",
+      echoDelay: "Time",
+      echoTimeout: "Time",
+      working: "Current",
+      quiescent: "Current",
+      vMin: "Voltage",
+      face: "Position",
+    },
+  },
 };
 
 /** Forms whose `V` param is the supply setpoint (D-023.2). */
@@ -362,6 +378,8 @@ export type WorldFileV2 = {
     air?: { density: number };
     primitives?: unknown[];
     stepProps?: unknown[];
+    /** Mocap primitives. Rays hit them. They do not push robots. */
+    targets?: unknown[];
   };
   run: {
     seed: number;

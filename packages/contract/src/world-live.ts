@@ -114,6 +114,12 @@ export type WorldPartState = {
    * An unwired V+ is 0.
    */
   voltage?: number;
+  /** Last ray hit, metres. Null is no echo. Absent on a servo. */
+  distanceM?: number | null;
+  /** Echo high time, seconds. Null when the part emitted no pulse. */
+  echoS?: number | null;
+  /** True when the last trigger returned a hit inside the range. */
+  hit?: boolean;
 };
 
 /** One supply in the shared run. Optional on `WorldState` for older clients. */
@@ -461,6 +467,12 @@ export type RecordedFrame = {
       maxCurrent: number;
       /** Volts at V+ relative to GND. 0 when that port is unwired. */
       voltage: number;
+      /** Metres. Present on a ranger. Null is no echo. */
+      distanceM?: number | null;
+      /** Echo high time, seconds. Present on a ranger. */
+      echoS?: number | null;
+      /** Present on a ranger. */
+      hit?: boolean;
     }
   >;
   supplies: Record<
@@ -517,7 +529,13 @@ export type RecordingEvent =
   | { t: number; kind: "reboot"; board: string }
   | { t: number; kind: "reload"; board: string }
   | { t: number; kind: "play"; by: WorldSender }
-  | { t: number; kind: "pause"; by: WorldSender };
+  | { t: number; kind: "pause"; by: WorldSender }
+  | {
+      t: number;
+      kind: "move-target";
+      id: string;
+      position: [number, number, number];
+    };
 
 export type RecordingRead = {
   id: string;

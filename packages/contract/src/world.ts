@@ -52,6 +52,26 @@ export type WorldCylinder = {
 export type WorldPrimitive = WorldBox | WorldSphere | WorldCylinder;
 
 /**
+ * Robot id under which a run records target poses. Not a URDF robot.
+ * A target `card` is the body `target/card`.
+ */
+export const WORLD_TARGET_ROBOT = "target";
+
+/** Seconds from the start of the run, and the position at that time. */
+export type WorldTargetKeyframe = {
+  t: number;
+  position: WorldVec3;
+};
+
+/**
+ * A primitive the run can move. `path` is linear between keyframes and
+ * held after the last one. With no path, the target stays at `pose`.
+ */
+export type WorldTarget = WorldPrimitive & {
+  path?: WorldTargetKeyframe[];
+};
+
+/**
  * A STEP prop. The run does not load it: the shape is checked and the
  * file is not asked to exist.
  */
