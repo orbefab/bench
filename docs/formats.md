@@ -140,6 +140,36 @@ type Netlist = {
 - An instance string param `urdf` replaces the body file of a part whose body is `urdf`. The path is relative to the project folder.
 - Children are instantiated only when the chosen behaviour is a composite. The lockfile still lists them.
 
+### `avr-pin@1` and the ADC
+
+A firmware board carries `avr-pin@1` as numbers on the variant's `params`, not as a `form`. The names are `roh`, `rol`, `rpu` and `rLeak`, in ohms. High is the board's 5V node. Low is 0 V. The Nano D13 stamp and the ADC both use these numbers.
+
+DDR and PORT choose the mode, read when the rail solves and when a conversion starts:
+
+| DDR | PORT | Mode |
+| --- | --- | --- |
+| 1 | 1 | `high` |
+| 1 | 0 | `low` |
+| 0 | 1 | `pullup` |
+| 0 | 0 | `input` |
+
+An input with nothing else on the net is 0 V through `rLeak`. A pull-up with nothing else on it is the board node through `rpu`. A pin that is its own output reads that level unloaded: `high` through `roh`, `low` through `rol`.
+
+The ADC keeps avr8js's conversion time. The count is `floor(V / Vref · 1024)`, clamped to 0..1023, after the sample-and-hold. The hold is exact at 0 Ω.
+
+AVCC (REFS = 01) is the board node at the end of the previous 1 ms step, latched before the CPU runs, so the conversion lags the rail by at most one master step. A board that starts in the same quantum, after the solve, sees that solve. The internal 1.1 V reference (REFS = 11) is the bandgap. AREF (REFS = 00) is 0 V: these boards have no AREF port, and a conversion against it reads 0. A reserved reference (REFS = 10) also reads 0. The AREF pin circuit is omitted.
+
+| MUX | Input |
+| --- | --- |
+| 0–7 | A0–A7, single-ended, from the net |
+| 8 | Temperature, 0.314 V. DS40002061 Table 24-2, typical at 25 °C. A constant. |
+| 14 | Bandgap, 1.1 V. DS40002061 ADC Characteristics, internal reference 1.0 V min, 1.1 V typical, 1.2 V max. |
+| 15 | 0 V |
+
+A0–A5 follow the table above. A6 and A7 are analog only. A net with this board's `5V` reads the board node. `GND` reads 0 V. A power or ground port wins over the pin's own mode. Anything else on the net, including another pin or a part, reads 0 V through `rLeak`.
+
+Omitted: ADC INL and DNL, ADC noise, the noise canceller, temperature drift, and the AREF pin circuit.
+
 **Model forms** are versioned equations that parts and snapshots fill in:
 - `slew@1`
 - `dc-motor@1` (K, R, L?, efficiency, eSat, quiescent)
@@ -313,8 +343,8 @@ These came out of the motor/rail and pin experiments. They are proposals, not ye
 - **`averaged-hbridge@1`**: ports are the rail and the motor's electrical port. `V_motor = s·V_rail`, `I_rail = s·I_motor`, plus `quiescent` as a current source on the rail. `s` is the behaviour law's output, not a stored parameter. The engine may fuse the bridge and the winding into one branch.
 - **`run.coupling`** on the world, not the part: `scheme` ∈ `explicit | substep | implicit-damping`, `substeps` (default 10), `bemfDamping` ∈ `body | circuit`. Default for a hobby servo is `substep`. A joint with `dt·B/J > 2` selects `implicit-damping`, which puts the derived `B(s) = η·K²/(R + Rs·s²)` on the joint's damping. `B(s)` is derived, never a parameter.
 - **Braking current** returns to the rail (`I_rail = s·I` may be negative). The rail clips it at 0; the measured bench (E10) decides which the SG90 part keeps.
-- **Pin element `avr-pin@1`**: Thevenin source to the rail node (`Roh`, `Rol`), Hi-Z as an input, and the pull-up stored as its datasheet **range** (20–50 kΩ, default the midpoint) until a measured snapshot replaces it. Pin changes land at their cycle timestamp.
-- **ADC**: the reference is the **AVCC node**, never a constant 5 V, and the conversion is the datasheet's `floor(V/Vref·1024)`, clamped to 1023. The sample-and-hold is a closed form, not a live 14 pF node.
+- **Pin element `avr-pin@1`** (landed, §3): `roh`, `rol`, `rpu` and `rLeak` on the firmware variant. High is the board node. DDR and PORT select the mode at the master step.
+- **ADC** (landed, §3): AVCC is the board node from the end of the previous 1 ms step. The count is `floor(V/Vref·1024)`, clamped to 1023. The sample-and-hold is a closed form, not a live 14 pF node. INL, DNL, noise, the noise canceller and temperature drift are omitted.
 - **`gear-train` body kind** beside `mjcf`: shafts `{ name, inertia, damping, friction }` and meshes `{ driver, driven, teethDriver, teethDriven }`, so the body-axis snapshot `collapse()` (armature `N²·J` plus reflected idlers, friction scaled by the speed ratio) is data. A catalog armature that was fitted, not reflected, says so.
 - **Current-limit floor**: a `thevenin-limit@1` rail feeding regenerating motors needs a clamp (the bridge's body diodes) so the terminal voltage cannot go negative.
 - **Run report** adds the **passivity sum** at each circuit/body cut (joules injected by the coupling) and flags it when it grows.
