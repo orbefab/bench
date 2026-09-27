@@ -17,6 +17,7 @@ from cadgen import build123d as bd
 from cadgen import read_step, read_scene
 from cadgen.geometry import boundary_edges, closest_points, overlap_volume, topology_errors
 
+from lib.fits import hcsr04_dupont_keepouts, nano_dupont_keepouts
 from lib.dimensions import (
     BODY_BOTTOM_Z,
     BOSS_TOP_Z,
@@ -33,6 +34,7 @@ from lib.dimensions import (
     HCSR04_HEADER_BODY,
     HCSR04_HEADER_BODY_L,
     HCSR04_HEADER_CLEARANCE,
+    HCSR04_PINS_DOWN,
     HCSR04_LIP_TO_CAN,
     HCSR04_PCB_L,
     HCSR04_PCB_T,
@@ -107,13 +109,32 @@ def closed_solid(path: Path, label: str) -> None:
         report(True, f"{label}: one closed solid, volume {solids[0].volume:.1f} mm^3")
 
 
+def _keepouts_clear(title: str, boxes, solids) -> None:
+    """Female housings and their bend gaps must miss every printed solid."""
+    hits = 0
+    for box_name, box in boxes:
+        for solid_name, solid in solids:
+            # The assembly sensor keep-outs are not meant to miss the coupon,
+            # and the coupon keep-outs are not meant to miss the base.
+            if title.startswith("HC-SR04 dupont") and solid_name == "coupon_sensor":
+                continue
+            if title.startswith("nano") and solid_name == "coupon_sensor":
+                continue
+            volume = overlap_volume(box, solid)
+            if volume > 0.01:
+                hits += 1
+                report(False, f"{title} {box_name} vs {solid_name}: {volume:.4f} mm^3")
+    if hits == 0:
+        report(True, f"{title}: housings and bend gaps clear of printed parts")
+
+
 def gap_at(point: tuple[float, float, float], other) -> float:
     """Distance from a point on a mating face to the other solid."""
     return closest_points(bd.Vertex(*point), other).distance
 
 
 def main() -> None:
-    for name in ("base", "dial", "flag", "coupon"):
+    for name in ("base", "dial", "flag", "coupon_servo", "coupon_horn", "coupon_sensor"):
         closed_solid(STEP / f"{name}.step", name)
 
     scene = read_scene(str(STEP / "gauge.step"))
@@ -181,14 +202,15 @@ def main() -> None:
             gap_at((10.0, HCSR04_Y, SENSOR_PCB_BOTTOM), base),
             HCSR04_SHELF_CLEARANCE,
         )
-        # Header body, just inside the rear-wall window, on its +X face.
-        header_z = SENSOR_PCB_BOTTOM + HCSR04_HEADER_BODY / 2.0
-        header_y = HCSR04_Y - HCSR04_PCB_T / 2.0 - HCSR04_HEADER_BODY / 2.0 + 0.15
-        expect(
-            "HC-SR04 header window",
-            gap_at((HCSR04_HEADER_BODY_L / 2.0, header_y, header_z), base),
-            HCSR04_HEADER_CLEARANCE,
-        )
+        if not HCSR04_PINS_DOWN:
+            # Header body, just inside the rear-wall window, on its +X face.
+            header_z = SENSOR_PCB_BOTTOM + HCSR04_HEADER_BODY / 2.0
+            header_y = HCSR04_Y - HCSR04_PCB_T / 2.0 - HCSR04_HEADER_BODY / 2.0 + 0.15
+            expect(
+                "HC-SR04 header window",
+                gap_at((HCSR04_HEADER_BODY_L / 2.0, header_y, header_z), base),
+                HCSR04_HEADER_CLEARANCE,
+            )
         can_bottom = HCSR04_Z + HCSR04_CAN_Z - HCSR04_CAN_D / 2.0
         lip_y = HCSR04_Y + HCSR04_PCB_T / 2.0 + HCSR04_SLOT_CLEARANCE + HCSR04_WALL / 2.0
         expect(
@@ -260,6 +282,22 @@ def main() -> None:
             ok,
             f"flag sweep 0-180: min {worst[0]:.3f} mm at {worst[1]} deg (limit {FLAG_SWEEP_CLEARANCE:.2f})",
         )
+
+    printed = []
+    for key in ("base", "dial", "flag"):
+        if key in solids:
+            printed.append((key, solids[key]))
+    sensor_coupon = STEP / "coupon_sensor.step"
+    if sensor_coupon.exists():
+        coupon_solids = list(read_step(str(sensor_coupon)).solids())
+        if len(coupon_solids) == 1:
+            printed.append(("coupon_sensor", coupon_solids[0]))
+    _keepouts_clear("nano dupont", nano_dupont_keepouts(), printed)
+    _keepouts_clear("HC-SR04 dupont", hcsr04_dupont_keepouts(0.0, HCSR04_Y), printed)
+    # The sensor coupon sits the cradle at the origin, same height as the base.
+    coupon_only = [item for item in printed if item[0] == "coupon_sensor"]
+    if coupon_only:
+        _keepouts_clear("HC-SR04 coupon", hcsr04_dupont_keepouts(0.0, 0.0), coupon_only)
 
     if FAILURES:
         print(f"{FAILURES} failed")

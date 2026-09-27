@@ -106,16 +106,21 @@ HCSR04_HEADER_PIN_L = 8.0  # verify
 HCSR04_HEADER_PIN = 0.64  # verify — square post
 HCSR04_HEADER_BODY_L = 10.2  # 4 × 2.54
 HCSR04_HEADER_BODY = 2.54  # verify
-HCSR04_HEADER_CLEARANCE = 1.0  # window in the rear wall around the header body
+HCSR04_HEADER_CLEARANCE = 1.0  # air around the header plastic and the housings
+HCSR04_HEADER_OVERLAP = 0.3  # plastic bites the PCB so the outline is one solid
+HCSR04_HEADER_BELOW_PCB = HCSR04_HEADER_BODY - HCSR04_HEADER_OVERLAP
+# Common module: the header is on the bottom edge and the pins point down,
+# in the plane of the board, past that edge. Confirm on the owner's part.
+HCSR04_PINS_DOWN = True  # verify
 
-# The board drops into a rear wall, side stops, a bottom shelf and a short
-# front lip that stays below the cans.
+# The board drops into a rear wall, side stops, end shelves and a short
+# front lip that stays below the cans. With the pins down, the shelves stop
+# either side of the header so the housings hang in the open centre.
 HCSR04_SLOT_CLEARANCE = 0.45  # per face, PCB thickness direction
 HCSR04_SIDE_CLEARANCE = 0.60  # per end, along the 45 mm edge
 HCSR04_SHELF_CLEARANCE = 0.40  # under the PCB
 HCSR04_LIP_TO_CAN = 1.0  # lip top stays this far under the can bottoms
 HCSR04_WALL = 2.4
-HCSR04_WALL_TOP = 22.0  # above the bed; the PCB top is higher, so the slot is open
 
 # ---------------------------------------------------------------------------
 # Arduino Nano (CH340 clone). Outline 18 × 45 mm per Arduino Nano / A000005.
@@ -159,16 +164,18 @@ NANO_D13_H = 0.8  # verify
 NANO_D13_X = -15.0  # verify
 NANO_D13_Y = 5.2  # verify
 
-# Female Dupont housing. The cradle is sized around this, not around a model
-# of the housing (the wires are not a solid in the assembly).
+# Female Dupont housing. One housing per pin. The wire leaves it straight
+# and needs DUPONT_BEND_GAP to turn. The rails are raised to leave that gap
+# above the floor; the floor is not opened under the pins.
 DUPONT_HOUSING_L = 14.0  # verify
-DUPONT_HOUSING_W = 2.54  # verify
+DUPONT_HOUSING_W = 2.54  # verify — square section of one housing
+DUPONT_BEND_GAP = 8.0  # verify — below every housing, before the wire turns
 
 # Cradle. End rails, pins down, component side up. Long sides stay open.
 NANO_RAIL_CLEARANCE = 0.35  # between rail top and the PCB
 NANO_SIDE_CLEARANCE = 1.20  # PCB edge to the corner lip; leaves room for a housing
 NANO_END_CLEARANCE = 0.80  # PCB end to the end stop
-NANO_RAIL_H = 17.6  # Dupont housing + shroud + a bend gap above the floor
+NANO_RAIL_H = NANO_SHROUD + DUPONT_HOUSING_L + DUPONT_BEND_GAP
 NANO_RAIL_L = 12.0  # across the board, inboard of the pin rows
 NANO_RAIL_W = 3.2
 NANO_LIP_T = 1.8
@@ -223,7 +230,7 @@ WIRE_RIB_T = 1.8
 WIRE_LANE_X0 = -47.0
 WIRE_LANE_X1 = -36.0
 WIRE_LANE_Y0 = -52.0
-WIRE_LANE_Y1 = 38.0
+WIRE_LANE_Y1 = 50.0  # forward to the sensor pin bay
 
 # ---------------------------------------------------------------------------
 # Stack. Derived from the fits above; do not retune these by hand.
@@ -262,8 +269,17 @@ NANO_USB_RAIL_Y = (NANO_FAR_Y - NANO_PCB_L) + NANO_RAIL_W / 2.0 + 1.6
 # Sensor placement. Cans point +Y. The PCB rear face sits SENSOR_GAP past the dial.
 SENSOR_GAP = 8.0
 HCSR04_Y = DIAL_R_OUT + SENSOR_GAP + HCSR04_PCB_T / 2.0
-SENSOR_PCB_BOTTOM = 5.0
+# Pins-down: header plastic, then a housing, then the bend, then a little air
+# above the floor. Pins-back keeps the low shelf; nothing hangs below the board.
+_HCSR04_UNDER_BOARD = (
+    HCSR04_HEADER_BELOW_PCB + DUPONT_HOUSING_L + DUPONT_BEND_GAP + 0.6
+    if HCSR04_PINS_DOWN
+    else 5.0 - FLOOR_T
+)
+SENSOR_PCB_BOTTOM = FLOOR_T + _HCSR04_UNDER_BOARD
 HCSR04_Z = SENSOR_PCB_BOTTOM + HCSR04_PCB_H / 2.0
+# Walls grip the lower part of the board. The top stays open.
+HCSR04_WALL_TOP = SENSOR_PCB_BOTTOM + 12.0
 
 # Nominal pilot-slot centre, slightly outboard of the datasheet hole so the
 # slot (length MG90S_PILOT_SLOT_L) still covers that hole.

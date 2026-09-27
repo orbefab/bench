@@ -8,7 +8,7 @@ from cadgen import build123d as bd
 from cadgen import step
 
 from base import base
-from coupon import coupon
+from coupon import coupon_horn, coupon_sensor, coupon_servo
 from dial import dial
 from flag import flag
 from hcsr04 import hcsr04
@@ -47,8 +47,10 @@ KINEMATICS = {
 
 @step(out="STEP/gauge.step", kinematics=KINEMATICS)
 def gauge():
-    # Child models write their own STEP files. The coupon is not in the assembly.
-    coupon()
+    # Child models write their own STEP files. The coupons stay out of the assembly.
+    coupon_servo()
+    coupon_horn()
+    coupon_sensor()
     mg90s()
 
     base_part = base()

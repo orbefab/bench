@@ -7,12 +7,14 @@
 | base.py | STEP/base.step | Printed base: servo pocket, dial seat, Nano cradle, sensor clip, wire lane |
 | dial.py | STEP/dial.step | Printed semicircular scale, separate from the base |
 | flag.py | STEP/flag.step | Printed pointer that seats on the single-arm horn |
-| coupon.py | STEP/coupon.step | Printed fit coupon: servo pocket, sensor slot, horn pocket |
+| coupon.py | STEP/coupon_servo.step | Fit coupon: MG90S pocket and screw slots |
+| coupon.py | STEP/coupon_horn.step | Fit coupon: horn pocket, opened upward |
+| coupon.py | STEP/coupon_sensor.step | Fit coupon: HC-SR04 cradle, same shelves and lip |
 | nano.py | STEP/nano.step | Bought CH340 Nano, outline only |
 | mg90s.py | STEP/mg90s.step | Bought MG90S body and single-arm horn |
 | hcsr04.py | STEP/hcsr04.step | Bought HC-SR04, outline only |
 | gauge.py | STEP/gauge.step | Assembly at 0°. Sidecar `STEP/gauge.step.json` |
-| check.py | — | Closed solids, clearances, flag sweep |
+| check.py | — | Closed solids, clearances, flag sweep, Dupont keep-outs |
 
 Build, from this directory:
 
@@ -21,7 +23,7 @@ python gauge.py
 python check.py
 ```
 
-`gauge.py` writes every STEP. The coupon is a separate print and stays out of the assembly. Units are millimetres.
+`gauge.py` writes every STEP. The three coupons are separate prints and stay out of the assembly. Units are millimetres.
 
 ## Frame
 
@@ -35,19 +37,21 @@ Named solids: `base`, `dial`, `flag`, `nano`, `mg90s`, `horn`, `hcsr04`. The hor
 
 ## Assembly
 
-1. Print the coupon first and try the MG90S in the pocket, the HC-SR04 in the slot, and the horn in the flag pocket. Then print the base, the dial, and the flag.
+1. Print the three coupons first. Try the MG90S in the servo coupon, the horn in the horn coupon, and the HC-SR04 in the sensor coupon. Then print the base, the dial, and the flag.
 2. Seat the servo in the pocket, tabs on the deck, cable toward the Nano (−Y). The two stock screws go through the tabs into the slots.
 3. Drop the dial into the seat, engraved face up. The long tick is 0° and lies on +X.
-4. Clip the HC-SR04 into the front holder, cans toward +Y. The header points back into the wire bay.
+4. Clip the HC-SR04 into the front holder, cans toward +Y. The pins point down, in the plane of the board. Four female Dupont housings hang in the open centre, under the shelves. Their wires turn and run under the shelf to the lane on the −X side.
 5. Set the Nano on the rails, pins down, mini-USB out the back.
 6. Upload the firmware. With the servo at its 0° pulse, press the single-arm horn onto the spline so the arm points along +X, at the long tick. The flag's pocket goes over that horn; the horn screw clamps it. The spline tooth that lands on 0° is chosen at this step.
 
-Wires run in the floor lane on the −X side, and through the bay under the dial shelf. The servo cable uses the notch on the −Y face of the collar.
+Wires from the sensor and the servo join the floor lane on the −X side, and run through the bay under the dial shelf to the Nano. The servo cable uses the notch on the −Y face of the collar. Under the Nano, each Dupont housing has 8 mm of air below it before the wire turns; the rails are raised to leave that air above the floor.
 
 ## Decisions
 
 - The dial is its own print, in a D-shaped seat, so a bad scale can be reprinted without the base.
-- The Nano sits pins-down on two end rails, component side up. That keeps the mini-USB and the D13 LED on the top face, and leaves the long edges open for female Dupont housings and the wires leaving them.
+- The Nano sits pins-down on two end rails, component side up. That keeps the mini-USB and the D13 LED on the top face, and leaves the long edges open for female Dupont housings and the wires leaving them. The rails are tall enough for a housing plus an 8 mm bend above the floor. The floor stays closed under the pins.
+- The HC-SR04 pins point down, in the plane of the board (`HCSR04_PINS_DOWN`). The shelves stop either side of the header so the housings hang free, and the wires leave under the shelf to the −X lane. Confirm the pin direction from a photo before printing the base.
+- The fit coupons are three small prints. Each one calls the same pocket or cradle as the base.
 - The scale is horizontal, under the flag. Standing in front of the sensor (+Y) and looking down, the flag and the dial are both in view. Number labels are turned so they read upright from that side. The long tick at 0° is the degree mark; 10, 50 and 100 cm are numbered. "100" sits at 168° so the glyphs stay on the plate.
 - The servo's tab holes are short slots, not round pilots, so a hole-spacing error still takes the stock screws.
 - The flag is one slab. Its pocket opens downward onto the horn and is held by the horn screw. Print it pocket-up.
@@ -100,6 +104,7 @@ These are in `lib/dimensions.py` with a `# verify` comment. Fits are loose becau
 | HCSR04_HEADER_PIN_L | 8.0 mm | right-angle posts |
 | HCSR04_HEADER_PIN | 0.64 mm | square post |
 | HCSR04_HEADER_BODY | 2.54 mm | header plastic |
+| HCSR04_PINS_DOWN | true | pins down in the board plane; confirm from a photo |
 | NANO_PCB_L | 43.2 mm | FR4; the shell makes the 45 mm overall |
 | NANO_PCB_T | 1.6 mm | board thickness |
 | NANO_ROW_SPACING | 15.24 mm | usual breadboard span |
@@ -122,3 +127,4 @@ These are in `lib/dimensions.py` with a `# verify` comment. Fits are loose becau
 | NANO_D13_Y | 5.2 mm | toward one long edge |
 | DUPONT_HOUSING_L | 14.0 mm | female Dupont housing |
 | DUPONT_HOUSING_W | 2.54 mm | female Dupont housing |
+| DUPONT_BEND_GAP | 8.0 mm | air below each housing before the wire turns |

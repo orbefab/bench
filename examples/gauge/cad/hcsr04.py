@@ -1,8 +1,9 @@
 """HC-SR04 outline: PCB, two transducer cans, crystal, 4-pin header.
 
-Part frame: PCB centre at the origin, cans toward +Y, pin header toward -Y
-off the bottom edge. The board stands in this frame (45 mm along X, 20 mm
-along Z) so the assembly only translates it.
+Part frame: PCB centre at the origin, cans toward +Y. The board stands in
+this frame (45 mm along X, 20 mm along Z) so the assembly only translates it.
+With HCSR04_PINS_DOWN the pins leave the bottom edge along -Z, in the plane
+of the board. Otherwise they leave the back face along -Y.
 """
 
 from cadgen import build123d as bd
@@ -17,11 +18,14 @@ from lib.dimensions import (
     HCSR04_CRYSTAL_L,
     HCSR04_CRYSTAL_W,
     HCSR04_HEADER_BODY,
+    HCSR04_HEADER_BODY_L,
+    HCSR04_HEADER_OVERLAP,
     HCSR04_HEADER_PINS,
     HCSR04_HEADER_PITCH,
     HCSR04_HEADER_PIN,
     HCSR04_HEADER_PIN_L,
     HCSR04_PCB_H,
+    HCSR04_PINS_DOWN,
     HCSR04_PCB_L,
     HCSR04_PCB_T,
 )
@@ -39,6 +43,32 @@ def _can(x: float):
 def _header():
     span = (HCSR04_HEADER_PINS - 1) * HCSR04_HEADER_PITCH
     x0 = -span / 2.0
+    if HCSR04_PINS_DOWN:
+        # Plastic on the bottom edge, pins continuing down in the board plane.
+        body_z = -HCSR04_PCB_H / 2.0 - HCSR04_HEADER_BODY / 2.0 + HCSR04_HEADER_OVERLAP
+        parts = [
+            box(
+                0,
+                0,
+                body_z,
+                HCSR04_HEADER_BODY_L,
+                max(HCSR04_PCB_T, HCSR04_HEADER_BODY),
+                HCSR04_HEADER_BODY,
+            )
+        ]
+        pin_z = body_z - HCSR04_HEADER_BODY / 2.0 - HCSR04_HEADER_PIN_L / 2.0 + 0.2
+        for index in range(HCSR04_HEADER_PINS):
+            parts.append(
+                box(
+                    x0 + index * HCSR04_HEADER_PITCH,
+                    0,
+                    pin_z,
+                    HCSR04_HEADER_PIN,
+                    HCSR04_HEADER_PIN,
+                    HCSR04_HEADER_PIN_L,
+                )
+            )
+        return parts
     z = -HCSR04_PCB_H / 2.0 + HCSR04_HEADER_BODY / 2.0
     body_y = -HCSR04_PCB_T / 2.0 - HCSR04_HEADER_BODY / 2.0 + 0.15
     parts = [

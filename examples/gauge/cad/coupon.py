@@ -1,8 +1,8 @@
-"""One small print that trials the three fits before the base.
+"""Three small prints that trial the fits before the base.
 
-The servo pocket is the plan-view opening (not the full case depth). The
-sensor slot uses the same clearances as the base, with shorter walls. The
-horn pocket is the flag's pocket, opened upward.
+Each feature is the same void or cradle as the base (``lib/fits.py``).
+The servo coupon is the plan opening, not the full case depth. The sensor
+coupon uses the same shelves, lip and pin opening, with shorter walls.
 """
 
 from cadgen import build123d as bd
@@ -11,58 +11,72 @@ from cadgen import srgb, step
 from lib.dimensions import (
     FLAG_T,
     FLOOR_T,
+    HCSR04_WALL,
+    MG90S_BODY_L,
     MG90S_BODY_W,
+    MG90S_HORN_ARM_L,
+    MG90S_HORN_HUB_D,
     MG90S_POCKET_CLEARANCE,
-    MG90S_TAB_SPAN,
     SENSOR_PCB_BOTTOM,
 )
 from lib.fits import hcsr04_cradle, horn_pocket_void, mg90s_pilot_slots, mg90s_pocket_void
-from lib.geom import box, fuse
+from lib.geom import box
 
 _SLATE = srgb("#3E4754")
 
-# Shorter than the base so the coupon is a fast print. The gaps match.
-_COUPON_WALL_TOP = 14.0
-_COUPON_POCKET_TOP = 10.0
-_PLATE_X = 72.0
-_PLATE_Y = 118.0
+# Tall enough to feel the opening. The plan size is the base's pocket.
+_SERVO_WALL_H = 6.0
+_SENSOR_GRIP = 8.0  # side stops above the shelf; the lip is still the full one
 
 
-def coupon_shape():
-    plate = box(0, 0, FLOOR_T / 2.0, _PLATE_X, _PLATE_Y, FLOOR_T)
+def _servo_shape():
+    wall = HCSR04_WALL
+    ox = MG90S_BODY_L + 2.0 * MG90S_POCKET_CLEARANCE + 2.0 * wall
+    oy = MG90S_BODY_W + 2.0 * MG90S_POCKET_CLEARANCE + 2.0 * wall
+    oz = FLOOR_T + _SERVO_WALL_H
+    block = box(0, 0, oz / 2.0, ox, oy, oz)
+    pocket = mg90s_pocket_void(FLOOR_T, oz + 0.4)
+    slots = mg90s_pilot_slots(oz)
+    return block - pocket - slots
 
-    servo_y = -36.0
-    servo_top = _COUPON_POCKET_TOP
-    servo_block = box(
-        0,
-        servo_y,
-        servo_top / 2.0,
-        MG90S_TAB_SPAN + 8.0,
-        MG90S_BODY_W + 2.0 * MG90S_POCKET_CLEARANCE + 8.0,
-        servo_top,
-    )
-    pocket = bd.Pos(0, servo_y, 0) * mg90s_pocket_void(FLOOR_T, servo_top + 0.4)
-    slots = bd.Pos(0, servo_y, 0) * mg90s_pilot_slots(servo_top)
 
-    horn_y = 2.0
-    pad_h = FLAG_T
-    pad = box(0, horn_y, pad_h / 2.0, 30.0, 18.0, pad_h)
-    # Pocket opens upward: flip the flag cutter, which opens downward.
-    pocket_up = bd.Pos(0, horn_y, pad_h) * bd.Rot(180, 0, 0) * horn_pocket_void()
+def _horn_shape():
+    hub_r = MG90S_HORN_HUB_D / 2.0 + 2.0
+    length = MG90S_HORN_ARM_L + 8.0
+    pad = box(length / 2.0 - 2.0, 0, FLAG_T / 2.0, length, 2.0 * hub_r, FLAG_T)
+    pocket_up = bd.Pos(0, 0, FLAG_T) * bd.Rot(180, 0, 0) * horn_pocket_void()
+    return pad - pocket_up
 
-    sensor = hcsr04_cradle(0, 38.0, SENSOR_PCB_BOTTOM, _COUPON_WALL_TOP)
 
-    body = fuse([plate, servo_block, pad, sensor]) - pocket - slots - pocket_up
+def _sensor_shape():
+    return hcsr04_cradle(0, 0, SENSOR_PCB_BOTTOM, SENSOR_PCB_BOTTOM + _SENSOR_GRIP)
+
+
+@step(out="STEP/coupon_servo.step")
+def coupon_servo():
+    body = _servo_shape()
+    body.label = "coupon_servo"
+    body.color = _SLATE
     return body
 
 
-@step(out="STEP/coupon.step")
-def coupon():
-    body = coupon_shape()
-    body.label = "coupon"
+@step(out="STEP/coupon_horn.step")
+def coupon_horn():
+    body = _horn_shape()
+    body.label = "coupon_horn"
+    body.color = _SLATE
+    return body
+
+
+@step(out="STEP/coupon_sensor.step")
+def coupon_sensor():
+    body = _sensor_shape()
+    body.label = "coupon_sensor"
     body.color = _SLATE
     return body
 
 
 if __name__ == "__main__":
-    coupon()
+    coupon_servo()
+    coupon_horn()
+    coupon_sensor()
