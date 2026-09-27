@@ -129,19 +129,24 @@ export async function writeHingeSnapshot(
   const ratings = part.ratings?.shaft;
   const speedRating = pair(ratings?.speed);
   const torqueRating = pair(ratings?.torque);
+  if (!speedRating || !torqueRating) {
+    throw new Error(
+      `${input.entry.part} shaft has no speed and torque ratings`
+    );
+  }
   if (
-    !speedRating ||
-    !torqueRating ||
-    speedLo < speedRating[0] ||
-    speedHi > speedRating[1] ||
-    torqueLo < torqueRating[0] ||
-    torqueHi > torqueRating[1]
+    speedLo > speedRating[0] ||
+    speedHi < speedRating[1] ||
+    torqueLo > torqueRating[0] ||
+    torqueHi < torqueRating[1]
   ) {
     throw new Error(
-      `${input.entry.part} fixture left the shaft ratings ` +
+      `${input.entry.part} fixture did not reach the shaft ratings ` +
         `(speed ${speedLo}..${speedHi}, torque ${torqueLo}..${torqueHi})`
     );
   }
+  const speedBound = clipToRating(speedLo, speedHi, speedRating);
+  const torqueBound = clipToRating(torqueLo, torqueHi, torqueRating);
   const snap: SnapshotFile = {
     format: SNAPSHOT_FORMAT,
     partType: typeId,
@@ -156,8 +161,8 @@ export async function writeHingeSnapshot(
     },
     envelope: {
       bounds: {
-        [`${shaftName(type)}.speed`]: [speedLo, speedHi],
-        [`${shaftName(type)}.torque`]: [torqueLo, torqueHi],
+        [`${shaftName(type)}.speed`]: speedBound,
+        [`${shaftName(type)}.torque`]: torqueBound,
       },
     },
     error: [
@@ -269,7 +274,10 @@ function signalAt(
   const amplitude = input.params.amplitude ?? 0;
   if (input.signal === "step") {
     const t0 = input.params.t0 ?? 0;
-    return t >= t0 ? amplitude : 0;
+    const width = input.params.width;
+    if (t < t0) return 0;
+    if (width !== undefined && t >= t0 + width) return 0;
+    return amplitude;
   }
   if (input.signal === "chirp") {
     const f0 = input.params.f0 ?? 0;
@@ -387,6 +395,15 @@ function lerp(
   const span = next - prev;
   const frac = span === 0 ? 0 : (level - prev) / span;
   return (index - 1 + frac) * dt;
+}
+
+/** Observed range, pulled back inside the rating when a case ran past it. */
+function clipToRating(
+  lo: number,
+  hi: number,
+  rating: [number, number]
+): [number, number] {
+  return [Math.max(lo, rating[0]), Math.min(hi, rating[1])];
 }
 
 function pair(value: unknown): [number, number] | null {

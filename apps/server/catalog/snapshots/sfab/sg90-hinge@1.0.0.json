@@ -3,12 +3,12 @@
   "envelope": {
     "bounds": {
       "shaft.speed": [
-        -1.0551732779125773,
-        6.555905096474365
+        -10.472,
+        10.472
       ],
       "shaft.torque": [
-        -0.014999873213274263,
-        0.02
+        -0.176,
+        0.176
       ]
     }
   },
@@ -21,7 +21,7 @@
       "heldOut": "fixture",
       "metric": "free-run-max-abs",
       "quantity": "shaft.angle",
-      "value": 0.001984178
+      "value": 0.00363702
     },
     {
       "baseline": {
@@ -31,7 +31,7 @@
       "heldOut": "fixture",
       "metric": "free-run-rms",
       "quantity": "shaft.angle",
-      "value": 0.001519875
+      "value": 0.002350363
     },
     {
       "baseline": {
@@ -41,7 +41,7 @@
       "heldOut": "fixture",
       "metric": "step-rise",
       "quantity": "shaft.angle",
-      "value": 0.000085177
+      "value": 0.00036181
     }
   ],
   "form": "hinge@1",
@@ -69,7 +69,7 @@
     },
     "created": "2026-09-27T00:00:00.000Z",
     "fixture": {
-      "hash": "6733102b6d4f4cdb16a1b01c4a9b9ece28d5c787da8f1bd3f13becc5f7e43f12",
+      "hash": "39a42d44474e8fe026419dbe74f1184e8c5ccbbbf334f2e48db8e1c7d0c5d00b",
       "ref": "sfab/sg90-body",
       "seed": 20260927
     },

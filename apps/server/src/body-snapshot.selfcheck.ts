@@ -26,7 +26,7 @@ import type {
 
 import { levelCard } from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
-import { collapse, gearTrainErrors, reflection } from "./world/body/gear-train";
+import { collapse, reflection } from "./world/body/gear-train";
 import { writeHingeSnapshot } from "./world/body/hinge-capture";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { applyLevelEdit } from "./world/level-edit";
@@ -80,21 +80,28 @@ console.log(
   `frictionloss ${lumped.frictionloss} matches catalog ${CATALOG_FRICTION} within 1e-15`
 );
 
-const idle: GearTrain = {
-  ...TRAIN,
-  shafts: [
-    ...TRAIN.shafts,
-    { name: "idle", inertia: 1e-9, damping: 0, frictionloss: 0 },
-  ],
-};
-const idleErrors = gearTrainErrors("sfab/sg90@1.0.0", idle);
-expect(idleErrors.length === 1, idleErrors.join("; "));
-console.log(`reject unreached shaft: ${idleErrors[0]}`);
-
 const root = mkdtempSync(join(tmpdir(), "sfab-hinge-"));
 try {
   const partDir = join(root, "parts", "sfab");
   mkdirSync(partDir, { recursive: true });
+  writeFileSync(
+    join(partDir, "idle-train@1.0.0.json"),
+    JSON.stringify(idleTrainPart())
+  );
+  writeFileSync(
+    join(root, "idle-train.world.json"),
+    JSON.stringify(partScene("sfab/idle-train@1.0.0"))
+  );
+  const idle = planWorld(root, "idle-train.world.json");
+  expect(!idle.ok, "unreached shaft loaded");
+  if (idle.ok) throw new Error("unreachable");
+  const idleMessage = idle.errors.map((error) => error.message).join("; ");
+  expect(
+    idleMessage.includes("idle") && idleMessage.includes("not reached"),
+    idleMessage
+  );
+  console.log(`reject unreached shaft: ${idleMessage}`);
+
   writeFileSync(
     join(partDir, "bad-servo@1.0.0.json"),
     JSON.stringify(badServo("hinge@1"))
@@ -268,6 +275,11 @@ for (const row of snap.error) {
   }
 }
 console.log(`quality ${snap.quality}`);
+const speedBox = snap.envelope.bounds["shaft.speed"];
+const torqueBox = snap.envelope.bounds["shaft.torque"];
+console.log(
+  `covered box shaft.speed ${speedBox?.[0]}..${speedBox?.[1]} rad/s, shaft.torque ${torqueBox?.[0]}..${torqueBox?.[1]} N·m`
+);
 
 const captureFile = JSON.parse(
   readFileSync(join(catalog, "fixtures/capture.config.json"), "utf8")
@@ -342,7 +354,12 @@ try {
   const fittedRise = riseMs(fittedSweep);
   const collapsedRise = riseMs(collapsedSweep);
   console.log(
-    `E10 flag 10–90% rise fitted ${msText(fittedRise)} ms, collapsed ${msText(collapsedRise)} ms`
+    `E10 flag 10–90% rise fitted ${msText(fittedRise)} ms, collapsed ${msText(collapsedRise)} ms, linear between 10 ms frames`
+  );
+  const collapsedWarnings = collapsed.report?.warnings ?? [];
+  expect(
+    collapsedWarnings.length === 0,
+    `collapsed envelope warning ${collapsedWarnings.map((row) => row.message).join(" | ")}`
   );
   const angleDelta = maxAbsDelta(fittedSweep.angle, collapsedSweep.angle);
   console.log(
@@ -448,6 +465,53 @@ function partScene(part: string) {
     environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
     run: { seed: 1, levels: { default: 1 } },
     root: { id: "scene", part: shell(part) },
+  };
+}
+
+function idleTrainPart() {
+  return {
+    format: "sfab.part@1",
+    id: "sfab/idle-train@1.0.0",
+    type: "hobby-servo-3wire",
+    axes: {
+      behaviour: {
+        "1": {
+          default: "law",
+          variants: {
+            law: {
+              kind: "form",
+              form: "dc-motor@1",
+              params: {
+                K: 0.458,
+                R: 7.1,
+                efficiency: 0.57,
+                eSat: 0.3,
+                quiescent: 0.01,
+              },
+              omits: ["test"],
+            },
+          },
+        },
+      },
+      body: {
+        "2": {
+          default: "gear-train",
+          variants: {
+            "gear-train": {
+              kind: "gear-train",
+              input: TRAIN.input,
+              output: TRAIN.output,
+              shafts: [
+                ...TRAIN.shafts,
+                { name: "idle", inertia: 1e-9, damping: 0, frictionloss: 0 },
+              ],
+              meshes: TRAIN.meshes,
+              omits: ["unreached shaft"],
+            },
+          },
+        },
+      },
+    },
   };
 }
 
@@ -733,8 +797,12 @@ function riseMs(sweep: { angle: number[]; t: number[] }): number | null {
   for (let i = 1; i < angle.length; i++) {
     const prev = angle[i - 1] ?? 0;
     const cur = angle[i] ?? prev;
-    if (tLo === null && crossed(prev, cur, lo, span)) tLo = t[i] ?? null;
-    if (tHi === null && crossed(prev, cur, hi, span)) tHi = t[i] ?? null;
+    if (tLo === null && crossed(prev, cur, lo, span)) {
+      tLo = lerpTime(t[i - 1] ?? 0, t[i] ?? 0, prev, cur, lo);
+    }
+    if (tHi === null && crossed(prev, cur, hi, span)) {
+      tHi = lerpTime(t[i - 1] ?? 0, t[i] ?? 0, prev, cur, hi);
+    }
   }
   if (tLo === null || tHi === null) return null;
   return (tHi - tLo) * 1000;
@@ -749,6 +817,18 @@ function crossed(
   return span > 0
     ? prev < target && cur >= target
     : prev > target && cur <= target;
+}
+
+function lerpTime(
+  t0: number,
+  t1: number,
+  a0: number,
+  a1: number,
+  level: number
+): number {
+  const span = a1 - a0;
+  const frac = span === 0 ? 0 : (level - a0) / span;
+  return t0 + frac * (t1 - t0);
 }
 
 function msText(value: number | null): string {

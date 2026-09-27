@@ -13,15 +13,40 @@
     {
       "port": "shaft",
       "signal": "step",
-      "params": { "amplitude": 0.02, "t0": 0.02 }
+      "params": { "amplitude": 0.05, "t0": 0.01, "width": 0.06 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": -0.05, "t0": 0.01, "width": 0.06 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": 0.1, "t0": 0.01, "width": 0.042 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": -0.1, "t0": 0.01, "width": 0.042 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": 0.176, "t0": 0.005, "width": 0.025 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": -0.176, "t0": 0.005, "width": 0.025 }
     },
     {
       "port": "shaft",
       "signal": "chirp",
-      "params": { "amplitude": 0.015, "f0": 0.5, "f1": 4 }
+      "params": { "amplitude": 0.176, "f0": 14, "f1": 28 }
     }
   ],
   "record": ["shaft.angle"],
-  "duration": 0.4,
+  "duration": 0.2,
   "seed": 20260927
 }
