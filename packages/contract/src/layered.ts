@@ -246,8 +246,19 @@ export type Params = Record<string, number | string | boolean>;
 /** `instance.port` on a composite netlist. */
 export type PortRef = string;
 
+/**
+ * One child of a netlist. `level` is that child's authored level.
+ * A world path rule for the same instance still wins.
+ */
+export type NetlistInstance = {
+  part: string;
+  pose?: Pose;
+  params?: Params;
+  level?: LevelSpec;
+};
+
 export type Netlist = {
-  instances: Record<string, { part: string; pose?: Pose; params?: Params }>;
+  instances: Record<string, NetlistInstance>;
   wires: [PortRef, PortRef][];
   expose: Record<string, PortRef>;
 };
@@ -370,9 +381,8 @@ export type BehaviourImpl = { omits: string[] } & (
       params?: Record<string, number>;
       fuses?: Record<string, string>;
       /**
-       * Class-1 source law `snapshot:<publisher/name@version>`, or a
-       * named cable such as `path:uno-usb`. Absent, the supply terminal
-       * is the board's power pin.
+       * Named cable `path:uno-usb`: this part's class-2 board netlist.
+       * Absent, a variant with no `board` uses the power pin as the terminal.
        */
       boardCircuit?: string;
       /** Logic port the chip uses as reset. Absent, the rail has no reset node. */
@@ -565,7 +575,7 @@ export type RunReport = {
     variant: string | null;
     impl: string;
     reason: string;
-    source: "default" | "type" | "path" | "fallback" | "parent";
+    source: "default" | "type" | "path" | "instance" | "fallback" | "parent";
   }[];
   nets: {
     id: string;

@@ -27,7 +27,7 @@ import { LawTable } from "./circuit/law-table";
 import { AVR_PIN, type AvrPinParams, Pin } from "./circuit/pin";
 import { PmosChannel } from "./circuit/pmos-switch";
 import { PtcFuseElement, type PtcFuseParams } from "./circuit/ptc-fuse";
-import { compileRules, resolveLevels } from "./parts/levels";
+import { compileRules, type LiveInstance, resolveLevels } from "./parts/levels";
 import {
   type Library,
   type LibraryOptions,
@@ -39,7 +39,13 @@ import {
 } from "./parts/library";
 import { buildNets, type LiveNet, netlistOf } from "./parts/nets";
 import { chipFacts } from "./power-path";
-import type { SnapshotEnvelope, TableLaw } from "./snapshot-law";
+import {
+  envelopeOf,
+  type SnapshotEnvelope,
+  type TableLaw,
+  tableLawOf,
+} from "./snapshot-law";
+import { loadSnapshot } from "./snapshot-load";
 
 export const CIRCUIT_FORMS = [
   "resistor@1",
@@ -460,8 +466,7 @@ function elementOf(part: AssignedPart): {
           need(part, law.across[0]),
           need(part, law.across[1]),
           law,
-          0,
-          null
+          0
         ),
       ],
       capacitive: false,
@@ -641,6 +646,43 @@ function variantSlot(
   throw new Error(`${part.id} variant ${variant} is not a circuit assembly`);
 }
 
+/** A `table@1` behaviour, stamped on its `across` ports. */
+function snapshotInstOf(
+  inst: LiveInstance,
+  catalogDir: string,
+  worldDir: string
+): CircuitInst | null {
+  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+  if (behaviour?.kind !== "snapshot") return null;
+  const found = loadSnapshot(
+    worldDir,
+    { catalogDir, assetRoot: catalogDir },
+    behaviour.ref,
+    inst.type
+  );
+  if (!found.loaded) {
+    const text = found.diagnostics.map((diag) => diag.message).join("; ");
+    throw new Error(
+      text || `${inst.path} snapshot ${behaviour.ref} did not load`
+    );
+  }
+  const law = tableLawOf(found.loaded.file);
+  const envelope = envelopeOf(found.loaded.file);
+  if (!law || !envelope || found.loaded.file.form !== "table@1") {
+    throw new Error(`${inst.path} snapshot ${behaviour.ref} is not table@1`);
+  }
+  const ports: Record<string, string> = {};
+  for (const name of law.across) ports[name] = `${inst.path}.${name}`;
+  return {
+    path: inst.path,
+    form: "table@1",
+    typeId: inst.type.id,
+    params: {},
+    ports,
+    table: { ref: behaviour.ref, law, envelope },
+  };
+}
+
 function circuitInstOf(inst: {
   path: string;
   params: Record<string, number | string | boolean>;
@@ -814,7 +856,8 @@ function stampOf(
   }
   const circuitParts: CircuitInst[] = [];
   for (const inst of instances) {
-    const row = circuitInstOf(inst);
+    const row =
+      circuitInstOf(inst) ?? snapshotInstOf(inst, catalogDir, worldDir);
     if (row) circuitParts.push(row);
   }
   const built = buildNets(instances, undefined);

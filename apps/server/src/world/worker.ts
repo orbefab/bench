@@ -1132,9 +1132,6 @@ function bindRails() {
           ...(attached.stamp && attached.feed
             ? { stamp: attached.stamp, feed: attached.feed }
             : {}),
-          ...(path === "snapshot-feed" && fed?.powerSnapshot
-            ? { law: fed.powerSnapshot.law }
-            : {}),
         });
     if (fuseStart === "tripped") circuit.tripFuse();
     for (let i = 0; i < members.length; i++) {
@@ -1203,21 +1200,9 @@ function ledReading(boardId: string): {
 }
 
 /** One warning per path and ref when an observed bound is outside. */
-function noteSnapshotEnvelope(supplyId: string, amps: number): void {
+function noteSnapshotEnvelope(supplyId: string): void {
   const group = rails.get(supplyId);
   if (!group) return;
-  const board = boardOn(supplyId);
-  const volts = supplySpecs.find((item) => item.id === supplyId)?.voltage ?? 0;
-  const snap = board?.powerSnapshot;
-  if (group.path === "snapshot-feed" && board && snap) {
-    const observed: Record<string, number> = {
-      [`${snap.law.across[0]}.current`]: amps,
-    };
-    if (snap.law.supplyPort) {
-      observed[`${snap.law.supplyPort}.voltage`] = volts;
-    }
-    warnEnvelope(board.id, snap.ref, snap.envelope, observed);
-  }
   const supply = runPlan?.supplies.find((item) => item.id === supplyId);
   const parts = [
     ...boardsFed(supplyId).flatMap((item) => item.stamp?.parts ?? []),
@@ -1420,7 +1405,7 @@ function solveOneRail(
     );
   }
   circuit.solve(pieces ?? undefined);
-  noteSnapshotEnvelope(supplyId, circuit.current);
+  noteSnapshotEnvelope(supplyId);
   const winding = circuit.winding;
   for (let i = 0; i < members.length; i++) {
     const load = members[i];

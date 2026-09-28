@@ -5,8 +5,7 @@ import type { SnapshotFile } from "@sfab-bench/contract";
  * `vAxis` is `V(across[0]) − V(across[1])`.
  * `iAxis` is current into `across[0]` when `iSense` is 1, and current
  * out of that port when `iSense` is -1. A source's output is negative
- * under the port convention, so a feed table stores the delivered
- * current with `iSense: -1` and keeps those knots positive.
+ * under the port convention.
  */
 export type TableLaw = {
   across: readonly [string, string];
@@ -19,9 +18,6 @@ export type TableLaw = {
   supplyAffine?: number;
 };
 
-/** `feed` replaces a Thevenin source. `branch` is a two-terminal law. */
-export type TableUse = "feed" | "branch";
-
 export type SnapshotEnvelope = {
   /** Every numeric pair in `envelope.bounds`, keyed as in the file. */
   bounds: Record<string, [number, number]>;
@@ -29,14 +25,6 @@ export type SnapshotEnvelope = {
   current: [number, number];
   /** Supply-port voltage bound. Null when the table has no supply term. */
   supply: [number, number] | null;
-};
-
-/** The feeding port the table was captured through. A point range is one value. */
-export type SourceBounds = {
-  /** Envelope prefix, for example `supply`. */
-  port: string;
-  resistance: [number, number];
-  currentLimit: [number, number];
 };
 
 export function tableLawOf(snap: SnapshotFile): TableLaw | null {
@@ -77,12 +65,6 @@ export function tableLawOf(snap: SnapshotFile): TableLaw | null {
   };
 }
 
-/** Feed replacement when the envelope names a source resistance and limit. */
-export function tableUseOf(snap: SnapshotFile): TableUse | null {
-  if (!tableLawOf(snap)) return null;
-  return sourceBoundsOf(snap) ? "feed" : "branch";
-}
-
 export function envelopeOf(snap: SnapshotFile): SnapshotEnvelope | null {
   const law = tableLawOf(snap);
   if (!law) return null;
@@ -97,44 +79,6 @@ export function envelopeOf(snap: SnapshotFile): SnapshotEnvelope | null {
   const supply = bounds[`${law.supplyPort}.voltage`];
   if (!supply) return null;
   return { bounds, current, supply };
-}
-
-/** Series resistance and current limit of the port the capture swept. */
-export function sourceBoundsOf(snap: SnapshotFile): SourceBounds | null {
-  const bounds = snap.envelope?.bounds;
-  if (!bounds) return null;
-  let port: string | null = null;
-  let resistance: [number, number] | null = null;
-  let currentLimit: [number, number] | null = null;
-  for (const [key, value] of Object.entries(bounds)) {
-    const parsed = pair(value);
-    if (!parsed) continue;
-    const resistanceName = suffix(key, ".resistance");
-    const limitName = suffix(key, ".currentLimit");
-    if (resistanceName !== null) {
-      if (port !== null && port !== resistanceName) return null;
-      port = resistanceName;
-      resistance = parsed;
-    } else if (limitName !== null) {
-      if (port !== null && port !== limitName) return null;
-      port = limitName;
-      currentLimit = parsed;
-    }
-  }
-  if (!port || !resistance || !currentLimit) return null;
-  return { port, resistance, currentLimit };
-}
-
-/** True when this port is not the one the snapshot was captured through. */
-export function sourceOutside(
-  bounds: SourceBounds,
-  resistance: number,
-  currentLimit: number
-): boolean {
-  return (
-    outsideRange(bounds.resistance, resistance) ||
-    outsideRange(bounds.currentLimit, currentLimit)
-  );
 }
 
 function pair(value: unknown): [number, number] | null {
@@ -170,10 +114,6 @@ function num(value: unknown): number | null {
     return typeof v === "number" ? v : null;
   }
   return null;
-}
-
-function suffix(key: string, tail: string): string | null {
-  return key.endsWith(tail) ? key.slice(0, -tail.length) : null;
 }
 
 /** Voltage axis at `supply`, after the affine shift. No term copies `vAxis`. */

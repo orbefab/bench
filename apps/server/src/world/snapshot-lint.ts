@@ -430,6 +430,43 @@ function hingeErrors(
   return diags;
 }
 
+/** A snapshot must not carry its fixture's supply. */
+export const FIXTURE_SUPPLY = "a snapshot must not carry its fixture's supply";
+
+/**
+ * Envelope bounds on `supply.*`, or on a port this part does not declare.
+ * The supply is a part in the scene. The table is a branch of its own ports.
+ */
+function fixtureSupplyDiags(
+  snap: SnapshotFile,
+  ctx: SnapshotLintContext
+): Diagnostic[] {
+  const bounds = snap.envelope?.bounds;
+  if (!bounds) return [];
+  const diags: Diagnostic[] = [];
+  const ports = ctx.ports;
+  for (const key of Object.keys(bounds).sort()) {
+    const dot = key.lastIndexOf(".");
+    const port = dot > 0 ? key.slice(0, dot) : "";
+    const supply = port === "supply" || key.startsWith("supply.");
+    const foreign =
+      ports !== undefined && (port.length === 0 || ports[port] === undefined);
+    if (!supply && !foreign) continue;
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path: snap.part || "snapshot",
+        port: port || key,
+        quantity: "Snapshot",
+        left: key,
+        right: "the part's own ports",
+        detail: FIXTURE_SUPPLY,
+      })
+    );
+  }
+  return diags;
+}
+
 export function lintSnapshot(
   snap: SnapshotFile,
   ctx: SnapshotLintContext
@@ -476,6 +513,7 @@ export function lintSnapshot(
       })
     );
   }
+  diagnostics.push(...fixtureSupplyDiags(snap, ctx));
   diagnostics.push(...tablePorts(snap, ctx));
   diagnostics.push(...hingeErrors(snap, ctx));
   diagnostics.push(...plausibleErrors(snap, ctx));

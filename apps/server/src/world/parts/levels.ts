@@ -21,12 +21,14 @@ export type ReasonKind =
   | { kind: "default" }
   | { kind: "type"; type: string }
   | { kind: "path"; path: string }
+  | { kind: "instance" }
   | { kind: "parent"; class: LevelClass };
 
 export type ResolvedSource =
   | "default"
   | "type"
   | "path"
+  | "instance"
   | "fallback"
   | "parent";
 
@@ -91,6 +93,7 @@ export function compileRules(world: WorldFileV2): LevelRules {
 function reasonOf(by: ReasonKind): string {
   if (by.kind === "default") return "default";
   if (by.kind === "type") return `type rule ${by.type}`;
+  if (by.kind === "instance") return "instance level";
   if (by.kind === "parent") return `parent class ${by.class}`;
   return `path rule ${by.path}`;
 }
@@ -98,6 +101,7 @@ function reasonOf(by: ReasonKind): string {
 function sourceOf(by: ReasonKind): ResolvedSource {
   if (by.kind === "default") return "default";
   if (by.kind === "type") return "type";
+  if (by.kind === "instance") return "instance";
   if (by.kind === "parent") return "parent";
   return "path";
 }
@@ -106,7 +110,8 @@ function request(
   rules: LevelRules,
   axis: AxisName,
   instancePath: string,
-  typeId: string
+  typeId: string,
+  instanceLevel?: Partial<Record<AxisName, AxisRequest>>
 ): { class: LevelClass; variant?: string; by: ReasonKind } {
   let asked = rules.default[axis];
   let by: ReasonKind = { kind: "default" };
@@ -114,6 +119,12 @@ function request(
   if (typeRule?.[axis] !== undefined) {
     asked = typeRule[axis] as AxisRequest;
     by = { kind: "type", type: typeId };
+  }
+  // The netlist names this child. A world path rule is the run's override.
+  const placed = instanceLevel?.[axis];
+  if (placed !== undefined) {
+    asked = placed;
+    by = { kind: "instance" };
   }
   const pathRule = rules.paths[instancePath];
   if (pathRule?.[axis] !== undefined) {
@@ -151,9 +162,10 @@ function resolveAxis(
   instancePath: string,
   typeId: string,
   rules: LevelRules,
-  parentClass?: LevelClass
+  parentClass?: LevelClass,
+  instanceLevel?: Partial<Record<AxisName, AxisRequest>>
 ): ResolvedAxis {
-  const asked = request(rules, axis, instancePath, typeId);
+  const asked = request(rules, axis, instancePath, typeId, instanceLevel);
   let requested = asked.class;
   let by = asked.by;
   const variantName = asked.variant;
@@ -323,7 +335,8 @@ export function resolveLevels(
     instancePath: string,
     params: Params,
     pose?: Pose,
-    parentClass?: LevelClass
+    parentClass?: LevelClass,
+    instanceLevel?: Partial<Record<AxisName, AxisRequest>>
   ) => {
     const type = typeOf(lib, part);
     const axes = {
@@ -333,10 +346,27 @@ export function resolveLevels(
         instancePath,
         type.id,
         rules,
-        parentClass
+        parentClass,
+        instanceLevel
       ),
-      body: resolveAxis(part, "body", instancePath, type.id, rules),
-      visual: resolveAxis(part, "visual", instancePath, type.id, rules),
+      body: resolveAxis(
+        part,
+        "body",
+        instancePath,
+        type.id,
+        rules,
+        undefined,
+        instanceLevel
+      ),
+      visual: resolveAxis(
+        part,
+        "visual",
+        instancePath,
+        type.id,
+        rules,
+        undefined,
+        instanceLevel
+      ),
     };
     for (const axis of AXES) {
       const by = axes[axis].requestedBy;
@@ -381,7 +411,8 @@ export function resolveLevels(
           childPath(instancePath, id),
           { ...(child.params ?? {}) },
           child.pose,
-          nextParent
+          nextParent,
+          child.level === undefined ? undefined : specAxes(child.level)
         );
       }
     }
