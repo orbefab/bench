@@ -225,6 +225,26 @@ export type BusDecl = {
 
 export const PART_TYPE_FORMAT = "sfab.part-type@1" as const;
 export const PART_FORMAT = "sfab.part@1" as const;
+
+/** A root part on disk: `parts/<publisher>/<name>@<version>.json`. */
+const PART_DOCUMENT_RE =
+  /(?:^|\/)parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i;
+
+/** A legacy world import. */
+const WORLD_DOCUMENT_RE = /\.world\.json$/i;
+
+export function isPartDocumentPath(path: string): boolean {
+  return PART_DOCUMENT_RE.test(path.replace(/\\/g, "/"));
+}
+
+export function isWorldDocumentPath(path: string): boolean {
+  return WORLD_DOCUMENT_RE.test(path.replace(/\\/g, "/"));
+}
+
+/** A file the run can open: a root part, or a v2 world import. */
+export function isRunDocumentPath(path: string): boolean {
+  return isPartDocumentPath(path) || isWorldDocumentPath(path);
+}
 export const LOCK_FORMAT = "sfab.lock@1" as const;
 export const RUN_REPORT_FORMAT = "sfab.run-report@1" as const;
 export const SNAPSHOT_FORMAT = "sfab.snapshot@1" as const;
@@ -259,11 +279,23 @@ export type PortRef = string;
  * One child of a netlist. `level` is that child's authored level.
  * A world path rule for the same instance still wins.
  */
+/**
+ * Shape, size, and scripted path of a target instance. Pose stays on
+ * the instance. The run reads these the same way it read a world target.
+ */
+export type TargetInstance = {
+  shape: "box" | "sphere" | "cylinder";
+  size: Vec3 | number | { radius: number; length: number };
+  path?: { t: number; position: Vec3 }[];
+};
+
 export type NetlistInstance = {
   part: string;
   pose?: Pose;
   params?: Params;
   level?: LevelSpec;
+  /** Set when this instance is a target part. */
+  target?: TargetInstance;
 };
 
 export type Netlist = {
@@ -290,7 +322,9 @@ export type FormId =
   | "transfer-fn@1"
   | "multibody@1"
   | "ranger@1"
-  | "hinge@1";
+  | "hinge@1"
+  | "ground-plane@1"
+  | "target@1";
 
 /** Forms that belong on the body axis. Anywhere else is a load error. */
 export const BODY_FORMS = ["hinge@1"] as const;
@@ -403,6 +437,10 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
       frictionloss: "Torque",
     },
   },
+  /** An infinite plane at z = 0. No params. Absence of the part is no plane. */
+  "ground-plane@1": { params: {} },
+  /** A mocap body. Shape, size, and path live on the instance, not here. */
+  "target@1": { params: {} },
 };
 
 /** Forms the plan treats as a supply. */
@@ -499,6 +537,44 @@ export type AxisMap<T> = Partial<Record<"0" | "1" | "2" | "3", ClassSlot<T>>>;
 
 export type Citation = { title: string; ref: string };
 
+/**
+ * Master step when a document does not name one. Matches the body
+ * engine's historical 1 ms step.
+ */
+export const DEFAULT_TIMESTEP_S = 0.001;
+
+/** Catalog part instanced wherever a run stands on a plane. */
+export const GROUND_PART_ID = "sfab/ground-plane@1.0.0";
+
+/** Catalog part instanced for each scripted target. */
+export const TARGET_PART_ID = "sfab/target@1.0.0";
+
+/**
+ * Gravity, seed, time step, and level defaults. Read only when this
+ * part is the root of a run. A nested part keeps the block and the
+ * run ignores it.
+ */
+export type PlayBlock = {
+  /** Metres per second squared. */
+  gravity: Vec3;
+  seed: number;
+  /** Master step, seconds. */
+  timestep: number;
+  levels: {
+    default: LevelSpec;
+    types?: Record<string, LevelSpec>;
+    paths?: Record<string, LevelSpec>;
+    nets?: Record<string, "digital" | "analog">;
+  };
+  air?: { density: number };
+  /**
+   * Static props a world import still draws. They are not parts.
+   * Absent on a part authored in the library.
+   */
+  primitives?: unknown[];
+  stepProps?: unknown[];
+};
+
 export type PartFile = {
   format: typeof PART_FORMAT;
   id: string;
@@ -507,6 +583,8 @@ export type PartFile = {
   declaredOnly?: boolean;
   sources?: Citation[];
   ratings?: Record<string, Ratings>;
+  /** Present on a root document. Ignored when this part is nested. */
+  play?: PlayBlock;
   axes?: {
     behaviour?: AxisMap<BehaviourImpl>;
     body?: AxisMap<BodyImpl>;
@@ -535,6 +613,8 @@ export type WorldFileV2 = {
   };
   run: {
     seed: number;
+    /** Seconds. Absent means `DEFAULT_TIMESTEP_S`. */
+    timestep?: number;
     levels: {
       default: LevelSpec;
       types?: Record<string, LevelSpec>;

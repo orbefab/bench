@@ -1,0 +1,49 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/target@1.0.0",
+  "type": "target",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Scripted target",
+      "ref": "Mocap body. Rays hit it. It does not push a robot. Shape, size, pose, and path are on the instance"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "mocap",
+        "variants": {
+          "mocap": {
+            "kind": "form",
+            "form": "target@1",
+            "params": {},
+            "omits": ["contact force on robots", "rotation along the path"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["the run builds the mocap body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["drawn from the instance shape"]
+          }
+        }
+      }
+    }
+  }
+}

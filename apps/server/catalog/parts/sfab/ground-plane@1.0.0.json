@@ -1,0 +1,49 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/ground-plane@1.0.0",
+  "type": "ground-plane",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Ground plane",
+      "ref": "Infinite plane at z = 0. No ground part means no ground"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "plane",
+        "variants": {
+          "plane": {
+            "kind": "form",
+            "form": "ground-plane@1",
+            "params": {},
+            "omits": ["terrain friction", "uneven ground"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["the plane is the environment, not a body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["drawn by the run as the ground geom"]
+          }
+        }
+      }
+    }
+  }
+}
