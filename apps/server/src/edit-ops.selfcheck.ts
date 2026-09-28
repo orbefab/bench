@@ -292,6 +292,10 @@ try {
   );
 
   const sceneBefore = pairOf(work, SCENE);
+  const rootLocks = [USB, COLLAPSED].map((rel) => ({
+    path: lockPathFor(join(work, rel)),
+    text: readFileSync(lockPathFor(join(work, rel)), "utf8"),
+  }));
   const sequence: EditOp[] = [
     docOp(SCENE, { kind: "set-pose", id: "flag", pose: pose(0.03) }),
     docOp(SCENE, { kind: "set-pose", id: "servo", pose: pose(0.02) }),
@@ -379,6 +383,7 @@ try {
     "edit sequence: 20 ops undone to the original bytes, redone to the final bytes"
   );
   putPair(work, SCENE, sceneBefore);
+  for (const lock of rootLocks) writeFileSync(lock.path, lock.text);
 
   reject(
     work,
