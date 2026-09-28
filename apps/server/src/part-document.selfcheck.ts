@@ -1,9 +1,16 @@
 /**
  * A root part replays the v2 world it was converted from.
  * Frames and serial stay byte-identical. The report names the document.
+ * apps/server/fixtures/v2-worlds/ is git show b6fa416 of each example world.
  */
-import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -20,7 +27,6 @@ import { catalogRoot, planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
 
 const repo = fileURLToPath(new URL("../../..", import.meta.url));
-const BASE = "b6fa416";
 const SPAN_MS = 3000;
 
 const examples: { dir: string; world: string; part: string }[] = [
@@ -80,11 +86,8 @@ function expect(cond: unknown, label: string) {
   if (!cond) throw new Error(label);
 }
 
-function worldAtBase(rel: string): string {
-  return execFileSync("git", ["show", `${BASE}:${rel}`], {
-    cwd: repo,
-    encoding: "utf8",
-  });
+function worldFixture(name: string): Buffer {
+  return readFileSync(join(repo, "apps/server/fixtures/v2-worlds", name));
 }
 
 function takeLines(chunks: SerialChunk[]): string[] {
@@ -192,7 +195,7 @@ for (const example of examples) {
   try {
     cpSync(join(repo, example.dir), dir, { recursive: true });
     const worldFile = join(dir, example.world);
-    writeFileSync(worldFile, worldAtBase(`${example.dir}/${example.world}`));
+    writeFileSync(worldFile, worldFixture(example.world));
     rmSync(join(dir, example.part), { force: true });
     rmSync(join(dir, example.part.replace(/\.json$/, ".lock.json")), {
       force: true,
