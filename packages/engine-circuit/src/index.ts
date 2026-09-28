@@ -55,6 +55,7 @@ export {
   type Sample,
   type SolveOpts,
 } from "./engine";
+export { CircuitEngine, type CircuitEngineSpec } from "./face";
 export { LawTable } from "./law-table";
 export {
   dropoutAt,

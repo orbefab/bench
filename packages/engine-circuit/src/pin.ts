@@ -1,4 +1,5 @@
 // Ported from layered-sim E3 src/pin.ts @ fc7e8d3. Rail voltage is the rail node.
+import type { PinMode } from "@sfab-bench/contract";
 import type { Element } from "./element";
 import { Resistor, Switch } from "./elements";
 import type { Waveform } from "./wave";
@@ -69,7 +70,7 @@ export function avrPinParams(
 
 const OPEN: Waveform = { kind: "dc", value: 0 };
 
-export type PinMode = "high" | "low" | "input" | "pullup";
+export type { PinMode };
 
 /**
  * A switch whose closed flag is set by the pin mode. The engine's structure
