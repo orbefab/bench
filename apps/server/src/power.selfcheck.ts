@@ -738,14 +738,32 @@ try {
   );
 
   const sharedName = twoArm(sharedRoot, true);
-  const sharedPlan = planWorld(sharedRoot, sharedName);
-  expect(!sharedPlan.ok, "two class-1 boards on one bench planned");
-  if (sharedPlan.ok) throw new Error("unreachable");
-  const sharedHit = sharedPlan.errors.find(
-    (item) => item.message.includes("hold") && item.message.includes("stall")
+  const shared = await sample(sharedRoot, sharedName, 2000, 1, [
+    "hold",
+    "stall",
+  ]);
+  // Both boards and both servos sit on one 5 V / 0.3 A bench rail.
+  // The stall servo's current pulls that rail through brownout, so the
+  // hold board resets even though its own servo is not stalled.
+  const sharedSag = shared.find(
+    (row) => (row.state.boards.hold?.voltage ?? 5) < BOD_ASSERT_V
   );
-  expect(sharedHit, sharedPlan.errors.map((item) => item.message).join("; "));
-  console.log(`shared rail: ${sharedHit?.message}`);
+  const holdReset = shared.find(
+    (row) => (row.state.boards.hold?.resets ?? 0) >= 1
+  );
+  const stallReset = shared.find(
+    (row) => (row.state.boards.stall?.resets ?? 0) >= 1
+  );
+  expect(sharedSag, "shared rail never sagged");
+  expect(holdReset, "hold board on the shared rail never reset");
+  expect(stallReset, "stall board on the shared rail never reset");
+  expect(
+    holdReset.serial.hold?.includes("— brownout reset —"),
+    "hold marker missing"
+  );
+  console.log(
+    `shared rail: hold resets at ${holdReset.state.simTime.toFixed(3)} s, stall at ${stallReset.state.simTime.toFixed(3)} s`
+  );
 
   const reloadRoot = mkdtempSync(join(tmpdir(), "sfab-power-reload-"));
   try {
