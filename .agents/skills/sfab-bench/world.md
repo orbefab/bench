@@ -1,6 +1,6 @@
 # Worlds
 
-Bench runs one shared sim per `.world.json`. You play, pause, step, and
+Bench runs one shared sim per root part. You play, pause, step, and
 read that run. The Mac and Quest watch the same one. Your play or pause
 is labeled **agent**.
 
@@ -9,23 +9,26 @@ is labeled **agent**.
 
 ## The file
 
-A world is version 2. Copy `examples/arm/arm.world.json` and its scene
-part. Do not invent a second schema. Opening a file with `"version": 1`
-fails. The error is **World v1 is no longer supported**, in the page and
-from the world tools.
+A world is a root part, `sfab.part@1`, with a `play` block. Copy
+`examples/arm/parts/sfab/arm-bench@1.0.0.json` and its scene part. Do not
+invent a second schema. Opening a file with `"version": 1` fails. The
+error is **World v1 is no longer supported**, in the page and from the
+world tools. A `.world.json` of version 2 still opens: it is an import,
+and `sfab-bench convert <world.json>` writes the root part and its lock.
 
-The world file is a root part plus environment and run settings:
+The root part instances the scene, the ground, and any targets, and it
+carries `play`:
 
-- `version` is `2`.
-- `environment` — `ground.plane`, `gravity`, optional primitives, optional
-  STEP props, optional `targets`. A target is a box, sphere or cylinder
+- `play.gravity`, `play.seed`, and `play.timestep` (seconds). A nested
+  part's `play` is kept and ignored.
+- `play.levels` — `default` is a class for all three axes (the arm uses `1`). `types` and `paths` override it. A path beats a type, which beats the default. Omit `axis` and the class sets behaviour, body, and visual. Path choices stay on the root, so two roots can share one scene.
+- Ground is an instance of `sfab/ground-plane@1.0.0`. No ground part means no ground.
+- A target is an instance of `sfab/target@1.0.0`: a box, sphere or cylinder
   on a `path`, or placed with `world_move_target` from the next step.
   `sfab/hc-sr04@1.0.0` reads that distance on Trig and Echo.
-- `run` — `seed`, and `levels`. `default` is a class for all three axes (the arm uses `1`). `types` and `paths` override it. A path beats a type, which beats the default. Omit `axis` and the class sets behaviour, body, and visual.
-- `root.part` — `publisher/name@version`, for the arm
-  `sfab/arm-scene@1.0.0`.
+- The scene instance is `sfab/arm-scene@1.0.0`.
 
-The scene is a part file next to the world, `parts/sfab/arm-scene@1.0.0.json`.
+The scene is `parts/sfab/arm-scene@1.0.0.json`.
 Its netlist names the instances and the wires. Instance ids stay short
 (`arm`, `uno`, `servo`, `usb`), so a wire is still `uno.D9`.
 
@@ -50,7 +53,7 @@ Its netlist names the instances and the wires. Instance ids stay short
   `["uno.D9", "servo.signal"]`, `["uno.5V", "servo.V+"]`,
   `["uno.GND", "servo.GND"]`.
 
-`examples/arm/arm-stall.world.json` is the same arm with stall firmware
+`examples/arm/parts/sfab/arm-stall@1.0.0.json` is the same arm with stall firmware
 and a bench supply.
 
 A part file is `sfab.part@1`: an id `publisher/name@version`, a type, and
@@ -157,7 +160,7 @@ while it is in reset. A supply is `V = V_nom − rSeries·I` up to
 limit. USB ("500 mA" port) is 5 V, 0.5 Ω, 0.9 A. A bench supply is
 0.05 Ω with the voltage and current limit in the file.
 
-`arm-stall.world.json` is a bench supply at 5 V / 0.3 A. The starting
+`parts/sfab/arm-stall@1.0.0.json` is a bench supply at 5 V / 0.3 A. The starting
 current at rest pulls the rail to about 1.70 V: 0.3 A minus the 50 mA
 board and the 10 mA servo electronics leaves 0.24 A through 7.1 Ω. The
 board resets on the first pulse, holds 66 ms, reboots, and repeats. Each
@@ -170,7 +173,7 @@ same stall on the USB preset keeps the 5V node near 4.5 V, reaches the
 joint stop, and does not reset. A stall display needs the drive saturated and slower
 than 5 °/s for 20 ms.
 
-To explain one: `world_restart` `arm-stall.world.json`, `world_step` 2000,
+To explain one: `world_restart` `parts/sfab/arm-stall@1.0.0.json`, `world_step` 2000,
 then `read_recording` from 0 to 2. Expect `resets` ≥ 1 on the board, a
 `reset` event, a later `reboot`, and a board frame whose `minVoltage`
 (the 5V node) is under 2.675. On a bench header that node equals the

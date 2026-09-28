@@ -61,9 +61,10 @@ pip runtime, not a second skill.
 
 ## Worlds
 
-A world is `<name>.world.json` in the open folder. Bench runs one shared
-sim for that file. How to write one, build firmware outside Bench, and
-read the run: [world.md](world.md).
+A world is a root part, `parts/<publisher>/<name>@<version>.json`, in the
+open folder. A `.world.json` still opens as an import. Bench runs one
+shared sim for that file. How to write one, build firmware outside Bench,
+and read the run: [world.md](world.md).
 
 GitHub Releases of the `.app` zip: [`.agents/skills/release/`](../release/).
 

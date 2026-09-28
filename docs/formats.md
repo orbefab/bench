@@ -98,6 +98,7 @@ type PartFile = {
   declaredOnly?: boolean;                       // exists in a netlist, no working behaviour
   sources?: Citation[];
   ratings?: Record<string, Ratings>;            // per port, overrides the type
+  play?: PlayBlock;                             // read only when this part is the root of a run
   axes: {
     behaviour?: AxisMap<BehaviourImpl>;
     body?: AxisMap<BodyImpl>;
@@ -107,6 +108,22 @@ type PartFile = {
 
 // D-004: classes 0..3, named variants inside each class, one default per class.
 type AxisMap<T> = Partial<Record<"0" | "1" | "2" | "3", { default: string; variants: Record<string, T> }>>;
+
+// Read only when this part is the root of a run. A nested part keeps it, and the run ignores it.
+type PlayBlock = {
+  gravity: Vec3;                                // m/s²
+  seed: number;
+  timestep: number;                             // master step, seconds; 0.001 when a world import omits it
+  levels: {
+    default: LevelSpec;
+    types?: Record<string, LevelSpec>;
+    paths?: Record<string, LevelSpec>;          // unprefixed, as in a world: "servo"
+    nets?: Record<string, "digital" | "analog">;
+  };
+  air?: { density: number };                    // kept so a world import does not drop it
+  primitives?: unknown[];                       // static props; not parts
+  stepProps?: unknown[];
+};
 ```
 
 Every implementation carries `omits: string[]`: the effects this level leaves out. It feeds the report's "not simulated" list. For example, SG90 behaviour class 1 omits gear backlash, motor inductance and winding heat.
@@ -137,7 +154,10 @@ type VisualImpl = { omits: string[] } & (
 A mesh with `placeholder: true` is drawn as the nearest lower class whose visual is a `box`. The visual level row says which class, for example "placeholder mesh; drawn as the class-0 box". A mesh file is not drawn. A URDF body is not also drawn as a box.
 
 type Netlist = {
-  instances: Record<string, { part: string; pose?: Pose; params?: Params; level?: LevelSpec }>;
+  instances: Record<string, {
+    part: string; pose?: Pose; params?: Params; level?: LevelSpec;
+    target?: { shape: "box" | "sphere" | "cylinder"; size: Vec3 | number | { radius: number; length: number }; path?: { t: number; position: Vec3 }[] };
+  }>;
   wires: [PortRef, PortRef][];
   expose: Record<string, PortRef>;             // the composite's ports → inner ports
 };
@@ -205,6 +225,8 @@ Omitted: ADC INL and DNL, ADC noise, the noise canceller, temperature drift, and
 - `hinge@1` (body axis only: `armature` Inertia, `damping` TorquePerAngularVelocity, `frictionloss` Torque). On the behaviour axis it is a load error. A behaviour form on the body axis is a load error.
 - `mlp@1` (later)
 - `ranger@1` (c, rangeMin, rangeMax, beamHalf, trigMin, echoDelay, echoTimeout, working, quiescent, vMin, face)
+- `ground-plane@1` (no params). The catalog part is `sfab/ground-plane@1.0.0`. An instance of it in the root part is the ground plane. No such instance means no ground.
+- `target@1` (no params). The catalog part is `sfab/target@1.0.0`. Shape, size, and the scripted `path` sit on the instance as `target`, and the pose sits on the instance. The run places and ray-casts that target the same way it did a world target.
 
 Catalog supplies on these forms: `sfab/usb2-host-port@1.0.0`, `sfab/usb3-host-port@1.0.0`, `sfab/usb-charger-1a@1.0.0`, and `sfab/bench-supply-2a@1.0.0` (`thevenin-limit@1`); `sfab/battery-3xaa-alkaline@1.0.0` and `sfab/battery-2s-lipo@1.0.0` (`battery@1`). `sfab/usb-port-500ma@1.0.0` and `sfab/bench-supply@1.0.0` are unchanged. Fixed regulators: `sfab/ams1117-5v0@1.0.0`, `sfab/ncp1117-5v0@1.0.0`, and `sfab/lp2985-3v3@1.0.0` (`ldo-regulator@1`). `sfab/lmv358@1.0.0` (`comparator@1`).
 
@@ -214,9 +236,23 @@ Each form declares its params with quantities, its ports, its engine contributio
 
 The ray is cast once per accepted trigger, on the physics of the previous master step. The CPU runs before `mj_step`, the same lag as the AVCC latch above. It starts at the transducer plane (`face` metres along the part's local +Y) and goes along +Y, from the part's pose in the scene. That pose is fixed for the run. A sensor on a moving link is not supported yet. When a ranger is in the run, rays see targets and static primitives only. Every other geom, including robots and the ground, is geom group 1, and the ray includes group 0 only, with `flg_static` set and `bodyexclude` −1. A world with no ranger does not change geom groups.
 
-## 4. World
+## 4. The part document
 
-A world is **one root part** plus environment plus run settings (D-002).
+The part is the only document ([ADR 0011](decisions/0011-one-document-kind.md)). A run opens a root part: `parts/<publisher>/<name>@<version>.json`, id `publisher/name@version`. The arm example is `examples/arm/parts/sfab/arm-bench@1.0.0.json` because `sfab/arm@1.0.0` is already the robot. Every other example uses `sfab/<world-stem>@1.0.0`. The lock sits beside that file as `<name>@<version>.lock.json`, and `world` in the lock and in the run report is that stem (`arm-bench@1.0.0`).
+
+The root part instances the scene, a ground part when the run stands on a plane, and one target part per target. It carries `play`. Path and net level choices live on `play.levels.paths` and `play.levels.nets`, not on the shared scene: `nano-servo-usb` and `nano-servo-collapsed` both instance `sfab/nano-servo-scene@1.0.0` and choose different levels. The loader unwraps that single scene instance back to `$root`, so a path stays `servo`. An instance `level` still exists and a path rule still beats it.
+
+`play` is read only when that part is the root of the run. A nested part's `play` is kept and ignored. Gravity, seed, and `timestep` (seconds) come from the root. `play.levels.default` and `types` are the level defaults. `air`, `primitives`, and `stepProps` are optional so a world import does not drop them.
+
+No ground part means no ground. A target instance keeps the same shape, size, pose, and scripted path.
+
+`sfab-bench convert <world.json>` writes the root part and its lock under the project's `parts/` and prints the two project-relative paths.
+
+### Legacy import
+
+A `.world.json` is an import, not a document. The loader converts it in memory on read. `bench run` and the server still open one. A v1 file is still the hard stop: **World v1 is no longer supported**.
+
+Opening a `.world.json` leaves `report.world` as the file stem (`arm.world`). The in-memory conversion does not pin the synthetic import part, the ground part, or the target part into that lock, so an existing report stays byte-identical. Opening the root part names `report.world` and `report.lock` for that part; those are the fields that differ.
 
 ```ts
 type WorldFile = {
@@ -229,6 +265,7 @@ type WorldFile = {
   };
   run: {
     seed: number;                                       // D-008: all randomness from here
+    timestep?: number;                                  // omitted on the examples; the body step stays 0.001
     levels: {
       default: LevelSpec;                               // bare number = all three axes (D-023.4)
       types?: Record<string, LevelSpec>;                // part-type rules
@@ -276,7 +313,7 @@ type LockFile = {
 };
 ```
 
-The lock sits beside its world as `<stem>.lock.json` (`arm.world.json` → `arm.world.lock.json`), and `world` is that stem (`arm.world`).
+The lock sits beside the document. A root part `parts/sfab/arm-bench@1.0.0.json` has `parts/sfab/arm-bench@1.0.0.lock.json`, and `world` is the stem `arm-bench@1.0.0`. A legacy import `arm.world.json` still uses `arm.world.lock.json`, and `world` is `arm.world`.
 
 A part file whose hash no longer matches the lock is an error that names the part. A snapshot file is pinned the same way, and only when the resolved variant actually runs it. The key is omitted when the run uses none.
 
@@ -381,9 +418,9 @@ Rebuild with `pnpm --filter @sfab-bench/server capture`. The timestamp comes fro
 
 **Plain branch, Uno power input.** `sfab/uno-power-input@1.0.0` is the USB front end: a `ptc-fuse@1`, a `pmos-switch@1`, the +5V capacitors, and, in the class-2 netlist, the VIN regulator. The class-1 snapshot is that USB path with VIN open: the gate is held at ground and the regulator is not in the stamp. Class 2 is that composite. Class 1 is the snapshot: `across` `["VBUS", "5V"]`, current into `VBUS`, swept from 0 to the fuse's `iHold` (0.5 A). The table cannot hold the fuse's thermal state, so the variant omits fuse trip, thermal state, rail capacitance and temperature, and the envelope stops at that current. Above it the run warns once and continues. `sfab/uno-r3@1.0.0` class 2 instances the group as `power`. Class 1 `boardCircuit: "path:uno-usb"` is that same netlist, stamped in the plan at the instance path.
 
-**Plain branch, any assembly.** `sfab/led-module-red@1.0.0` is 220 Ω and a red LED. Class 1 is the snapshot, `across` `["IN", "GND"]`, swept 0 to 20 mA. `examples/nano/nano-led-module.world.json` holds D9 high into that module. At class 1 the record has no inner LED channel.
+**Plain branch, any assembly.** `sfab/led-module-red@1.0.0` is 220 Ω and a red LED. Class 1 is the snapshot, `across` `["IN", "GND"]`, swept 0 to 20 mA. `examples/nano/parts/sfab/nano-led-module@1.0.0.json` holds D9 high into that module. At class 1 the record has no inner LED channel.
 
-**Body.** `sfab/sg90@1.0.0` body class 1 default `lumped` is the fitted joint: armature 5e-5 kg·m², damping 0.0025 N·m·s/rad, frictionloss 0.002 N·m. Variant `collapsed` is the snapshot `sfab/sg90-hinge@1.0.0`, the class-2 collapse, so the armature is reflected rather than fitted. Class 2 is the gear train: a 9-tooth pinion, compounds 47:10, 38:8 and 32:7, and a 23-tooth output. Tooth counts are the published brochure figures. Shaft inertias are estimates (a copper rotor cup, POM gear disks). Damping is 70% on the rotor and 30% on the output. Friction is split evenly. The snapshot's ports are `shaft.torque` in and `shaft.angle` out. Its envelope is the speed and torque the fixture reached, clipped to the shaft ratings, so the box covers normal use. `examples/nano/nano-servo-collapsed.world.json` selects `{ class: 1, variant: "collapsed" }` on `servo`.
+**Body.** `sfab/sg90@1.0.0` body class 1 default `lumped` is the fitted joint: armature 5e-5 kg·m², damping 0.0025 N·m·s/rad, frictionloss 0.002 N·m. Variant `collapsed` is the snapshot `sfab/sg90-hinge@1.0.0`, the class-2 collapse, so the armature is reflected rather than fitted. Class 2 is the gear train: a 9-tooth pinion, compounds 47:10, 38:8 and 32:7, and a 23-tooth output. Tooth counts are the published brochure figures. Shaft inertias are estimates (a copper rotor cup, POM gear disks). Damping is 70% on the rotor and 30% on the output. Friction is split evenly. The snapshot's ports are `shaft.torque` in and `shaft.angle` out. Its envelope is the speed and torque the fixture reached, clipped to the shaft ratings, so the box covers normal use. `examples/nano/parts/sfab/nano-servo-collapsed@1.0.0.json` selects `{ class: 1, variant: "collapsed" }` on `servo`.
 
 A `hinge@1` capture runs the gear train and the collapsed hinge on the same fixture. The deep side is one MuJoCo hinge per shaft and one joint equality per mesh, with the load inertia on the output, at the 1 ms master step. The snapshot side is one hinge from `collapse()`, with the same load. The error rows compare `shaft.angle`: worst-case free-run max-abs and rms, and the worst `step-rise` across the step cases.
 

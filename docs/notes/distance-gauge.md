@@ -1,6 +1,6 @@
 # Distance gauge
 
-The owner builds this device for real. Bench runs it as `examples/gauge/gauge-usb.world.json`. The CAD is `examples/gauge/cad/`. The firmware is `examples/gauge/firmware/gauge/gauge.ino`, the same file for the real Nano and for Bench.
+The owner builds this device for real. Bench runs it as `examples/gauge/parts/sfab/gauge-usb@1.0.0.json`. The CAD is `examples/gauge/cad/`. The firmware is `examples/gauge/firmware/gauge/gauge.ino`, the same file for the real Nano and for Bench.
 
 Values marked **verify** come from memory of common datasheets. Check them against the actual part and its datasheet before any number goes into the catalog.
 
@@ -11,7 +11,7 @@ Values marked **verify** come from memory of common datasheets. Check them again
 - The Nano's own LED (D13) lights when something is close.
 - Each reading is printed over serial.
 
-In Bench the thing that moves is a target in the scene. `gauge-usb.world.json` moves the card on `path`: 50 cm, then 10 cm at 1 s, 90 cm at 2.5 s, 30 cm at 4 s, then out of the beam at 5.5 s. Each step is two keyframes 1 ms apart, so the card jumps and the servo slews. `world_move_target` can place it during a run. Dragging it in the view is later.
+In Bench the thing that moves is a target in the scene. `parts/sfab/gauge-usb@1.0.0.json` moves the card on `path`: 50 cm, then 10 cm at 1 s, 90 cm at 2.5 s, 30 cm at 4 s, then out of the beam at 5.5 s. Each step is two keyframes 1 ms apart, so the card jumps and the servo slews. `world_move_target` can place it during a run. Dragging it in the view is later.
 
 ## 2. Parts
 

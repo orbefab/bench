@@ -22,8 +22,9 @@ chat, as peers: a tool, the agent, and a script make the same typed edits
 to the same document, with one undo history per tab. Chat uses the AI
 subscriptions already on the Mac (Codex, Claude Code, Cursor, Grok,
 OpenCode). Cursor is listed but a Mac login is not visible to this app yet.
-This app does not take API keys for chat. A world runs today from a
-`.world.json`; the editor is A3–A6 below.
+This app does not take API keys for chat. A world runs today from a root
+part, `parts/<publisher>/<name>@<version>.json`. A `.world.json` still
+opens as an import. The editor is A3b–A6 below.
 
 The world is the view. CAD, firmware, electronics, and physics sit around
 it. Reinforcement learning is later, and it runs outside this app. A STEP
@@ -35,7 +36,7 @@ Three jobs, kept separate:
 | Job | Who |
 | --- | --- |
 | **Authoring** | Whatever produced the STEP, the URDF, and the firmware in the open folder (Jake cadgen, a CAD export, a toolchain, a human, or the agent running a tool there). Bench watches and reloads. For now this app does not author CAD and does not compile firmware; in-app part CAD and an MCU IDE are Later, after A6. |
-| **World** | Building and running parts: the part document ([ADR 0011](decisions/0011-one-document-kind.md); a `.world.json` until A3), MuJoCo, a board, wires, the tools, and the viewer. The STEP viewer is how a part is inspected. This is the product. |
+| **World** | Building and running parts: the part document ([ADR 0011](decisions/0011-one-document-kind.md)), MuJoCo, a board, wires, the tools, and the viewer. The STEP viewer is how a part is inspected. This is the product. |
 | **Agent host** | This Node process: open folder, harnesses, threads, and the tools that see and run the world. `get_viewer` / `show_artifact` stay. |
 
 North star: global server → **open a folder** → **open a part** → build it
@@ -55,7 +56,7 @@ tool wrote the file.
 
 Do not re-open these unless the human asks.
 
-- **No adapters.** Project = a directory. A STEP or GLB in it is a document. A world is `<name>.world.json` until A3 converts it to a part, the only document kind ([ADR 0011](decisions/0011-one-document-kind.md)). Agent cwd = that directory. Skills live in the project if the user put them there. This app does not learn which tool wrote the STEP, the URDF, or the firmware.
+- **No adapters.** Project = a directory. A STEP or GLB in it is a document. A world is a root part, `parts/<publisher>/<name>@<version>.json`, the only document kind ([ADR 0011](decisions/0011-one-document-kind.md)). A `.world.json` is a legacy import. Agent cwd = that directory. Skills live in the project if the user put them there. This app does not learn which tool wrote the STEP, the URDF, or the firmware.
 - **Tessellation is a loader**, not an adapter. OpenCascade WASM in the API process, and the only one, producing `assembly.json` + `.tess` + `#o…` ([ADR 0002](decisions/0002-step-loader-occt.md), [ADR 0004](decisions/0004-occt-via-opencascade-js.md)). The Python stopgap it replaced is gone.
 - **One process, two HTTPS clients.** Mac tab (loopback trusted) and Quest Browser (paired). No Unity, no APK.
 - **Share the library.** Recents, thread list, messages at rest, pairing. The folder a tab is in stays the tab's (`?project=`, [ADR 0006](decisions/0006-folder-is-a-tab.md)). For a STEP or GLB the viewport stays per client: loaded file, selection, camera, XR, which chat is open, live stream. `show_artifact` moves only the asking client ([ADR 0003](decisions/0003-library-not-viewport.md)). For a world, the run is shared per document — play state, sim time, poses, signals — and the last play or pause shows who sent it. Camera, selection, lens, and scrub stay per client ([ADR 0009](decisions/0009-world-simulation.md)).
@@ -99,7 +100,9 @@ Shipped rows stay. Next is the world.
 | 23 | planned | A1 — `packages/parts` (loader, resolver, levels, nets, lint, lock, `Store`) and `packages/engine-circuit`; a lint rule against upward imports ([ADR 0012](decisions/0012-layers-and-plugin-seams.md)). Proof: no printed line changes. |
 | 24 | planned | A2 — `packages/sim` (plan, form adapters as the form registry, orchestrator, recorder, capture runner); `worker.ts` a thin Node host; `bench run`; one rail path (a single board is the N = 1 case); only an unreadable document blocks Play. Proof: no line changes; `bench run` prints the gauge's serial lines with no server. |
 | 25 | planned | G2 — energy residual per seam in the run report, flagged when it grows. Proof: new report lines only. |
-| 26 | planned | A3 — document model, typed edit operations, undo; `.world.json` converter and the `play` block ([ADR 0011](decisions/0011-one-document-kind.md)); fixed ports; dirtying upward; agent tools on edit operations. Proof: converted examples replay their recordings identically. |
+| 26a | **done** | A3a — the part is the only document: the `play` block, ground and target parts, the converter, and one lock per root part ([ADR 0011](decisions/0011-one-document-kind.md)). Proof: converted examples replay their recordings identically. |
+| 26b | planned | A3b — typed edit operations with undo in `packages/parts`; agent tools on them. |
+| 26c | planned | A3c — fixed ports (D4) and dirtying upward (G3). |
 | 27 | planned | A4 — editor shell: tabs, tree, stage, card with one level picker per axis, timeline, chat panel, warnings three ways ([`manual.md`](manual.md)). Proof: browser QA. |
 | 28 | planned | A5 — tool framework plus move/rotate/snap, mount, wire, probe. Proof: browser QA; edit-operation undo tests. |
 | 29 | planned | A6 — Capture from the card: sidecar snapshots and project level overlays, the fixture tool, progress and abort. Proof: a UI capture matches the CLI capture. |

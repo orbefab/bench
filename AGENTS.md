@@ -75,7 +75,7 @@ and `.claude/skills/release` symlink the skills above.
 
 ## Conventions
 
-- Project = a directory. A STEP or GLB in it is a document. A world is `<name>.world.json` ([ADR 0009](docs/decisions/0009-world-simulation.md)). Agent cwd = that directory. Bench does not author the CAD or compile the firmware.
+- Project = a directory. A STEP or GLB in it is a document. A world is a root part, `parts/<publisher>/<name>@<version>.json` ([ADR 0011](docs/decisions/0011-one-document-kind.md)). A `.world.json` is a legacy import. Agent cwd = that directory. Bench does not author the CAD or compile the firmware.
 - Tessellation is a loader, not a project adapter. It is OCCT WASM in the API process, and the only one ([ADR 0002](docs/decisions/0002-step-loader-occt.md), [ADR 0004](docs/decisions/0004-occt-via-opencascade-js.md)).
 - Loopback is trusted. Anything else on `/api` needs pairing.
 - Electron is a shell: same server, same `https://127.0.0.1:7322` page, plus a native folder dialog. `apps/web` never imports from it ([ADR 0005](docs/decisions/0005-electron-shell.md)).

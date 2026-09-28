@@ -91,10 +91,10 @@ rp2040js, `micro-emulator`, 3MF/GLB meshes, `package://`, RL export, and
 a lone STEP or URDF opening as a world are later. Sensors and ground
 contact are demo 2, later.
 
-The document is moving from the world file to the part: [ADR 0011](decisions/0011-one-document-kind.md)
-replaces `.world.json` with a part whose `play` block holds gravity, seed,
-and time step. That lands with the document model (A3 in
-[`product.md`](product.md)); until then this section describes what runs.
+The document is a root part ([ADR 0011](decisions/0011-one-document-kind.md)):
+`parts/<publisher>/<name>@<version>.json`, with a `play` block for gravity,
+seed, and time step. A `.world.json` still opens as an import. Edit
+operations and fixed ports are A3b and A3c in [`product.md`](product.md).
 
 ## Simulation principles (ADR 0010)
 
