@@ -15,10 +15,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
-
+import { Engine, MF_MSMF050, PtcFuseElement } from "@sfab-bench/engine-circuit";
 import { closeRootWatches } from "./projects";
-import { Engine, TRACE_CASES } from "./world/circuit";
-import { MF_MSMF050, PtcFuseElement } from "./world/circuit/ptc-fuse";
 import { boardStampOf } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,
@@ -45,6 +43,7 @@ import {
 } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
+import { unoUsbTrace } from "./world/uno-reference";
 
 const LINE = 0.005;
 /** Board node and recorded rail may sit this far under 0 V. */
@@ -185,8 +184,11 @@ function msUntilTrip(amps: number, limitMs: number): number {
 
 const trace = loadCsv("uno-usb.csv");
 {
-  const spec = TRACE_CASES.find((item) => item.id === "uno-usb");
-  expect(spec, "uno-usb trace case");
+  const spec = {
+    h: 2e-8,
+    steps: 150000,
+    elements: unoUsbTrace,
+  };
   const eng = new Engine(spec.elements(), { method: "be", h: spec.h });
   const samples = eng.run(spec.steps, ["v5"]);
   const ours = trace.t.map((t) =>

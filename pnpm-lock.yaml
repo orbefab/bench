@@ -163,6 +163,12 @@ importers:
       '@sfab-bench/contract':
         specifier: workspace:*
         version: link:../../packages/contract
+      '@sfab-bench/engine-circuit':
+        specifier: workspace:*
+        version: link:../../packages/engine-circuit
+      '@sfab-bench/parts':
+        specifier: workspace:*
+        version: link:../../packages/parts
       '@vitejs/plugin-basic-ssl':
         specifier: ^2.1.0
         version: 2.3.0(vite@7.3.6(@types/node@22.20.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -348,6 +354,26 @@ importers:
       ai:
         specifier: ^7.0.99
         version: 7.0.99(zod@4.6.5)
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
+  packages/engine-circuit:
+    dependencies:
+      '@sfab-bench/contract':
+        specifier: workspace:*
+        version: link:../contract
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
+  packages/parts:
+    dependencies:
+      '@sfab-bench/contract':
+        specifier: workspace:*
+        version: link:../contract
     devDependencies:
       typescript:
         specifier: ^5.9.2

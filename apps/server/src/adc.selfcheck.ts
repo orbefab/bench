@@ -9,18 +9,17 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
-
+import { adcCount } from "@sfab-bench/engine-circuit";
+import { loadWorldV2, lockPathFor, writeLock } from "@sfab-bench/parts";
 import { closeRootWatches } from "./projects";
 import { BANDGAP_V } from "./world/board-adc";
-import { adcCount } from "./world/circuit/adc";
 import {
   attachWorld,
   readAdcTrace,
   readRecording,
   stopWorld,
 } from "./world/host";
-import { loadWorldV2 } from "./world/parts/load";
-import { lockPathFor, writeLock } from "./world/parts/lock";
+import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
 import type { AdcSampleStamp, AdcTrace } from "./world/worker";
 
@@ -439,6 +438,7 @@ async function assertTraceOff(project: string, world: string): Promise<void> {
     );
     rmSync(lockPathFor(worldFile), { force: true });
     const loaded = loadWorldV2(worldFile, {
+      store: nodeStore,
       catalogDir: catalogRoot(),
       assetRoot: class2Dir,
     });
@@ -449,7 +449,7 @@ async function assertTraceOff(project: string, world: string): Promise<void> {
       lockErrors.length === 0 && loaded.lock,
       lockErrors.map((diag) => diag.message).join("; ") || "no class 2 lock"
     );
-    if (loaded.lock) writeLock(lockPathFor(worldFile), loaded.lock);
+    if (loaded.lock) writeLock(nodeStore, lockPathFor(worldFile), loaded.lock);
     const high = await runWorld(class2Dir, "nano-divider.world.json", 400);
     assertDivider(high, 2);
   } finally {

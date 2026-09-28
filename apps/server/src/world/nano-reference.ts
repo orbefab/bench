@@ -3,32 +3,31 @@
  * instead. These decks stay so the ngspice traces and the 1 µV check
  * still have the previous element list.
  */
-import { LED_RED, SS14 } from "./circuit/circuits";
-import type { Element } from "./circuit/element";
 import {
+  AVR_PIN,
+  type AvrPinParams,
   type Braking,
   BridgeMotor,
   CurrentLoad,
   capacitor,
   type DiodeParams,
   diode,
+  type Element,
+  Engine,
   iSource,
-  resistor,
-  sw,
-  TheveninLimit,
-  vSource,
-} from "./circuit/elements";
-import { Engine } from "./circuit/engine";
-import {
-  AVR_PIN,
-  type AvrPinParams,
+  LED_RED,
   PIN_LEAK,
   PIN_ROFF,
   PIN_ROH,
   PIN_ROL,
   Pin,
   type PinMode,
-} from "./circuit/pin";
+  resistor,
+  SS14,
+  sw,
+  TheveninLimit,
+  vSource,
+} from "@sfab-bench/engine-circuit";
 import { boardStampOf, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,

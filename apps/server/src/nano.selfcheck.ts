@@ -21,10 +21,8 @@ import {
   type RecordingRead,
   type WorldState,
 } from "@sfab-bench/contract";
-
+import { SS14, thermalVoltage } from "@sfab-bench/engine-circuit";
 import { closeRootWatches } from "./projects";
-import { SS14 } from "./world/circuit/circuits";
-import { thermalVoltage } from "./world/circuit/elements";
 import { boardStampOf } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,

@@ -3,20 +3,21 @@
  * class 2 instead. This deck stays so the ngspice trace and the 1e-12
  * check still have the previous element list.
  */
-import type { Element } from "./circuit/element";
 import {
   type Braking,
   BridgeMotor,
   CurrentLoad,
   capacitor,
   diode,
+  type Element,
+  Engine,
   iSource,
+  MF_MSMF050,
+  PtcFuseElement,
   resistor,
   TheveninLimit,
   vSource,
-} from "./circuit/elements";
-import { Engine } from "./circuit/engine";
-import { MF_MSMF050, PtcFuseElement } from "./circuit/ptc-fuse";
+} from "@sfab-bench/engine-circuit";
 import {
   BOARD_LOAD_KNEE_V,
   UNO_BOARD_NODE,

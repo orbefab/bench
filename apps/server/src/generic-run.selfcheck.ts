@@ -16,15 +16,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { PartFile } from "@sfab-bench/contract";
-import { LED_RED } from "./world/circuit/circuits";
 import {
+  AVR_PIN,
   CurrentLoad,
   Diode,
+  Engine,
+  LED_RED,
   Resistor,
   TheveninLimit,
-} from "./world/circuit/elements";
-import { Engine } from "./world/circuit/engine";
-import { AVR_PIN } from "./world/circuit/pin";
+} from "@sfab-bench/engine-circuit";
 import {
   type BoardStamp,
   type boardStampOf,

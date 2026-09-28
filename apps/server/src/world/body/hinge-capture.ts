@@ -16,8 +16,7 @@ import {
   type SnapshotFile,
 } from "@sfab-bench/contract";
 
-import { contentHash, sortValue } from "../parts/si";
-import { lintSnapshot } from "../snapshot-lint";
+import { contentHash, lintSnapshot, sortValue } from "@sfab-bench/parts";
 import { collapse } from "./gear-train";
 import { gearTrainXml, hingeXml } from "./mjcf";
 

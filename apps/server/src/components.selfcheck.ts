@@ -19,13 +19,26 @@ import {
   type SnapshotFile,
   type WorldState,
 } from "@sfab-bench/contract";
-
+import {
+  AVR_PIN,
+  Diode,
+  Engine,
+  gminFallbackCalls,
+  ISource,
+  LED_RED,
+  PIN_ROH,
+  Resistor,
+  tableVoltage,
+  VSource,
+} from "@sfab-bench/engine-circuit";
+import {
+  loadWorldV2,
+  lockPathFor,
+  sortValue,
+  tableLawOf,
+} from "@sfab-bench/parts";
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
-import { LED_RED } from "./world/circuit/circuits";
-import { Diode, ISource, Resistor, VSource } from "./world/circuit/elements";
-import { Engine, gminFallbackCalls } from "./world/circuit/engine";
-import { AVR_PIN, PIN_ROH } from "./world/circuit/pin";
 import { boardStampOf, realize } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,
@@ -33,13 +46,10 @@ import {
   readRecording,
   stopWorld,
 } from "./world/host";
-import { loadWorldV2 } from "./world/parts/load";
-import { lockPathFor } from "./world/parts/lock";
-import { sortValue } from "./world/parts/si";
+import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit } from "./world/rail-circuit";
-import { tableLawOf, tableVoltage } from "./world/snapshot-law";
 
 const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
   boardId: "nano",
@@ -262,6 +272,7 @@ async function runLed(
       )
     );
     const loaded = loadWorldV2(worldFile, {
+      store: nodeStore,
       catalogDir: catalogRoot(),
       assetRoot: root,
     });

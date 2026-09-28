@@ -24,9 +24,16 @@ import {
   type RecordingRead,
   SNAPSHOT_FORMAT,
   type SnapshotFile,
+  type TableLaw,
   type WorldState,
 } from "@sfab-bench/contract";
-
+import { tableVoltage } from "@sfab-bench/engine-circuit";
+import {
+  contentHash,
+  lintSnapshot,
+  loadPartById,
+  sortValue,
+} from "@sfab-bench/parts";
 import { closeRootWatches } from "./projects";
 import {
   type HingeCaptureEntry,
@@ -34,12 +41,9 @@ import {
 } from "./world/body/hinge-capture";
 import { assemblyStampOf, describeNetlist } from "./world/circuit-stamp";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
-import { loadPartById } from "./world/parts/library";
-import { contentHash, sortValue } from "./world/parts/si";
+import { nodeStore } from "./world/node-store";
 import { catalogRoot } from "./world/plan";
 import { branchDc } from "./world/snapshot-dc";
-import { type TableLaw, tableVoltage } from "./world/snapshot-law";
-import { lintSnapshot } from "./world/snapshot-lint";
 
 export type FreeCase = {
   firmware: string;
@@ -381,6 +385,7 @@ function partTypeOf(
   const loaded = loadPartById(
     worldDir,
     {
+      store: nodeStore,
       catalogDir: catalog,
       assetRoot: catalog,
       ...(libraryDir ? { libraryDir } : {}),

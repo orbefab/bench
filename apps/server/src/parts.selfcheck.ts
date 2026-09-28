@@ -15,16 +15,25 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Diagnostic, PartFile, PartTypeFile } from "@sfab-bench/contract";
-import { expandPartType } from "./world/parts/expand";
-import { type LoadOptions, loadWorldV2 } from "./world/parts/load";
-import { lockPathFor, writeLock } from "./world/parts/lock";
-import { canonicalJson } from "./world/parts/si";
+import {
+  canonicalJson,
+  expandPartType,
+  type LoadOptions,
+  loadWorldV2,
+  lockPathFor,
+  writeLock,
+} from "@sfab-bench/parts";
+import { nodeStore } from "./world/node-store";
 
 const serverDir = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const catalogDir = path.join(serverDir, "catalog");
 const fixtures = path.join(serverDir, "fixtures/layered");
-const opts: LoadOptions = { catalogDir, assetRoot: repoRoot };
+const opts: LoadOptions = {
+  store: nodeStore,
+  catalogDir,
+  assetRoot: repoRoot,
+};
 
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
@@ -272,7 +281,7 @@ try {
   const file = path.join(lockDir, "world.json");
   const first = loadWorldV2(file, opts);
   expect(first.lock, "hold lock");
-  writeLock(lockPathFor(file), first.lock);
+  writeLock(nodeStore, lockPathFor(file), first.lock);
   const second = loadWorldV2(file, opts);
   const roundTrip = second.diagnostics.filter((d) => d.quantity === "sha256");
   line(roundTrip.length === 0, "lockfile round trip verifies");
@@ -281,7 +290,7 @@ try {
   expect(row, "lock part");
   row.sha256 =
     "0000000000000000000000000000000000000000000000000000000000000000";
-  writeLock(lockPathFor(file), tampered);
+  writeLock(nodeStore, lockPathFor(file), tampered);
   const third = loadWorldV2(file, opts);
   const caught = third.diagnostics.find(
     (d) =>
@@ -367,9 +376,9 @@ try {
   rmSync(libDir, { recursive: true, force: true });
 }
 
-const partsSrc = readdirSync(path.join(serverDir, "src/world/parts"))
+const partsSrc = readdirSync(path.join(serverDir, "../../packages/parts/src"))
   .map((name) =>
-    readFileSync(path.join(serverDir, "src/world/parts", name), "utf8")
+    readFileSync(path.join(serverDir, "../../packages/parts/src", name), "utf8")
   )
   .join("\n");
 line(

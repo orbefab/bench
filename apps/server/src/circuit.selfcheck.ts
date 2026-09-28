@@ -38,12 +38,13 @@ import {
   sw,
   TRACE_CASES,
   vSource,
-} from "./world/circuit";
+} from "@sfab-bench/engine-circuit";
 import {
   nanoD13Deck,
   nanoTraceStimulus,
   nanoUsbDeck,
 } from "./world/nano-reference";
+import { unoUsbTrace } from "./world/uno-reference";
 
 const LINE = 0.005;
 const POWER_W = 1e-9;
@@ -166,7 +167,18 @@ function notePower(samples: readonly Sample[]): void {
   }
 }
 
-for (const spec of TRACE_CASES) {
+const TRACES = [
+  ...TRACE_CASES,
+  {
+    id: "uno-usb",
+    probe: "v5",
+    h: 2e-8,
+    steps: 150000,
+    elements: unoUsbTrace,
+  },
+];
+
+for (const spec of TRACES) {
   const trace = loadCsv(`${spec.id}.csv`);
   const eng = new Engine(spec.elements(), { method: "be", h: spec.h });
   const samples = eng.run(spec.steps, [spec.probe]);

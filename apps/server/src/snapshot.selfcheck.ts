@@ -20,18 +20,22 @@ import type {
   SnapshotFile,
   WorldState,
 } from "@sfab-bench/contract";
-
+import {
+  canonicalJson,
+  envelopeOf,
+  FIXTURE_SUPPLY,
+  lintSnapshot,
+  loadSnapshot,
+  outsideEnvelope,
+} from "@sfab-bench/parts";
 import { captureCatalog, type FreeRunSpec, runClassScenes } from "./capture";
 import { closeRootWatches } from "./projects";
 import { boardStampOf } from "./world/circuit-stamp";
 import { attachWorld, stopWorld } from "./world/host";
-import { canonicalJson } from "./world/parts/si";
+import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit } from "./world/rail-circuit";
-import { envelopeOf, outsideEnvelope } from "./world/snapshot-law";
-import { FIXTURE_SUPPLY, lintSnapshot } from "./world/snapshot-lint";
-import { loadSnapshot } from "./world/snapshot-load";
 
 const SNAPSHOT_ID = "sfab/nano-power-input@1.0.0";
 const nanoDir = fileURLToPath(
@@ -102,7 +106,7 @@ console.log(
 );
 const loaded = loadSnapshot(
   tmpdir(),
-  { catalogDir: catalogRoot(), assetRoot: tmpdir() },
+  { store: nodeStore, catalogDir: catalogRoot(), assetRoot: tmpdir() },
   SNAPSHOT_ID,
   powerType()
 );
@@ -166,7 +170,7 @@ console.log("lint: committed snapshot Q1");
     writeFileSync(file, JSON.stringify(copy));
     const loaded = loadSnapshot(
       dir,
-      { catalogDir: join(dir, "catalog"), assetRoot: dir },
+      { store: nodeStore, catalogDir: join(dir, "catalog"), assetRoot: dir },
       SNAPSHOT_ID,
       powerType()
     );

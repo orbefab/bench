@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import type { Pose } from "@sfab-bench/contract";
-import { lockPathFor } from "./parts/lock";
+import { lockPathFor } from "@sfab-bench/parts";
 import { planWorld } from "./plan";
 
 export type DraftPose = {

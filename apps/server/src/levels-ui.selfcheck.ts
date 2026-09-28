@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { emptySnapshot, type WorldServerMessage } from "@sfab-bench/contract";
-
+import { contentHash } from "@sfab-bench/parts";
 import { levelCard, reasonWords } from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
@@ -25,7 +25,6 @@ import {
   worldWorkerCount,
 } from "./world/host";
 import { replaceLevels } from "./world/level-edit";
-import { contentHash } from "./world/parts/si";
 import { planWorld } from "./world/plan";
 import { viewOf } from "./world/view";
 import { worldTools } from "./world-tools";

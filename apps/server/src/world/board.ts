@@ -1,5 +1,6 @@
 import type { WorldPinState } from "@sfab-bench/contract";
 import { arduinoPinMask } from "@sfab-bench/contract";
+import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   AVRIOPort,
   AVRTimer,
@@ -14,9 +15,7 @@ import {
   timer2Config,
   usart0Config,
 } from "avr8js";
-
 import { attachBoardAdc, type BoardAdcHooks } from "./board-adc";
-import type { PinMode } from "./circuit/pin";
 import { FLASH_BYTES } from "./ihex";
 
 /** ATmega328P is clocked at 16 MHz. One sim millisecond is 16 000 cycles. */

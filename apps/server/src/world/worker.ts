@@ -28,12 +28,12 @@ import {
   type WorldSupplyState,
   type WorldVec3,
 } from "@sfab-bench/contract";
+import type { PinMode } from "@sfab-bench/engine-circuit";
+import { type BatteryParams, boundOutside } from "@sfab-bench/parts";
 
 import { analogRead } from "./analog-pin";
-import type { BatteryParams } from "./battery";
 import { AvrBoard, type CpuResetRegs, FIRMWARE_RELOADED } from "./board";
 import type { AdcConversion } from "./board-adc";
-import type { PinMode } from "./circuit/pin";
 import { projectReal, readerFor, readInside, type WorldBytes } from "./files";
 import { parseIntelHex } from "./ihex";
 import {
@@ -55,7 +55,6 @@ import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
 import { blankTrack, type ServoTrack, trackServo } from "./servo";
-import { boundOutside } from "./snapshot-law";
 import { targetPosition } from "./targets";
 import {
   applyGpioDrives,

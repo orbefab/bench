@@ -25,7 +25,7 @@ import {
   type RunReport,
   type WorldSender,
 } from "@sfab-bench/contract";
-
+import { loadWorldV2, writeLock } from "@sfab-bench/parts";
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
 import {
@@ -41,8 +41,7 @@ import {
   replaceLevels,
 } from "./world/level-edit";
 import { maxBoardDelta } from "./world/nano-reference";
-import { loadWorldV2 } from "./world/parts/load";
-import { writeLock } from "./world/parts/lock";
+import { nodeStore } from "./world/node-store";
 import { catalogRoot } from "./world/plan";
 import { noLoadSpeedRad } from "./world/power";
 import { NANO_BOARD_A } from "./world/power-path";
@@ -695,6 +694,7 @@ try {
     writeFileSync(temp, text);
     try {
       const loaded = loadWorldV2(temp, {
+        store: nodeStore,
         catalogDir: catalogRoot(),
         assetRoot: gaugeRoot,
       });
@@ -709,7 +709,7 @@ try {
       }
       const decided = lockAfterLevels(gaugeLock, loaded.lock);
       if ("error" in decided) throw new Error(decided.error);
-      writeLock(gaugeLockPath, decided.lock);
+      writeLock(nodeStore, gaugeLockPath, decided.lock);
       writeFileSync(gaugeWorldPath, text);
     } finally {
       rmSync(temp, { force: true });

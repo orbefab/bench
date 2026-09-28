@@ -21,6 +21,14 @@ import {
   type WorldSender,
   type WorldState,
 } from "@sfab-bench/contract";
+import {
+  canonicalJson,
+  type LoadResult,
+  loadWorldV2,
+  lockPathFor,
+  readLock,
+  writeLock,
+} from "@sfab-bench/parts";
 import { tool } from "ai";
 import { z } from "zod";
 import { viewerProjectRoot } from "./viewer-context";
@@ -44,9 +52,7 @@ import {
   lockAfterLevels,
   replaceLevels,
 } from "./world/level-edit";
-import { type LoadResult, loadWorldV2 } from "./world/parts/load";
-import { lockPathFor, readLock, writeLock } from "./world/parts/lock";
-import { canonicalJson } from "./world/parts/si";
+import { nodeStore } from "./world/node-store";
 import {
   catalogRoot,
   planWorld,
@@ -202,7 +208,11 @@ function loadWorldText(
   const temp = join(dirname(worldFile), `.${basename(worldFile)}.level-edit`);
   writeFileSync(temp, text);
   try {
-    return loadWorldV2(temp, { catalogDir: catalogRoot(), assetRoot });
+    return loadWorldV2(temp, {
+      store: nodeStore,
+      catalogDir: catalogRoot(),
+      assetRoot,
+    });
   } finally {
     rmSync(temp, { force: true });
   }
@@ -1161,6 +1171,7 @@ export const worldTools = {
       const file = join(found.root, found.world);
       const before = readFileSync(file, "utf8");
       const live = loadWorldV2(file, {
+        store: nodeStore,
         catalogDir: catalogRoot(),
         assetRoot: found.root,
       });
@@ -1216,9 +1227,10 @@ export const worldTools = {
       const previousLock = existsSync(lockFile) ? readFileSync(lockFile) : null;
       const lockChanged =
         previousLock === null ||
-        canonicalJson(readLock(lockFile)) !== canonicalJson(decided.lock);
+        canonicalJson(readLock(nodeStore, lockFile)) !==
+          canonicalJson(decided.lock);
       try {
-        if (lockChanged) writeLock(lockFile, decided.lock);
+        if (lockChanged) writeLock(nodeStore, lockFile, decided.lock);
         writeFileSync(file, next);
       } catch (err: unknown) {
         if (previousLock) writeFileSync(lockFile, previousLock);

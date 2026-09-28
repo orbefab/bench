@@ -1,6 +1,7 @@
 // Ported from layered-sim E3 src/harness.ts installAdc @ fc7e8d3.
 // avr8js times the conversion. The count is adcCount against the latched rail.
 
+import { adcCount, holdVoltage } from "@sfab-bench/engine-circuit";
 import {
   type ADCMuxInput,
   ADCMuxInputType,
@@ -9,8 +10,6 @@ import {
   adcConfig,
   type CPU,
 } from "avr8js";
-
-import { adcCount, holdVoltage } from "./circuit/adc";
 
 /** ATmega328P clock. One ADC clock is `prescaler` CPU cycles. */
 const CPU_HZ = 16_000_000;

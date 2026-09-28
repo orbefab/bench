@@ -23,22 +23,27 @@ import type {
   RunReport,
   SnapshotFile,
 } from "@sfab-bench/contract";
-import { closeRootWatches } from "./projects";
 import {
+  AVR_PIN,
   CurrentLoad,
+  Engine,
   ISource,
+  MF_MSMF050,
+  PmosChannel,
+  PtcFuseElement,
+  type PtcFuseParams,
   TheveninLimit,
   thermalVoltage,
   VSource,
-} from "./world/circuit/elements";
-import { Engine } from "./world/circuit/engine";
-import { AVR_PIN } from "./world/circuit/pin";
-import { PmosChannel } from "./world/circuit/pmos-switch";
+} from "@sfab-bench/engine-circuit";
 import {
-  MF_MSMF050,
-  PtcFuseElement,
-  type PtcFuseParams,
-} from "./world/circuit/ptc-fuse";
+  type Library,
+  lintLibrary,
+  loadPartById,
+  loadTypeById,
+  tableLawOf,
+} from "@sfab-bench/parts";
+import { closeRootWatches } from "./projects";
 import {
   type AssignedPart,
   assemblyStampOf,
@@ -47,17 +52,11 @@ import {
   realize,
 } from "./world/circuit-stamp";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
-import {
-  type Library,
-  lintLibrary,
-  loadPartById,
-  loadTypeById,
-} from "./world/parts/library";
+import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
 import { BOARD_LOAD_KNEE_V, railAttachment } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 import { branchDc } from "./world/snapshot-dc";
-import { tableLawOf } from "./world/snapshot-law";
 import { UnoReferenceRail } from "./world/uno-reference";
 import { powerFeedsOf } from "./world/wiring";
 
@@ -292,7 +291,7 @@ function mosSecond(
 
 {
   const catalog = catalogRoot();
-  const opts = { catalogDir: catalog, assetRoot: catalog };
+  const opts = { store: nodeStore, catalogDir: catalog, assetRoot: catalog };
   const loaded = loadPartById(catalog, opts, "sfab/mf-msmf050@1.0.0");
   const type = loadTypeById(catalog, opts, "ptc-fuse");
   if (!("part" in loaded) || !("type" in type)) {

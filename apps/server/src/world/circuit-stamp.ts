@@ -15,39 +15,48 @@ import {
   type PartFile,
   type PortDecl,
 } from "@sfab-bench/contract";
-import { Comparator } from "./circuit/comparator";
-import type { Element } from "./circuit/element";
 import {
+  AVR_PIN,
+  type AvrPinParams,
   Capacitor,
+  Comparator,
   Diode,
   type DiodeParams,
+  type Element,
+  LawTable,
+  LdoRegulator,
+  Pin,
+  PmosChannel,
+  PtcFuseElement,
+  type PtcFuseParams,
   Resistor,
-} from "./circuit/elements";
-import { LawTable } from "./circuit/law-table";
-import { type LdoParams, LdoRegulator, ldoFrom } from "./circuit/ldo";
-import { AVR_PIN, type AvrPinParams, Pin } from "./circuit/pin";
-import { PmosChannel } from "./circuit/pmos-switch";
-import { PtcFuseElement, type PtcFuseParams } from "./circuit/ptc-fuse";
-import { compileRules, type LiveInstance, resolveLevels } from "./parts/levels";
+} from "@sfab-bench/engine-circuit";
 import {
+  buildNets,
+  compileRules,
+  envelopeOf,
+  isScalarParam,
+  type LdoParams,
   type Library,
   type LibraryOptions,
+  type LiveInstance,
+  type LiveNet,
   type LoadedPart,
   type LoadedType,
+  ldoFrom,
   lintLibrary,
   loadPartById,
+  loadSnapshot,
   loadTypeById,
-} from "./parts/library";
-import { buildNets, type LiveNet, netlistOf } from "./parts/nets";
-import { isScalarParam } from "./parts/si";
-import { chipFacts, type RailFeed } from "./power-path";
-import {
-  envelopeOf,
+  netlistOf,
+  resolveLevels,
   type SnapshotEnvelope,
   type TableLaw,
   tableLawOf,
-} from "./snapshot-law";
-import { loadSnapshot } from "./snapshot-load";
+} from "@sfab-bench/parts";
+
+import { nodeStore } from "./node-store";
+import { chipFacts, type RailFeed } from "./power-path";
 
 export const CIRCUIT_FORMS = [
   "resistor@1",
@@ -755,7 +764,7 @@ function snapshotInstOf(
   if (behaviour?.kind !== "snapshot") return null;
   const found = loadSnapshot(
     worldDir,
-    { catalogDir, assetRoot: catalogDir },
+    { store: nodeStore, catalogDir, assetRoot: catalogDir },
     behaviour.ref,
     inst.type
   );
@@ -868,6 +877,7 @@ function stampOf(
   const assetRoot = opts.assetRoot ?? catalogDir;
   const boardId = opts.boardId ?? "board";
   const libOpts: LibraryOptions = {
+    store: nodeStore,
     catalogDir,
     assetRoot,
     ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),

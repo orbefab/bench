@@ -15,9 +15,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { FormParam } from "@sfab-bench/contract";
-
-import { type BatteryParams, batteryFrom, ocvAt } from "./world/battery";
-import { CurrentLoad, Engine, Resistor, TheveninLimit } from "./world/circuit";
+import {
+  CurrentLoad,
+  Engine,
+  Resistor,
+  TheveninLimit,
+} from "@sfab-bench/engine-circuit";
+import { type BatteryParams, batteryFrom, ocvAt } from "@sfab-bench/parts";
 import { boardStampOf } from "./world/circuit-stamp";
 import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";

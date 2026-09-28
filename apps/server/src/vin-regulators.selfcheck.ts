@@ -16,30 +16,26 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { PartFile, RecordingRead, WorldState } from "@sfab-bench/contract";
-
-import { levelCard } from "../../web/src/lib/level-card";
-import { type CaptureFile, captureFromConfig } from "./capture";
-import { closeRootWatches } from "./projects";
-import { batteryFrom } from "./world/battery";
-import { Comparator } from "./world/circuit/comparator";
 import {
+  AVR_PIN,
+  Comparator,
   CurrentLoad,
   Diode,
-  Resistor,
-  TheveninLimit,
-  VSource,
-} from "./world/circuit/elements";
-import { Engine } from "./world/circuit/engine";
-import {
   dropoutAt,
+  Engine,
   type LdoParams,
   LdoRegulator,
   ldoBias,
-  ldoFrom,
   ldoRegulated,
-} from "./world/circuit/ldo";
-import { AVR_PIN } from "./world/circuit/pin";
-import { PmosChannel } from "./world/circuit/pmos-switch";
+  PmosChannel,
+  Resistor,
+  TheveninLimit,
+  VSource,
+} from "@sfab-bench/engine-circuit";
+import { batteryFrom, ldoFrom } from "@sfab-bench/parts";
+import { levelCard } from "../../web/src/lib/level-card";
+import { type CaptureFile, captureFromConfig } from "./capture";
+import { closeRootWatches } from "./projects";
 import { boardStampOf, realize } from "./world/circuit-stamp";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { catalogRoot, planWorld } from "./world/plan";

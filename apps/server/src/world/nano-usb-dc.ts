@@ -1,8 +1,6 @@
 /** Ported from layered-sim E4 (fd10742). DC drop of a composite's own ports. */
 
-import { ISource, VSource } from "./circuit/elements";
-import { Engine } from "./circuit/engine";
-import { AVR_PIN } from "./circuit/pin";
+import { AVR_PIN, Engine, ISource, VSource } from "@sfab-bench/engine-circuit";
 import type { BoardStamp } from "./circuit-stamp";
 import { realize } from "./circuit-stamp";
 

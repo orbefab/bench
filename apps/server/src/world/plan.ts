@@ -19,9 +19,27 @@ import {
   type WorldStepProp,
   type WorldTarget,
 } from "@sfab-bench/contract";
-import { type BatteryParams, batteryFrom, ocvAt } from "./battery";
-import { collapse, gearTrainErrors } from "./body/gear-train";
-import { type AvrPinParams, avrPinParams } from "./circuit/pin";
+import { type AvrPinParams, avrPinParams } from "@sfab-bench/engine-circuit";
+import {
+  type BatteryParams,
+  batteryFrom,
+  class2BoardNetlist,
+  envelopeOf,
+  gearTrainErrors,
+  isScalarParam,
+  type LiveInstance,
+  type LiveNet,
+  type LoadResult,
+  loadWorldV2,
+  ocvAt,
+  pathRefOf,
+  siValue,
+  tableLawOf,
+  type Wire,
+  type WireEnd,
+} from "@sfab-bench/parts";
+
+import { collapse } from "./body/gear-train";
 import {
   type BoardStamp,
   type CircuitInst,
@@ -35,13 +53,9 @@ import {
   stampBoard,
   touches,
 } from "./circuit-stamp";
-import { class2BoardNetlist, type LiveInstance } from "./parts/levels";
-import { type LoadResult, loadWorldV2 } from "./parts/load";
-import type { LiveNet, Wire, WireEnd } from "./parts/nets";
-import { isScalarParam, siValue } from "./parts/si";
-import { chipFacts, pathRefOf } from "./power-path";
+import { nodeStore } from "./node-store";
+import { chipFacts } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
-import { envelopeOf, tableLawOf } from "./snapshot-law";
 import { readTargets } from "./targets";
 
 /** Shown where a world fails to load, in the UI and in the agent tools. */
@@ -1401,6 +1415,7 @@ export function planWorld(project: string, worldRel: string): PlanResult {
     };
   }
   const loaded = loadWorldV2(found.abs, {
+    store: nodeStore,
     catalogDir: catalogRoot(),
     assetRoot: found.root,
   });

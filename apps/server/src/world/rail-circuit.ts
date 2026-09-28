@@ -15,22 +15,26 @@
  */
 
 import { arduinoPinBit } from "@sfab-bench/contract";
-import { BatteryElement, type BatteryParams } from "./battery";
-import { Comparator } from "./circuit/comparator";
-import type { Element } from "./circuit/element";
 import {
+  AVR_PIN,
+  type AvrPinParams,
+  BatteryElement,
+  type BatteryParams,
   type Braking,
   BridgeMotor,
+  Comparator,
   CurrentLoad,
   type Diode,
+  type Element,
+  Engine,
+  LawTable,
+  LdoRegulator,
+  type PinMode,
+  PmosChannel,
+  PtcFuseElement,
   TheveninLimit,
-} from "./circuit/elements";
-import { Engine } from "./circuit/engine";
-import { LawTable } from "./circuit/law-table";
-import { LdoRegulator } from "./circuit/ldo";
-import { AVR_PIN, type AvrPinParams, type PinMode } from "./circuit/pin";
-import { PmosChannel } from "./circuit/pmos-switch";
-import { PtcFuseElement } from "./circuit/ptc-fuse";
+} from "@sfab-bench/engine-circuit";
+
 import { type BoardStamp, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,

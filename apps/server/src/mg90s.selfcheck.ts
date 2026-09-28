@@ -11,11 +11,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { PartFile, RecordingRead } from "@sfab-bench/contract";
-
+import { canonicalJson, contentHash, loadWorldV2 } from "@sfab-bench/parts";
 import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stepWorld, stopWorld } from "./world/host";
-import { loadWorldV2 } from "./world/parts/load";
-import { canonicalJson, contentHash } from "./world/parts/si";
+import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
 
 const armDir = fileURLToPath(
@@ -70,7 +69,7 @@ try {
   );
 
   const worldFile = path.join(root, worldName);
-  const opts = { catalogDir: catalogRoot(), assetRoot: root };
+  const opts = { store: nodeStore, catalogDir: catalogRoot(), assetRoot: root };
   const loaded = loadWorldV2(worldFile, opts);
   const again = loadWorldV2(worldFile, opts);
   const errors = loaded.diagnostics.filter((diag) => diag.severity === "error");

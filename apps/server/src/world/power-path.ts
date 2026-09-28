@@ -15,7 +15,8 @@
  * on the constants. A value marked assumed is not in those documents.
  */
 
-import { type DiodeParams, thermalVoltage } from "./circuit/elements";
+import { type DiodeParams, thermalVoltage } from "@sfab-bench/engine-circuit";
+import { pathRefOf } from "@sfab-bench/parts";
 
 /** Supply side of F1. The rail's Thevenin terminal when the path is on. */
 export const UNO_TERM_NODE = "term";
@@ -111,13 +112,6 @@ export type RailFeed = "usb" | "header" | "vin";
 export type UsbPath =
   | { kind: "path"; path: BoardPathName }
   | { kind: "netlist"; feed: "usb" | "header" };
-
-/** `path:<name>` on a firmware variant's `boardCircuit`. The Uno cable is `path:uno-usb`. */
-export function pathRefOf(boardCircuit: string | null): string | null {
-  if (!boardCircuit?.startsWith("path:")) return null;
-  const name = boardCircuit.slice("path:".length);
-  return name.length > 0 ? name : null;
-}
 
 /**
  * The network between this supply and the board it feeds, or null when

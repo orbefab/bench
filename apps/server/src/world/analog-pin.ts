@@ -1,4 +1,4 @@
-import type { AvrPinParams, PinMode } from "./circuit/pin";
+import type { AvrPinParams, PinMode } from "@sfab-bench/engine-circuit";
 import type { RunPlan } from "./plan";
 
 export type AnalogMode = PinMode | "analog";

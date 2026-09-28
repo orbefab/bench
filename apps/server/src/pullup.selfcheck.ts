@@ -1,8 +1,7 @@
 import { maskHasPin } from "@sfab-bench/contract";
+import { AVR_PIN } from "@sfab-bench/engine-circuit";
 import { assemble } from "avr8js/dist/esm/utils/assembler.js";
-
 import { AvrBoard } from "./world/board";
-import { AVR_PIN } from "./world/circuit/pin";
 import { FLASH_BYTES } from "./world/ihex";
 import type { RunPin, RunPlan } from "./world/plan";
 import { applyGpioDrives, gpioInputNets } from "./world/wiring";
