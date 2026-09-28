@@ -25,6 +25,8 @@ import {
 } from "./circuit/elements";
 import { LawTable } from "./circuit/law-table";
 import { AVR_PIN, type AvrPinParams, Pin } from "./circuit/pin";
+import { PmosChannel } from "./circuit/pmos-switch";
+import { PtcFuseElement, type PtcFuseParams } from "./circuit/ptc-fuse";
 import { compileRules, resolveLevels } from "./parts/levels";
 import {
   type Library,
@@ -39,7 +41,13 @@ import { buildNets, type LiveNet, netlistOf } from "./parts/nets";
 import { chipFacts } from "./power-path";
 import type { SnapshotEnvelope, TableLaw } from "./snapshot-law";
 
-export const CIRCUIT_FORMS = ["resistor@1", "capacitor@1", "diode@1"] as const;
+export const CIRCUIT_FORMS = [
+  "resistor@1",
+  "capacitor@1",
+  "diode@1",
+  "ptc-fuse@1",
+  "pmos-switch@1",
+] as const;
 export type CircuitForm = (typeof CIRCUIT_FORMS)[number];
 
 export function isCircuitForm(form: string): form is CircuitForm {
@@ -258,6 +266,15 @@ export function stampBoard(input: {
     ...(part.table ? { table: part.table } : {}),
   }));
   assigned.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  for (const part of assigned) {
+    if (part.form !== "pmos-switch@1") continue;
+    const gate = part.nodes.G;
+    // An unwired gate is a private node. `realize` would prune the
+    // switch before `elementOf` could see it, so the miss is an error here.
+    if (!gate || gate === `${part.path}.G`) {
+      throw new Error(`${part.path}: pmos-switch@1 has no gate net`);
+    }
+  }
 
   const boardFull = (port: string) => `${input.boardId}.${port}`;
   const named = (port: string): string | null => {
@@ -441,6 +458,51 @@ function elementOf(part: AssignedPart): {
           0,
           null
         ),
+      ],
+      capacitive: false,
+    };
+  }
+  if (part.form === "ptc-fuse@1") {
+    const params: PtcFuseParams = {
+      rCold: needNum(part, "rCold"),
+      rHot: needNum(part, "rHot"),
+      iHold: needNum(part, "iHold"),
+      iTrip: needNum(part, "iTrip"),
+      tripPower: needNum(part, "tripPower"),
+      tau: needNum(part, "tau"),
+      uReset: needNum(part, "uReset"),
+    };
+    return {
+      elements: [
+        new PtcFuseElement(part.path, need(part, "A"), need(part, "B"), params),
+      ],
+      capacitive: false,
+    };
+  }
+  if (part.form === "pmos-switch@1") {
+    const gate = part.nodes.G;
+    if (!gate || gate === `${part.path}.G`) {
+      throw new Error(`${part.path}: pmos-switch@1 has no gate net`);
+    }
+    const source = need(part, "S");
+    const drain = need(part, "D");
+    const diode: DiodeParams = {
+      Is: needNum(part, "Is"),
+      N: needNum(part, "N"),
+      Rs: part.params.Rs ?? 0,
+      tempC: 25,
+    };
+    return {
+      elements: [
+        new PmosChannel(
+          part.path,
+          source,
+          drain,
+          gate,
+          needNum(part, "rds"),
+          needNum(part, "vth")
+        ),
+        new Diode(`${part.path}#d`, drain, source, diode),
       ],
       capacitive: false,
     };

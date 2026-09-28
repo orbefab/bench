@@ -260,6 +260,8 @@ export type FormId =
   | "resistor@1"
   | "capacitor@1"
   | "diode@1"
+  | "ptc-fuse@1"
+  | "pmos-switch@1"
   | "logic-in@1"
   | "table@1"
   | "transfer-fn@1"
@@ -303,6 +305,27 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
   },
   "diode@1": {
     params: { Is: "Current", N: "Dimensionless", Rs: "Resistance" },
+    optional: ["Rs"],
+  },
+  "ptc-fuse@1": {
+    params: {
+      rCold: "Resistance",
+      rHot: "Resistance",
+      iHold: "Current",
+      iTrip: "Current",
+      tripPower: "HeatFlow",
+      tau: "Time",
+      uReset: "Dimensionless",
+    },
+  },
+  "pmos-switch@1": {
+    params: {
+      rds: "Resistance",
+      vth: "Voltage",
+      Is: "Current",
+      N: "Dimensionless",
+      Rs: "Resistance",
+    },
     optional: ["Rs"],
   },
   "logic-in@1": { params: {} },

@@ -24,6 +24,7 @@ import {
   contentHash,
   makeDiag,
   parsePartRef,
+  siValue,
   splitPortRef,
 } from "./si";
 
@@ -606,6 +607,27 @@ function lintBehaviour(
           left: "missing",
           right: key,
           detail: `form ${variant.form} is missing param ${key}`,
+        })
+      );
+    }
+  }
+  if (variant.form === "ptc-fuse@1") {
+    const cold = variant.params.rCold;
+    const hot = variant.params.rHot;
+    if (
+      cold !== undefined &&
+      hot !== undefined &&
+      !(siValue(hot) > siValue(cold))
+    ) {
+      diags.push(
+        makeDiag({
+          severity: "error",
+          path: partId,
+          port: name,
+          quantity: "Resistance",
+          left: String(siValue(hot)),
+          right: String(siValue(cold)),
+          detail: "ptc-fuse@1 needs rHot greater than rCold",
         })
       );
     }

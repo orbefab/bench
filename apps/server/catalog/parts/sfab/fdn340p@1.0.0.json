@@ -1,0 +1,64 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/fdn340p@1.0.0",
+  "type": "pmos-switch",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "onsemi FDN340P",
+      "ref": "FDN340P/D ON CHARACTERISTICS. RDS(on) typical 60 mohm at VGS = -4.5 V, ID = -2 A (70 mohm max). VGS(th) typical -0.8 V at VDS = VGS, ID = -250 uA (min -0.4 V, max -1.5 V)"
+    },
+    {
+      "title": "Body diode",
+      "ref": "Assumed fit from one point: VSD typical 0.7 V at 0.42 A, VGS = 0. N = 1 and Rs = 0. The datasheet gives no second point"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "switch",
+        "variants": {
+          "switch": {
+            "kind": "form",
+            "form": "pmos-switch@1",
+            "params": {
+              "rds": 0.06,
+              "vth": -0.8,
+              "Is": 6.177319835715052e-13,
+              "N": 1,
+              "Rs": 0
+            },
+            "omits": [
+              "gate charge",
+              "the region between on and off",
+              "temperature"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.003, 0.002, 0.001],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}
