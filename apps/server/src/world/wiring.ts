@@ -209,6 +209,9 @@ export function powerFeedsOf(plan: RunPlan): PowerFeeds {
       feed = supplyOn(plan, reachedFrom(`${board.id}.${pin}`, adjacent));
       if (feed) break;
     }
+    if (!feed) {
+      feed = supplyOn(plan, reachedFrom(`${board.id}.VIN`, adjacent));
+    }
     boards[board.id] = feed;
   }
   const parts: Record<string, string | null> = {};

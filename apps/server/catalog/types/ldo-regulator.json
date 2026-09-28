@@ -1,30 +1,26 @@
 {
   "format": "sfab.part-type@1",
-  "id": "power-input",
+  "id": "ldo-regulator",
   "plausible": {
-    "Voltage": [-1, 10],
-    "Current": [-2, 2]
+    "Voltage": [0, 30],
+    "Current": [0, 5],
+    "Resistance": [0, 10]
   },
   "ports": {
-    "VBUS": {
+    "IN": {
       "domain": "electrical",
       "role": "power",
       "direction": "in"
     },
-    "5V": {
+    "OUT": {
       "domain": "electrical",
       "role": "power",
-      "direction": "in"
+      "direction": "out"
     },
     "GND": {
       "domain": "electrical",
       "role": "ground",
       "direction": "passive"
-    },
-    "VIN": {
-      "domain": "electrical",
-      "role": "power",
-      "direction": "in"
     }
   }
 }

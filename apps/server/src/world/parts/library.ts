@@ -19,6 +19,7 @@ import {
 
 import { batteryFrom } from "../battery";
 import { gearTrainErrors } from "../body/gear-train";
+import { ldoFrom } from "../circuit/ldo";
 import { expandPartType } from "./expand";
 import {
   classesOf,
@@ -663,6 +664,22 @@ function lintBehaviour(
           quantity: "Form",
           left: variant.form,
           right: "ocv",
+          detail: built.error,
+        })
+      );
+    }
+  }
+  if (variant.form === "ldo-regulator@1") {
+    const built = ldoFrom(variant.params, {});
+    if (!built.ok) {
+      diags.push(
+        makeDiag({
+          severity: "error",
+          path: partId,
+          port: name,
+          quantity: "Form",
+          left: variant.form,
+          right: "dropout",
           detail: built.error,
         })
       );

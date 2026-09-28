@@ -163,7 +163,8 @@ function resolveAxis(
   typeId: string,
   rules: LevelRules,
   parentClass?: LevelClass,
-  instanceLevel?: Partial<Record<AxisName, AxisRequest>>
+  instanceLevel?: Partial<Record<AxisName, AxisRequest>>,
+  vinFallback?: ReadonlySet<string>
 ): ResolvedAxis {
   const asked = request(rules, axis, instancePath, typeId, instanceLevel);
   let requested = asked.class;
@@ -238,6 +239,20 @@ function resolveAxis(
           : `no level (requested ${requested} by ${reasonOf(by)})`;
       }
     }
+  }
+  // A branch table cannot be a regulator. VIN driven, class 1 asked:
+  // run the netlist. The reason is the card's warning. Children do not
+  // inherit it; a fallback parent does not pass its class down.
+  if (
+    vinFallback?.has(instancePath) &&
+    axis === "behaviour" &&
+    typeId === "power-input" &&
+    chosen === 1 &&
+    available.includes(2)
+  ) {
+    chosen = 2;
+    source = "fallback";
+    reason = "nearest runnable level";
   }
   if (chosen === null || !map) {
     return {
@@ -325,7 +340,8 @@ function childPath(parent: string, id: string): string {
 
 export function resolveLevels(
   lib: Library,
-  rules: LevelRules
+  rules: LevelRules,
+  vinFallback?: ReadonlySet<string>
 ): { instances: LiveInstance[]; appliedPaths: Set<string> } {
   const instances: LiveInstance[] = [];
   const appliedPaths = new Set<string>();
@@ -347,7 +363,8 @@ export function resolveLevels(
         type.id,
         rules,
         parentClass,
-        instanceLevel
+        instanceLevel,
+        vinFallback
       ),
       body: resolveAxis(
         part,

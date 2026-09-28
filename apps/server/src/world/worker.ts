@@ -1112,13 +1112,14 @@ function bindRails() {
               hasNetlist: board.hasNetlist,
               stamp: board.stamp,
             });
-            if (!board.stamp || !one.feed) {
+            const feed = board.vinFeed ? "vin" : one.feed;
+            if (!board.stamp || !feed) {
               throw new Error(`${board.id} has no feed`);
             }
             return {
               id: board.id,
               stamp: board.stamp,
-              feed: one.feed,
+              feed,
               pin: board.pin,
             };
           }),
@@ -1137,8 +1138,11 @@ function bindRails() {
           }),
           ...(path ? { boardPath: path } : {}),
           ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
-          ...(attached.stamp && attached.feed
-            ? { stamp: attached.stamp, feed: attached.feed }
+          ...(attached.stamp && (fed?.vinFeed || attached.feed)
+            ? {
+                stamp: attached.stamp,
+                feed: fed?.vinFeed ? "vin" : attached.feed,
+              }
             : {}),
           ...(supply.battery ? { battery: supply.battery } : {}),
         });

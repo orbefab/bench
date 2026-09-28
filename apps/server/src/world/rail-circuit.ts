@@ -16,6 +16,7 @@
 
 import { arduinoPinBit } from "@sfab-bench/contract";
 import { BatteryElement, type BatteryParams } from "./battery";
+import { Comparator } from "./circuit/comparator";
 import type { Element } from "./circuit/element";
 import {
   type Braking,
@@ -33,6 +34,7 @@ import { type BoardStamp, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,
   type BoardPathName,
+  type RailFeed,
   UNO_BOARD_NODE,
   UNO_TERM_NODE,
 } from "./power-path";
@@ -52,7 +54,7 @@ export type RailMotorLaw = {
 export type SharedBoard = {
   id: string;
   stamp: BoardStamp;
-  feed: "usb" | "header";
+  feed: RailFeed;
   pin?: AvrPinParams;
 };
 
@@ -84,8 +86,9 @@ export type RailCircuitSpec = {
   /**
    * Where the supply attaches when `stamp` is set. `usb` uses `VBUS`
    * when the stamp has that node. `header` uses the board 5V node.
+   * `vin` uses the VIN node, and the regulator on that node feeds 5V.
    */
-  feed?: "usb" | "header";
+  feed?: RailFeed;
   /** `leds` key copied onto `ledCurrent`. From the stamp when omitted. */
   ledAlias?: string;
   /** V_RST / VCC. From the stamp when omitted. */
@@ -145,6 +148,7 @@ export class RailCircuit {
   private readonly boardNode: string;
   private readonly fuse: PtcFuseElement[];
   private readonly channels: PmosChannel[];
+  private readonly comparators: Comparator[];
   private readonly drives: {
     bit: number;
     pin: { setMode(mode: PinMode): void };
@@ -206,6 +210,7 @@ export class RailCircuit {
       this.boardNode = built.boardNode;
       this.fuse = built.fuse;
       this.channels = built.channels;
+      this.comparators = built.comparators;
       this.drives = built.drives;
       this.ledDiodes = built.ledDiodes;
       this.ledAlias = built.ledAlias;
@@ -230,8 +235,8 @@ export class RailCircuit {
     const uno = spec.boardPath === "uno-usb";
     const stamp = spec.stamp ?? null;
     const feed = spec.feed;
-    if (stamp && feed !== "usb" && feed !== "header") {
-      throw new Error("a board stamp needs feed usb or header");
+    if (stamp && feed !== "usb" && feed !== "header" && feed !== "vin") {
+      throw new Error("a board stamp needs feed usb, header, or vin");
     }
     const realized = stamp
       ? realize(stamp, feed ?? "header", spec.pin ?? AVR_PIN)
@@ -306,6 +311,9 @@ export class RailCircuit {
     );
     this.channels = stamped.filter(
       (el): el is PmosChannel => el instanceof PmosChannel
+    );
+    this.comparators = stamped.filter(
+      (el): el is Comparator => el instanceof Comparator
     );
     this.winding = new Float64Array(motors.length);
     this.engine = new Engine([supply, this.load, ...motors, ...stamped], {
@@ -532,6 +540,7 @@ export class RailCircuit {
     }
     let drop = false;
     for (const fuse of this.fuse) if (fuse.pull()) drop = true;
+    for (const cmp of this.comparators) if (cmp.apply()) drop = true;
     for (const channel of this.channels) if (channel.apply()) drop = true;
     if (this.battery?.pull()) drop = true;
     if (drop) this.engine.dropFactor();
@@ -569,6 +578,7 @@ export class RailCircuit {
     const voltage = (node: string) => this.engine.voltage(node);
     for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
     for (const channel of this.channels) channel.latch(voltage);
+    for (const cmp of this.comparators) cmp.latch(voltage);
     this.battery?.advance(this.current, MASTER_S);
   }
 
@@ -576,6 +586,7 @@ export class RailCircuit {
   private solveShared(): void {
     let drop = false;
     for (const fuse of this.fuse) if (fuse.pull()) drop = true;
+    for (const cmp of this.comparators) if (cmp.apply()) drop = true;
     for (const channel of this.channels) if (channel.apply()) drop = true;
     if (this.battery?.pull()) drop = true;
     if (drop) this.engine.dropFactor();
@@ -629,6 +640,7 @@ export class RailCircuit {
     const voltage = (node: string) => this.engine.voltage(node);
     for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
     for (const channel of this.channels) channel.latch(voltage);
+    for (const cmp of this.comparators) cmp.latch(voltage);
     this.battery?.advance(this.current, MASTER_S);
   }
 
@@ -718,6 +730,7 @@ function sharedRail(spec: RailCircuitSpec): {
   boardNode: string;
   fuse: PtcFuseElement[];
   channels: PmosChannel[];
+  comparators: Comparator[];
   drives: { bit: number; pin: { setMode(mode: PinMode): void } }[];
   ledDiodes: { path: string; diode: Diode }[];
   ledAlias: string;
@@ -743,24 +756,30 @@ function sharedRail(spec: RailCircuitSpec): {
     throw new Error("one supply mixes a usb feed and a header feed");
   }
   const usb = boards[0]?.feed === "usb";
+  const vin = boards[0]?.feed === "vin";
   const prepared = boards.map((board) => {
     const stamp = usb
       ? mapNodes(board.stamp, (node) =>
           node === board.stamp.vbusNode ? TERM : node
         )
-      : board.stamp;
+      : vin
+        ? mapNodes(board.stamp, (node) =>
+            node === board.stamp.portNodes.VIN ? TERM : node
+          )
+        : board.stamp;
     return { ...board, stamp };
   });
   const headerNode = prepared[0]?.stamp.boardNode ?? "rail";
-  const tied = usb
-    ? prepared
-    : prepared.map((board) => ({
-        ...board,
-        stamp: mapNodes(board.stamp, (node) =>
-          node === board.stamp.boardNode ? headerNode : node
-        ),
-      }));
-  const termNode = usb ? TERM : headerNode;
+  const tied =
+    usb || vin
+      ? prepared
+      : prepared.map((board) => ({
+          ...board,
+          stamp: mapNodes(board.stamp, (node) =>
+            node === board.stamp.boardNode ? headerNode : node
+          ),
+        }));
+  const termNode = usb || vin ? TERM : headerNode;
   const boardNode = tied[0]?.stamp.boardNode ?? headerNode;
   const braking = spec.braking ?? "clip";
   const boardLoads = new Map<string, CurrentLoad>();
@@ -853,6 +872,9 @@ function sharedRail(spec: RailCircuitSpec): {
     ),
     channels: stamped.filter(
       (el): el is PmosChannel => el instanceof PmosChannel
+    ),
+    comparators: stamped.filter(
+      (el): el is Comparator => el instanceof Comparator
     ),
     drives,
     ledDiodes,

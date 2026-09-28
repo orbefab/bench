@@ -29,6 +29,7 @@ import {
   connectorPort,
   groundPorts,
   isCircuitForm,
+  ldoLaw,
   liveNets,
   railPowerPorts,
   stampBoard,
@@ -100,6 +101,11 @@ export type RunBoard = {
   pins: Record<string, RunPin>;
   /** Pins a supply may power. On the Uno that is `5V`, not `VIN`. */
   powerInputs: readonly string[];
+  /**
+   * The supply that powers this board is on `VIN`, and not on the 5V
+   * rail. The worker attaches there so the onboard regulator runs.
+   */
+  vinFeed: boolean;
   voltagePin: string;
   groundPin: string;
   /** Amperes drawn by the board, independent of voltage. */
@@ -571,12 +577,15 @@ function circuitInstOf(inst: LiveInstance): CircuitInst | null {
     if (decl.internal) continue;
     ports[name] = `${inst.path}.${name}`;
   }
+  const ldo = ldoLaw(behaviour, inst.params);
+  if (ldo === null) return null;
   return {
     path: inst.path,
     form: behaviour.form,
     typeId: inst.type.id,
     params,
     ports,
+    ...(ldo ? { ldo } : {}),
   };
 }
 
@@ -737,24 +746,36 @@ function suppliesReached(
   return [...ids].sort();
 }
 
-function boardSupplyId(
-  board: RunBoard,
+function supplyOnPort(
+  boardId: string,
+  port: string,
   supplies: RunSupply[],
   nets: { ports: { path: string; port: string }[] }[]
 ): string | null {
   for (const net of nets) {
     const onBoard = net.ports.some(
-      (port) => port.path === board.id && port.port === board.voltagePin
+      (item) => item.path === boardId && item.port === port
     );
     if (!onBoard) continue;
     for (const supply of supplies) {
       const hit = net.ports.some(
-        (port) => port.path === supply.id && port.port === supply.positivePin
+        (item) => item.path === supply.id && item.port === supply.positivePin
       );
       if (hit) return supply.id;
     }
   }
   return null;
+}
+
+function boardSupplyId(
+  board: RunBoard,
+  supplies: RunSupply[],
+  nets: { ports: { path: string; port: string }[] }[]
+): string | null {
+  return (
+    supplyOnPort(board.id, board.voltagePin, supplies, nets) ??
+    supplyOnPort(board.id, "VIN", supplies, nets)
+  );
 }
 
 /** A supply with circuit parts and no firmware board. Ground is `"0"`. */
@@ -920,6 +941,7 @@ function build(
         size,
         pins: pinsOf(inst.type.ports),
         powerInputs: [powerName],
+        vinFeed: false,
         voltagePin: powerName,
         groundPin: groundName,
         current: params.quiescent ?? 0,
@@ -1200,6 +1222,11 @@ function build(
       list.push(part);
       loose.set(reached[0], list);
     }
+  }
+  for (const board of boards) {
+    const onRail = supplyOnPort(board.id, board.voltagePin, supplies, nets);
+    const onVin = supplyOnPort(board.id, "VIN", supplies, nets);
+    board.vinFeed = onRail === null && onVin !== null;
   }
   const boardsOn = new Map<string, RunBoard[]>();
   for (const board of boards) {

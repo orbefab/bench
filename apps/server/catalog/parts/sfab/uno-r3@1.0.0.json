@@ -103,7 +103,8 @@
               "expose": {
                 "VBUS": "power.VBUS",
                 "5V": "power.5V",
-                "GND": "power.GND"
+                "GND": "power.GND",
+                "VIN": "power.VIN"
               }
             },
             "omits": [

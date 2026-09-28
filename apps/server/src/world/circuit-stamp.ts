@@ -15,7 +15,7 @@ import {
   type PartFile,
   type PortDecl,
 } from "@sfab-bench/contract";
-
+import { Comparator } from "./circuit/comparator";
 import type { Element } from "./circuit/element";
 import {
   Capacitor,
@@ -24,6 +24,7 @@ import {
   Resistor,
 } from "./circuit/elements";
 import { LawTable } from "./circuit/law-table";
+import { type LdoParams, LdoRegulator, ldoFrom } from "./circuit/ldo";
 import { AVR_PIN, type AvrPinParams, Pin } from "./circuit/pin";
 import { PmosChannel } from "./circuit/pmos-switch";
 import { PtcFuseElement, type PtcFuseParams } from "./circuit/ptc-fuse";
@@ -39,7 +40,7 @@ import {
 } from "./parts/library";
 import { buildNets, type LiveNet, netlistOf } from "./parts/nets";
 import { isScalarParam } from "./parts/si";
-import { chipFacts } from "./power-path";
+import { chipFacts, type RailFeed } from "./power-path";
 import {
   envelopeOf,
   type SnapshotEnvelope,
@@ -54,6 +55,8 @@ export const CIRCUIT_FORMS = [
   "diode@1",
   "ptc-fuse@1",
   "pmos-switch@1",
+  "ldo-regulator@1",
+  "comparator@1",
 ] as const;
 export type CircuitForm = (typeof CIRCUIT_FORMS)[number];
 
@@ -78,6 +81,8 @@ export type CircuitInst = {
   /** Port name → `path.port`. */
   ports: Record<string, string>;
   table?: StampedTable;
+  /** `ldo-regulator@1` law. The dropout table is not in `params`. */
+  ldo?: LdoParams;
 };
 
 export type AssignedPart = {
@@ -88,6 +93,7 @@ export type AssignedPart = {
   /** Port name → node. Ground is `"0"`. */
   nodes: Record<string, string>;
   table?: StampedTable;
+  ldo?: LdoParams;
 };
 
 export type StampedPin = {
@@ -272,14 +278,21 @@ export function stampBoard(input: {
       ])
     ),
     ...(part.table ? { table: part.table } : {}),
+    ...(part.ldo ? { ldo: part.ldo } : {}),
   }));
   assigned.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   for (const part of assigned) {
     if (part.form !== "pmos-switch@1") continue;
     const gate = part.nodes.G;
-    // An unwired gate is a private node. `realize` would prune the
-    // switch before `elementOf` could see it, so the miss is an error here.
-    if (!gate || gate === `${part.path}.G`) {
+    // An unwired gate is a private node named after the port. A wired
+    // gate can share that string when the net's first port is the gate.
+    const shared =
+      gate !== undefined &&
+      assigned.some(
+        (other) =>
+          other.path !== part.path && Object.values(other.nodes).includes(gate)
+      );
+    if (!gate || (gate === `${part.path}.G` && !shared)) {
       throw new Error(`${part.path}: pmos-switch@1 has no gate net`);
     }
   }
@@ -359,13 +372,48 @@ export function touches(
 }
 
 /**
+ * Forms that exist to regulate VIN. With VIN open they are not stamped:
+ * their bias would move the USB branch the snapshot was captured from.
+ */
+const VIN_ISLAND = new Set(["ldo-regulator@1", "comparator@1"]);
+
+/**
+ * VIN open: drop the regulator island, and hold a P-channel gate that
+ * lost its driver at ground. That is the comparator output sitting low,
+ * and it leaves the USB elements where the snapshot captured them.
+ */
+function dropOpenVin(
+  parts: readonly AssignedPart[],
+  vin: string | undefined,
+  anchors: ReadonlySet<string>
+): AssignedPart[] {
+  if (!vin || anchors.has(vin)) return [...parts];
+  const kept = parts.filter((part) => {
+    if (VIN_ISLAND.has(part.form)) return false;
+    return !Object.values(part.nodes).includes(vin);
+  });
+  return kept.map((part) => {
+    if (part.form !== "pmos-switch@1") return part;
+    const gate = part.nodes.G;
+    if (!gate || gate === "0" || anchors.has(gate)) return part;
+    const driven = kept.some(
+      (other) =>
+        other.path !== part.path && Object.values(other.nodes).includes(gate)
+    );
+    if (driven) return part;
+    return { ...part, nodes: { ...part.nodes, G: "0" } };
+  });
+}
+
+/**
  * Drop a part that has a node nothing else drives. A USB feed anchors
  * `VBUS`, so the Schottky stays. A header feed anchors `5V` only, so
- * that diode's open anode drops it. No extra conductance is added.
+ * that diode's open anode drops it. A VIN feed anchors `VIN`. No extra
+ * conductance is added.
  */
 export function realize(
   stamp: BoardStamp,
-  feed: "usb" | "header",
+  feed: RailFeed,
   drive: AvrPinParams,
   opts?: {
     pins?: boolean;
@@ -375,17 +423,24 @@ export function realize(
   }
 ): RealizedCircuit {
   const feedNode =
-    feed === "usb" && stamp.vbusNode ? stamp.vbusNode : stamp.boardNode;
+    feed === "usb" && stamp.vbusNode
+      ? stamp.vbusNode
+      : feed === "vin" && stamp.portNodes.VIN
+        ? stamp.portNodes.VIN
+        : stamp.boardNode;
   const anchors = new Set<string>(["0", feedNode, stamp.boardNode]);
   for (const node of opts?.keep ?? []) anchors.add(node);
   const withPins = opts?.pins !== false;
   for (const pin of stamp.pins) anchors.add(pin.node);
-  const alive = prune(stamp.parts, anchors);
+  const alive = prune(
+    dropOpenVin(stamp.parts, stamp.portNodes.VIN, anchors),
+    anchors
+  );
   const made: Element[] = [];
   const leds: { path: string; diode: Diode }[] = [];
   let capacitive = false;
   for (const part of alive) {
-    const built = elementOf(part);
+    const built = elementOf(part, alive);
     if (built.capacitive) capacitive = true;
     made.push(...built.elements);
     if (built.led) leds.push(built.led);
@@ -445,7 +500,10 @@ function prune(
   return alive;
 }
 
-function elementOf(part: AssignedPart): {
+function elementOf(
+  part: AssignedPart,
+  assigned: readonly AssignedPart[]
+): {
   elements: Element[];
   capacitive: boolean;
   led?: { path: string; diode: Diode };
@@ -492,7 +550,16 @@ function elementOf(part: AssignedPart): {
   }
   if (part.form === "pmos-switch@1") {
     const gate = part.nodes.G;
-    if (!gate || gate === `${part.path}.G`) {
+    // A net's name is its first port. `t1.G` sorts first on the gate net,
+    // so that string is also a wired gate. Unwired is the same string
+    // with no other part on it.
+    const shared =
+      gate !== undefined &&
+      assigned.some(
+        (other) =>
+          other.path !== part.path && Object.values(other.nodes).includes(gate)
+      );
+    if (!gate || (gate === `${part.path}.G` && !shared)) {
       throw new Error(`${part.path}: pmos-switch@1 has no gate net`);
     }
     const source = need(part, "S");
@@ -536,6 +603,37 @@ function elementOf(part: AssignedPart): {
     return {
       elements: [new Capacitor(part.path, a, b, c)],
       capacitive: true,
+    };
+  }
+  if (part.form === "ldo-regulator@1") {
+    if (!part.ldo) throw new Error(`${part.path} is missing its regulator law`);
+    return {
+      elements: [
+        new LdoRegulator(
+          part.path,
+          need(part, "IN"),
+          need(part, "OUT"),
+          need(part, "GND"),
+          part.ldo
+        ),
+      ],
+      capacitive: false,
+    };
+  }
+  if (part.form === "comparator@1") {
+    return {
+      elements: [
+        new Comparator(
+          part.path,
+          need(part, "P"),
+          need(part, "N"),
+          need(part, "OUT"),
+          need(part, "VP"),
+          need(part, "VN"),
+          part.params.vHyst ?? 0
+        ),
+      ],
+      capacitive: false,
     };
   }
   const params: DiodeParams = {
@@ -705,13 +803,31 @@ function circuitInstOf(inst: {
     if (decl.internal) continue;
     ports[name] = `${inst.path}.${name}`;
   }
+  const ldo = ldoLaw(behaviour, inst.params);
+  if (ldo === null) return null;
   return {
     path: inst.path,
     form: behaviour.form,
     typeId: inst.type.id,
     params,
     ports,
+    ...(ldo ? { ldo } : {}),
   };
+}
+
+/**
+ * The regulator law, when this behaviour is `ldo-regulator@1`.
+ * `undefined` is any other form. `null` is a law that did not parse.
+ */
+export function ldoLaw(
+  behaviour: BehaviourImpl,
+  overrides: Record<string, number | string | boolean>
+): LdoParams | null | undefined {
+  if (behaviour.kind !== "form" || behaviour.form !== "ldo-regulator@1") {
+    return undefined;
+  }
+  const built = ldoFrom(behaviour.params, overrides);
+  return built.ok ? built.params : null;
 }
 
 /**
@@ -917,7 +1033,7 @@ function stampOf(
 export function describeNetlist(
   stamp: BoardStamp,
   rSeries: number,
-  feed: "usb" | "header"
+  feed: RailFeed
 ): unknown {
   const realized = realize(stamp, feed, AVR_PIN);
   return {

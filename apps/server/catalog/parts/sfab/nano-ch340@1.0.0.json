@@ -99,7 +99,8 @@
               "expose": {
                 "VBUS": "power.VBUS",
                 "5V": "power.5V",
-                "GND": "power.GND"
+                "GND": "power.GND",
+                "VIN": "power.VIN"
               }
             },
             "omits": [
@@ -225,12 +226,12 @@
                 "VBUS": "power.VBUS",
                 "5V": "power.5V",
                 "GND": "power.GND",
+                "VIN": "power.VIN",
                 "RESET": "rrst.B",
                 "D13": "rled.A"
               }
             },
             "omits": [
-              "VIN and the AMS1117",
               "USB Schottky when the 5V header feeds the board",
               "3.3 V rail",
               "auto-reset on upload",

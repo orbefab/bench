@@ -101,6 +101,12 @@ export const UNO_DECOUPLE_C = 100e-9;
  */
 export type BoardPathName = "uno-usb";
 
+/**
+ * Where the supply attaches. `usb` is VBUS. `header` is the 5V node.
+ * `vin` is the VIN node: the onboard regulator feeds the 5V rail.
+ */
+export type RailFeed = "usb" | "header" | "vin";
+
 /** What `usbPathFor` tells the worker to put on the rail. */
 export type UsbPath =
   | { kind: "path"; path: BoardPathName }

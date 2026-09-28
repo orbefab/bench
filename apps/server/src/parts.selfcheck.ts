@@ -244,8 +244,9 @@ line(
     reasons.type === 2 &&
     reasons.path === 2 &&
     // Each rig's Uno power group stays class 2, and its leaves fall back.
+    // The VIN path (two regulators, the comparator, the divider, PC1) is in that count.
     reasons.parent === 2 &&
-    reasons.fallback === 68 &&
+    reasons.fallback === 104 &&
     reasons.none === 12 &&
     rig1?.class === 0 &&
     rig1.reason === "type rule hobby-servo-3wire" &&

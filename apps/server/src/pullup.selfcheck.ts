@@ -54,6 +54,7 @@ function gpioPlan(
       size: [0.0686, 0.0534, 0.012],
       pins,
       powerInputs: ["5V"],
+      vinFeed: false,
       voltagePin: "5V",
       groundPin: "GND",
       current: 0.05,

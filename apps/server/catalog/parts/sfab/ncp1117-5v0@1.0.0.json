@@ -1,0 +1,70 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/ncp1117-5v0@1.0.0",
+  "type": "ldo-regulator",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "onsemi NCP1117ST50T3G",
+      "ref": "NCP1117/D Rev. 29, July 2018. Electrical Characteristics, TA = 25 C. Output voltage 5.000 V typical. Dropout (Vout - 100 mV) 0.95 V at 0.1 A, 1.01 V at 0.5 A, 1.07 V at 0.8 A (1.20 V max at 0.8 A). Figure 5 is the curve; these three table points are the knots. Output current limit (Vin - Vout = 5 V) 1.5 A typical (1.0 A min, 2.2 A max). Note 6: do not exceed 1.0 A with Vin above 12 V. Load regulation of the 5.0 V part, Iout 0 to 0.8 A, Vin = 6.5 V: 6.7 mV typical. Quiescent current of the 5.0 V part, Vin = 15 V: 0.006 A typical"
+    },
+    {
+      "title": "Uno U1",
+      "ref": "Arduino Uno Rev3 schematic, arduino.cc, CC-BY-SA (A000066). Rev3e bill arduino_Uno_Rev3-02-TH. U1 is NCP1117ST50T3G"
+    },
+    {
+      "title": "Dropout outside the table, reverse path",
+      "ref": "Assumed flat dropout below 0.1 A and above 0.8 A. rOut is 6.7 mV / 0.8 A. The internal reverse diode is documented as a surge (about 15 A for 100 us) with no DC law, so it is omitted"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "fixed",
+        "variants": {
+          "fixed": {
+            "kind": "form",
+            "form": "ldo-regulator@1",
+            "params": {
+              "vOut": 5,
+              "dropout": [[0.1, 0.95], [0.5, 1.01], [0.8, 1.07]],
+              "iGround": 0.006,
+              "iLimit": 1.5,
+              "rOut": 0.008375
+            },
+            "omits": [
+              "line and load transients",
+              "PSRR",
+              "thermal shutdown and temperature",
+              "noise",
+              "output-to-input reverse diode"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.007, 0.006, 0.002],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}

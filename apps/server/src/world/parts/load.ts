@@ -11,6 +11,7 @@ import {
   type LockSnapshot,
   type RunReport,
   type SnapshotFile,
+  SUPPLY_FORMS,
   type WorldFileV2,
 } from "@sfab-bench/contract";
 import { type LoadedSnapshot, loadSnapshot } from "../snapshot-load";
@@ -35,6 +36,43 @@ import { buildReport } from "./report";
 import { makeDiag } from "./si";
 
 export type LoadOptions = LibraryOptions;
+
+/**
+ * Power-input groups at class 1 whose VIN net has a supply. The branch
+ * snapshot cannot regulate, so the second resolve runs class 2.
+ */
+function vinFallbackPaths(
+  instances: LiveInstance[],
+  nets: LiveNet[]
+): Set<string> {
+  const supplies = new Set<string>();
+  for (const inst of instances) {
+    const behaviour = inst.axes.behaviour.impl as {
+      kind?: string;
+      form?: string;
+    } | null;
+    if (
+      behaviour?.kind !== "form" ||
+      !behaviour.form ||
+      !(SUPPLY_FORMS as readonly string[]).includes(behaviour.form)
+    ) {
+      continue;
+    }
+    supplies.add(inst.path);
+  }
+  const out = new Set<string>();
+  if (supplies.size === 0) return out;
+  for (const inst of instances) {
+    if (inst.type.id !== "power-input") continue;
+    if (inst.axes.behaviour.class !== 1) continue;
+    const net = nets.find((item) =>
+      item.ports.some((port) => port.path === inst.path && port.port === "VIN")
+    );
+    if (!net) continue;
+    if (net.ports.some((port) => supplies.has(port.path))) out.add(inst.path);
+  }
+  return out;
+}
 
 export type LoadResult = {
   world: WorldFileV2 | null;
@@ -128,6 +166,9 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   let resolved: ReturnType<typeof resolveLevels>;
   try {
     resolved = resolveLevels(lib, rules);
+    const first = buildNets(resolved.instances, lib.world.run.levels.nets);
+    const vin = vinFallbackPaths(resolved.instances, first.nets);
+    if (vin.size > 0) resolved = resolveLevels(lib, rules, vin);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     diagnostics.push(

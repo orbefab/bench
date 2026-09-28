@@ -137,7 +137,7 @@ export type SiNumber = number | SiTagged;
 /** One `[soc, volts]` knot of a `battery@1` open-circuit curve. */
 export type OcvKnot = readonly [number, number];
 
-/** A form param is one SI number, or an open-circuit table. */
+/** A form param is one SI number, or a table of pairs. */
 export type FormParam = SiNumber | readonly OcvKnot[];
 export type Range = [SiNumber, SiNumber];
 export type Vec3 = [number, number, number];
@@ -278,6 +278,8 @@ export type FormId =
   | "thevenin-limit@1"
   | "ideal-voltage@1"
   | "battery@1"
+  | "ldo-regulator@1"
+  | "comparator@1"
   | "resistor@1"
   | "capacitor@1"
   | "diode@1"
@@ -330,6 +332,20 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
     },
     optional: ["vCutoff"],
     tables: ["ocv"],
+  },
+  "ldo-regulator@1": {
+    params: {
+      vOut: "Voltage",
+      iGround: "Current",
+      iLimit: "Current",
+      rOut: "Resistance",
+    },
+    optional: ["rOut"],
+    tables: ["dropout"],
+  },
+  "comparator@1": {
+    params: { vHyst: "Voltage" },
+    optional: ["vHyst"],
   },
   "resistor@1": { params: { R: "Resistance" } },
   "capacitor@1": {
