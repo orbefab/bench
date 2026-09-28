@@ -103,7 +103,8 @@ Shipped rows stay. Next is the world.
 | 26a | **done** | A3a — the part is the only document: the `play` block, ground and target parts, the converter, and one lock per root part ([ADR 0011](decisions/0011-one-document-kind.md)). Proof: converted examples replay their recordings identically. |
 | 26b | **done** | A3b — typed edit operations with undo in `packages/parts`; agent tools on them. |
 | 26c | **done** | A3c — fixed ports (D4) and dirtying upward (G3). |
-| 27 | planned | A4 — editor shell: tabs, tree, stage, card with one level picker per axis, timeline, chat panel, warnings three ways ([`manual.md`](manual.md)). Proof: browser QA. |
+| 27a | **done** | A4a — editor shell: tree, docked card with one level picker per axis, timeline, warnings three ways, undo, Stay / Break ([`manual.md`](manual.md)). Proof: web self-checks; browser QA is the manager's. |
+| 27b | planned | A4b — tabs, breadcrumb, Open part, parking a tab, Rename part file. Proof: browser QA. |
 | 28 | planned | A5 — tool framework plus move/rotate/snap, mount, wire, probe. Proof: browser QA; edit-operation undo tests. |
 | 29 | planned | A6 — Capture from the card: sidecar snapshots and project level overlays, the fixture tool, progress and abort. Proof: a UI capture matches the CLI capture. |
 

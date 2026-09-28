@@ -146,7 +146,8 @@ operations, so one undo history covers them. An edit is applied in
 text through an overlay store, then the part and the lock are written
 together. A nested edit re-pins that part's row in every project root
 that uses it, in the same step. The server keeps one undo history per
-open part and restarts the run from that write. L1 bubbles a composite's
+open part and restarts the run from that write. The web editor reads
+`WorldView.tree` for the part tree, the card, and warning markers. L1 bubbles a composite's
 free nets into ports. L3, at plan time, recomputes a running capture's
 `from.hash` and marks it stale without changing its frames.
 
