@@ -113,7 +113,7 @@ type AxisMap<T> = Partial<Record<"0" | "1" | "2" | "3", { default: string; varia
 type PlayBlock = {
   gravity: Vec3;                                // m/s²
   seed: number;
-  timestep: number;                             // master step, seconds; 0.001 when a world import omits it
+  timestep: number;                             // seconds; only 0.001 runs today
   levels: {
     default: LevelSpec;
     types?: Record<string, LevelSpec>;
@@ -242,7 +242,7 @@ The part is the only document ([ADR 0011](decisions/0011-one-document-kind.md)).
 
 The root part instances the scene, a ground part when the run stands on a plane, and one target part per target. It carries `play`. Path and net level choices live on `play.levels.paths` and `play.levels.nets`, not on the shared scene: `nano-servo-usb` and `nano-servo-collapsed` both instance `sfab/nano-servo-scene@1.0.0` and choose different levels. The loader unwraps that single scene instance back to `$root`, so a path stays `servo`. An instance `level` still exists and a path rule still beats it.
 
-`play` is read only when that part is the root of the run. A nested part's `play` is kept and ignored. Gravity, seed, and `timestep` (seconds) come from the root. `play.levels.default` and `types` are the level defaults. `air`, `primitives`, and `stepProps` are optional so a world import does not drop them.
+`play` is read only when that part is the root of the run. A nested part's `play` is kept and ignored. Gravity, seed, and `timestep` (seconds) come from the root. Only `0.001` runs today: any other `play.timestep` warns (`timestep-unsupported`) and the run still steps 1 ms. `play.levels.default` and `types` are the level defaults. `air`, `primitives`, and `stepProps` are optional so a world import does not drop them.
 
 No ground part means no ground. A target instance keeps the same shape, size, pose, and scripted path.
 
@@ -265,7 +265,7 @@ type WorldFile = {
   };
   run: {
     seed: number;                                       // D-008: all randomness from here
-    timestep?: number;                                  // omitted on the examples; the body step stays 0.001
+    timestep?: number;                                  // omitted on the examples; only 0.001 runs today
     levels: {
       default: LevelSpec;                               // bare number = all three axes (D-023.4)
       types?: Record<string, LevelSpec>;                // part-type rules

@@ -4,6 +4,7 @@ import {
   AXES,
   type BehaviourImpl,
   type BodyImpl,
+  DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type LevelClass,
   type LockFile,
@@ -426,6 +427,19 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   diagnostics.push(
     ...checkWorld(resolved.instances, nets, wires, opts.assetRoot, opts.store)
   );
+  const step = lib.world.run.timestep;
+  if (typeof step === "number" && step !== DEFAULT_TIMESTEP_S) {
+    diagnostics.push({
+      severity: "warning",
+      code: "timestep-unsupported",
+      path: "$root",
+      port: "play",
+      quantity: "Time",
+      left: String(step),
+      right: String(DEFAULT_TIMESTEP_S),
+      message: `play.timestep ${step} s is not supported yet; the run steps 1 ms`,
+    });
+  }
   const built = buildReport({
     world: lib.worldName,
     seed: lib.world.run.seed,

@@ -4,6 +4,7 @@ import {
   arduinoPinBit,
   type BehaviourImpl,
   type BodyImpl,
+  DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type PortDecl,
   type Pose,
@@ -1359,8 +1360,8 @@ function build(
   notePlaceholderBoxes(loaded);
   return {
     plan: {
-      ...(typeof world.run.timestep === "number"
-        ? { timestep: world.run.timestep }
+      ...(world.run.timestep === DEFAULT_TIMESTEP_S
+        ? { timestep: DEFAULT_TIMESTEP_S }
         : {}),
       environment: {
         ground: { plane: environment.ground.plane },

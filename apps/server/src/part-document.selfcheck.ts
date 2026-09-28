@@ -17,6 +17,7 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import type { RunReport } from "@sfab-bench/contract";
+import { compileWorld } from "@sfab-bench/engine-body";
 import { convertWorldFile, loadWorldV2, sha256Bytes } from "@sfab-bench/parts";
 import type { SerialChunk } from "@sfab-bench/sim/sim";
 import { Sim } from "@sfab-bench/sim/sim";
@@ -360,6 +361,90 @@ function writeJson(file: string, value: unknown) {
     console.log(
       "nested play ignored: gravity [0, 0, -9.81], seed 1, timestep 0.001"
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-timestep-"));
+  try {
+    writeJson(join(dir, "types/step-scene.json"), {
+      format: "sfab.part-type@1",
+      id: "step-scene",
+      ports: {},
+    });
+    writeJson(join(dir, "parts/sfab/step-root@1.0.0.json"), {
+      format: "sfab.part@1",
+      id: "sfab/step-root@1.0.0",
+      type: "step-scene",
+      foreign: false,
+      play: {
+        gravity: [0, 0, -9.81],
+        seed: 1,
+        timestep: 0.002,
+        levels: { default: 1 },
+      },
+      axes: {
+        behaviour: {
+          "2": {
+            default: "netlist",
+            variants: {
+              netlist: {
+                kind: "composite",
+                omits: ["play timestep is not a behaviour"],
+                netlist: { instances: {}, wires: [], expose: {} },
+              },
+            },
+          },
+        },
+        body: {
+          "0": {
+            default: "none",
+            variants: { none: { kind: "none", omits: ["no body"] } },
+          },
+        },
+        visual: {
+          "0": {
+            default: "none",
+            variants: { none: { kind: "none", omits: ["no visual"] } },
+          },
+        },
+      },
+    });
+    const planned = planWorld(dir, "parts/sfab/step-root@1.0.0.json");
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((error) => error.message).join("; "));
+    }
+    const warning = planned.plan.report?.warnings.find(
+      (row) => row.code === "timestep-unsupported"
+    );
+    expect(
+      warning?.path === "$root" &&
+        warning.message ===
+          "play.timestep 0.002 s is not supported yet; the run steps 1 ms",
+      `timestep warning ${JSON.stringify(warning)}`
+    );
+    expect(
+      planned.plan.timestep === undefined,
+      `plan timestep ${planned.plan.timestep}`
+    );
+    const compiled = await compileWorld(
+      planned.plan,
+      readerFor(dir, "parts/sfab/step-root@1.0.0.json")
+    );
+    if (!compiled.ok) {
+      throw new Error(compiled.errors.map((error) => error.message).join("; "));
+    }
+    expect(
+      compiled.model.opt.timestep === 0.001,
+      `body timestep ${compiled.model.opt.timestep}`
+    );
+    console.log(
+      `${warning.message}; body steps ${compiled.model.opt.timestep}`
+    );
+    compiled.model.delete();
+    compiled.vfs.delete();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
