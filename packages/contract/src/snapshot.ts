@@ -18,14 +18,10 @@ export type ViewerSnapshot = {
   simTime?: number;
   /**
    * This client's world selection (D-015). Present only when a world is
-   * open. Null when nothing in that world is selected.
+   * open. An instance path, plus `link` when the pick is one link of a
+   * robot. Null when nothing in that world is selected.
    */
-  selection?:
-    | { kind: "link"; robot: string; link: string }
-    | { kind: "board"; board: string }
-    | { kind: "part"; part: string }
-    | { kind: "supply"; supply: string }
-    | null;
+  selection?: { kind: "instance"; path: string; link?: string } | null;
 };
 
 export type CatalogEntry = {
