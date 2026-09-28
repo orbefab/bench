@@ -1262,10 +1262,9 @@ function snapshotDriveModes(): void {
 }
 
 /**
- * Intervals between edges of a stamped pin inside this millisecond.
- * D13 stays on the end-of-step sample. Splitting one level change would
- * charge the rail for part of the millisecond and move the board voltage.
- * A pulse on another pin has both edges, and those intervals are the duty.
+ * Intervals between edges of every stamped pin inside this millisecond.
+ * A single level change charges the rail for the part of the millisecond
+ * after the edge. A pulse has both edges, and those intervals are the duty.
  */
 function pinPieces(
   avr: AvrBoard,
@@ -1273,13 +1272,8 @@ function pinPieces(
 ): { dt: number; drive: { bit: number; mode: PinMode }[] }[] | null {
   const bits = circuit.driveBits;
   const start = driveAtStart.get(avr.id);
-  const onboard = arduinoPinBit("D13");
   if (!start || bits.length === 0) return null;
-  const wanted = new Set<number>();
-  for (const bit of bits) {
-    if (bit !== onboard) wanted.add(bit);
-  }
-  if (wanted.size === 0) return null;
+  const wanted = new Set(bits);
   const edges = avr.pinChanges.filter(
     (edge) => wanted.has(edge.bit) && edge.cycle >= avr.stepOrigin
   );
