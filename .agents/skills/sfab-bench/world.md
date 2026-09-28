@@ -34,10 +34,9 @@ Its netlist names the instances and the wires. Instance ids stay short
   Link meshes are STL or OBJ next to the URDF.
 - A board is `sfab/uno-r3@1.0.0` or `sfab/nano-ch340@1.0.0`. `params.firmware` is the `.hex`.
   `params.source` is the `.ino`, shown read-only. `analogRead` reads that
-  board's own 5V node as AVCC. A class-1 Nano fed by `usb-a-port` uses the
-  captured snapshot `sfab/nano-usb-5v@1.0.0` when that port's series
-  resistance and current limit match the capture. Rebuild it with
-  `pnpm --filter @sfab-bench/server capture`.
+  board's own 5V node as AVCC. A class-1 Nano keeps the supply outside the
+  board: the power group runs at class 1 (`sfab/nano-power-input@1.0.0`).
+  Rebuild snapshots with `pnpm --filter @sfab-bench/server capture`.
 - A servo is `sfab/sg90@1.0.0`. Its shaft wire is
   `["servo.shaft", "arm.shoulder"]` and its mount wire is
   `["servo.mount", "arm.base"]`.
