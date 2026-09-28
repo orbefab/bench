@@ -147,7 +147,11 @@ Third-party plugins loaded at run time wait for the part registry and
 signing.
 
 L1 is `packages/parts`. The circuit engine (L2) is
-`packages/engine-circuit`. The Node `Store` is
-`apps/server/src/world/node-store.ts`. L3 and L4 still live in
-`apps/server/src/world/`; A2 moves them. Printed self-check lines are
-unchanged apart from the boundary rule's rejection.
+`packages/engine-circuit`, the MCU engine is `packages/engine-mcu`,
+and the body engine is `packages/engine-body`. Each implements the
+`Engine` face in the contract (init, advance to a master time, read
+and write port quantities). The Node `Store` is
+`apps/server/src/world/node-store.ts`. The plan, the worker, and the
+capture runner still live in `apps/server/src/world/`; A2b moves them
+into `packages/sim`. Printed self-check lines are unchanged apart from
+the boundary rule's rejections and the three engine lines.
