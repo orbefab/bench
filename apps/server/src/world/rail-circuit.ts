@@ -7,13 +7,15 @@
  *
  * L = 0 and no board path is one backward-Euler step per millisecond.
  * A board path (it has capacitors) or L > 0 is 10 backward-Euler steps
- * with ω and the bridge ratio held. The fuse temperature moves once per
- * millisecond, after those steps, not inside them.
+ * with ω and the bridge ratio held. The fuse temperature, and a
+ * battery's state of charge, move once per millisecond, after those
+ * steps, not inside them.
  * Implicit damping (E2 scheme (d)) is not applied here. It would stamp
  * ω = 0 and add B(s) on the joint.
  */
 
 import { arduinoPinBit } from "@sfab-bench/contract";
+import { BatteryElement, type BatteryParams } from "./battery";
 import type { Element } from "./circuit/element";
 import {
   type Braking,
@@ -71,6 +73,11 @@ export type RailCircuitSpec = {
   boardPath?: "none" | BoardPathName;
   /** Diode-law table for `snapshot-feed`. The supply setpoint is `vNom`. */
   law?: TableLaw;
+  /**
+   * `battery@1` source. When set, the rail stamps this instead of
+   * `vNom`, `rSeries`, and `iLimit`.
+   */
+  battery?: BatteryParams;
   /** D13 `avr-pin@1` numbers. Absent uses the datasheet fits. */
   pin?: AvrPinParams;
   /**
@@ -174,6 +181,8 @@ export class RailCircuit {
   private readonly branchLaws: LawTable[];
   private ready = false;
   private shared = false;
+  /** Set when this rail's source is `battery@1`. The same instance the engine stamps. */
+  private battery: BatteryElement | null = null;
   /** Shared rails start the operating point here. One board leaves this at 0. */
   private readonly boardLoads = new Map<string, CurrentLoad>();
   private readonly boardNodes = new Map<string, string>();
@@ -211,6 +220,7 @@ export class RailCircuit {
       this.resetFraction = built.resetFraction;
       this.resetNode = built.resetNode;
       this.branchLaws = built.branchLaws;
+      this.battery = built.battery;
       this.shared = true;
       this.boardOrder.push(...built.boardOrder);
       for (const [id, load] of built.boardLoads) this.boardLoads.set(id, load);
@@ -287,23 +297,29 @@ export class RailCircuit {
       "0",
       board || snap ? BOARD_LOAD_KNEE_V : 0
     );
-    const supply = snap
-      ? new LawTable(
-          "src",
-          this.boardNode,
-          "0",
-          spec.law ?? missingLaw(),
-          spec.vNom,
-          spec.iLimit
-        )
-      : new TheveninLimit(
-          "src",
-          this.termNode,
-          "0",
-          spec.vNom,
-          spec.rSeries,
-          spec.iLimit
-        );
+    const battery = spec.battery
+      ? new BatteryElement("src", this.termNode, "0", spec.battery)
+      : null;
+    this.battery = battery;
+    const supply =
+      battery ??
+      (snap
+        ? new LawTable(
+            "src",
+            this.boardNode,
+            "0",
+            spec.law ?? missingLaw(),
+            spec.vNom,
+            spec.iLimit
+          )
+        : new TheveninLimit(
+            "src",
+            this.termNode,
+            "0",
+            spec.vNom,
+            spec.rSeries,
+            spec.iLimit
+          ));
     const stamped = realized?.elements ?? [];
     this.fuse = stamped.filter(
       (el): el is PtcFuseElement => el instanceof PtcFuseElement
@@ -332,6 +348,24 @@ export class RailCircuit {
 
   get sharedRail(): boolean {
     return this.shared;
+  }
+
+  /** State of charge after this step. Absent when the source is not a battery. */
+  get soc(): number | undefined {
+    return this.battery ? this.battery.soc : undefined;
+  }
+
+  /** State of charge the source stamped for this step. */
+  get stampedSoc(): number | undefined {
+    return this.battery ? this.battery.stampedSoc : undefined;
+  }
+
+  batteryWarning(): string | null {
+    return this.battery?.warning ?? null;
+  }
+
+  batteryWarnings(): number {
+    return this.battery?.warnCount ?? 0;
   }
 
   /** One board's knee load, when several boards share this rail. */
@@ -519,6 +553,7 @@ export class RailCircuit {
     let drop = false;
     for (const fuse of this.fuse) if (fuse.pull()) drop = true;
     for (const channel of this.channels) if (channel.apply()) drop = true;
+    if (this.battery?.pull()) drop = true;
     if (drop) this.engine.dropFactor();
     const frozen = this.engine.frozenSteps;
     let min = Number.POSITIVE_INFINITY;
@@ -554,6 +589,7 @@ export class RailCircuit {
     const voltage = (node: string) => this.engine.voltage(node);
     for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
     for (const channel of this.channels) channel.latch(voltage);
+    this.battery?.advance(this.current, MASTER_S);
   }
 
   /** Several boards, one source. Each board keeps its own node and load. */
@@ -561,6 +597,7 @@ export class RailCircuit {
     let drop = false;
     for (const fuse of this.fuse) if (fuse.pull()) drop = true;
     for (const channel of this.channels) if (channel.apply()) drop = true;
+    if (this.battery?.pull()) drop = true;
     if (drop) this.engine.dropFactor();
     const frozen = this.engine.frozenSteps;
     const mins = new Map<string, number>();
@@ -612,6 +649,7 @@ export class RailCircuit {
     const voltage = (node: string) => this.engine.voltage(node);
     for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
     for (const channel of this.channels) channel.latch(voltage);
+    this.battery?.advance(this.current, MASTER_S);
   }
 
   private noteShared(dt: number): void {
@@ -706,6 +744,7 @@ function sharedRail(spec: RailCircuitSpec): {
   resetFraction: number | null;
   resetNode: string | null;
   branchLaws: LawTable[];
+  battery: BatteryElement | null;
   boardOrder: string[];
   boardLoads: Map<string, CurrentLoad>;
   boardNodes: Map<string, string>;
@@ -798,14 +837,19 @@ function sharedRail(spec: RailCircuitSpec): {
     );
   }
   const loads = [...boardLoads.values()];
-  const supply = new TheveninLimit(
-    "src",
-    termNode,
-    "0",
-    spec.vNom,
-    spec.rSeries,
-    spec.iLimit
-  );
+  const battery = spec.battery
+    ? new BatteryElement("src", termNode, "0", spec.battery)
+    : null;
+  const supply =
+    battery ??
+    new TheveninLimit(
+      "src",
+      termNode,
+      "0",
+      spec.vNom,
+      spec.rSeries,
+      spec.iLimit
+    );
   const substeps = inductive || capacitive ? SUBSTEPS : 1;
   const first = tied[0];
   const engine = new Engine([supply, ...loads, ...motors, ...stamped], {
@@ -836,6 +880,7 @@ function sharedRail(spec: RailCircuitSpec): {
     resetFraction: first?.stamp.resetFraction ?? null,
     resetNode: first?.stamp.resetNode ?? null,
     branchLaws: stamped.filter((el): el is LawTable => el instanceof LawTable),
+    battery,
     boardOrder: tied.map((board) => board.id),
     boardLoads,
     boardNodes,

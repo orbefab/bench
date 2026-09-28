@@ -8,6 +8,7 @@ import {
   DIM_KEYS,
   type Diagnostic,
   type Dim,
+  type FormParam,
   type LevelClass,
   type LevelSpec,
   QUANTITY_DIM,
@@ -54,6 +55,11 @@ export function isTagged(n: SiNumber): n is SiTagged {
 
 export function siValue(n: SiNumber): number {
   return isTagged(n) ? n.v : n;
+}
+
+/** A form param that is one number. An open-circuit table is not. */
+export function isScalarParam(value: FormParam): value is SiNumber {
+  return !Array.isArray(value);
 }
 
 export function dimEqual(a: Dim, b: Dim): boolean {

@@ -129,6 +129,8 @@ export type WorldSupplyState = {
   voltage: number;
   /** Amperes drawn from this supply this step. */
   current: number;
+  /** State of charge, 0 to 1. Present on a `battery@1` supply. */
+  soc?: number;
 };
 
 /** One board in the shared run. `pins` is the 20-bit snapshot for this tick. */

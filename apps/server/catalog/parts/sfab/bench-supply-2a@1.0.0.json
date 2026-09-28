@@ -1,0 +1,62 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/bench-supply-2a@1.0.0",
+  "type": "bench-supply-cv-cc",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "KORAD KA6002 user manual",
+      "ref": "The supply output range is 0 V to 60 V and 0 A to 2 A. V is 5, a point in that voltage range and the same catalog default as sfab/bench-supply. Ilimit is 2 A, the top of the current range."
+    },
+    {
+      "title": "Series resistance, assumed",
+      "ref": "Rs is 0.05 ohm, assumed. It is the series figure used by sfab/bench-supply, not the KA6002 regulation specification."
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "ideal",
+        "variants": {
+          "ideal": {
+            "kind": "form",
+            "form": "ideal-voltage@1",
+            "params": { "V": 5 },
+            "omits": ["series resistance", "current limit"]
+          }
+        }
+      },
+      "1": {
+        "default": "thevenin",
+        "variants": {
+          "thevenin": {
+            "kind": "form",
+            "form": "thevenin-limit@1",
+            "params": { "V": 5, "Rs": 0.05, "Ilimit": 2 },
+            "omits": ["sense-lead drop", "heat"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": { "kind": "none", "omits": ["chassis"] }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.2, 0.15, 0.1],
+            "omits": ["panel"]
+          }
+        }
+      }
+    }
+  }
+}

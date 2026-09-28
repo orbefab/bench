@@ -30,6 +30,7 @@ import {
 } from "@sfab-bench/contract";
 
 import { analogRead } from "./analog-pin";
+import type { BatteryParams } from "./battery";
 import { AvrBoard, type CpuResetRegs, FIRMWARE_RELOADED } from "./board";
 import type { AdcConversion } from "./board-adc";
 import type { PinMode } from "./circuit/pin";
@@ -355,6 +356,8 @@ type SupplySpec = {
   voltage: number;
   currentLimit: number;
   rSeries: number;
+  /** Set for `battery@1`. The rail stamps this instead of the three numbers. */
+  battery?: BatteryParams;
 };
 
 let loads: Load[] = [];
@@ -410,6 +413,8 @@ let runPlan: RunPlan | null = null;
 let runReport: RunReport | null = null;
 let reportPending = false;
 const envelopeWarned = new Set<string>();
+/** One empty-battery warning per supply, for this load of the world. */
+const batteryWarned = new Set<string>();
 const firmwareSha = new Map<string, string>();
 let inputNets: ReturnType<typeof gpioInputNets> = [];
 let applyingInputs = false;
@@ -965,6 +970,7 @@ function fillBoardPower(plan: RunPlan) {
     voltage: supply.voltage,
     currentLimit: supply.currentLimit,
     rSeries: supply.rSeries,
+    ...(supply.battery ? { battery: supply.battery } : {}),
   }));
   boardPower = new Map();
   for (const board of plan.boards) {
@@ -1097,6 +1103,7 @@ function bindRails() {
               boardId: drive.board?.id,
             };
           }),
+          ...(supply.battery ? { battery: supply.battery } : {}),
           boards: stamped.map((board) => {
             const one = railAttachment({
               connector: supplyConnectorOf(supply.id),
@@ -1135,6 +1142,7 @@ function bindRails() {
           ...(path === "snapshot-feed" && fed?.powerSnapshot
             ? { law: fed.powerSnapshot.law }
             : {}),
+          ...(supply.battery ? { battery: supply.battery } : {}),
         });
     if (fuseStart === "tripped") circuit.tripFuse();
     for (let i = 0; i < members.length; i++) {
@@ -1233,6 +1241,26 @@ function noteSnapshotEnvelope(supplyId: string, amps: number): void {
       [`${port}.voltage`]: reading.volts,
     });
   }
+}
+
+/** One warning when a battery first reads empty. The run keeps going. */
+function noteBattery(supplyId: string): void {
+  if (batteryWarned.has(supplyId)) return;
+  const group = rails.get(supplyId);
+  const detail = group?.circuit.batteryWarning();
+  if (!detail || !group) return;
+  batteryWarned.add(supplyId);
+  if (!runReport) return;
+  runReport.warnings.push({
+    severity: "warning",
+    path: supplyId,
+    port: "+",
+    quantity: "Voltage",
+    left: String(group.circuit.voltage),
+    right: "ocv(0)",
+    message: `${supplyId} ${detail}`,
+  });
+  reportPending = true;
 }
 
 function warnEnvelope(
@@ -1421,6 +1449,7 @@ function solveOneRail(
   }
   circuit.solve(pieces ?? undefined);
   noteSnapshotEnvelope(supplyId, circuit.current);
+  noteBattery(supplyId);
   const winding = circuit.winding;
   for (let i = 0; i < members.length; i++) {
     const load = members[i];
@@ -1551,8 +1580,13 @@ function solveSupplies() {
     fixed += rangerFixed.get(supply.id) ?? 0;
     const solved = solveOneRail(supply.id, fixed);
     // The supply record is the terminal. The board node is reported on
-    // the board, and a servo's V+ is that same node.
-    next[supply.id] = { voltage: solved.voltage, current: solved.current };
+    // the board, and a servo's V+ is that same node. A battery also
+    // records the state of charge after this step.
+    const soc = rails.get(supply.id)?.circuit.soc;
+    next[supply.id] =
+      soc === undefined
+        ? { voltage: solved.voltage, current: solved.current }
+        : { voltage: solved.voltage, current: solved.current, soc };
   }
   for (const load of loads) {
     const drive = load.drive;
@@ -2069,6 +2103,7 @@ async function build(): Promise<boolean> {
   runReport = planned.plan.report ? structuredClone(planned.plan.report) : null;
   reportPending = runReport !== null;
   envelopeWarned.clear();
+  batteryWarned.clear();
   fillBoardPower(runPlan);
   loadBoards(runPlan);
   bindPower(runPlan);

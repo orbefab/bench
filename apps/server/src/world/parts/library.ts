@@ -17,11 +17,13 @@ import {
   type WorldFileV2,
 } from "@sfab-bench/contract";
 
+import { batteryFrom } from "../battery";
 import { gearTrainErrors } from "../body/gear-train";
 import { expandPartType } from "./expand";
 import {
   classesOf,
   contentHash,
+  isScalarParam,
   makeDiag,
   parsePartRef,
   siValue,
@@ -595,6 +597,22 @@ function lintBehaviour(
     return;
   }
   const optional = new Set(form.optional ?? []);
+  const tables = new Set(form.tables ?? []);
+  for (const key of form.tables ?? []) {
+    if (variant.params[key] === undefined) {
+      diags.push(
+        makeDiag({
+          severity: "error",
+          path: partId,
+          port: name,
+          quantity: "Form",
+          left: "missing",
+          right: key,
+          detail: `form ${variant.form} is missing param ${key}`,
+        })
+      );
+    }
+  }
   for (const key of Object.keys(form.params)) {
     if (optional.has(key)) continue;
     if (variant.params[key] === undefined) {
@@ -617,6 +635,8 @@ function lintBehaviour(
     if (
       cold !== undefined &&
       hot !== undefined &&
+      isScalarParam(cold) &&
+      isScalarParam(hot) &&
       !(siValue(hot) > siValue(cold))
     ) {
       diags.push(
@@ -632,8 +652,24 @@ function lintBehaviour(
       );
     }
   }
+  if (variant.form === "battery@1") {
+    const built = batteryFrom(variant.params, {});
+    if (!built.ok) {
+      diags.push(
+        makeDiag({
+          severity: "error",
+          path: partId,
+          port: name,
+          quantity: "Form",
+          left: variant.form,
+          right: "ocv",
+          detail: built.error,
+        })
+      );
+    }
+  }
   for (const key of Object.keys(variant.params)) {
-    if (!form.params[key]) {
+    if (!form.params[key] && !tables.has(key)) {
       diags.push(
         makeDiag({
           severity: "error",

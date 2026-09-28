@@ -18,6 +18,7 @@ import {
   type VisualImpl,
 } from "@sfab-bench/contract";
 
+import { batteryFrom, ocvAt } from "../battery";
 import type { LiveInstance } from "./levels";
 import { collectPorts, type LiveNet, type LivePort, type Wire } from "./nets";
 import {
@@ -25,6 +26,7 @@ import {
   formatDim,
   formatRange,
   formatSi,
+  isScalarParam,
   isTagged,
   makeDiag,
   numericRange,
@@ -44,6 +46,7 @@ function tagDiags(inst: LiveInstance): Diagnostic[] {
   if (behaviour?.kind === "form") {
     const form = FORM_PARAMS[behaviour.form];
     for (const [key, value] of Object.entries(behaviour.params)) {
+      if (!isScalarParam(value)) continue;
       const expected = form?.params[key];
       if (expected && isTagged(value)) {
         checkTag(
@@ -197,7 +200,10 @@ function plausibilityDiags(inst: LiveInstance): Diagnostic[] {
   const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
   if (behaviour?.kind === "form") {
     const form = FORM_PARAMS[behaviour.form];
-    const params: Record<string, SiNumber> = { ...behaviour.params };
+    const params: Record<string, SiNumber> = {};
+    for (const [key, value] of Object.entries(behaviour.params)) {
+      if (isScalarParam(value)) params[key] = value;
+    }
     for (const [key, override] of Object.entries(inst.params)) {
       if (typeof override === "number" && form?.params[key])
         params[key] = override;
@@ -380,6 +386,10 @@ function sourceVoltage(inst: LiveInstance, portName: string): number | null {
   const decl = inst.type.ports[portName];
   if (decl?.role !== "power" || decl?.direction !== "out") return null;
   const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+  if (behaviour?.kind === "form" && behaviour.form === "battery@1") {
+    const built = batteryFrom(behaviour.params, inst.params);
+    return built.ok ? ocvAt(built.params.ocv, built.params.soc0) : null;
+  }
   if (
     behaviour?.kind === "form" &&
     (SUPPLY_FORMS as readonly string[]).includes(behaviour.form)
@@ -387,7 +397,7 @@ function sourceVoltage(inst: LiveInstance, portName: string): number | null {
     const override = inst.params.V;
     if (typeof override === "number") return override;
     const value = behaviour.params.V;
-    if (value !== undefined) return siValue(value);
+    if (value !== undefined && isScalarParam(value)) return siValue(value);
   }
   const ratings = inst.part.ratings?.[portName] ?? decl.ratings;
   const range = numericRange(ratings?.voltage);

@@ -19,6 +19,7 @@ export type Domain =
 export type Quantity =
   | "Voltage"
   | "Current"
+  | "Charge"
   | "Resistance"
   | "Capacitance"
   | "Inductance"
@@ -58,6 +59,7 @@ export const DIM_KEYS: readonly DimKey[] = [
 export const QUANTITY_DIM: Record<Quantity, Dim> = {
   Voltage: { kg: 1, m: 2, s: -3, A: -1 },
   Current: { A: 1 },
+  Charge: { A: 1, s: 1 },
   Resistance: { kg: 1, m: 2, s: -3, A: -2 },
   Capacitance: { kg: -1, m: -2, s: 4, A: 2 },
   Inductance: { kg: 1, m: 2, s: -2, A: -2 },
@@ -83,6 +85,7 @@ export const QUANTITY_DIM: Record<Quantity, Dim> = {
 export const SI_UNIT: Record<Quantity, string> = {
   Voltage: "V",
   Current: "A",
+  Charge: "C",
   Resistance: "Ω",
   Capacitance: "F",
   Inductance: "H",
@@ -130,6 +133,12 @@ export type SiTagged = {
 };
 
 export type SiNumber = number | SiTagged;
+
+/** One `[soc, volts]` knot of a `battery@1` open-circuit curve. */
+export type OcvKnot = readonly [number, number];
+
+/** A form param is one SI number, or an open-circuit table. */
+export type FormParam = SiNumber | readonly OcvKnot[];
 export type Range = [SiNumber, SiNumber];
 export type Vec3 = [number, number, number];
 export type Sym6 = [number, number, number, number, number, number];
@@ -257,6 +266,7 @@ export type FormId =
   | "dc-motor@1"
   | "thevenin-limit@1"
   | "ideal-voltage@1"
+  | "battery@1"
   | "resistor@1"
   | "capacitor@1"
   | "diode@1"
@@ -275,6 +285,8 @@ export const BODY_FORMS = ["hinge@1"] as const;
 export type FormDef = {
   params: Partial<Record<string, Quantity>>;
   optional?: readonly string[];
+  /** Param names that hold a table, not one SI number. */
+  tables?: readonly string[];
 };
 
 /**
@@ -298,6 +310,16 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
     params: { V: "Voltage", Rs: "Resistance", Ilimit: "Current" },
   },
   "ideal-voltage@1": { params: { V: "Voltage" } },
+  "battery@1": {
+    params: {
+      rInternal: "Resistance",
+      capacity: "Charge",
+      soc0: "Dimensionless",
+      vCutoff: "Voltage",
+    },
+    optional: ["vCutoff"],
+    tables: ["ocv"],
+  },
   "resistor@1": { params: { R: "Resistance" } },
   "capacitor@1": {
     params: { C: "Capacitance", esr: "Resistance" },
@@ -356,11 +378,15 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
   },
 };
 
-/** Forms whose `V` param is the supply setpoint (D-023.2). */
-export const SUPPLY_FORMS = ["ideal-voltage@1", "thevenin-limit@1"] as const;
+/** Forms the plan treats as a supply. */
+export const SUPPLY_FORMS = [
+  "ideal-voltage@1",
+  "thevenin-limit@1",
+  "battery@1",
+] as const;
 
 export type BehaviourImpl = { omits: string[] } & (
-  | { kind: "form"; form: FormId; params: Record<string, SiNumber> }
+  | { kind: "form"; form: FormId; params: Record<string, FormParam> }
   | { kind: "snapshot"; ref: string }
   | { kind: "composite"; netlist: Netlist }
   | {

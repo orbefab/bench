@@ -12,12 +12,14 @@ import {
   type PortDecl,
   type Pose,
   type RunReport,
+  SUPPLY_FORMS,
   type VisualImpl,
   type WorldError,
   type WorldPrimitive,
   type WorldStepProp,
   type WorldTarget,
 } from "@sfab-bench/contract";
+import { type BatteryParams, batteryFrom, ocvAt } from "./battery";
 import { collapse, gearTrainErrors } from "./body/gear-train";
 import { type AvrPinParams, avrPinParams } from "./circuit/pin";
 import {
@@ -35,7 +37,7 @@ import {
 import { class2BoardNetlist, type LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
-import { siValue } from "./parts/si";
+import { isScalarParam, siValue } from "./parts/si";
 import { chipFacts, pathRefOf, snapshotRefOf } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
 import {
@@ -161,6 +163,8 @@ export type RunSupply = {
   groundPin: string;
   /** Cable family on the positive port. Null is the header. */
   connector: string | null;
+  /** Set when this supply is `battery@1`. The rail stamps this, not `voltage`. */
+  battery?: BatteryParams;
   /**
    * Circuit parts on this supply when no firmware board feeds it.
    * Absent when a board stamp already holds those parts, or there are none.
@@ -368,7 +372,7 @@ function formNumbers(inst: LiveInstance): Record<string, number> | null {
   if (!behaviour || behaviour.kind !== "form") return null;
   const out: Record<string, number> = {};
   for (const [key, value] of Object.entries(behaviour.params)) {
-    out[key] = siValue(value);
+    if (isScalarParam(value)) out[key] = siValue(value);
   }
   for (const [key, value] of Object.entries(inst.params)) {
     if (typeof value === "number" && Object.hasOwn(out, key)) out[key] = value;
@@ -639,8 +643,7 @@ function chosenPowerPort(
       const behaviour = other ? selectedBehaviour(other) : null;
       return (
         behaviour?.kind === "form" &&
-        (behaviour.form === "thevenin-limit@1" ||
-          behaviour.form === "ideal-voltage@1")
+        (SUPPLY_FORMS as readonly string[]).includes(behaviour.form)
       );
     });
     if (fed) return name;
@@ -1010,6 +1013,44 @@ function build(
         groundPin: ground,
         connector: inst.type.ports[positive]?.connector ?? null,
         pins,
+      });
+      pushBox(boxes, inst, "supply");
+      continue;
+    }
+    if (behaviour?.kind === "form" && behaviour.form === "battery@1") {
+      const built = batteryFrom(behaviour.params, inst.params);
+      if (!built.ok) {
+        diags.push(cannot(inst, built.error));
+        continue;
+      }
+      const cell = built.params;
+      const pins = pinsOf(inst.type.ports);
+      const positive = Object.entries(pins).find(
+        ([, pin]) => pin.kind === "power" && pin.output
+      )?.[0];
+      const ground = Object.entries(pins).find(
+        ([, pin]) => pin.kind === "ground"
+      )?.[0];
+      if (!positive) {
+        diags.push(cannot(inst, `${inst.part.id} has no power port`));
+        continue;
+      }
+      if (!ground) {
+        diags.push(cannot(inst, `${inst.part.id} has no ground port`));
+        continue;
+      }
+      const voc = ocvAt(cell.ocv, cell.soc0);
+      supplies.push({
+        id: inst.path,
+        type: typeId,
+        voltage: voc,
+        currentLimit: cell.rInternal > 0 ? voc / cell.rInternal : 1,
+        rSeries: cell.rInternal,
+        positivePin: positive,
+        groundPin: ground,
+        connector: inst.type.ports[positive]?.connector ?? null,
+        pins,
+        battery: cell,
       });
       pushBox(boxes, inst, "supply");
       continue;

@@ -38,6 +38,7 @@ import {
   loadTypeById,
 } from "./parts/library";
 import { buildNets, type LiveNet, netlistOf } from "./parts/nets";
+import { isScalarParam } from "./parts/si";
 import { chipFacts } from "./power-path";
 import type { SnapshotEnvelope, TableLaw } from "./snapshot-law";
 
@@ -132,8 +133,9 @@ export function circuitNumbers(
   const out: Record<string, number> = {};
   for (const key of Object.keys(form.params)) {
     const value = behaviour.params[key];
-    if (value !== undefined)
+    if (value !== undefined && isScalarParam(value)) {
       out[key] = typeof value === "number" ? value : value.v;
+    }
   }
   for (const [key, value] of Object.entries(params)) {
     if (typeof value === "number" && form.params[key]) out[key] = value;

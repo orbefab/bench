@@ -1,0 +1,62 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/usb2-host-port@1.0.0",
+  "type": "usb-a-port",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "USB 2.0 Specification, section 7.2.1",
+      "ref": "A high-power port's VBUS is 4.75 V to 5.25 V. A unit load is 0.1 A, and a high-power port supplies at least five unit loads. V is 5. Ilimit is 0.5 A, that five-unit-load ceiling: the model stays a voltage source at Ilimit and enters current limit only above it, so a load of five unit loads stays on the Thevenin line. The USB-IF drop test loads a PC USB 2.0 host at 0.5 A and still requires VBUS of at least 4.75 V."
+    },
+    {
+      "title": "Series resistance, assumed",
+      "ref": "Rs is 0.5 ohm, assumed. It is the resistance that places a 0.5 A load on the 4.75 V floor of the cited VBUS range, and it is the cable figure used by sfab/usb-port-500ma."
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "ideal",
+        "variants": {
+          "ideal": {
+            "kind": "form",
+            "form": "ideal-voltage@1",
+            "params": { "V": 5 },
+            "omits": ["series resistance", "current limit", "sag"]
+          }
+        }
+      },
+      "1": {
+        "default": "thevenin",
+        "variants": {
+          "thevenin": {
+            "kind": "form",
+            "form": "thevenin-limit@1",
+            "params": { "V": 5, "Rs": 0.5, "Ilimit": 0.5 },
+            "omits": ["USB enumeration", "cable inductance", "heat"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": { "kind": "none", "omits": ["connector body"] }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.015, 0.012, 0.005],
+            "omits": ["shell shape"]
+          }
+        }
+      }
+    }
+  }
+}
