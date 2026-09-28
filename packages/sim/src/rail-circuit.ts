@@ -130,10 +130,10 @@ export type RailCircuitSpec = {
     node: string;
   }[];
   /**
-   * Board whose feed node carries `src` when several supplies and several
-   * boards share the island. Absent uses the first board.
+   * Node `src` sits on when several supplies share the island. The
+   * positive pin's net names it. Absent uses the first board's feed.
    */
-  primaryBoardId?: string;
+  primaryNode?: string;
   /**
    * Every board on this rail. One board uses the same element ids and
    * node names as a stamp. A path prefix is added only when N > 1.
@@ -746,8 +746,8 @@ function supplyElement(
  * One rail for N boards and M supplies. Pin and load ids gain the board
  * path only when N > 1, so one board keeps the stamp's element ids and
  * node names. Several boards on one supply tie the feed the way they
- * always have. Several supplies keep each feed node, because the wires
- * already share the nodes they connect.
+ * always have. Several supplies each sit on the node their positive
+ * pin reaches.
  */
 function assembleRail(spec: RailCircuitSpec): Assembled {
   const fromBoards = spec.boards ?? [];
@@ -896,7 +896,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
         : "rail"
       : many
         ? multiSupply
-          ? (feedOf.get(spec.primaryBoardId ?? first?.id ?? "") ?? boardNode)
+          ? (spec.primaryNode ?? feedOf.get(first?.id ?? "") ?? boardNode)
           : (tiedTerm ?? boardNode)
         : (single?.feedNode ?? boardNode);
   let inductive = false;

@@ -1,7 +1,8 @@
 /**
  * One rail path. A single board is that rail with N = 1, so its numbers
  * match the stamp constructor. Two boards split a pin edge. Two supplies
- * and two boards on one island are one circuit.
+ * and two boards on one island are one circuit. A supply stamps on the
+ * board its positive wire reaches, not on the board with the nearest id.
  */
 
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -276,6 +277,140 @@ function read(circuit: RailCircuit): string {
       );
     } finally {
       sim.dispose();
+    }
+    writeFileSync(
+      join(dir, "parts", "sfab", "cross-scene@1.0.0.json"),
+      JSON.stringify({
+        format: "sfab.part@1",
+        id: "sfab/cross-scene@1.0.0",
+        type: "assembly",
+        foreign: false,
+        axes: {
+          behaviour: {
+            "2": {
+              default: "netlist",
+              variants: {
+                netlist: {
+                  kind: "composite",
+                  omits: ["cross"],
+                  netlist: {
+                    instances: {
+                      "a-usb": { part: "sfab/usb-port-500ma@1.0.0" },
+                      "z-usb": { part: "sfab/usb-port-500ma@1.0.0" },
+                      "a-board": {
+                        part: "sfab/nano-ch340@1.0.0",
+                        params: { firmware: hex, source: ino },
+                      },
+                      "z-board": {
+                        part: "sfab/nano-ch340@1.0.0",
+                        params: { firmware: hex, source: ino },
+                      },
+                      // Nested on z-board. A sibling would also touch a-board
+                      // through the shared ground and be pruned there.
+                      "z-board.load": {
+                        part: "sfab/resistor@1.0.0",
+                        params: { R: 100 },
+                      },
+                    },
+                    wires: [
+                      ["a-usb.5V", "z-board.5V"],
+                      ["z-usb.5V", "a-board.5V"],
+                      ["a-usb.GND", "a-board.GND"],
+                      ["z-usb.GND", "z-board.GND"],
+                      ["a-board.GND", "z-board.GND"],
+                      ["z-board.load.A", "z-board.5V"],
+                      ["z-board.load.B", "z-board.GND"],
+                    ],
+                    expose: {},
+                  },
+                },
+              },
+            },
+          },
+          body: {
+            "0": {
+              default: "none",
+              variants: { none: { kind: "none", omits: ["none"] } },
+            },
+          },
+          visual: {
+            "0": {
+              default: "none",
+              variants: { none: { kind: "none", omits: ["none"] } },
+            },
+          },
+        },
+      })
+    );
+    writeFileSync(
+      join(dir, "cross.world.json"),
+      JSON.stringify({
+        version: 2,
+        environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+        run: { seed: 1, levels: { default: 2 } },
+        root: { id: "scene", part: "sfab/cross-scene@1.0.0" },
+      })
+    );
+    const crossed = planWorld(dir, "cross.world.json");
+    expect(crossed.ok, "crossed cables did not plan");
+    if (!crossed.ok) throw new Error("unreachable");
+    const crossIslands = powerIslands(crossed.plan).filter(
+      (island) => island.supplyIds.length > 1
+    );
+    expect(crossIslands.length === 1, `crossed islands ${crossIslands.length}`);
+    expect(
+      crossIslands[0]?.supplyIds.join("+") === "a-usb+z-usb",
+      crossIslands[0]?.supplyIds.join("+") ?? ""
+    );
+    const cross = new Sim({
+      post() {},
+      now: () => performance.now(),
+      schedule: (fn, delay) => setTimeout(fn, delay),
+      clear(handle) {
+        clearTimeout(handle as ReturnType<typeof setTimeout>);
+      },
+      ledTrace: false,
+      sha256: sha256Bytes,
+      versions: {
+        mujoco: packageVersion("@mujoco/mujoco", import.meta.url),
+        avr8js: packageVersion("avr8js", import.meta.url),
+      },
+      projectReal,
+      readInside,
+      readerFor,
+      plan: nodePlanEnv,
+      keepSerial: false,
+    });
+    try {
+      const loaded = await cross.load({
+        project: dir,
+        world: "cross.world.json",
+        generation: 1,
+      });
+      expect(loaded.ok, "crossed cables did not run");
+      await cross.step(80);
+      const settled = cross.state();
+      if (!settled) throw new Error("no state");
+      const body = cross.record({ op: "read", from: 0, to: settled.simTime });
+      if (body.op !== "read") throw new Error("no recording");
+      const read = body.read as RecordingRead;
+      const frame = read.frames.at(-1);
+      if (!frame) throw new Error("no frame");
+      const a = frame.supplies["a-usb"];
+      const z = frame.supplies["z-usb"];
+      const light = frame.boards["a-board"];
+      const heavy = frame.boards["z-board"];
+      expect(a && z && light && heavy, "crossed frame is missing a rail");
+      if (!a || !z || !light || !heavy) throw new Error("unreachable");
+      expect(
+        a.current > z.current + 0.02,
+        `a-usb ${a.current} A landed on a-board; z-usb ${z.current} A`
+      );
+      console.log(
+        `crossed cables: a-usb ${a.current.toFixed(6)} A feeds z-board, z-usb ${z.current.toFixed(6)} A feeds a-board`
+      );
+    } finally {
+      cross.dispose();
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });

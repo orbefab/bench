@@ -263,10 +263,10 @@ export type PowerIsland = {
 };
 
 /**
- * One rail per connected power island. Supplies that reach the same
- * board, or each other's positive pin, share an island when their
- * grounds meet. Supplies whose grounds stay apart are not one circuit:
- * tying them would short two grounds. That island is left split.
+ * One rail per connected power island. Supplies whose grounds meet are
+ * one island, even when each positive pin feeds a different board.
+ * Supplies whose grounds stay apart are not one circuit: tying them
+ * would short two grounds. That island is left split.
  */
 export function powerIslands(plan: RunPlan): PowerIsland[] {
   const parent = new Map<string, string>();
@@ -287,7 +287,6 @@ export function powerIslands(plan: RunPlan): PowerIsland[] {
     parent.set(left < right ? right : left, left < right ? left : right);
   };
   for (const supply of plan.supplies) parent.set(supply.id, supply.id);
-  const adjacent = powerAdjacent(plan);
   const grounds = groundAdjacent(plan);
   const shareGround = (a: string, b: string): boolean => {
     const left = plan.supplies.find((item) => item.id === a);
@@ -296,34 +295,13 @@ export function powerIslands(plan: RunPlan): PowerIsland[] {
     const hit = reachedFrom(`${left.id}.${left.groundPin}`, grounds);
     return hit.has(`${right.id}.${right.groundPin}`);
   };
-  const suppliesOn = (path: string, port: string): string[] => {
-    const hit = reachedFrom(`${path}.${port}`, adjacent);
-    const ids: string[] = [];
-    for (const supply of plan.supplies) {
-      if (hit.has(`${supply.id}.${supply.positivePin}`)) ids.push(supply.id);
-    }
-    return ids;
-  };
-  for (const supply of plan.supplies) {
-    const hit = reachedFrom(`${supply.id}.${supply.positivePin}`, adjacent);
-    for (const other of plan.supplies) {
-      if (other.id === supply.id) continue;
-      if (!hit.has(`${other.id}.${other.positivePin}`)) continue;
-      if (!shareGround(supply.id, other.id)) continue;
-      union(supply.id, other.id);
-    }
-  }
-  for (const board of plan.boards) {
-    const ids = new Set<string>();
-    for (const port of [...board.powerInputs, "VIN"]) {
-      for (const id of suppliesOn(board.id, port)) ids.add(id);
-    }
-    const list = [...ids].sort();
-    const first = list[0];
-    if (!first) continue;
-    for (const id of list.slice(1)) {
-      if (!shareGround(first, id)) continue;
-      union(first, id);
+  const ids = plan.supplies.map((supply) => supply.id);
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const left = ids[i];
+      const right = ids[j];
+      if (!left || !right || !shareGround(left, right)) continue;
+      union(left, right);
     }
   }
   const groups = new Map<string, string[]>();
@@ -345,6 +323,33 @@ export function powerIslands(plan: RunPlan): PowerIsland[] {
     islands.push({ id, supplyIds });
   }
   return islands;
+}
+
+/**
+ * Node name of a supply's positive net. The same lex-first port the
+ * stamp uses, or `"0"` when that net is ground. A supply that reaches
+ * no board feed stamps here, so it cannot land on another board's node.
+ */
+export function supplyPositiveNode(plan: RunPlan, supplyId: string): string {
+  const supply = plan.supplies.find((item) => item.id === supplyId);
+  if (!supply) return "rail";
+  const start = `${supply.id}.${supply.positivePin}`;
+  const adjacent = new Map<string, string[]>();
+  const link = (from: string, to: string) => {
+    const list = adjacent.get(from);
+    if (list) list.push(to);
+    else adjacent.set(from, [to]);
+  };
+  for (const wire of plan.wires) {
+    link(wire[0], wire[1]);
+    link(wire[1], wire[0]);
+  }
+  const hit = reachedFrom(start, adjacent);
+  for (const name of hit) {
+    if (endpointPin(plan, name)?.kind === "ground") return "0";
+  }
+  const names = [...hit].sort();
+  return names[0] ?? start;
 }
 
 /** Supply positive pins that reach `path.port` by a power wire. */
