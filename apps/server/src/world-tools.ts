@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 
 import {
   ARDUINO_PINS,
+  PART_FORMAT,
   ATMEGA328P_16MHZ_MIN_V,
   atmega328pSoaWarning,
   boardTrackId,
@@ -1186,11 +1187,15 @@ export const worldTools = {
         };
       }
       let parsed: {
+        format?: string;
+        id?: string;
         run?: { levels?: LevelTable };
         play?: { levels?: LevelTable };
       };
       try {
         parsed = JSON.parse(before) as {
+          format?: string;
+          id?: string;
           run?: { levels?: LevelTable };
           play?: { levels?: LevelTable };
         };
@@ -1227,7 +1232,11 @@ export const worldTools = {
         const message = blocked.map((diag) => diag.message).join("; ");
         return { error: message || "world file did not load" };
       }
-      const decided = lockAfterLevels(live.lock, loaded.lock);
+      const refresh =
+        parsed.format === PART_FORMAT && typeof parsed.id === "string"
+          ? [parsed.id]
+          : [];
+      const decided = lockAfterLevels(live.lock, loaded.lock, refresh);
       if ("error" in decided) return decided;
       const lockFile = lockPathFor(file);
       const previousLock = existsSync(lockFile) ? readFileSync(lockFile) : null;

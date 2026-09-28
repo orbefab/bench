@@ -245,12 +245,17 @@ function levelsSpan(
  * The lock written after a level edit. Part and type rows stay as pinned.
  * Snapshot rows may appear or disappear with the levels. A hash that no
  * longer matches the pin is drift: the tool must not re-pin it.
+ *
+ * `refresh` is the document part, when the levels live on that part. Its
+ * hash is copied from the resolved lock. Every other row still has to match.
  */
 export function lockAfterLevels(
   pinned: LockFile,
-  resolved: LockFile
+  resolved: LockFile,
+  refresh: readonly string[] = []
 ): { lock: LockFile } | { error: string } {
-  const part = rowDrift("part", pinned.parts, resolved.parts);
+  const refreshing = new Set(refresh);
+  const part = rowDrift("part", pinned.parts, resolved.parts, refreshing);
   if (part) return { error: part };
   const type = rowDrift("part type", pinned.types, resolved.types);
   if (type) return { error: type };
@@ -260,11 +265,16 @@ export function lockAfterLevels(
   );
   if (snapshot) return { error: snapshot };
   const snapshots = resolved.snapshots ?? [];
+  const parts = pinned.parts.map((row) => {
+    if (!refreshing.has(row.id)) return row;
+    const next = resolved.parts.find((item) => item.id === row.id);
+    return next ? { ...row, sha256: next.sha256 } : row;
+  });
   return {
     lock: {
       format: pinned.format,
       world: pinned.world,
-      parts: pinned.parts,
+      parts,
       types: pinned.types,
       ...(snapshots.length > 0 ? { snapshots } : {}),
     },
@@ -274,7 +284,8 @@ export function lockAfterLevels(
 function rowDrift(
   kind: "part" | "part type",
   pinned: { id: string; sha256: string }[],
-  resolved: { id: string; sha256: string }[]
+  resolved: { id: string; sha256: string }[],
+  refresh: ReadonlySet<string> = new Set()
 ): string | null {
   const have = new Map(pinned.map((row) => [row.id, row.sha256]));
   const want = new Map(resolved.map((row) => [row.id, row.sha256]));
@@ -283,7 +294,7 @@ function rowDrift(
     if (found === undefined) {
       return `${id} port file quantity sha256: lockfile is missing a resolved ${kind} (missing vs ${sha})`;
     }
-    if (found !== sha) {
+    if (found !== sha && !refresh.has(id)) {
       return `${id} port file quantity sha256: lockfile hash mismatch on a ${kind} (content changed, lockfile did not) (${found} vs ${sha})`;
     }
   }

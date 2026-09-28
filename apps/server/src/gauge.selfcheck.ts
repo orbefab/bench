@@ -713,7 +713,9 @@ try {
             "gauge world did not load"
         );
       }
-      const decided = lockAfterLevels(gaugeLock, loaded.lock);
+      const decided = lockAfterLevels(gaugeLock, loaded.lock, [
+        "sfab/gauge-usb@1.0.0",
+      ]);
       if ("error" in decided) throw new Error(decided.error);
       writeLock(nodeStore, gaugeLockPath, decided.lock);
       writeFileSync(gaugeWorldPath, text);
