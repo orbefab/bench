@@ -1,7 +1,9 @@
 import type { TimelineMarker, TimelineTrack } from "@sfab-bench/contract";
+import { Pause, Play } from "lucide-react";
 import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
+import { sendWorldCommand } from "@/hooks/useWorldRun";
 import {
   isMacPlatform,
   matchesShortcut,
@@ -22,9 +24,12 @@ import { goLive, scrubTo, useWorldTimeline } from "@/state/world-timeline";
  * Desktop scrub strip. Dragging moves this client's playhead only.
  * The shared run keeps its own sim time (D-015). Hidden in XR (D-008).
  */
-export function WorldTimeline() {
+export function WorldTimeline({ docked = false }: { docked?: boolean }) {
   const { recording, data, playhead } = useWorldTimeline();
   const selection = useWorld((s) => s.selection);
+  const playing = useWorld((s) => s.playing);
+  const connection = useWorld((s) => s.connection);
+  const blocked = useWorld((s) => s.runErrors.length > 0);
   const outline = useWorld((s) => s.outline);
   const mac = isMacPlatform(
     typeof navigator === "undefined" ? "" : navigator.platform,
@@ -49,7 +54,35 @@ export function WorldTimeline() {
     return () => window.removeEventListener("keydown", onKey);
   }, [mac]);
 
-  if (!recording) return null;
+  const canPlay = connection === "live" && !blocked;
+  const playButton = (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      className="h-9 shrink-0 self-center px-2.5"
+      disabled={!canPlay}
+      aria-label={playing ? "Pause" : "Play"}
+      onClick={() => sendWorldCommand(playing ? "pause" : "play")}
+    >
+      {playing ? <Pause /> : <Play />}
+      {playing ? "Pause" : "Play"}
+    </Button>
+  );
+  const shell = docked
+    ? "flex shrink-0 items-center gap-2 border-t border-border bg-card px-2 py-1.5"
+    : "pointer-events-auto absolute inset-x-3 bottom-3 z-20 flex items-stretch gap-2 rounded-xl border border-border bg-card/95 p-1.5 shadow-lg";
+
+  if (!recording) {
+    return (
+      <div className={shell}>
+        {playButton}
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {formatSimTime(0)}
+        </span>
+      </div>
+    );
+  }
   const from = recording.from;
   const to = Math.max(recording.to, from);
   const chosen = tracksForSelection(data?.tracks ?? [], selection, outline);
@@ -87,7 +120,8 @@ export function WorldTimeline() {
   const live = playhead === null;
 
   return (
-    <div className="pointer-events-auto absolute inset-x-3 bottom-3 z-20 flex items-stretch gap-2 rounded-xl border border-border bg-card/95 p-1.5 shadow-lg">
+    <div className={shell}>
+      {playButton}
       <div
         className="relative min-w-0 flex-1 cursor-ew-resize touch-none"
         role="slider"

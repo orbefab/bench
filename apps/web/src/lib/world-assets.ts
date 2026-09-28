@@ -76,6 +76,7 @@ export type LoadedWorld = {
   meshKeys: string[];
   problems: WorldAssetProblem[];
   outline: WorldOutline;
+  tree: WorldView["tree"] | null;
 };
 
 type CacheEntry<T> = {
@@ -323,5 +324,12 @@ export async function loadWorldAssets(
     },
     urdfByRobot
   );
-  return { document, visuals, meshKeys, problems, outline };
+  return {
+    document,
+    visuals,
+    meshKeys,
+    problems,
+    outline,
+    tree: read.tree ?? null,
+  };
 }

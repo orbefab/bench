@@ -124,7 +124,7 @@ const outline = {
       wires: [],
     },
   ],
-  boards: [],
+  boards: [{ id: "uno", chip: "atmega328p", firmware: "hold.hex" }],
   supplies: [
     {
       id: "usb",
@@ -144,7 +144,7 @@ expect(
 );
 const link = tracksForSelection(
   tracks,
-  { kind: "link", robot: "arm", link: "upper" },
+  { kind: "instance", path: "arm", link: "upper" },
   outline
 );
 expect(
@@ -153,7 +153,7 @@ expect(
 );
 const part = tracksForSelection(
   tracks,
-  { kind: "part", part: "servo" },
+  { kind: "instance", path: "servo" },
   outline
 );
 expect(
@@ -161,12 +161,12 @@ expect(
   "a part plots the joint and the command"
 );
 expect(
-  tracksForSelection(tracks, { kind: "supply", supply: "usb" }, outline).primary
+  tracksForSelection(tracks, { kind: "instance", path: "usb" }, outline).primary
     ?.id === supply.id,
   "a supply plots voltage"
 );
 expect(
-  tracksForSelection(tracks, { kind: "board", board: "uno" }, outline).primary
+  tracksForSelection(tracks, { kind: "instance", path: "uno" }, outline).primary
     ?.id === board.id,
   "a board plots its 5V node"
 );

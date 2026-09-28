@@ -41,6 +41,12 @@ import { ToastProvider, Toasts } from "@/components/ui/toast";
 import { WorldControls, WorldProblemCard } from "@/components/WorldChrome";
 import { WorldInspector } from "@/components/WorldInspector";
 import { WorldTimeline } from "@/components/WorldTimeline";
+import {
+  WorldConfirmDialog,
+  WorldHotkeys,
+  WorldTopBar,
+  WorldTree,
+} from "@/components/WorldTree";
 import { useCanvasFit } from "@/hooks/useCanvasFit";
 import { type CatalogState, useCatalog } from "@/hooks/useCatalog";
 import { useMotionReady } from "@/hooks/useMotionReady";
@@ -182,7 +188,6 @@ function EnterXr() {
 }
 
 function Overlay({
-  host,
   folder,
   catalog,
   canvasWidth,
@@ -190,7 +195,6 @@ function Overlay({
   compactChat,
   chatToggleRef,
 }: {
-  host: boolean;
   folder: ReturnType<typeof useOpenFolder>;
   catalog: CatalogState;
   canvasWidth: number;
@@ -350,34 +354,29 @@ function Overlay({
               }}
             />
           ) : null}
-          <PartTree
-            canvasHeight={canvasHeight}
-            cardRef={setPartsCard}
-            expanded={partsExpanded}
-            onCollapse={() => {
-              setPartsOpen(false);
-              setPartsForceExpand(false);
-            }}
-            onExpand={() => {
-              setPartsOpen(true);
-              setPartsForceExpand(true);
-            }}
-          />
-          {worldOpen ? (
-            <WorldInspector
+          {!worldOpen ? (
+            <PartTree
               canvasHeight={canvasHeight}
-              cardRef={setDetailCard}
-              compact={overlays.detailCompact}
-              width={detailWidth}
+              cardRef={setPartsCard}
+              expanded={partsExpanded}
+              onCollapse={() => {
+                setPartsOpen(false);
+                setPartsForceExpand(false);
+              }}
+              onExpand={() => {
+                setPartsOpen(true);
+                setPartsForceExpand(true);
+              }}
             />
-          ) : (
+          ) : null}
+          {!worldOpen ? (
             <DetailPanel
               canvasHeight={canvasHeight}
               cardRef={setDetailCard}
               compact={overlays.detailCompact}
               width={detailWidth}
             />
-          )}
+          ) : null}
           <div className="pointer-events-none absolute top-4 right-3 z-10 flex items-start gap-2">
             <EnterXr />
             {project.path ? (
@@ -442,7 +441,6 @@ function Overlay({
           </div>
         </div>
       )}
-      {!session && host && worldPath ? <WorldTimeline /> : null}
       {!session ? <WorldProblemCard /> : null}
       {sceneCrash ? (
         <div className="pointer-events-auto absolute inset-x-4 top-1/2 z-30 mx-auto flex max-w-80 justify-center">
@@ -480,6 +478,7 @@ function ViewerShell({ host }: { host: boolean }) {
     if (!compactChat) setCompactChatOpen(false);
   }, [compactChat, setCompactChatOpen]);
 
+  const editor = Boolean(worldPath) && !session;
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
@@ -491,7 +490,7 @@ function ViewerShell({ host }: { host: boolean }) {
     ro.observe(el);
     setCanvasSize({ w: el.clientWidth, h: el.clientHeight });
     return () => ro.disconnect();
-  }, []);
+  }, [editor]);
 
   useEffect(() => {
     const shown = worldPath || url;
@@ -515,30 +514,67 @@ function ViewerShell({ host }: { host: boolean }) {
         <DesktopSidebar catalog={catalog} host={host} folder={folder} />
       ) : null}
       <SidebarInset className="min-h-0 overflow-hidden">
-        <div
-          ref={canvasRef}
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
-        >
-          <RenderErrorBoundary
-            resetKeys={[url]}
-            fallback={({ error, reset }) => (
-              <div className="absolute inset-0 z-10 grid place-items-center bg-studio">
-                <CrashCard error={error} onRetry={reset} />
+        {editor ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <WorldTopBar />
+            <div className="flex min-h-0 min-w-0 flex-1">
+              <WorldTree />
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div
+                  ref={canvasRef}
+                  className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+                >
+                  <RenderErrorBoundary
+                    resetKeys={[url]}
+                    fallback={({ error, reset }) => (
+                      <div className="absolute inset-0 z-10 grid place-items-center bg-studio">
+                        <CrashCard error={error} onRetry={reset} />
+                      </div>
+                    )}
+                  >
+                    <ViewerCanvas />
+                  </RenderErrorBoundary>
+                  <Overlay
+                    canvasHeight={canvasSize.h}
+                    canvasWidth={canvasSize.w}
+                    catalog={catalog}
+                    chatToggleRef={chatToggleRef}
+                    compactChat={compactChat}
+                    folder={folder}
+                  />
+                </div>
+                <WorldTimeline docked />
               </div>
-            )}
+              <WorldInspector />
+            </div>
+            <WorldHotkeys />
+            <WorldConfirmDialog />
+          </div>
+        ) : (
+          <div
+            ref={canvasRef}
+            className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
           >
-            <ViewerCanvas />
-          </RenderErrorBoundary>
-          <Overlay
-            canvasHeight={canvasSize.h}
-            canvasWidth={canvasSize.w}
-            catalog={catalog}
-            chatToggleRef={chatToggleRef}
-            compactChat={compactChat}
-            folder={folder}
-            host={host}
-          />
-        </div>
+            <RenderErrorBoundary
+              resetKeys={[url]}
+              fallback={({ error, reset }) => (
+                <div className="absolute inset-0 z-10 grid place-items-center bg-studio">
+                  <CrashCard error={error} onRetry={reset} />
+                </div>
+              )}
+            >
+              <ViewerCanvas />
+            </RenderErrorBoundary>
+            <Overlay
+              canvasHeight={canvasSize.h}
+              canvasWidth={canvasSize.w}
+              catalog={catalog}
+              chatToggleRef={chatToggleRef}
+              compactChat={compactChat}
+              folder={folder}
+            />
+          </div>
+        )}
       </SidebarInset>
       {!session && hasProject ? (
         <RenderErrorBoundary

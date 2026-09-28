@@ -1,3 +1,4 @@
+import { Html } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useFrame } from "@react-three/fiber";
 import {
@@ -5,6 +6,7 @@ import {
   type WorldPose,
   type WorldPrimitive,
   type WorldVec3,
+  type WorldViewNode,
 } from "@sfab-bench/contract";
 import {
   type ReactNode,
@@ -30,6 +32,7 @@ import {
   WORLD_TO_SCENE_X,
   worldQuatToThree,
 } from "@/lib/world-pose";
+import { warningsFromRun, warningText } from "@/lib/world-warnings";
 import { invalidateSceneNow } from "@/scene/invalidate";
 import { setWorldFitTarget } from "@/scene/world-fit";
 import {
@@ -216,12 +219,8 @@ function linkKey(robotId: string, link: string) {
 }
 
 function selectionKey(selection: NonNullable<WorldSelection>): string {
-  if (selection.kind === "link") {
-    return `link:${selection.robot}/${selection.link}`;
-  }
-  if (selection.kind === "board") return `board:${selection.board}`;
-  if (selection.kind === "part") return `part:${selection.part}`;
-  return `supply:${selection.supply}`;
+  if (selection.link) return `link:${selection.path}/${selection.link}`;
+  return `instance:${selection.path}`;
 }
 
 function linkMaterial(color: number): THREE.MeshStandardMaterial {
@@ -231,6 +230,80 @@ function linkMaterial(color: number): THREE.MeshStandardMaterial {
     roughness: 0.62,
     side: THREE.DoubleSide,
   });
+}
+
+function calloutNodes(
+  nodes: readonly WorldViewNode[],
+  warnings: ReturnType<typeof warningsFromRun>,
+  into: { id: string; pose: WorldViewNode["pose"]; text: string }[] = []
+) {
+  for (const node of nodes) {
+    const rows = warnings.get(node.id);
+    if (rows && rows.length > 0) {
+      into.push({ id: node.id, pose: node.pose, text: warningText(rows) });
+    }
+    calloutNodes(node.children, warnings, into);
+  }
+  return into;
+}
+
+function WarningCallouts() {
+  const session = useXrSession();
+  const tree = useWorld((s) => s.tree);
+  const report = useWorld((s) => s.report);
+  const diagnostics = useWorld((s) => s.diagnostics);
+  const selected = useWorld((s) => s.selection?.path ?? null);
+  const [hover, setHover] = useState<string | null>(null);
+  const warnings = useMemo(
+    () => warningsFromRun(report, diagnostics),
+    [report, diagnostics]
+  );
+  const markers = useMemo(
+    () => (tree ? calloutNodes(tree.nodes, warnings) : []),
+    [tree, warnings]
+  );
+  if (session || markers.length === 0) return null;
+  return (
+    <>
+      {markers.map((marker) => {
+        const open = hover === marker.id || selected === marker.id;
+        return (
+          <Body key={marker.id} pose={marker.pose}>
+            <mesh
+              onClick={(event) => {
+                event.stopPropagation();
+                worldStore.getState().select({
+                  kind: "instance",
+                  path: marker.id,
+                });
+              }}
+              onPointerOut={() =>
+                setHover((current) => (current === marker.id ? null : current))
+              }
+              onPointerOver={(event) => {
+                event.stopPropagation();
+                setHover(marker.id);
+              }}
+            >
+              <sphereGeometry args={[0.012, 16, 12]} />
+              <meshBasicMaterial color="#c2410c" />
+            </mesh>
+            {open ? (
+              <Html
+                distanceFactor={0.8}
+                position={[0, 0.04, 0]}
+                style={{ pointerEvents: "none" }}
+              >
+                <div className="max-w-56 whitespace-pre-wrap rounded-md border border-border bg-card px-2 py-1 text-[11px] text-card-foreground shadow">
+                  {marker.text}
+                </div>
+              </Html>
+            ) : null}
+          </Body>
+        );
+      })}
+    </>
+  );
 }
 
 export function WorldScene({
@@ -264,6 +337,7 @@ export function WorldScene({
         worldStore.getState().setAssetIssues(next.problems);
         worldStore.getState().setAssets("ready", true);
         worldStore.getState().setOutline(next.outline);
+        worldStore.getState().setTree(next.tree);
         releaseMeshes(previous);
         invalidateSceneNow();
       })
@@ -476,8 +550,8 @@ export function WorldScene({
               const material = linkMaterials.get(linkKey(robotId, name));
               if (!material) return null;
               const pick = {
-                kind: "link" as const,
-                robot: robotId,
+                kind: "instance" as const,
+                path: robotId,
                 link: name,
               };
               return (
@@ -566,7 +640,7 @@ export function WorldScene({
           if (!board.pose || !finiteVec(board.size, 3) || !material) {
             return null;
           }
-          const pick = { kind: "board" as const, board: board.id };
+          const pick = { kind: "instance" as const, path: board.id };
           return (
             <Body key={board.id} pose={board.pose}>
               <group
@@ -593,10 +667,7 @@ export function WorldScene({
         {doc.boxes.map((box) => {
           const material = partMaterials.get(box.id);
           if (!box.pose || !finiteVec(box.size, 3) || !material) return null;
-          const pick =
-            box.pick === "supply"
-              ? { kind: "supply" as const, supply: box.id }
-              : { kind: "part" as const, part: box.id };
+          const pick = { kind: "instance" as const, path: box.id };
           return (
             <Body key={`${box.pick}:${box.id}`} pose={box.pose}>
               <group
@@ -620,6 +691,7 @@ export function WorldScene({
             </Body>
           );
         })}
+        <WarningCallouts />
       </group>
     </>
   );

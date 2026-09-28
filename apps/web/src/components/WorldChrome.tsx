@@ -1,15 +1,9 @@
-import { Home, Pause, Play } from "lucide-react";
+import { Home } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
-import { sendWorldCommand } from "@/hooks/useWorldRun";
-import {
-  formatSimTime,
-  formatWorldIssues,
-  visibleAssetIssues,
-} from "@/lib/world-issues";
+import { formatWorldIssues, visibleAssetIssues } from "@/lib/world-issues";
 import { useWorld } from "@/state/world";
-import { useWorldTimeline } from "@/state/world-timeline";
 
 export function WorldControls({
   top,
@@ -20,18 +14,12 @@ export function WorldControls({
   left: number;
   onHome: () => void;
 }) {
-  const { playing, simTime, connection, notice, blocked } = useWorld(
+  const { connection, notice } = useWorld(
     useShallow((s) => ({
-      playing: s.playing,
-      simTime: s.simTime,
       connection: s.connection,
       notice: s.notice,
-      blocked: s.runErrors.length > 0,
     }))
   );
-  const playhead = useWorldTimeline().playhead;
-  const live = connection === "live" && !blocked;
-  const shownTime = playhead ?? simTime;
   const status =
     connection === "reconnecting"
       ? "Reconnecting…"
@@ -55,21 +43,6 @@ export function WorldControls({
         >
           <Home />
         </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="h-9 w-9 p-0"
-          title={playing ? "Pause" : "Play"}
-          aria-label={playing ? "Pause" : "Play"}
-          disabled={!live}
-          onClick={() => sendWorldCommand(playing ? "pause" : "play")}
-        >
-          {playing ? <Pause /> : <Play />}
-        </Button>
-        <span className="px-1.5 text-xs tabular-nums text-muted-foreground">
-          {formatSimTime(shownTime)}
-        </span>
         {status ? (
           <span className="pr-1.5 text-xs text-muted-foreground">{status}</span>
         ) : null}

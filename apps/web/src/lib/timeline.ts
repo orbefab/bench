@@ -134,32 +134,36 @@ export function tracksForSelection(
       secondary: null,
     };
   }
-  if (selection.kind === "link") {
-    const name = linkJoint(outline, selection.robot, selection.link);
+  if (selection.link) {
+    const name = linkJoint(outline, selection.path, selection.link);
     const joint = name
-      ? byId(tracks, jointTrackId(selection.robot, name))
+      ? byId(tracks, jointTrackId(selection.path, name))
       : null;
     return { primary: joint, secondary: null };
   }
-  if (selection.kind === "part") {
-    const drives = outline?.parts.find(
-      (item) => item.id === selection.part
-    )?.drives;
-    const joint = drives
-      ? byId(tracks, jointTrackId(drives.robot, drives.joint))
-      : null;
-    const command = byId(tracks, partTrackId(selection.part));
+  const drives = outline?.parts.find(
+    (item) => item.id === selection.path
+  )?.drives;
+  if (drives) {
+    const joint = byId(tracks, jointTrackId(drives.robot, drives.joint));
+    const command = byId(tracks, partTrackId(selection.path));
     if (joint) return { primary: joint, secondary: command };
     return { primary: command, secondary: null };
   }
-  if (selection.kind === "supply") {
+  if (outline?.supplies.some((item) => item.id === selection.path)) {
     return {
-      primary: byId(tracks, supplyTrackId(selection.supply)),
+      primary: byId(tracks, supplyTrackId(selection.path)),
+      secondary: null,
+    };
+  }
+  if (outline?.boards.some((item) => item.id === selection.path)) {
+    return {
+      primary: byId(tracks, boardTrackId(selection.path)),
       secondary: null,
     };
   }
   return {
-    primary: byId(tracks, boardTrackId(selection.board)),
+    primary: byId(tracks, partTrackId(selection.path)),
     secondary: null,
   };
 }

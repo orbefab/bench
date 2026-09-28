@@ -1,4 +1,5 @@
 import type {
+  EditOp,
   RunReport,
   WorldBoardState,
   WorldError,
@@ -7,6 +8,7 @@ import type {
   WorldSender,
   WorldState,
   WorldSupplyState,
+  WorldViewTree,
 } from "@sfab-bench/contract";
 import { useStore as useZustandStore } from "zustand";
 import { createStore } from "zustand/vanilla";
@@ -14,7 +16,8 @@ import { createStore } from "zustand/vanilla";
 import { readOpenDocument } from "@/lib/document-query";
 import { projectUrl } from "@/lib/project-query";
 import type { AssetIssue } from "@/lib/world-issues";
-import { outlineItems, type WorldOutline } from "@/lib/world-outline";
+import type { WorldOutline } from "@/lib/world-outline";
+import { findViewNode, viewPaths } from "@/lib/world-tree";
 
 /**
  * The open world document and the low-rate HUD. Poses live in
@@ -23,39 +26,49 @@ import { outlineItems, type WorldOutline } from "@/lib/world-outline";
 export type WorldConnection = "idle" | "connecting" | "live" | "reconnecting";
 
 /** Per client. The shared run does not carry this (D-015). */
-export type WorldSelection =
-  | { kind: "link"; robot: string; link: string }
-  | { kind: "board"; board: string }
-  | { kind: "part"; part: string }
-  | { kind: "supply"; supply: string }
-  | null;
+export type WorldSelection = {
+  kind: "instance";
+  /** Run path. The same id as a tree row and a report level. */
+  path: string;
+  /** Set when the pick is one link of a robot. */
+  link?: string;
+} | null;
+
+/** A wire row. Not part of the agent selection. */
+export type WorldWirePick = {
+  owner: string;
+  index: number;
+};
+
+export type EditStep = {
+  /** Owning part id. Absent when the edit was on the open document. */
+  part?: string;
+};
+
+export type WorldConfirm = {
+  count: number;
+  ports: { name: string; dependents: string[] }[];
+  message: string;
+  ops: EditOp[];
+  part?: string;
+  label?: string;
+};
 
 export type WorldSelectionAction =
   | { type: "select"; selection: WorldSelection }
   | { type: "close" }
-  | {
-      type: "reload";
-      links: readonly { robot: string; link: string }[];
-      boards: readonly string[];
-      parts: readonly string[];
-      supplies: readonly string[];
-    };
+  | { type: "reload"; paths: readonly string[] };
 
 export function sameWorldSelection(
   a: WorldSelection,
   b: WorldSelection
 ): boolean {
   if (a === b) return true;
-  if (!a || !b || a.kind !== b.kind) return false;
-  if (a.kind === "board" && b.kind === "board") return a.board === b.board;
-  if (a.kind === "part" && b.kind === "part") return a.part === b.part;
-  if (a.kind === "supply" && b.kind === "supply") return a.supply === b.supply;
-  return a.kind === "link" && b.kind === "link"
-    ? a.robot === b.robot && a.link === b.link
-    : false;
+  if (!a || !b) return false;
+  return a.path === b.path && (a.link ?? "") === (b.link ?? "");
 }
 
-/** Select, drop on close, or keep a selection only when the reload still has it. */
+/** Select, drop on close, or keep a selection only when the reload still has its path. */
 export function reduceWorldSelection(
   selection: WorldSelection,
   action: WorldSelectionAction
@@ -67,19 +80,7 @@ export function reduceWorldSelection(
       : action.selection;
   }
   if (!selection) return null;
-  if (selection.kind === "board") {
-    return action.boards.includes(selection.board) ? selection : null;
-  }
-  if (selection.kind === "part") {
-    return action.parts.includes(selection.part) ? selection : null;
-  }
-  if (selection.kind === "supply") {
-    return action.supplies.includes(selection.supply) ? selection : null;
-  }
-  const kept = action.links.some(
-    (item) => item.robot === selection.robot && item.link === selection.link
-  );
-  return kept ? selection : null;
+  return action.paths.includes(selection.path) ? selection : null;
 }
 
 export type WorldHudState = {
@@ -117,11 +118,40 @@ export type WorldHudState = {
    * object from the host's snapshot. Ordinary states leave it in place.
    */
   report: RunReport | null;
+  /** Part tree from the world view. Null until the file loads. */
+  tree: WorldViewTree | null;
+  /** Degraded rows on the latest state. Empty when the state omits them. */
+  diagnostics: { path: string; message: string; code: string }[];
+  /** Wire row. Mutually exclusive with `selection`. */
+  wire: WorldWirePick | null;
+  /** Local undo stack. Each step names the part the server edited. */
+  edits: EditStep[];
+  redos: EditStep[];
+  editLabel: string | null;
+  /** The loader's refusal of the last edit. */
+  editError: string | null;
+  confirm: WorldConfirm | null;
+  /** Bumped when F2 asks the tree to rename the selection. */
+  renameTick: number;
   open: (path: string, opts?: { force?: boolean }) => void;
   close: () => void;
   select: (selection: WorldSelection) => void;
-  /** Replace the outline and drop a selection the new document no longer has. */
+  selectWire: (wire: WorldWirePick | null) => void;
+  /** Replace the outline. Selection follows the tree, not this list. */
   setOutline: (outline: WorldOutline) => void;
+  /** Replace the tree and keep a selection whose path is still there. */
+  setTree: (tree: WorldViewTree | null) => void;
+  setDiagnostics: (
+    diagnostics: { path: string; message: string; code: string }[]
+  ) => void;
+  setEditError: (message: string | null) => void;
+  setConfirm: (confirm: WorldConfirm | null) => void;
+  requestRename: () => void;
+  noteEdited: (
+    kind: "edit" | "undo" | "redo",
+    part: string | undefined,
+    label: string
+  ) => void;
   setSignals: (
     joints: Record<string, Record<string, number>>,
     pins: Record<string, WorldPinState>,
@@ -139,6 +169,17 @@ export type WorldHudState = {
   setAssetIssues: (issues: AssetIssue[]) => void;
   setAssets: (assets: WorldHudState["assets"], sceneReady?: boolean) => void;
 };
+
+function keptWire(
+  tree: WorldViewTree,
+  wire: WorldWirePick | null
+): WorldWirePick | null {
+  if (!wire) return null;
+  const node = findViewNode(tree.nodes, wire.owner);
+  const count = node?.wires?.length ?? 0;
+  if (wire.index < 0 || wire.index >= count) return null;
+  return wire;
+}
 
 function initialPath(): string {
   if (typeof window === "undefined" || !projectUrl()) return "";
@@ -180,6 +221,15 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
   parts: {},
   supplies: {},
   report: null,
+  tree: null,
+  diagnostics: [],
+  wire: null,
+  edits: [],
+  redos: [],
+  editLabel: null,
+  editError: null,
+  confirm: null,
+  renameTick: 0,
 
   open: (next, opts) => {
     const current = get();
@@ -209,6 +259,15 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
         ? current.selection
         : reduceWorldSelection(current.selection, { type: "close" }),
       outline: sameDocument ? current.outline : null,
+      tree: sameDocument ? current.tree : null,
+      diagnostics: [],
+      wire: sameDocument ? current.wire : null,
+      edits: sameDocument ? current.edits : [],
+      redos: sameDocument ? current.redos : [],
+      editLabel: sameDocument ? current.editLabel : null,
+      editError: null,
+      confirm: null,
+      renameTick: sameDocument ? current.renameTick : 0,
       joints: {},
       pins: {},
       parts: {},
@@ -233,6 +292,15 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
       assets: "idle",
       selection: reduceWorldSelection(get().selection, { type: "close" }),
       outline: null,
+      tree: null,
+      diagnostics: [],
+      wire: null,
+      edits: [],
+      redos: [],
+      editLabel: null,
+      editError: null,
+      confirm: null,
+      renameTick: 0,
       joints: {},
       pins: {},
       parts: {},
@@ -245,20 +313,73 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
       type: "select",
       selection,
     });
-    if (next === get().selection) return;
-    set({ selection: next });
+    if (next === get().selection && get().wire === null) return;
+    set({ selection: next, wire: null, editError: null });
+  },
+  selectWire: (wire) => {
+    if (!wire) {
+      if (get().wire === null) return;
+      set({ wire: null });
+      return;
+    }
+    set({ wire, selection: null, editError: null });
   },
   setOutline: (outline) => {
-    const items = outlineItems(outline);
+    set({ outline });
+  },
+  setTree: (tree) => {
+    const current = get();
+    const paths = tree ? viewPaths(tree.nodes) : null;
+    const selection =
+      paths === null
+        ? current.selection
+        : reduceWorldSelection(current.selection, { type: "reload", paths });
+    const wire = selection || !tree ? null : keptWire(tree, current.wire);
+    set({ tree, selection, wire });
+  },
+  setDiagnostics: (diagnostics) => {
+    set({ diagnostics });
+  },
+  setEditError: (message) => {
+    if (get().editError === message) return;
+    set({ editError: message });
+  },
+  setConfirm: (confirm) => {
+    set({ confirm });
+  },
+  requestRename: () => {
+    set((state) => ({ renameTick: state.renameTick + 1 }));
+  },
+  noteEdited: (kind, part, label) => {
+    const current = get();
+    if (kind === "undo") {
+      const step = current.edits[current.edits.length - 1];
+      set({
+        edits: current.edits.slice(0, -1),
+        redos: step ? [...current.redos, step] : current.redos,
+        editLabel: label,
+        editError: null,
+        confirm: null,
+      });
+      return;
+    }
+    if (kind === "redo") {
+      const step = current.redos[current.redos.length - 1];
+      set({
+        redos: current.redos.slice(0, -1),
+        edits: step ? [...current.edits, step] : current.edits,
+        editLabel: label,
+        editError: null,
+        confirm: null,
+      });
+      return;
+    }
     set({
-      outline,
-      selection: reduceWorldSelection(get().selection, {
-        type: "reload",
-        links: items.links,
-        boards: items.boards,
-        parts: items.parts,
-        supplies: items.supplies,
-      }),
+      edits: [...current.edits, part ? { part } : {}],
+      redos: [],
+      editLabel: label,
+      editError: null,
+      confirm: null,
     });
   },
   setSignals: (joints, pins, parts) => {

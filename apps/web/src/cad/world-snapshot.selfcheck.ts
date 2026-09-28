@@ -37,46 +37,38 @@ expect(
   "nothing picked reports a null world selection"
 );
 expect(
-  worldViewerSelection(false, { kind: "board", board: "uno" }) === undefined,
+  worldViewerSelection(false, { kind: "instance", path: "uno" }) === undefined,
   "a CAD view omits the world selection"
 );
 expect(
   worldViewerSelection(true, null) === null,
   "an open world can report nothing selected"
 );
-const linkPick = { kind: "link" as const, robot: "arm", link: "upper_arm" };
+const linkPick = {
+  kind: "instance" as const,
+  path: "arm",
+  link: "upper_arm",
+};
 expect(
   worldViewerSelection(true, linkPick) === linkPick,
   "the helper returns the link selection"
 );
 
-worldStore.getState().select({ kind: "board", board: "uno" });
+worldStore.getState().select({ kind: "instance", path: "uno" });
 const boardSnap = viewerSnapshot();
 expect(
-  boardSnap.selection?.kind === "board" && boardSnap.selection.board === "uno",
-  "get_viewer names the selected board"
+  boardSnap.selection?.kind === "instance" &&
+    boardSnap.selection.path === "uno" &&
+    boardSnap.selection.link === undefined,
+  "get_viewer names the selected instance"
 );
 worldStore.getState().select(linkPick);
 const linkSnap = viewerSnapshot();
 expect(
-  linkSnap.selection?.kind === "link" &&
-    linkSnap.selection.robot === "arm" &&
+  linkSnap.selection?.kind === "instance" &&
+    linkSnap.selection.path === "arm" &&
     linkSnap.selection.link === "upper_arm",
   "get_viewer names the selected link"
-);
-const partPick = { kind: "part" as const, part: "servo" };
-worldStore.getState().select(partPick);
-const partSnap = viewerSnapshot();
-expect(
-  partSnap.selection?.kind === "part" && partSnap.selection.part === "servo",
-  "get_viewer names the selected part"
-);
-worldStore.getState().select({ kind: "supply", supply: "usb" });
-const supplySnap = viewerSnapshot();
-expect(
-  supplySnap.selection?.kind === "supply" &&
-    supplySnap.selection.supply === "usb",
-  "get_viewer names the selected supply"
 );
 
 worldStore.getState().close();

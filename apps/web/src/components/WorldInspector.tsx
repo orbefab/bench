@@ -1,15 +1,16 @@
 import {
   ARDUINO_PINS,
   maskHasPin,
-  type RunReport,
   type WorldPinState,
+  type WorldViewNode,
+  type WorldViewPlay,
 } from "@sfab-bench/contract";
-import { useEffect } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { SerialConsole } from "@/components/SerialConsole";
 import { SourceView } from "@/components/SourceView";
 import { Button } from "@/components/ui/button";
-import { sendBoardSerial } from "@/hooks/useWorldRun";
+import { sendBoardSerial, sendWorldEdit } from "@/hooks/useWorldRun";
 import { ampsText } from "@/lib/amps-text";
 import {
   boardStatusLabel,
@@ -17,8 +18,6 @@ import {
   recordedSoaLine,
   scrubbedBoardStatus,
 } from "@/lib/board-status";
-import { overlayMaxHeight } from "@/lib/layout";
-import { type LevelSnapshot, levelCard } from "@/lib/level-card";
 import {
   activeEscLayer,
   compactChatSheetOpen,
@@ -27,12 +26,13 @@ import {
 } from "@/lib/shortcuts";
 import { faultUntil, resetsUntil, serialUntil } from "@/lib/timeline";
 import { relFromWorldFile } from "@/lib/world-assets";
+import { instanceCard } from "@/lib/world-card";
+import { instanceEditTarget } from "@/lib/world-edit-target";
 import { formatSimTime } from "@/lib/world-issues";
 import {
   formatJointReadout,
   formatLiveDegrees,
   formatPartWire,
-  outlinePartLabel,
   type WorldOutline,
   type WorldOutlineBoard,
   type WorldOutlineJoint,
@@ -40,12 +40,14 @@ import {
   type WorldOutlinePart,
   type WorldOutlineSupply,
 } from "@/lib/world-outline";
+import { findViewNode } from "@/lib/world-tree";
+import { type PathWarning, warningsFromRun } from "@/lib/world-warnings";
 import {
   type BoardConsoleEntry,
   clearBoardReject,
   useBoardConsole,
 } from "@/state/board-console";
-import { useWorld, type WorldSelection, worldStore } from "@/state/world";
+import { useWorld, worldStore } from "@/state/world";
 import { useWorldTimeline } from "@/state/world-timeline";
 
 function useWorldSelectionEsc() {
@@ -67,7 +69,6 @@ function useWorldSelectionEsc() {
 }
 
 const EMPTY_PARTS: readonly WorldOutlinePart[] = [];
-const EMPTY_NETS: RunReport["nets"] = [];
 
 function transcriptText(entries: readonly BoardConsoleEntry[]): string {
   let text = "";
@@ -91,80 +92,6 @@ function SoaLine({ text }: { text: string }) {
   );
 }
 
-function SnapshotBlock({
-  cardPath,
-  snap,
-}: {
-  cardPath: string;
-  snap: LevelSnapshot;
-}) {
-  const value =
-    snap.path === cardPath
-      ? `${snap.ref} · ${snap.quality}`
-      : `${snap.path} · ${snap.ref} · ${snap.quality}`;
-  return (
-    <div className="min-w-0">
-      <Field label="Snapshot" value={value} />
-      {snap.errors.map((line) => (
-        <div
-          key={line}
-          className="mb-1.5 truncate font-mono text-[12px]"
-          title={line}
-        >
-          {line}
-        </div>
-      ))}
-      {snap.provenance ? (
-        <Field label="Provenance" value={snap.provenance} />
-      ) : null}
-      {snap.warnings.map((text) => (
-        <SoaLine key={text} text={text} />
-      ))}
-    </div>
-  );
-}
-
-function LevelBlock({ path }: { path: string }) {
-  const report = useWorld((s) => s.report);
-  const card = levelCard(report, path);
-  if (!card) return null;
-  const snaps = [...(card.snapshot ? [card.snapshot] : []), ...card.nested];
-  return (
-    <div className="mb-1.5 min-w-0">
-      <div className="text-[11px] text-muted-foreground">Level</div>
-      {card.axes.map((axis) => (
-        <div
-          key={axis.axis}
-          className="truncate font-mono text-[12px]"
-          title={`${axis.line} · ${axis.reason}`}
-        >
-          {axis.line}
-          <span className="text-muted-foreground"> · {axis.reason}</span>
-        </div>
-      ))}
-      {snaps.map((snap) => (
-        <SnapshotBlock key={snap.path} cardPath={path} snap={snap} />
-      ))}
-      {card.omits.length > 0 ? (
-        <details className="mt-1">
-          <summary className="cursor-pointer text-[11px] text-muted-foreground">
-            Not simulated
-          </summary>
-          {card.omits.map((line) => (
-            <div
-              key={line}
-              className="truncate font-mono text-[12px]"
-              title={line}
-            >
-              {line}
-            </div>
-          ))}
-        </details>
-      ) : null}
-    </div>
-  );
-}
-
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="mb-1.5 min-w-0">
@@ -172,133 +99,6 @@ function Field({ label, value }: { label: string; value: string }) {
       <div className="truncate font-mono text-[12px]" title={value}>
         {value}
       </div>
-    </div>
-  );
-}
-
-function OutlineBody({ outline }: { outline: WorldOutline | null }) {
-  const failed = useWorld(
-    (s) => s.assets === "error" || s.runErrors.length > 0
-  );
-  const nets = useWorld((s) => s.report?.nets ?? EMPTY_NETS);
-  const select = (selection: NonNullable<WorldSelection>) => {
-    worldStore.getState().select(selection);
-  };
-  if (!outline) {
-    return (
-      <p className="text-[12px] text-muted-foreground">
-        {failed ? "This world failed to load." : "Reading the world…"}
-      </p>
-    );
-  }
-  const empty =
-    outline.robots.length === 0 &&
-    outline.parts.length === 0 &&
-    outline.boards.length === 0 &&
-    outline.supplies.length === 0 &&
-    outline.targets.length === 0;
-  if (empty) {
-    return (
-      <p className="text-[12px] text-muted-foreground">
-        This world has no robots, parts, boards, supplies, or targets.
-      </p>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-2">
-      {outline.robots.map((robot) => (
-        <div key={robot.id}>
-          <div className="px-1 text-[12px] font-medium">{robot.id}</div>
-          {robot.links.map((link) => (
-            <button
-              key={link.name}
-              type="button"
-              className="flex w-full items-baseline gap-2 rounded-md px-1 py-0.5 text-left text-[12px] hover:bg-muted"
-              onClick={() =>
-                select({ kind: "link", robot: robot.id, link: link.name })
-              }
-            >
-              <span className="min-w-0 flex-1 truncate">{link.name}</span>
-              <span className="shrink-0 text-muted-foreground">
-                {link.joint?.name ?? "root"}
-              </span>
-            </button>
-          ))}
-        </div>
-      ))}
-      {outline.parts.length > 0 ? (
-        <div>
-          <div className="px-1 text-[12px] font-medium">Parts</div>
-          {outline.parts.map((part) => (
-            <button
-              key={part.id}
-              type="button"
-              className="flex w-full rounded-md px-1 py-0.5 text-left text-[12px] hover:bg-muted"
-              onClick={() => select({ kind: "part", part: part.id })}
-            >
-              {outlinePartLabel(part)}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {outline.boards.length > 0 ? (
-        <div>
-          <div className="px-1 text-[12px] font-medium">Boards</div>
-          {outline.boards.map((board) => (
-            <button
-              key={board.id}
-              type="button"
-              className="flex w-full rounded-md px-1 py-0.5 text-left text-[12px] hover:bg-muted"
-              onClick={() => select({ kind: "board", board: board.id })}
-            >
-              {board.id}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {outline.targets.length > 0 ? (
-        <div>
-          <div className="px-1 text-[12px] font-medium">Targets</div>
-          {outline.targets.map((id) => (
-            <div key={id} className="px-1 py-0.5 text-[12px]">
-              {id}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {nets.length > 0 ? (
-        <div>
-          <div className="px-1 text-[12px] font-medium">Nets</div>
-          {nets.map((net) => (
-            <div
-              key={net.id}
-              className="truncate px-1 py-0.5 text-[12px]"
-              title={`${net.id} ${net.level} · ${net.reason}`}
-            >
-              <span className="font-mono">{net.id}</span>
-              <span className="text-muted-foreground">
-                {" "}
-                {net.level} · {net.reason}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {outline.supplies.length > 0 ? (
-        <div>
-          <div className="px-1 text-[12px] font-medium">Supplies</div>
-          {outline.supplies.map((supply) => (
-            <button
-              key={supply.id}
-              type="button"
-              className="flex w-full rounded-md px-1 py-0.5 text-left text-[12px] hover:bg-muted"
-              onClick={() => select({ kind: "supply", supply: supply.id })}
-            >
-              {supply.id}
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -507,7 +307,6 @@ function PartBody({
   return (
     <>
       <Field label="Part" value={id} />
-      <LevelBlock path={id} />
       <Field label="Model" value={info?.model ?? "—"} />
       <div className="mb-1.5 min-w-0">
         <div className="text-[11px] text-muted-foreground">Wires</div>
@@ -658,7 +457,6 @@ function SupplyBody({
   return (
     <>
       <Field label="Supply" value={id} />
-      <LevelBlock path={id} />
       <Field
         label="Voltage"
         value={
@@ -753,7 +551,6 @@ function BoardBody({
   return (
     <>
       <Field label="Board" value={id} />
-      <LevelBlock path={id} />
       <Field label="Chip" value={info?.chip ?? "—"} />
       <Field label="Firmware" value={info?.firmware ?? "—"} />
       <Field label="Source" value={info?.source ?? "None"} />
@@ -835,97 +632,429 @@ function BoardBody({
   );
 }
 
-export function WorldInspector({
-  canvasHeight,
-  compact,
-  width,
-  cardRef,
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mb-3">
+      <div className="mb-1 text-[11px] text-muted-foreground">{title}</div>
+      {children}
+    </section>
+  );
+}
+
+function WarningList({ rows }: { rows: readonly PathWarning[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <Section title="Warnings">
+      {rows.map((row) => (
+        <p
+          key={`${row.code ?? ""}:${row.message}`}
+          className="mb-1.5 break-words text-[12px]"
+        >
+          {row.message}
+        </p>
+      ))}
+    </Section>
+  );
+}
+
+function LiveBody({
+  node,
+  link,
+  outline,
 }: {
-  canvasHeight: number;
-  compact: boolean;
-  width: number;
-  cardRef?: (el: HTMLElement | null) => void;
+  node: WorldViewNode;
+  link?: string;
+  outline: WorldOutline | null;
 }) {
+  if (link) {
+    const info = outline?.robots
+      .find((robot) => robot.id === node.id)
+      ?.links.find((item) => item.name === link);
+    return (
+      <LinkBody
+        robot={node.id}
+        link={link}
+        info={info}
+        pending={outline === null}
+      />
+    );
+  }
+  const board = outline?.boards.find((item) => item.id === node.id);
+  if (board || node.role === "board") {
+    return <BoardBody id={node.id} info={board} pending={outline === null} />;
+  }
+  const supply = outline?.supplies.find((item) => item.id === node.id);
+  if (supply || node.role === "supply") {
+    return <SupplyBody id={node.id} info={supply} pending={outline === null} />;
+  }
+  const part = outline?.parts.find((item) => item.id === node.id);
+  if (part || node.role === "part") {
+    return <PartBody id={node.id} info={part} pending={outline === null} />;
+  }
+  return null;
+}
+
+function commitParam(
+  node: WorldViewNode,
+  name: string,
+  raw: string,
+  previous: number | string | boolean
+) {
+  const tree = worldStore.getState().tree;
+  if (!tree) return;
+  const target = instanceEditTarget(tree, node.id);
+  if (!target) return;
+  let value: number | string | boolean = raw;
+  if (typeof previous === "number") {
+    const next = Number(raw);
+    if (!Number.isFinite(next) || next === previous) return;
+    value = next;
+  } else if (typeof previous === "boolean") {
+    value = raw === "true";
+    if (value === previous) return;
+  } else if (raw === previous) {
+    return;
+  }
+  sendWorldEdit({
+    part: target.part,
+    ops: [
+      {
+        kind: "set-param",
+        document: target.document,
+        id: target.id,
+        name,
+        value,
+      },
+    ],
+  });
+}
+
+function commitLevel(
+  path: string,
+  axis: WorldViewNode["levels"][number]["axis"],
+  option: {
+    class: 0 | 1 | 2 | 3;
+    variant: string;
+    runnable: boolean;
+    chosen: boolean;
+  }
+) {
+  if (!option.runnable || option.chosen) return;
+  sendWorldEdit({
+    ops: [
+      {
+        kind: "set-level",
+        document: worldStore.getState().path,
+        scope: "path",
+        key: path,
+        axis,
+        class: option.class,
+        variant: option.variant,
+      },
+    ],
+  });
+}
+
+function commitPlay(
+  current: WorldViewPlay,
+  next: { gravity?: [number, number, number]; seed?: number; timestep?: number }
+) {
+  if (
+    next.gravity &&
+    next.gravity.every((value, index) => value === current.gravity[index])
+  ) {
+    return;
+  }
+  if (next.seed !== undefined && next.seed === current.seed) return;
+  if (
+    next.timestep !== undefined &&
+    next.timestep === (current.timestep ?? 0.001)
+  ) {
+    return;
+  }
+  sendWorldEdit({
+    ops: [
+      {
+        kind: "set-play",
+        document: worldStore.getState().path,
+        ...next,
+      },
+    ],
+  });
+}
+
+function NumberField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  return (
+    <label className="mb-1.5 block min-w-0">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <input
+        className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-[12px]"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          const next = Number(draft);
+          if (!Number.isFinite(next)) {
+            setDraft(String(value));
+            return;
+          }
+          onCommit(next);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+    </label>
+  );
+}
+
+function PlayFields({ play }: { play: WorldViewPlay }) {
+  return (
+    <Section title="Play">
+      <NumberField
+        label="Gravity x"
+        value={play.gravity[0]}
+        onCommit={(value) =>
+          commitPlay(play, {
+            gravity: [value, play.gravity[1], play.gravity[2]],
+          })
+        }
+      />
+      <NumberField
+        label="Gravity y"
+        value={play.gravity[1]}
+        onCommit={(value) =>
+          commitPlay(play, {
+            gravity: [play.gravity[0], value, play.gravity[2]],
+          })
+        }
+      />
+      <NumberField
+        label="Gravity z"
+        value={play.gravity[2]}
+        onCommit={(value) =>
+          commitPlay(play, {
+            gravity: [play.gravity[0], play.gravity[1], value],
+          })
+        }
+      />
+      <NumberField
+        label="Seed"
+        value={play.seed}
+        onCommit={(value) => commitPlay(play, { seed: value })}
+      />
+      <NumberField
+        label="Time step"
+        value={play.timestep ?? 0.001}
+        onCommit={(value) => commitPlay(play, { timestep: value })}
+      />
+    </Section>
+  );
+}
+
+function InstanceBody({
+  node,
+  link,
+  outline,
+  warnings,
+}: {
+  node: WorldViewNode;
+  link?: string;
+  outline: WorldOutline | null;
+  warnings: readonly PathWarning[];
+}) {
+  const card = instanceCard(node);
+  return (
+    <>
+      <Section title="Ports">
+        {card.ports.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground">None</p>
+        ) : (
+          card.ports.map((port) => (
+            <div
+              key={port.name}
+              className="flex items-baseline gap-2 text-[12px]"
+            >
+              <span className="font-mono">{port.name}</span>
+              {port.fixed ? (
+                <span className="text-[11px] text-muted-foreground">fixed</span>
+              ) : null}
+            </div>
+          ))
+        )}
+      </Section>
+      <LiveBody node={node} link={link} outline={outline} />
+      {card.params.length > 0 ? (
+        <Section title="Params">
+          {card.params.map((param) =>
+            typeof param.value === "boolean" ? (
+              <label
+                key={param.name}
+                className="mb-1.5 flex items-center gap-2 text-[12px]"
+              >
+                <input
+                  type="checkbox"
+                  checked={param.value}
+                  onChange={(event) =>
+                    commitParam(
+                      node,
+                      param.name,
+                      event.target.checked ? "true" : "false",
+                      param.value
+                    )
+                  }
+                />
+                <span className="font-mono">{param.name}</span>
+              </label>
+            ) : typeof param.value === "number" ? (
+              <NumberField
+                key={param.name}
+                label={param.name}
+                value={param.value}
+                onCommit={(value) =>
+                  commitParam(node, param.name, String(value), param.value)
+                }
+              />
+            ) : (
+              <label key={param.name} className="mb-1.5 block">
+                <span className="text-[11px] text-muted-foreground">
+                  {param.name}
+                </span>
+                <input
+                  className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-[12px]"
+                  defaultValue={param.value}
+                  onBlur={(event) =>
+                    commitParam(
+                      node,
+                      param.name,
+                      event.target.value,
+                      param.value
+                    )
+                  }
+                />
+              </label>
+            )
+          )}
+        </Section>
+      ) : null}
+      {card.axes.map((axis) => (
+        <Section key={axis.axis} title={axis.axis}>
+          <select
+            className="w-full rounded-md border border-border bg-background px-2 py-1 text-[12px]"
+            value={
+              axis.options.find((option) => option.chosen)
+                ? `${axis.options.find((option) => option.chosen)?.class}:${axis.options.find((option) => option.chosen)?.variant}`
+                : ""
+            }
+            onChange={(event) => {
+              const option = axis.options.find(
+                (item) => `${item.class}:${item.variant}` === event.target.value
+              );
+              if (!option) return;
+              commitLevel(node.id, axis.axis, option);
+            }}
+          >
+            {axis.options.map((option) => (
+              <option
+                key={`${option.class}:${option.variant}`}
+                value={`${option.class}:${option.variant}`}
+                disabled={!option.runnable}
+                title={option.reason}
+              >
+                {option.class} {option.variant}
+                {option.chosen ? " · current" : ""}
+                {option.label ? ` · ${option.label}` : ""}
+              </option>
+            ))}
+          </select>
+        </Section>
+      ))}
+      <WarningList rows={warnings} />
+    </>
+  );
+}
+
+export function WorldInspector() {
   useWorldSelectionEsc();
   const selection = useWorld((s) => s.selection);
+  const wire = useWorld((s) => s.wire);
+  const tree = useWorld((s) => s.tree);
   const outline = useWorld((s) => s.outline);
+  const report = useWorld((s) => s.report);
+  const diagnostics = useWorld((s) => s.diagnostics);
+  const editError = useWorld((s) => s.editError);
   const playhead = useWorldTimeline().playhead;
-  if (width <= 0) return null;
-
-  const link =
-    selection?.kind === "link"
-      ? outline?.robots
-          .find((robot) => robot.id === selection.robot)
-          ?.links.find((item) => item.name === selection.link)
-      : undefined;
-  const board =
-    selection?.kind === "board"
-      ? outline?.boards.find((item) => item.id === selection.board)
-      : undefined;
-  const part =
-    selection?.kind === "part"
-      ? outline?.parts.find((item) => item.id === selection.part)
-      : undefined;
-  const supply =
-    selection?.kind === "supply"
-      ? outline?.supplies.find((item) => item.id === selection.supply)
-      : undefined;
-
+  const warnings = useMemo(
+    () => warningsFromRun(report, diagnostics),
+    [report, diagnostics]
+  );
+  const node =
+    selection && tree ? findViewNode(tree.nodes, selection.path) : null;
+  const wireNode = wire && tree ? findViewNode(tree.nodes, wire.owner) : null;
+  const ends = wire ? wireNode?.wires?.[wire.index] : undefined;
+  const title = wire ? "Wire" : node ? node.name : (tree?.part ?? "Part");
   return (
-    <aside
-      ref={cardRef}
-      className="pointer-events-auto absolute top-16 right-4 z-10 min-w-0 overflow-auto rounded-xl border border-border bg-card/95 p-3 shadow-lg"
-      style={{
-        width: compact ? width : 260,
-        maxWidth: compact ? "calc(100% - 1.5rem)" : undefined,
-        maxHeight: overlayMaxHeight(canvasHeight),
-      }}
-    >
-      <header className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[13px] font-medium">
-          {selection ? "Selection" : "World"}
-        </span>
-        {selection ? (
+    <aside className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-card">
+      <header className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+        <span className="truncate text-[13px] font-medium">{title}</span>
+        {selection || wire ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
             className="h-7 px-2 text-xs text-muted-foreground"
-            onClick={() => worldStore.getState().select(null)}
+            onClick={() => {
+              worldStore.getState().select(null);
+              worldStore.getState().selectWire(null);
+            }}
           >
             Clear
           </Button>
         ) : null}
       </header>
-      {playhead !== null ? (
-        <p className="mb-2 text-[11px] text-muted-foreground">
-          Recorded at {formatSimTime(playhead)}
-        </p>
-      ) : null}
-      {selection?.kind === "link" ? (
-        <LinkBody
-          robot={selection.robot}
-          link={selection.link}
-          info={link}
-          pending={outline === null}
-        />
-      ) : selection?.kind === "board" ? (
-        <BoardBody
-          id={selection.board}
-          info={board}
-          pending={outline === null}
-        />
-      ) : selection?.kind === "part" ? (
-        <PartBody id={selection.part} info={part} pending={outline === null} />
-      ) : selection?.kind === "supply" ? (
-        <SupplyBody
-          id={selection.supply}
-          info={supply}
-          pending={outline === null}
-        />
-      ) : (
-        <OutlineBody outline={outline} />
-      )}
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        {playhead !== null ? (
+          <p className="mb-2 text-[11px] text-muted-foreground">
+            Recorded at {formatSimTime(playhead)}
+          </p>
+        ) : null}
+        {editError ? (
+          <p className="mb-2 break-words text-[12px] text-error">{editError}</p>
+        ) : null}
+        {wire && ends ? (
+          <>
+            <Field label="From" value={ends.a} />
+            <Field label="To" value={ends.b} />
+          </>
+        ) : node ? (
+          <InstanceBody
+            node={node}
+            link={selection?.link}
+            outline={outline}
+            warnings={warnings.get(node.id) ?? []}
+          />
+        ) : (
+          <>
+            {tree ? (
+              <PlayFields play={tree.play} />
+            ) : (
+              <p className="text-[12px] text-muted-foreground">
+                Reading the world…
+              </p>
+            )}
+            <WarningList rows={warnings.get("") ?? []} />
+          </>
+        )}
+      </div>
     </aside>
   );
 }

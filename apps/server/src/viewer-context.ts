@@ -34,7 +34,7 @@ export const viewerTools = {
   // the turn. A server execute would freeze the send-time (often empty) view.
   get_viewer: tool({
     description:
-      "What this asking client's visualizer is showing right now: project-relative path, empty, tree names, selected # ref. When a world is open, file is that world and the snapshot includes playing, simTime, and selection — this client's link, board, part, or supply, or null. Call after show_artifact if you need the loaded tree.",
+      "What this asking client's visualizer is showing right now: project-relative path, empty, tree names, selected # ref. When a world is open, file is that world and the snapshot includes playing, simTime, and selection — this client's instance path, plus a link when the pick is a link inside a robot, or null. Call after show_artifact if you need the loaded tree.",
     inputSchema: z.object({}),
   }),
   show_artifact: tool({

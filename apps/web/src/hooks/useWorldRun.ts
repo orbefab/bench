@@ -1,4 +1,5 @@
 import type {
+  EditOp,
   WorldPinState,
   WorldSender,
   WorldServerMessage,
@@ -58,6 +59,82 @@ export function sendBoardSerial(board: string, text: string) {
   const nonce = worldCommandNonce();
   sentSerialNonces.add(nonce);
   socket.send(JSON.stringify({ type: "serial-send", board, text, nonce }));
+}
+
+type PendingEdit = {
+  kind: "edit" | "undo" | "redo";
+  ops?: EditOp[];
+  part?: string;
+  label?: string;
+};
+
+/** The edit this tab is waiting on. Stay drops it. */
+let pendingEdit: PendingEdit | null = null;
+
+function sendSocket(message: unknown) {
+  if (socket?.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify(message));
+}
+
+export function sendWorldEdit(edit: {
+  ops: EditOp[];
+  part?: string;
+  label?: string;
+  confirm?: "break";
+}) {
+  if (edit.ops.length === 0) return;
+  pendingEdit = {
+    kind: "edit",
+    ops: edit.ops,
+    part: edit.part,
+    label: edit.label,
+  };
+  worldStore.getState().setEditError(null);
+  sendSocket({
+    type: "edit",
+    ops: edit.ops,
+    ...(edit.part ? { part: edit.part } : {}),
+    ...(edit.label ? { label: edit.label } : {}),
+    ...(edit.confirm ? { confirm: edit.confirm } : {}),
+  });
+}
+
+export function sendWorldUndo() {
+  const step = worldStore.getState().edits.at(-1);
+  if (!step) return;
+  pendingEdit = { kind: "undo", part: step.part };
+  sendSocket({
+    type: "undo",
+    ...(step.part ? { part: step.part } : {}),
+  });
+}
+
+export function sendWorldRedo() {
+  const step = worldStore.getState().redos.at(-1);
+  if (!step) return;
+  pendingEdit = { kind: "redo", part: step.part };
+  sendSocket({
+    type: "redo",
+    ...(step.part ? { part: step.part } : {}),
+  });
+}
+
+/** Stay: the edit is not sent again. */
+export function stayWorldEdit() {
+  pendingEdit = null;
+  worldStore.getState().setConfirm(null);
+}
+
+/** Break N: the same operations, with confirm. */
+export function breakWorldEdit() {
+  const confirm = worldStore.getState().confirm;
+  if (!confirm || confirm.ops.length === 0) return;
+  sendWorldEdit({
+    ops: confirm.ops,
+    part: confirm.part,
+    label: confirm.label,
+    confirm: "break",
+  });
 }
 
 function senderLabel(by: WorldSender): string {
@@ -125,6 +202,13 @@ export function useWorldRun(project: string, world: string) {
       const current = worldStore.getState();
       current.setBoards(state.boards);
       current.setSupplies(state.supplies ?? {});
+      current.setDiagnostics(
+        (state.diagnostics ?? []).map((row) => ({
+          path: row.path,
+          message: row.message,
+          code: row.code,
+        }))
+      );
       const live = current.connection === "live";
       const decision = decideHudSample({
         now,
@@ -231,7 +315,37 @@ export function useWorldRun(project: string, world: string) {
         noteBoardReject(message.board, message.message);
         return;
       }
+      if (message.type === "needs-confirm") {
+        const pending = pendingEdit;
+        if (!pending?.ops) return;
+        worldStore.getState().setConfirm({
+          count: message.count,
+          ports: message.ports,
+          message: message.message,
+          ops: pending.ops,
+          part: pending.part,
+          label: pending.label,
+        });
+        return;
+      }
+      if (message.type === "edited") {
+        const pending = pendingEdit;
+        pendingEdit = null;
+        worldStore
+          .getState()
+          .noteEdited(pending?.kind ?? "edit", pending?.part, message.label);
+        showNotice(message.label);
+        return;
+      }
       if (message.type === "error") {
+        if (sawState && pendingEdit && (message.errors?.length ?? 0) === 0) {
+          pendingEdit = null;
+          worldStore.getState().setConfirm(null);
+          worldStore
+            .getState()
+            .setEditError(message.message ?? "The edit was refused.");
+          return;
+        }
         if (!sawState) resetTimeline();
         const live = worldLiveState();
         if (live) setWorldLiveState({ ...live, playing: false });
@@ -283,6 +397,7 @@ export function useWorldRun(project: string, world: string) {
       bindWorldSocket(null);
       sentNonces.clear();
       sentSerialNonces.clear();
+      pendingEdit = null;
       if (retry) clearTimeout(retry);
       if (noticeTimer) clearTimeout(noticeTimer);
       clearFlush();
