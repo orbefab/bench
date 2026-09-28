@@ -144,8 +144,11 @@ Tools, the agent, and scripts all change a document through L1's edit
 operations, so one undo history covers them. An edit is applied in
 `packages/parts` (`EditSession`): in memory, checked by loading the new
 text through an overlay store, then the part and the lock are written
-together. The server keeps one undo history per open document and
-restarts the run from that write.
+together. A nested edit re-pins that part's row in every project root
+that uses it, in the same step. The server keeps one undo history per
+open part and restarts the run from that write. L1 bubbles a composite's
+free nets into ports. L3, at plan time, recomputes a running capture's
+`from.hash` and marks it stale without changing its frames.
 
 **Plugin seams** are compile-time registries of in-repo packages:
 

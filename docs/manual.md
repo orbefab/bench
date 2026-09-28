@@ -68,7 +68,7 @@ Bench keeps these naming ideas separate on purpose.
 ### 3. Ports
 
 - Ports are **always listed** on the card and shown as markers in 3D when empty or free.
-- On composites, free child connections **bubble up** as this part's ports automatically: **one outer port per free net** (not every child pin on that net). Names come from **pin-derived naming plus a collision heuristic**.
+- On composites, free child connections **bubble up** as this part's ports automatically: **one outer port per free net** (not every child pin on that net). The name is the smallest pin name on that net. Nets are named in lexicographic order; a collision becomes `<instance>_<pin>`, then `_2`, `_3`. A dot in a name becomes an underscore.
 - A port stays automatic only until something depends on it: a wire in a parent, or a capture of this part. From then on it is **fixed**. It keeps its name while you rewire the inside.
 - An edit that would remove or rename a fixed port **asks first**. The prompt lists what depends on it and offers **Stay** (undo the edit) or **Break N** (make the edit and break those N wires or captures, each with a warning).
 - In v1 there is **no port rename** UI. Star / pin-to-publish controls are deferred.
@@ -195,5 +195,4 @@ On the card, **contextual import** per category, not one mega Import menu. Bench
 ## Still soft
 
 - Exact Capture recipes per part type
-- Exact port-name collision heuristic when many free nets bubble up
 - Whether multiplayer cursors ever matter here
