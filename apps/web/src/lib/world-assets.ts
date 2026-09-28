@@ -15,12 +15,18 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { projectFileUrl } from "@/cad/loadCadReview";
 import { apiFetch } from "@/lib/api";
 import { messageFromHttpBody } from "@/lib/load-copy";
-import { parseUrdfVisuals } from "@/lib/urdf-visual";
+import { parseUrdfVisuals, type UrdfVisual } from "@/lib/urdf-visual";
 import { buildWorldOutline, type WorldOutline } from "@/lib/world-outline";
 
 export type WorldMesh =
   | { kind: "stl"; geometry: THREE.BufferGeometry }
   | { kind: "obj"; object: THREE.Object3D };
+
+/** A URDF `<box>`, `<cylinder>`, or `<sphere>`. Sizes are metres. */
+export type LoadedPrimitive =
+  | { shape: "box"; size: [number, number, number] }
+  | { shape: "sphere"; size: number }
+  | { shape: "cylinder"; size: { radius: number; length: number } };
 
 export type LoadedVisual = {
   robotId: string;
@@ -28,8 +34,21 @@ export type LoadedVisual = {
   xyz: [number, number, number];
   rpy: [number, number, number];
   scale: [number, number, number];
-  mesh: WorldMesh;
+  mesh: WorldMesh | null;
+  primitive: LoadedPrimitive | null;
 };
+
+function primitiveOf(visual: UrdfVisual): LoadedPrimitive | null {
+  if (visual.kind === "box") return { shape: "box", size: visual.size };
+  if (visual.kind === "sphere") return { shape: "sphere", size: visual.radius };
+  if (visual.kind === "cylinder") {
+    return {
+      shape: "cylinder",
+      size: { radius: visual.radius, length: visual.length },
+    };
+  }
+  return null;
+}
 
 /** What the scene draws. Wires and step props are not. */
 export type WorldSceneDocument = {
@@ -242,6 +261,20 @@ export async function loadWorldAssets(
     }
     urdfByRobot[robot.id] = extractUrdfJointsAndMeshes(xml);
     for (const visual of parseUrdfVisuals(xml)) {
+      const primitive = primitiveOf(visual);
+      if (primitive) {
+        visuals.push({
+          robotId: robot.id,
+          link: visual.link,
+          xyz: visual.xyz,
+          rpy: visual.rpy,
+          scale: [1, 1, 1],
+          mesh: null,
+          primitive,
+        });
+        continue;
+      }
+      if (visual.kind !== "mesh") continue;
       const meshRel = resolveUrdfMesh(urdfRel, visual.filename);
       if (!meshRel) {
         problems.push({
@@ -260,6 +293,7 @@ export async function loadWorldAssets(
           rpy: visual.rpy,
           scale: visual.scale,
           mesh,
+          primitive: null,
         });
       } catch (err: unknown) {
         const detail =
