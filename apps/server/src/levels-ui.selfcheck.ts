@@ -277,6 +277,31 @@ expect(
 console.log(
   `servo box nano-servo-usb: size [${servoUsbBox?.size.join(", ")}] pose [${servoUsbBox?.pose.position.join(", ")}] rot [${servoUsbBox?.pose.rotation.join(", ")}]`
 );
+const usbPose = (
+  world: string,
+  position: readonly [number, number, number]
+) => {
+  const box = viewOf(openReport(nanoDir, world).plan).boxes.find(
+    (item) => item.id === "usb"
+  );
+  expect(
+    box?.pose.position[0] === position[0] &&
+      box.pose.position[1] === position[1] &&
+      box.pose.position[2] === position[2] &&
+      box.pose.rotation[0] === 1 &&
+      box.pose.rotation[1] === 0 &&
+      box.pose.rotation[2] === 0 &&
+      box.pose.rotation[3] === 0,
+    `${world} usb ${JSON.stringify(box?.pose)}`
+  );
+  console.log(
+    `usb ${world}: position [${box?.pose.position.join(", ")}] rotation [${box?.pose.rotation.join(", ")}]`
+  );
+};
+usbPose("nano-led.world.json", [-0.038, 0, 0.0025]);
+usbPose("nano-divider.world.json", [-0.038, 0, 0.0025]);
+usbPose("nano-servo-usb.world.json", [0.042, 0, 0.0025]);
+usbPose("nano-vcc-usb.world.json", [0.042, 0, 0.0025]);
 console.log(
   `gauge boxes unchanged: sensor [${sensorBox?.size.join(", ")}] at [${sensorBox?.pose.position.join(", ")}], MG90S [${servoBox?.size.join(", ")}] at z ${servoBox?.pose.position[2]}`
 );

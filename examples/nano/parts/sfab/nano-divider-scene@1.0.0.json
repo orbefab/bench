@@ -25,7 +25,11 @@
                   }
                 },
                 "usb": {
-                  "part": "sfab/usb-port-500ma@1.0.0"
+                  "part": "sfab/usb-port-500ma@1.0.0",
+                  "pose": {
+                    "position": [-0.038, 0, 0.0025],
+                    "rotation": [1, 0, 0, 0]
+                  }
                 },
                 "rtop": {
                   "part": "sfab/resistor@1.0.0",
