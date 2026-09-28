@@ -102,11 +102,14 @@ export class RailCircuit {
   /** Frozen-factor steps during the last master step. */
   lastFrozen = 0;
   /**
-   * Amperes through `ledAlias`. 0 when that LED is not on this rail.
-   * Prefer `leds`. This field stays for the D13 card and the gauge.
+   * Amperes through `ledAlias` at the last circuit step. 0 when that LED
+   * is not on this rail. The recording reads the frame mean instead.
    */
   ledCurrent = 0;
-  /** Forward current of every LED on this rail, keyed by instance path. */
+  /**
+   * Forward current of every LED at the last circuit step, keyed by
+   * instance path. The recording stores the frame mean from `takeLedFrame`.
+   */
   leds: Record<string, number> = {};
   readonly ledPaths: readonly string[];
   /** Arduino bits that have a pin element on this rail. */
@@ -133,6 +136,16 @@ export class RailCircuit {
   }[];
   private readonly ledDiodes: { path: string; diode: Diode }[];
   private readonly ledAlias: string;
+  /** Seconds accumulated toward the current recording frame. */
+  private ledSpan = 0;
+  /** Time-weighted mean of each LED since the last `takeLedFrame`. */
+  private ledMean: Record<string, number> = {};
+  /**
+   * Last completed frame. The card shows this so a pulse that ended
+   * before the sample is not reported as 0 A.
+   */
+  private ledCard: { leds: Record<string, number>; ledCurrent: number } | null =
+    null;
   private readonly resetFraction: number | null;
   private readonly resetNode: string | null;
   /** Plain-branch tables stamped with the board. The feed table is `src`. */
@@ -284,9 +297,62 @@ export class RailCircuit {
     this.setDrive(bit, mode);
   }
 
-  private noteNano(): void {
+  /**
+   * Time-weighted mean of each LED since the previous take, then a new
+   * frame. Weight is the circuit step length, so a 0.1 ms sub-step and a
+   * 1 ms master step both count for the time they covered. With no timed
+   * step yet, this is the last sample. `end` is that last sample, the
+   * value a frame-end recording would have kept.
+   */
+  takeLedFrame(): {
+    leds: Record<string, number>;
+    ledCurrent: number;
+    end: Record<string, number>;
+  } {
+    const end = { ...this.leds };
     const leds: Record<string, number> = {};
-    for (const led of this.ledDiodes) leds[led.path] = led.diode.amps;
+    if (this.ledSpan === 0) {
+      for (const led of this.ledDiodes) leds[led.path] = end[led.path] ?? 0;
+    } else {
+      for (const led of this.ledDiodes) {
+        leds[led.path] = this.ledMean[led.path] ?? 0;
+      }
+    }
+    const ledCurrent = this.ledAlias ? (leds[this.ledAlias] ?? 0) : 0;
+    this.ledCard = { leds, ledCurrent };
+    this.ledSpan = 0;
+    this.ledMean = {};
+    return { leds, ledCurrent, end };
+  }
+
+  /**
+   * LED currents for the live card: the last completed frame's mean, or
+   * the last circuit step before the first frame.
+   */
+  ledCardReading(): { leds: Record<string, number>; ledCurrent: number } {
+    if (this.ledCard) return this.ledCard;
+    return { leds: this.leds, ledCurrent: this.ledCurrent };
+  }
+
+  /**
+   * Fold one circuit step into the frame mean. `dt` is that step's length.
+   * A steady current stays bit-identical: the update is zero when the
+   * sample equals the mean. The operating point passes `dt` 0 and does
+   * not enter the mean.
+   */
+  private noteNano(dt: number): void {
+    const leds: Record<string, number> = {};
+    const span = this.ledSpan;
+    const next = dt > 0 ? span + dt : span;
+    for (const led of this.ledDiodes) {
+      const amps = led.diode.amps;
+      leds[led.path] = amps;
+      if (!(dt > 0)) continue;
+      const prev = this.ledMean[led.path] ?? 0;
+      this.ledMean[led.path] =
+        span === 0 ? amps : prev + (amps - prev) * (dt / next);
+    }
+    if (dt > 0) this.ledSpan = next;
     this.leds = leds;
     this.ledCurrent = this.ledAlias ? (leds[this.ledAlias] ?? 0) : 0;
     if (!this.resetNode) return;
@@ -301,8 +367,16 @@ export class RailCircuit {
   /**
    * Solve the rail. Writes the terminal, the board node, and `winding`.
    * The fuse, when there is one, takes one thermal step from this current.
+   * `pieces`, when a stamped pin changed inside this millisecond, are the
+   * intervals between those edges. Their durations sum to one master step.
+   * With no pieces the pin is held and the grid is the one used before.
    */
-  solve(): void {
+  solve(
+    pieces?: readonly {
+      dt: number;
+      drive: readonly { bit: number; mode: PinMode }[];
+    }[]
+  ): void {
     const fuse = this.fuse;
     const fuseR = this.fuseR;
     if (fuse && fuseR && fuseR.ohms !== fuse.ohms) {
@@ -316,14 +390,17 @@ export class RailCircuit {
       this.engine.operatingPoint();
       this.ready = true;
       min = this.engine.voltage(this.boardNode);
-      this.noteNano();
+      this.noteNano(0);
+    } else if (pieces && pieces.length > 0) {
+      min = this.runPieces(pieces);
     } else {
       const n = this.substeps;
+      const dt = this.engine.h;
       for (let k = 0; k < n; k++) {
         this.engine.stepFast();
         const v = this.engine.voltage(this.boardNode);
         if (v < min) min = v;
-        this.noteNano();
+        this.noteNano(dt);
       }
     }
     this.lastFrozen = this.engine.frozenSteps - frozen;
@@ -338,6 +415,36 @@ export class RailCircuit {
       winding[i] = motor.connected ? this.engine.branchCurrent(motor.id) : 0;
     }
     fuse?.advance(this.current, MASTER_S);
+  }
+
+  /** Pin edges inside one master step. Each chunk is at most one grid step. */
+  private runPieces(
+    pieces: readonly {
+      dt: number;
+      drive: readonly { bit: number; mode: PinMode }[];
+    }[]
+  ): number {
+    let min = Number.POSITIVE_INFINITY;
+    const h = this.engine.h;
+    for (const piece of pieces) {
+      for (const drive of piece.drive) this.setDrive(drive.bit, drive.mode);
+      let left = piece.dt;
+      while (left > h * (1 + 1e-9)) {
+        this.engine.advance(h);
+        const v = this.engine.voltage(this.boardNode);
+        if (v < min) min = v;
+        this.noteNano(h);
+        left -= h;
+      }
+      if (left > 1e-15) {
+        this.engine.advance(left);
+        const v = this.engine.voltage(this.boardNode);
+        if (v < min) min = v;
+        this.noteNano(left);
+      }
+    }
+    this.engine.parkGrid(this.substeps);
+    return min;
   }
 }
 

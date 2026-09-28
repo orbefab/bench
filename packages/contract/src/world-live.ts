@@ -158,11 +158,12 @@ export type WorldBoardState = {
   voltage?: number;
   /**
    * Forward current, amperes, of each LED on this board's rail.
-   * Keyed by instance path (`nano.led`, `led`).
+   * Keyed by instance path (`nano.led`, `led`). Each value is the
+   * time-weighted mean over the last recording frame's circuit steps.
    */
   leds?: Record<string, number>;
   /**
-   * Amperes through the onboard LED at `leds[`${id}.led`]`.
+   * Frame mean through the onboard LED at `leds[`${id}.led`]`.
    * @deprecated Read `leds` instead. Kept for the D13 card and the gauge.
    */
   ledCurrent?: number;
@@ -507,10 +508,13 @@ export type RecordedFrame = {
       voltage: number;
       /** Lowest 5V-node voltage in the window. */
       minVoltage: number;
-      /** Forward current of each LED on this rail, keyed by instance path. */
+      /**
+       * Forward current of each LED on this rail, keyed by instance path.
+       * The time-weighted mean over this frame's circuit steps.
+       */
       leds?: Record<string, number>;
       /**
-       * Amperes through `leds[`${id}.led`]`.
+       * Frame mean through `leds[`${id}.led`]`.
        * @deprecated Read `leds`. Kept for the D13 card and the gauge.
        */
       ledCurrent?: number;

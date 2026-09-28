@@ -89,6 +89,10 @@ export class AvrBoard {
   private toggled = 0;
   /** Arduino bits whose rising and falling edges are timed. */
   private edgeMask = 0;
+  /** Cycle count at the start of the current `stepMillis`. */
+  stepOrigin = 0;
+  /** Port-bit changes during the current `stepMillis`, in order. */
+  pinChanges: { bit: number; high: boolean; cycle: number }[] = [];
   /** Cycle count at the rising edge, keyed by Arduino bit. */
   private riseAt = new Map<number, number>();
   private pulses: { bit: number; us: number }[] = [];
@@ -323,11 +327,12 @@ export class AvrBoard {
         this.toggled |= changed << shift;
         this.noteEdges(changed, shift, value);
         const cycles = this.cpu?.cycles;
-        if (this.onEdge && cycles !== undefined) {
+        if (cycles !== undefined) {
           for (let index = 0; index < width; index++) {
             if ((changed & (1 << index)) === 0) continue;
             const high = ((value >> index) & 1) === 1;
-            this.onEdge(shift + index, high, cycles);
+            this.pinChanges.push({ bit: shift + index, high, cycle: cycles });
+            this.onEdge?.(shift + index, high, cycles);
           }
         }
       }
@@ -503,10 +508,17 @@ export class AvrBoard {
     return (level & mask) !== 0;
   }
 
+  /** CPU cycle counter. Equal to `stepOrigin` while the CPU is down. */
+  cycles(): number {
+    return this.cpu?.cycles ?? this.stepOrigin;
+  }
+
   stepMillis() {
     const cpu = this.cpu;
     // Ports and timers stay reachable from this object, not only from CPU hooks.
     if (!this.running || !cpu || this.peripherals.length === 0) return;
+    this.pinChanges = [];
+    this.stepOrigin = cpu.cycles;
     const budget = CYCLES_PER_MS - this.overshoot;
     if (budget <= 0) {
       this.overshoot = -budget;

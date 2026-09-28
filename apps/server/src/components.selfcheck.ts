@@ -137,6 +137,17 @@ function nanoLaw() {
   console.log(
     `leds alias: nano.led ${(alias * 1000).toFixed(2)} mA equals ledCurrent`
   );
+  rail.takeLedFrame();
+  for (let i = 0; i < 10; i++) rail.solve();
+  const steadyEnd = rail.leds["nano.led"] ?? 0;
+  const steady = rail.takeLedFrame();
+  expect(
+    steady.leds["nano.led"] === steadyEnd && steady.ledCurrent === steadyEnd,
+    `D13 frame mean ${steady.ledCurrent} A moved from ${steadyEnd} A`
+  );
+  console.log(
+    `D13 steady on ${(steadyEnd * 1000).toFixed(4)} mA, frame mean unchanged`
+  );
 }
 
 {
@@ -312,6 +323,75 @@ async function runLed(
         `(${(snapErr * 100).toFixed(3)}%); leds nano.led equals ledCurrent`
     );
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/** Arduino `map(angle, 0, 180, 544, 2400)`, integer division. */
+function servoPulseUs(angle: number): number {
+  return Math.trunc((angle * (2400 - 544)) / 180) + 544;
+}
+
+{
+  const root = mkdtempSync(join(tmpdir(), "sfab-led-mean-"));
+  const previous = process.env.SFAB_LED_TRACE;
+  process.env.SFAB_LED_TRACE = "1";
+  try {
+    cpSync(nanoDir, root, { recursive: true });
+    const read = await runLed(root, "nano-led.world.json", 1500);
+    const pulseUs = servoPulseUs(10);
+    const periodUs = 20_000;
+    let serial = "";
+    let wroteAt = Number.NaN;
+    for (const event of read.events) {
+      if (event.kind !== "serial" || event.board !== "nano") continue;
+      serial += event.text ?? "";
+      if (Number.isNaN(wroteAt) && serial.includes("10\r\n")) wroteAt = event.t;
+    }
+    console.log(
+      `nano-led serial ${JSON.stringify(serial.slice(0, 24))} first line at ${
+        Number.isNaN(wroteAt) ? "none" : `${wroteAt.toFixed(3)} s`
+      }`
+    );
+    // The 10° pulse is one second. The timer is up by 60 ms, and the
+    // next width starts at 1 s, so the closed form is taken on this span.
+    const from = 0.06;
+    const to = 1;
+    let sum = 0;
+    let volts = 0;
+    let n = 0;
+    let d13Min = Number.POSITIVE_INFINITY;
+    let d13Max = 0;
+    for (const frame of read.frames) {
+      if (frame.t + 1e-9 < from || frame.t >= to - 1e-9) continue;
+      const led = frame.boards.nano?.leds?.led ?? 0;
+      sum += led;
+      volts += frame.boards.nano?.voltage ?? 0;
+      const onboard = frame.boards.nano?.leds?.["nano.led"] ?? 0;
+      if (onboard < d13Min) d13Min = onboard;
+      if (onboard > d13Max) d13Max = onboard;
+      n += 1;
+    }
+    expect(n >= 90, `LED mean window has ${n} frames`);
+    const mean = sum / n;
+    const board = volts / n;
+    const on = ledDeck(board);
+    const closed = (pulseUs / periodUs) * on;
+    const rel = closed > 0 ? Math.abs(mean - closed) / closed : 0;
+    console.log(
+      `nano-led D9 mean over 1 s ${(mean * 1e3).toFixed(4)} mA ` +
+        `(${from.toFixed(3)}..${to.toFixed(3)} s), ` +
+        `closed form ${(closed * 1e3).toFixed(4)} mA ` +
+        `(${pulseUs} µs / ${periodUs} µs × ${(on * 1e3).toFixed(4)} mA), ` +
+        `${(rel * 100).toFixed(2)}%`
+    );
+    expect(rel <= 0.02, `LED frame mean ${mean} A vs closed form ${closed} A`);
+    console.log(
+      `D13 in that window ${(d13Min * 1e3).toFixed(4)}..${(d13Max * 1e3).toFixed(4)} mA`
+    );
+  } finally {
+    if (previous === undefined) delete process.env.SFAB_LED_TRACE;
+    else process.env.SFAB_LED_TRACE = previous;
     rmSync(root, { recursive: true, force: true });
   }
 }

@@ -468,6 +468,25 @@ export class Engine {
   }
 
   /**
+   * One transient step of `dt` seconds. Unlike `stepFast`, the width need
+   * not be the grid `h`, so a pin edge can land inside a master step.
+   */
+  advance(dt: number): void {
+    if (!(dt > 0)) return;
+    this.stepTo(this.t + dt);
+  }
+
+  /**
+   * `stepFast` places time on `stepIndex * h`. After one or more `advance`
+   * calls that together cover `steps` grid intervals, park there so the
+   * next `stepFast` continues the same grid.
+   */
+  parkGrid(steps: number): void {
+    this.stepIndex += steps;
+    this.t = this.stepIndex * this.h;
+  }
+
+  /**
    * One accepted transient step of width `h`. A linear circuit is factored
    * on the first step and reused while switches hold their state.
    */

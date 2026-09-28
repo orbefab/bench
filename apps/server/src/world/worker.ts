@@ -32,6 +32,7 @@ import {
 import { analogRead } from "./analog-pin";
 import { AvrBoard, type CpuResetRegs, FIRMWARE_RELOADED } from "./board";
 import type { AdcConversion } from "./board-adc";
+import type { PinMode } from "./circuit/pin";
 import { projectReal, readerFor, readInside, type WorldBytes } from "./files";
 import { parseIntelHex } from "./ihex";
 import {
@@ -644,15 +645,28 @@ function fillRecorder(full: boolean) {
     rec.voltage[i] = live?.voltage ?? 0;
     rec.supplyCurrent[i] = live?.current ?? 0;
   }
+  const ledFrames = new Map<string, ReturnType<RailCircuit["takeLedFrame"]>>();
+  const ledFrameOf = (supplyId: string) => {
+    const cached = ledFrames.get(supplyId);
+    if (cached) return cached;
+    const circuit = rails.get(supplyId)?.circuit;
+    if (!circuit) return undefined;
+    const frame = full ? circuit.takeLedFrame() : undefined;
+    if (frame) ledFrames.set(supplyId, frame);
+    return frame;
+  };
   for (let i = 0; i < lay.boards.length; i++) {
     const id = lay.boards[i];
     const board = boards.find((item) => item.id === id);
     const power = id ? boardPower.get(id) : undefined;
     rec.boardVoltage[i] = power?.supplyId ? boardNodeOf(power.supplyId) : 0;
     if (rec.ledOn[i]) {
-      rec.ledCurrent[i] = power?.supplyId
-        ? (ledCurrentOf(power.supplyId) ?? 0)
-        : 0;
+      const frame = power?.supplyId ? ledFrameOf(power.supplyId) : undefined;
+      rec.ledCurrent[i] = frame
+        ? frame.ledCurrent
+        : power?.supplyId
+          ? (ledCurrentOf(power.supplyId) ?? 0)
+          : 0;
     }
     rec.brownout[i] = board?.brownout ? 1 : 0;
     rec.belowSoa[i] = board && boardInSoa(board) ? 1 : 0;
@@ -661,8 +675,27 @@ function fillRecorder(full: boolean) {
     const row = rec.ledPaths[k];
     if (!row) continue;
     const supplyId = boardPower.get(row.board)?.supplyId;
+    const frame = supplyId ? ledFrameOf(supplyId) : undefined;
     const group = supplyId ? rails.get(supplyId) : undefined;
-    rec.ledAmps[k] = group?.circuit.leds[row.path] ?? 0;
+    rec.ledAmps[k] = frame
+      ? (frame.leds[row.path] ?? 0)
+      : (group?.circuit.leds[row.path] ?? 0);
+  }
+  if (
+    full &&
+    process.env.SFAB_LED_TRACE === "1" &&
+    worldRel.endsWith("nano-led.world.json")
+  ) {
+    const supplyId = boardPower.get("nano")?.supplyId;
+    const frame = supplyId ? ledFrames.get(supplyId) : undefined;
+    const ms = simMs();
+    if (frame && ms <= 90) {
+      const end = frame.end.led ?? 0;
+      const mean = frame.leds.led ?? 0;
+      console.log(
+        `nano-led D9 t=${(ms / 1000).toFixed(3)} end ${(end * 1e3).toFixed(4)} mA mean ${(mean * 1e3).toFixed(4)} mA`
+      );
+    }
   }
 }
 
@@ -1112,10 +1145,11 @@ function ledReading(supplyId: string | null | undefined): {
   if (!supplyId) return {};
   const group = rails.get(supplyId);
   if (!group || group.circuit.ledPaths.length === 0) return {};
+  const card = group.circuit.ledCardReading();
   const current = ledCurrentOf(supplyId);
   return {
-    leds: group.circuit.leds,
-    ...(current === undefined ? {} : { ledCurrent: current }),
+    leds: card.leds,
+    ...(current === undefined ? {} : { ledCurrent: card.ledCurrent }),
   };
 }
 
@@ -1210,6 +1244,76 @@ function boundName(key: string): { port: string; quantity: string } {
   return { port, quantity };
 }
 
+/** Drive mode of each stamped pin at the start of this millisecond. */
+const driveAtStart = new Map<string, Map<number, PinMode>>();
+
+function snapshotDriveModes(): void {
+  driveAtStart.clear();
+  for (const board of boards) {
+    board.pinChanges = [];
+    const supplyId = boardPower.get(board.id)?.supplyId;
+    const circuit = supplyId ? rails.get(supplyId)?.circuit : undefined;
+    if (!circuit || circuit.driveBits.length === 0) continue;
+    const modes = new Map<number, PinMode>();
+    for (const bit of circuit.driveBits) modes.set(bit, board.driveMode(bit));
+    driveAtStart.set(board.id, modes);
+  }
+}
+
+/**
+ * Intervals between edges of a stamped pin inside this millisecond.
+ * D13 stays on the end-of-step sample. Splitting one level change would
+ * charge the rail for part of the millisecond and move the board voltage.
+ * A pulse on another pin has both edges, and those intervals are the duty.
+ */
+function pinPieces(
+  avr: AvrBoard,
+  circuit: RailCircuit
+): { dt: number; drive: { bit: number; mode: PinMode }[] }[] | null {
+  const bits = circuit.driveBits;
+  const start = driveAtStart.get(avr.id);
+  const onboard = arduinoPinBit("D13");
+  if (!start || bits.length === 0) return null;
+  const wanted = new Set<number>();
+  for (const bit of bits) {
+    if (bit !== onboard) wanted.add(bit);
+  }
+  if (wanted.size === 0) return null;
+  const edges = avr.pinChanges.filter(
+    (edge) => wanted.has(edge.bit) && edge.cycle >= avr.stepOrigin
+  );
+  if (edges.length === 0) return null;
+  const span = avr.cycles() - avr.stepOrigin;
+  if (!(span > 0)) return null;
+  const mode = new Map(start);
+  const pieces: { dt: number; drive: { bit: number; mode: PinMode }[] }[] = [];
+  let t = 0;
+  let changed = false;
+  const driveOf = () =>
+    bits.map((bit) => ({
+      bit,
+      mode: mode.get(bit) ?? ("input" as const),
+    }));
+  for (const edge of edges) {
+    const when = ((edge.cycle - avr.stepOrigin) / span) * 0.001;
+    const dt = when - t;
+    if (dt > 1e-12) pieces.push({ dt, drive: driveOf() });
+    const prev = mode.get(edge.bit);
+    if (prev === "high" || prev === "low") {
+      const next: PinMode = edge.high ? "high" : "low";
+      if (next !== prev) {
+        mode.set(edge.bit, next);
+        changed = true;
+      }
+    }
+    if (when > t) t = when;
+  }
+  if (!changed) return null;
+  const rest = 0.001 - t;
+  if (rest > 1e-12) pieces.push({ dt: rest, drive: driveOf() });
+  return pieces.length > 0 ? pieces : null;
+}
+
 function solveOneRail(
   supplyId: string,
   fixed: number
@@ -1219,7 +1323,8 @@ function solveOneRail(
   const { circuit, loads: members } = group;
   circuit.setFixed(fixed);
   const avr = drivenBoard(supplyId);
-  if (avr) {
+  const pieces = avr ? pinPieces(avr, circuit) : null;
+  if (avr && !pieces) {
     // DDR set and PORT set is high, DDR set and PORT clear is low,
     // PORT set alone is the pull-up, and neither is an input.
     // High is the board node. peekPins mixes PIN into the level, so
@@ -1239,7 +1344,7 @@ function solveOneRail(
       on
     );
   }
-  circuit.solve();
+  circuit.solve(pieces ?? undefined);
   noteSnapshotEnvelope(supplyId, circuit.current);
   const winding = circuit.winding;
   for (let i = 0; i < members.length; i++) {
@@ -1711,6 +1816,7 @@ function advanceOne() {
     throw new Error("injected step fault");
   }
   latchSupplyNodes();
+  snapshotDriveModes();
   const already = new Set<string>();
   for (const board of boards) {
     const power = boardPower.get(board.id);
@@ -1797,6 +1903,7 @@ function dispose() {
   adcNodes = [];
   adcSamples = [];
   rails = new Map();
+  driveAtStart.clear();
   stepPulses.clear();
   targetHolds.clear();
   specs = [];
