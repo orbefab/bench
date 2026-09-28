@@ -24,7 +24,7 @@ import {
   BridgeMotor,
   Comparator,
   CurrentLoad,
-  type Diode,
+  Diode,
   type Element,
   Engine,
   LawTable,
@@ -98,6 +98,28 @@ export type RailCircuitSpec = {
   ledAlias?: string;
   /** V_RST / VCC. From the stamp when omitted. */
   resetFraction?: number;
+  /**
+   * Nodes the feed would leave open, but another supply on this island
+   * drives. A VIN feed keeps `VBUS` when USB is also wired.
+   */
+  keep?: readonly string[];
+  /**
+   * The supply stamped as `src`, when this island has several. Absent
+   * means the only source, and `sourceCurrent` is that source for any id.
+   */
+  primaryId?: string;
+  /**
+   * Further supplies on this island. Each is a Thevenin or a battery on
+   * `node`. The primary stays `src` on the feed terminal.
+   */
+  also?: readonly {
+    id: string;
+    vNom: number;
+    rSeries: number;
+    iLimit: number;
+    battery?: BatteryParams;
+    node: string;
+  }[];
   /**
    * Every board on this rail. N = 1 is the single-board rail: the same
    * element ids and node names. Two or more share one source, each
@@ -196,6 +218,10 @@ export class RailCircuit {
   private shared = false;
   /** Set when this rail's source is `battery@1`. The same instance the engine stamps. */
   private battery: BatteryElement | null = null;
+  /** Supply id of `src` when `also` is set. Null on a one-supply rail. */
+  private primarySupply: string | null = null;
+  private readonly extraNodes = new Map<string, string>();
+  private diodes: Diode[] = [];
   /** Shared rails start the operating point here. One board leaves this at 0. */
   private readonly boardLoads = new Map<string, CurrentLoad>();
   private readonly boardNodes = new Map<string, string>();
@@ -273,8 +299,16 @@ export class RailCircuit {
       throw new Error("a board stamp needs feed usb, header, or vin");
     }
     const realized = stamp
-      ? realize(stamp, feed ?? "header", spec.pin ?? AVR_PIN)
+      ? realize(
+          stamp,
+          feed ?? "header",
+          spec.pin ?? AVR_PIN,
+          spec.keep && spec.keep.length > 0 ? { keep: spec.keep } : undefined
+        )
       : null;
+    this.diodes = (realized?.elements ?? []).filter(
+      (el): el is Diode => el instanceof Diode
+    );
     const nano = realized !== null && stamp?.netlist === true;
     const board = uno || nano;
     this.path = board;
@@ -354,12 +388,34 @@ export class RailCircuit {
       (el): el is LdoRegulator => el instanceof LdoRegulator
     );
     this.winding = new Float64Array(motors.length);
-    this.engine = new Engine([supply, this.load, ...motors, ...stamped], {
-      method: "be",
-      h: MASTER_S / this.substeps,
-      atol: 1e-14,
-      rtol: 1e-12,
-    });
+    const extras: Element[] = [];
+    for (const src of spec.also ?? []) {
+      this.extraNodes.set(src.id, src.node);
+      extras.push(
+        src.battery
+          ? new BatteryElement(src.id, src.node, "0", src.battery)
+          : new TheveninLimit(
+              src.id,
+              src.node,
+              "0",
+              src.vNom,
+              src.rSeries,
+              src.iLimit
+            )
+      );
+    }
+    if ((spec.also?.length ?? 0) > 0 && spec.primaryId) {
+      this.primarySupply = spec.primaryId;
+    }
+    this.engine = new Engine(
+      [supply, this.load, ...motors, ...stamped, ...extras],
+      {
+        method: "be",
+        h: MASTER_S / this.substeps,
+        atol: 1e-14,
+        rtol: 1e-12,
+      }
+    );
   }
 
   setFixed(amps: number): void {
@@ -374,6 +430,46 @@ export class RailCircuit {
 
   get sharedRail(): boolean {
     return this.shared;
+  }
+
+  /**
+   * Current out of one supply on this island. A one-supply rail returns
+   * the `src` current for every id.
+   */
+  sourceCurrent(id: string): number {
+    if (this.primarySupply !== null && id !== this.primarySupply) {
+      return -this.engine.branchCurrent(id);
+    }
+    return this.current;
+  }
+
+  /** Terminal voltage of one supply. A one-supply rail returns `voltage`. */
+  sourceVoltage(id: string): number {
+    if (this.primarySupply !== null && id !== this.primarySupply) {
+      const node = this.extraNodes.get(id);
+      if (node) return this.engine.voltage(node);
+    }
+    return this.voltage;
+  }
+
+  /** Forward current of a stamped diode, by id or by an id suffix. */
+  diodeCurrent(suffix: string): number | null {
+    const found = this.diodes.find(
+      (diode) => diode.id === suffix || diode.id.endsWith(suffix)
+    );
+    return found ? found.amps : null;
+  }
+
+  /** The P-channel switch, when this rail stamped one. */
+  pmosOn(): boolean | null {
+    const channel = this.channels[0];
+    return channel ? channel.on : null;
+  }
+
+  /** True when `id` is the supply whose state of charge this rail tracks. */
+  batteryOf(id: string): boolean {
+    if (!this.battery) return false;
+    return this.primarySupply === null || id === this.primarySupply;
   }
 
   /** State of charge after this step. Absent when the source is not a battery. */

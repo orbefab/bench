@@ -69,7 +69,9 @@ import {
   gpioInputNets,
   type PowerFeeds,
   powerFeedsOf,
+  powerIslands,
   servoSignalDrives,
+  suppliesOnPort,
 } from "./wiring";
 
 export type SimHost = {
@@ -1118,7 +1120,91 @@ function createSession(host: SimHost) {
       if (list) list.push(load);
       else groups.set(load.supplyId, [load]);
     }
+    const islands = runPlan ? powerIslands(runPlan) : [];
+    const islandOf = new Map(
+      islands.flatMap((island) =>
+        island.supplyIds.map((id) => [id, island] as const)
+      )
+    );
+    const builtIsland = new Set<string>();
     for (const supply of supplySpecs) {
+      const island = islandOf.get(supply.id);
+      if (!runPlan || !island || island.supplyIds.length < 2) continue;
+      if (builtIsland.has(island.id)) continue;
+      const fed = runPlan.boards.filter((board) =>
+        island.supplyIds.includes(boardPower.get(board.id)?.supplyId ?? "")
+      );
+      const stamped = fed.filter((board) => board.stamp);
+      const only = stamped.length === 1 ? stamped[0] : undefined;
+      if (!only?.stamp) continue;
+      const onVin = suppliesOnPort(runPlan, only.id, "VIN")[0] ?? null;
+      const onRail =
+        suppliesOnPort(runPlan, only.id, only.voltagePin)[0] ?? null;
+      const railSupply = runPlan.supplies.find((item) => item.id === onRail);
+      const vinSupply = runPlan.supplies.find((item) => item.id === onVin);
+      const vbus = only.stamp.vbusNode;
+      const vinNode = only.stamp.portNodes.VIN ?? null;
+      if (
+        !railSupply ||
+        !vinSupply ||
+        !vinNode ||
+        vinSupply.id === railSupply.id
+      ) {
+        continue;
+      }
+      const usb = railSupply.connector === "usb";
+      const railNode = usb ? vbus : only.stamp.boardNode;
+      if (!railNode || railNode === vinNode) continue;
+      const members = island.supplyIds.flatMap((id) => groups.get(id) ?? []);
+      const primary = vinSupply;
+      const circuit = createRailCircuit({
+        vNom: primary.voltage,
+        rSeries: primary.rSeries,
+        iLimit: primary.currentLimit,
+        motors: members.map((load) => {
+          const drive = load.drive;
+          if (!drive) throw new Error("rail motor has no drive");
+          return {
+            resistance: drive.law.resistance,
+            k: drive.law.k,
+            boardId: drive.board?.id,
+          };
+        }),
+        pin: only.pin,
+        ledAlias: `${only.id}.led`,
+        stamp: only.stamp,
+        feed: "vin",
+        ...(usb && vbus ? { keep: [vbus] } : {}),
+        primaryId: primary.id,
+        ...(primary.battery ? { battery: primary.battery } : {}),
+        also: [
+          {
+            id: railSupply.id,
+            vNom: railSupply.voltage,
+            rSeries: railSupply.rSeries,
+            iLimit: railSupply.currentLimit,
+            node: railNode,
+            ...(railSupply.battery ? { battery: railSupply.battery } : {}),
+          },
+        ],
+      });
+      if (fuseStart === "tripped") circuit.tripFuse();
+      for (let i = 0; i < members.length; i++) {
+        const load = members[i];
+        if (load) load.railSlot = i;
+      }
+      const group = {
+        circuit,
+        loads: members,
+        path: null as BoardPathName | null,
+        boardMin: 0,
+      };
+      for (const id of island.supplyIds) rails.set(id, group);
+      rails.set(island.id, group);
+      builtIsland.add(island.id);
+    }
+    for (const supply of supplySpecs) {
+      if (builtIsland.has(islandOf.get(supply.id)?.id ?? "")) continue;
       const members = groups.get(supply.id) ?? [];
       const fedBoards = boardsFed(supply.id);
       const stamped = fedBoards.filter((board) => board.stamp);
@@ -1296,7 +1382,7 @@ function createSession(host: SimHost) {
     if (batteryWarned.has(supplyId)) return;
     const group = rails.get(supplyId);
     const detail = group?.circuit.batteryWarning();
-    if (!detail || !group) return;
+    if (!detail || !group?.circuit.batteryOf(supplyId)) return;
     batteryWarned.add(supplyId);
     if (!runReport) return;
     runReport.warnings.push({
@@ -1304,7 +1390,7 @@ function createSession(host: SimHost) {
       path: supplyId,
       port: "+",
       quantity: "Voltage",
-      left: String(group.circuit.voltage),
+      left: String(group.circuit.sourceVoltage(supplyId)),
       right: "ocv(0)",
       message: `${supplyId} ${detail}`,
     });
@@ -1440,7 +1526,9 @@ function createSession(host: SimHost) {
   function pinPiecesUnion(
     specs: readonly { id: string }[],
     circuit: RailCircuit
-  ): { dt: number; drive: { bit: number; mode: PinMode; boardId: string }[] }[] | null {
+  ):
+    | { dt: number; drive: { bit: number; mode: PinMode; boardId: string }[] }[]
+    | null {
     type Edge = { boardId: string; bit: number; when: number; high: boolean };
     const edges: Edge[] = [];
     const modes = new Map<string, Map<number, PinMode>>();
@@ -1587,7 +1675,9 @@ function createSession(host: SimHost) {
     }
     circuit.solve(pieces ?? undefined);
     noteSnapshotEnvelope(supplyId);
-    noteBattery(supplyId);
+    for (const [id, other] of rails) {
+      if (other.circuit === circuit) noteBattery(id);
+    }
     const winding = circuit.winding;
     for (let i = 0; i < members.length; i++) {
       const load = members[i];
@@ -1705,26 +1795,41 @@ function createSession(host: SimHost) {
       );
     }
     const next: Record<string, WorldSupplyState> = {};
+    const solved = new Set<RailCircuit>();
     for (const supply of supplySpecs) {
+      const group = rails.get(supply.id);
+      const circuit = group?.circuit;
+      if (circuit && solved.has(circuit)) continue;
+      if (circuit) solved.add(circuit);
+      const onThis = (id: string | null) => {
+        if (!id) return false;
+        if (!circuit) return id === supply.id;
+        return rails.get(id)?.circuit === circuit;
+      };
       let fixed = 0;
       for (const power of boardPower.values()) {
-        if (power.supplyId !== supply.id) continue;
+        if (!onThis(power.supplyId)) continue;
         fixed += power.draw;
       }
       for (const load of loads) {
-        if (load.supplyId !== supply.id) continue;
+        if (!onThis(load.supplyId)) continue;
         fixed += load.quiescent;
       }
-      fixed += rangerFixed.get(supply.id) ?? 0;
-      const solved = solveOneRail(supply.id, fixed);
+      for (const [id, draw] of rangerFixed) {
+        if (onThis(id)) fixed += draw;
+      }
+      solveOneRail(supply.id, fixed);
+    }
+    for (const supply of supplySpecs) {
+      const circuit = rails.get(supply.id)?.circuit;
       // The supply record is the terminal. The board node is reported on
       // the board, and a servo's V+ is that same node. A battery also
       // records the state of charge after this step.
-      const soc = rails.get(supply.id)?.circuit.soc;
+      const soc = circuit?.batteryOf(supply.id) ? circuit.soc : undefined;
+      const voltage = circuit?.sourceVoltage(supply.id) ?? 0;
+      const current = circuit?.sourceCurrent(supply.id) ?? 0;
       next[supply.id] =
-        soc === undefined
-          ? { voltage: solved.voltage, current: solved.current }
-          : { voltage: solved.voltage, current: solved.current, soc };
+        soc === undefined ? { voltage, current } : { voltage, current, soc };
     }
     for (const load of loads) {
       const drive = load.drive;
@@ -1864,7 +1969,7 @@ function createSession(host: SimHost) {
     for (const supply of supplySpecs) {
       latchedTerminal.set(
         supply.id,
-        rails.get(supply.id)?.circuit.voltage ?? 0
+        rails.get(supply.id)?.circuit.sourceVoltage(supply.id) ?? 0
       );
     }
   }

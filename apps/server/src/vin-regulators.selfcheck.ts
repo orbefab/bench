@@ -41,7 +41,7 @@ import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit } from "./world/rail-circuit";
-import { powerFeedsOf } from "./world/wiring";
+import { powerFeedsOf, powerIslands, suppliesOnPort } from "./world/wiring";
 
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
@@ -391,6 +391,7 @@ async function runProject(
   leds: number[];
   resets: number;
   frames: RecordingRead["frames"];
+  supplies: WorldState["supplies"];
 }> {
   const seen: { state: WorldState | null; failed: string | null } = {
     state: null,
@@ -433,6 +434,7 @@ async function runProject(
       ),
       resets: seen.state.boards[board]?.resets ?? 0,
       frames: read.frames,
+      supplies: seen.state.supplies,
     };
   } finally {
     attached.detach();
@@ -636,6 +638,214 @@ try {
   rmSync(root, { recursive: true, force: true });
   await stopWorld(root, "blink.world.json");
   closeRootWatches();
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-dual-supply-"));
+  try {
+    mkdirSync(join(dir, "parts", "sfab"), { recursive: true });
+    cpSync(join(nanoExample, "firmware"), join(dir, "firmware"), {
+      recursive: true,
+    });
+    const body = `{
+      "format": "sfab.part@1",
+      "id": "sfab/dual-scene@1.0.0",
+      "type": "assembly",
+      "foreign": false,
+      "axes": {
+        "behaviour": { "2": { "default": "netlist", "variants": { "netlist": {
+          "kind": "composite", "omits": ["two supplies"],
+          "netlist": {
+            "instances": {
+              "nano": { "part": "sfab/nano-ch340@1.0.0", "params": { "firmware": "firmware/hold/hold.hex", "source": "firmware/hold/hold.ino" } },
+              "usb": { "part": "sfab/usb-port-500ma@1.0.0" },
+              "vin": { "part": "sfab/bench-supply@1.0.0", "params": { "V": 9, "Ilimit": 2 } }
+            },
+            "wires": [
+              ["usb.5V", "nano.5V"], ["usb.GND", "nano.GND"],
+              ["vin.5V", "nano.VIN"], ["vin.GND", "nano.GND"]
+            ],
+            "expose": {}
+          }
+        } } } },
+        "body": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["none"] } } } },
+        "visual": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["none"] } } } }
+      }
+    }`;
+    writeFileSync(join(dir, "parts", "sfab", "dual-scene@1.0.0.json"), body);
+    writeFileSync(
+      join(dir, "dual.world.json"),
+      `{
+        "version": 2,
+        "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },
+        "run": { "seed": 1, "levels": { "default": 1, "paths": { "nano": { "behaviour": 2 } } } },
+        "root": { "id": "scene", "part": "sfab/dual-scene@1.0.0" }
+      }`
+    );
+    const planned = planWorld(dir, "dual.world.json");
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((item) => item.message).join("; "));
+    }
+    const islands = powerIslands(planned.plan);
+    const island = islands.find((item) => item.supplyIds.length > 1);
+    expect(
+      island,
+      `islands ${islands.map((item) => item.supplyIds.join("+")).join(",")}`
+    );
+    const board = planned.plan.boards.find((item) => item.id === "nano");
+    if (!board?.stamp?.vbusNode) throw new Error("dual nano has no stamp");
+    const vinId = suppliesOnPort(planned.plan, "nano", "VIN")[0];
+    const railId = suppliesOnPort(planned.plan, "nano", board.voltagePin)[0];
+    const vin = planned.plan.supplies.find((item) => item.id === vinId);
+    const usb = planned.plan.supplies.find((item) => item.id === railId);
+    if (!vin || !usb || !board.stamp.vbusNode) throw new Error("dual supplies");
+    const circuit = createRailCircuit({
+      vNom: vin.voltage,
+      rSeries: vin.rSeries,
+      iLimit: vin.currentLimit,
+      motors: [],
+      pin: board.pin,
+      ledAlias: "nano.led",
+      stamp: board.stamp,
+      feed: "vin",
+      keep: [board.stamp.vbusNode],
+      primaryId: vin.id,
+      also: [
+        {
+          id: usb.id,
+          vNom: usb.voltage,
+          rSeries: usb.rSeries,
+          iLimit: usb.currentLimit,
+          node: board.stamp.vbusNode,
+        },
+      ],
+    });
+    circuit.setFixed(NANO_BOARD_A);
+    circuit.solve();
+    const pass = circuit.regulatorOut("nano");
+    const s4 = circuit.diodeCurrent(".s4");
+    if (s4 === null) throw new Error("dual rail has no S4");
+    const hand = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
+      boardId: "nano",
+    });
+    const vbus = hand.vbusNode;
+    if (!vbus) throw new Error("hand stamp");
+    const realized = realize(hand, "vin", AVR_PIN, { keep: [vbus] });
+    const load = new CurrentLoad("load", realized.boardNode, "0", 0);
+    load.amps = NANO_BOARD_A;
+    const engine = new Engine(
+      [
+        new TheveninLimit("usb", vbus, "0", 5, 0.5, 0.9),
+        new TheveninLimit("vin", realized.feedNode, "0", 9, 0.05, 2),
+        load,
+        ...realized.elements,
+      ],
+      { method: "be", h: 0.0001, atol: 1e-14, rtol: 1e-12 }
+    );
+    engine.operatingPoint();
+    const handDiode = realized.elements.find(
+      (el): el is Diode => el instanceof Diode && el.id.endsWith(".s4")
+    );
+    const handLdo = realized.elements.find(
+      (el): el is LdoRegulator => el instanceof LdoRegulator
+    );
+    if (!handDiode || !handLdo) throw new Error("hand dual");
+    const dPass = Math.abs(pass - engine.branchCurrent(handLdo.id));
+    const dS4 = Math.abs(s4 - handDiode.amps);
+    expect(dPass <= 1e-9, `regulator Δ ${dPass}`);
+    expect(dS4 <= 1e-9, `S4 Δ ${dS4}`);
+    console.log(
+      `nano USB and VIN 9 V: regulator ${pass.toFixed(6)} A, S4 ${s4.toExponential(2)} A, regulator supplies the board`
+    );
+    const ran = await runProject(dir, "dual.world.json", 50, "nano");
+    const reg = ran.frames.reduce(
+      (max, frame) => Math.max(max, frame.boards.nano?.regulatorMax ?? 0),
+      0
+    );
+    expect(reg > 0.02, `worker regulator ${reg}`);
+    console.log(
+      `nano USB and VIN world: regulator ${reg.toFixed(6)} A, plan island ${island?.supplyIds.join(" + ")}`
+    );
+
+    const unoBody = body
+      .replaceAll("nano", "uno")
+      .replaceAll("sfab/uno-ch340@1.0.0", "sfab/uno-r3@1.0.0")
+      .replace("sfab/dual-scene@1.0.0", "sfab/uno-dual-scene@1.0.0");
+    writeFileSync(
+      join(dir, "parts", "sfab", "uno-dual-scene@1.0.0.json"),
+      unoBody
+    );
+    writeFileSync(
+      join(dir, "uno-dual.world.json"),
+      `{
+        "version": 2,
+        "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },
+        "run": { "seed": 1, "levels": { "default": 1, "paths": { "uno": { "behaviour": 2 } } } },
+        "root": { "id": "scene", "part": "sfab/uno-dual-scene@1.0.0" }
+      }`
+    );
+    const unoPlanned = planWorld(dir, "uno-dual.world.json");
+    if (!unoPlanned.ok) {
+      throw new Error(unoPlanned.errors.map((item) => item.message).join("; "));
+    }
+    const unoBoard = unoPlanned.plan.boards.find((item) => item.id === "uno");
+    const unoVinId = suppliesOnPort(unoPlanned.plan, "uno", "VIN")[0];
+    const unoRailId = suppliesOnPort(
+      unoPlanned.plan,
+      "uno",
+      unoBoard?.voltagePin ?? "5V"
+    )[0];
+    const unoVin = unoPlanned.plan.supplies.find(
+      (item) => item.id === unoVinId
+    );
+    const unoUsb = unoPlanned.plan.supplies.find(
+      (item) => item.id === unoRailId
+    );
+    if (!unoBoard?.stamp?.vbusNode || !unoVin || !unoUsb) {
+      throw new Error("uno dual supplies");
+    }
+    const unoRail = createRailCircuit({
+      vNom: unoVin.voltage,
+      rSeries: unoVin.rSeries,
+      iLimit: unoVin.currentLimit,
+      motors: [],
+      pin: unoBoard.pin,
+      ledAlias: "uno.led",
+      stamp: unoBoard.stamp,
+      feed: "vin",
+      keep: [unoBoard.stamp.vbusNode],
+      primaryId: unoVin.id,
+      also: [
+        {
+          id: unoUsb.id,
+          vNom: unoUsb.voltage,
+          rSeries: unoUsb.rSeries,
+          iLimit: unoUsb.currentLimit,
+          node: unoBoard.stamp.vbusNode,
+        },
+      ],
+    });
+    unoRail.setFixed(0.05);
+    for (let i = 0; i < 3; i++) unoRail.solve();
+    const unoPass = unoRail.regulatorOut("uno");
+    const unoUsbA = unoRail.sourceCurrent(unoUsb.id);
+    expect(unoRail.pmosOn() === false, "planned Uno T1 stayed on");
+    expect(unoPass > 0.04, `planned Uno regulator ${unoPass}`);
+    expect(Math.abs(unoUsbA) < 1e-3, `planned Uno USB ${unoUsbA}`);
+    const unoRan = await runProject(dir, "uno-dual.world.json", 50, "uno");
+    const unoReg = unoRan.frames.reduce(
+      (max, frame) => Math.max(max, frame.boards.uno?.regulatorMax ?? 0),
+      0
+    );
+    const liveUsb = unoRan.supplies?.usb?.current ?? Number.NaN;
+    expect(unoReg > 0.04, `uno world regulator ${unoReg}`);
+    expect(Math.abs(liveUsb) < 1e-3, `uno world USB ${liveUsb}`);
+    console.log(
+      `uno USB and VIN 9 V world: T1 off, NCP1117 ${unoReg.toFixed(6)} A, USB ${liveUsb.toExponential(2)} A`
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 {

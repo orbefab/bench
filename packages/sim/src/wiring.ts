@@ -256,6 +256,128 @@ export function powerFeedsOf(plan: RunPlan): PowerFeeds {
   return { boards, parts };
 }
 
+export type PowerIsland = {
+  /** Lex-first supply on the island. A lone supply uses its own id. */
+  id: string;
+  supplyIds: string[];
+};
+
+/**
+ * One rail per connected power island. Supplies that reach the same
+ * board, or each other's positive pin, share an island when their
+ * grounds meet. Supplies whose grounds stay apart are not one circuit:
+ * tying them would short two grounds. That island is left split.
+ */
+export function powerIslands(plan: RunPlan): PowerIsland[] {
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    let root = id;
+    while (parent.get(root) !== root) {
+      const up = parent.get(root);
+      if (!up) break;
+      root = up;
+    }
+    parent.set(id, root);
+    return root;
+  };
+  const union = (a: string, b: string) => {
+    const left = find(a);
+    const right = find(b);
+    if (left === right) return;
+    parent.set(left < right ? right : left, left < right ? left : right);
+  };
+  for (const supply of plan.supplies) parent.set(supply.id, supply.id);
+  const adjacent = powerAdjacent(plan);
+  const grounds = groundAdjacent(plan);
+  const shareGround = (a: string, b: string): boolean => {
+    const left = plan.supplies.find((item) => item.id === a);
+    const right = plan.supplies.find((item) => item.id === b);
+    if (!left || !right) return false;
+    const hit = reachedFrom(`${left.id}.${left.groundPin}`, grounds);
+    return hit.has(`${right.id}.${right.groundPin}`);
+  };
+  const suppliesOn = (path: string, port: string): string[] => {
+    const hit = reachedFrom(`${path}.${port}`, adjacent);
+    const ids: string[] = [];
+    for (const supply of plan.supplies) {
+      if (hit.has(`${supply.id}.${supply.positivePin}`)) ids.push(supply.id);
+    }
+    return ids;
+  };
+  for (const supply of plan.supplies) {
+    const hit = reachedFrom(`${supply.id}.${supply.positivePin}`, adjacent);
+    for (const other of plan.supplies) {
+      if (other.id === supply.id) continue;
+      if (!hit.has(`${other.id}.${other.positivePin}`)) continue;
+      if (!shareGround(supply.id, other.id)) continue;
+      union(supply.id, other.id);
+    }
+  }
+  for (const board of plan.boards) {
+    const ids = new Set<string>();
+    for (const port of [...board.powerInputs, "VIN"]) {
+      for (const id of suppliesOn(board.id, port)) ids.add(id);
+    }
+    const list = [...ids].sort();
+    const first = list[0];
+    if (!first) continue;
+    for (const id of list.slice(1)) {
+      if (!shareGround(first, id)) continue;
+      union(first, id);
+    }
+  }
+  const groups = new Map<string, string[]>();
+  for (const supply of plan.supplies) {
+    const root = find(supply.id);
+    const list = groups.get(root) ?? [];
+    list.push(supply.id);
+    groups.set(root, list);
+  }
+  const islands: PowerIsland[] = [];
+  const seen = new Set<string>();
+  for (const supply of plan.supplies) {
+    const root = find(supply.id);
+    if (seen.has(root)) continue;
+    seen.add(root);
+    const supplyIds = [...(groups.get(root) ?? [])].sort();
+    const id = supplyIds[0];
+    if (!id) continue;
+    islands.push({ id, supplyIds });
+  }
+  return islands;
+}
+
+/** Supply positive pins that reach `path.port` by a power wire. */
+export function suppliesOnPort(
+  plan: RunPlan,
+  path: string,
+  port: string
+): string[] {
+  const hit = reachedFrom(`${path}.${port}`, powerAdjacent(plan));
+  const ids: string[] = [];
+  for (const supply of plan.supplies) {
+    if (hit.has(`${supply.id}.${supply.positivePin}`)) ids.push(supply.id);
+  }
+  return ids;
+}
+
+function groundAdjacent(plan: RunPlan): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  const link = (from: string, to: string) => {
+    const list = map.get(from);
+    if (list) list.push(to);
+    else map.set(from, [to]);
+  };
+  for (const wire of plan.wires) {
+    const left = endpointPin(plan, wire[0]);
+    const right = endpointPin(plan, wire[1]);
+    if (left?.kind !== "ground" || right?.kind !== "ground") continue;
+    link(wire[0], wire[1]);
+    link(wire[1], wire[0]);
+  }
+  return map;
+}
+
 /**
  * A GPIO output wins, then a ground, then a supply positive. The worker
  * calls this from the port listener (`onPinsChanged`) before that board

@@ -1120,46 +1120,19 @@ function build(
   for (const part of circuits) {
     const hit = ownersOf(part);
     if (hit.length >= 2) {
-      const supplyIds = new Set(
-        hit
-          .map((board) => boardSupplyId(board, supplies, nets))
-          .filter((id): id is string => id !== null)
-      );
-      const reached = suppliesReached(part, supplies, nets);
-      if (supplyIds.size >= 2 || reached.length >= 2) {
-        crowded.add(part.path);
-        const names =
-          supplyIds.size >= 2
-            ? hit.map((board) => board.id).join(" and ")
-            : reached.join(" and ");
-        diags.push({
-          severity: "error",
-          path: part.path,
-          port: "nets",
-          quantity: "Part",
-          left: names,
-          right: "one board",
-          message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
-        });
-        continue;
-      }
+      // One island may hold several supplies. The part is stamped once.
       const home = [...hit].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
       if (home) homeOf.set(part.path, home.id);
       continue;
     }
     const reached = suppliesReached(part, supplies, nets);
     if (reached.length >= 2) {
-      crowded.add(part.path);
-      const names = reached.join(" and ");
-      diags.push({
-        severity: "error",
-        path: part.path,
-        port: "nets",
-        quantity: "Part",
-        left: names,
-        right: "one supply",
-        message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
-      });
+      if (hit.length >= 1) continue;
+      const homeSupply = reached[0];
+      if (!homeSupply) continue;
+      const list = loose.get(homeSupply) ?? [];
+      list.push(part);
+      loose.set(homeSupply, list);
       continue;
     }
     if (reached.length === 0 && hit.length === 0) {
