@@ -1,0 +1,224 @@
+/**
+ * Circuit form stamps. Moved from `elementOf` (layered-sim A2b).
+ */
+import type { BehaviourImpl, FormId } from "@sfab-bench/contract";
+import { FORM_PARAMS } from "@sfab-bench/contract";
+import {
+  Capacitor,
+  Comparator,
+  Diode,
+  type DiodeParams,
+  LawTable,
+  LdoRegulator,
+  PmosChannel,
+  PtcFuseElement,
+  type PtcFuseParams,
+  Resistor,
+} from "@sfab-bench/engine-circuit";
+import { isScalarParam } from "@sfab-bench/parts";
+
+import type { AssignedPart } from "../circuit-stamp";
+import type { FormAdapter, StampedElements } from "./types";
+
+function need(part: AssignedPart, port: string): string {
+  const node = part.nodes[port];
+  if (!node) throw new Error(`${part.path} has no ${port} node`);
+  return node;
+}
+
+function needNum(part: AssignedPart, key: string): number {
+  const value = part.params[key];
+  if (!(typeof value === "number" && Number.isFinite(value))) {
+    throw new Error(`${part.path} is missing ${key}`);
+  }
+  return value;
+}
+
+/** Same numbers `circuitNumbers` published for a circuit form. */
+export function parseCircuitParams(
+  behaviour: BehaviourImpl,
+  params: Record<string, number | string | boolean>
+): Record<string, number> | null {
+  if (behaviour.kind !== "form") return null;
+  const form = FORM_PARAMS[behaviour.form as FormId];
+  const out: Record<string, number> = {};
+  for (const key of Object.keys(form.params)) {
+    const value = behaviour.params[key];
+    if (value !== undefined && isScalarParam(value)) {
+      out[key] = typeof value === "number" ? value : value.v;
+    }
+  }
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === "number" && form.params[key]) out[key] = value;
+  }
+  return out;
+}
+
+function stampResistor(part: AssignedPart): StampedElements {
+  const a = need(part, "A");
+  const b = need(part, "B");
+  return {
+    elements: [new Resistor(part.path, a, b, needNum(part, "R"))],
+    capacitive: false,
+  };
+}
+
+function stampTable(part: AssignedPart): StampedElements {
+  const law = part.table?.law;
+  if (!law) throw new Error(`${part.path} table is missing its law`);
+  return {
+    elements: [
+      new LawTable(
+        part.path,
+        need(part, law.across[0]),
+        need(part, law.across[1]),
+        law
+      ),
+    ],
+    capacitive: false,
+  };
+}
+
+function stampPtc(part: AssignedPart): StampedElements {
+  const params: PtcFuseParams = {
+    rCold: needNum(part, "rCold"),
+    rHot: needNum(part, "rHot"),
+    iHold: needNum(part, "iHold"),
+    iTrip: needNum(part, "iTrip"),
+    tripPower: needNum(part, "tripPower"),
+    tau: needNum(part, "tau"),
+    uReset: needNum(part, "uReset"),
+  };
+  return {
+    elements: [
+      new PtcFuseElement(part.path, need(part, "A"), need(part, "B"), params),
+    ],
+    capacitive: false,
+  };
+}
+
+function stampPmos(
+  part: AssignedPart,
+  assigned: readonly AssignedPart[]
+): StampedElements {
+  const gate = part.nodes.G;
+  // A net's name is its first port. `t1.G` sorts first on the gate net,
+  // so that string is also a wired gate. Unwired is the same string
+  // with no other part on it.
+  const shared =
+    gate !== undefined &&
+    assigned.some(
+      (other) =>
+        other.path !== part.path && Object.values(other.nodes).includes(gate)
+    );
+  if (!gate || (gate === `${part.path}.G` && !shared)) {
+    throw new Error(`${part.path}: pmos-switch@1 has no gate net`);
+  }
+  const source = need(part, "S");
+  const drain = need(part, "D");
+  const diode: DiodeParams = {
+    Is: needNum(part, "Is"),
+    N: needNum(part, "N"),
+    Rs: part.params.Rs ?? 0,
+    tempC: 25,
+  };
+  return {
+    elements: [
+      new PmosChannel(
+        part.path,
+        source,
+        drain,
+        gate,
+        needNum(part, "rds"),
+        needNum(part, "vth")
+      ),
+      new Diode(`${part.path}#d`, drain, source, diode),
+    ],
+    capacitive: false,
+  };
+}
+
+function stampCapacitor(part: AssignedPart): StampedElements {
+  const a = need(part, "A");
+  const b = need(part, "B");
+  const esr = part.params.esr ?? 0;
+  const c = needNum(part, "C");
+  if (esr > 0) {
+    const mid = `${part.path}#j`;
+    return {
+      elements: [
+        new Resistor(`${part.path}#esr`, a, mid, esr),
+        new Capacitor(part.path, mid, b, c),
+      ],
+      capacitive: true,
+    };
+  }
+  return {
+    elements: [new Capacitor(part.path, a, b, c)],
+    capacitive: true,
+  };
+}
+
+function stampLdo(part: AssignedPart): StampedElements {
+  if (!part.ldo) throw new Error(`${part.path} is missing its regulator law`);
+  return {
+    elements: [
+      new LdoRegulator(
+        part.path,
+        need(part, "IN"),
+        need(part, "OUT"),
+        need(part, "GND"),
+        part.ldo
+      ),
+    ],
+    capacitive: false,
+  };
+}
+
+function stampComparator(part: AssignedPart): StampedElements {
+  return {
+    elements: [
+      new Comparator(
+        part.path,
+        need(part, "P"),
+        need(part, "N"),
+        need(part, "OUT"),
+        need(part, "VP"),
+        need(part, "VN"),
+        part.params.vHyst ?? 0
+      ),
+    ],
+    capacitive: false,
+  };
+}
+
+/** The trailing branch of the old chain. Any form it does not know is a diode. */
+export function stampDiode(part: AssignedPart): StampedElements {
+  const params: DiodeParams = {
+    Is: needNum(part, "Is"),
+    N: needNum(part, "N"),
+    Rs: part.params.Rs ?? 0,
+    tempC: 25,
+  };
+  const diode = new Diode(part.path, need(part, "A"), need(part, "K"), params);
+  return {
+    elements: [diode],
+    capacitive: false,
+    ...(part.typeId === "led" ? { led: { path: part.path, diode } } : {}),
+  };
+}
+
+function circuit(id: string, stamp: FormAdapter["stamp"]): FormAdapter {
+  return { id, stamp, parse: parseCircuitParams };
+}
+
+export const circuitAdapters: FormAdapter[] = [
+  circuit("resistor@1", stampResistor),
+  circuit("capacitor@1", stampCapacitor),
+  circuit("diode@1", stampDiode),
+  circuit("ptc-fuse@1", stampPtc),
+  circuit("pmos-switch@1", stampPmos),
+  circuit("ldo-regulator@1", stampLdo),
+  circuit("comparator@1", stampComparator),
+  { id: "table@1", stamp: stampTable },
+];

@@ -19,7 +19,6 @@ import { collapse } from "@sfab-bench/engine-body";
 import { type AvrPinParams, avrPinParams } from "@sfab-bench/engine-circuit";
 import {
   type BatteryParams,
-  batteryFrom,
   class2BoardNetlist,
   envelopeOf,
   gearTrainErrors,
@@ -28,7 +27,6 @@ import {
   type LiveNet,
   type LoadResult,
   loadWorldV2,
-  ocvAt,
   pathRefOf,
   siValue,
   tableLawOf,
@@ -50,6 +48,7 @@ import {
   touches,
 } from "./circuit-stamp";
 import { requirePlanEnv } from "./env";
+import { formAdapter } from "./forms";
 import { chipFacts } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
 import { readTargets } from "./targets";
@@ -973,77 +972,27 @@ function build(
       });
       continue;
     }
-    if (behaviour?.kind === "form" && behaviour.form === "thevenin-limit@1") {
-      const numbers = formNumbers(inst);
-      if (!numbers) {
-        diags.push(cannot(inst, "the run needs thevenin-limit@1"));
-        continue;
-      }
-      const pins = pinsOf(inst.type.ports);
-      const positive = Object.entries(pins).find(
-        ([, pin]) => pin.kind === "power" && pin.output
-      )?.[0];
-      const ground = Object.entries(pins).find(
-        ([, pin]) => pin.kind === "ground"
-      )?.[0];
-      if (!positive) {
-        diags.push(cannot(inst, `${inst.part.id} has no power port`));
-        continue;
-      }
-      if (!ground) {
-        diags.push(cannot(inst, `${inst.part.id} has no ground port`));
-        continue;
-      }
-      supplies.push({
-        id: inst.path,
-        type: typeId,
-        voltage: numbers.V ?? 0,
-        currentLimit: numbers.Ilimit ?? 0,
-        rSeries: numbers.Rs ?? 0,
-        positivePin: positive,
-        groundPin: ground,
-        connector: inst.type.ports[positive]?.connector ?? null,
-        pins,
+    const place =
+      behaviour?.kind === "form"
+        ? formAdapter(behaviour.form)?.place
+        : undefined;
+    if (place && behaviour?.kind === "form") {
+      place({
+        inst,
+        behaviour,
+        typeId,
+        numbers: () => formNumbers(inst),
+        pins: () => pinsOf(inst.type.ports),
+        reject: (detail) => {
+          diags.push(cannot(inst, detail));
+        },
+        add: (supply) => {
+          supplies.push(supply);
+        },
+        box: () => {
+          pushBox(boxes, inst, "supply");
+        },
       });
-      pushBox(boxes, inst, "supply");
-      continue;
-    }
-    if (behaviour?.kind === "form" && behaviour.form === "battery@1") {
-      const built = batteryFrom(behaviour.params, inst.params);
-      if (!built.ok) {
-        diags.push(cannot(inst, built.error));
-        continue;
-      }
-      const cell = built.params;
-      const pins = pinsOf(inst.type.ports);
-      const positive = Object.entries(pins).find(
-        ([, pin]) => pin.kind === "power" && pin.output
-      )?.[0];
-      const ground = Object.entries(pins).find(
-        ([, pin]) => pin.kind === "ground"
-      )?.[0];
-      if (!positive) {
-        diags.push(cannot(inst, `${inst.part.id} has no power port`));
-        continue;
-      }
-      if (!ground) {
-        diags.push(cannot(inst, `${inst.part.id} has no ground port`));
-        continue;
-      }
-      const voc = ocvAt(cell.ocv, cell.soc0);
-      supplies.push({
-        id: inst.path,
-        type: typeId,
-        voltage: voc,
-        currentLimit: cell.rInternal > 0 ? voc / cell.rInternal : 1,
-        rSeries: cell.rInternal,
-        positivePin: positive,
-        groundPin: ground,
-        connector: inst.type.ports[positive]?.connector ?? null,
-        pins,
-        battery: cell,
-      });
-      pushBox(boxes, inst, "supply");
       continue;
     }
     if (behaviour?.kind === "form" && behaviour.form === "dc-motor@1") {

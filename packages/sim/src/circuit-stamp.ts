@@ -5,7 +5,6 @@
 import {
   arduinoPinBit,
   type BehaviourImpl,
-  FORM_PARAMS,
   type LevelClass,
   PART_FORMAT,
   PART_TYPE_FORMAT,
@@ -16,23 +15,15 @@ import {
   AVR_PIN,
   type AvrPinParams,
   Capacitor,
-  Comparator,
   Diode,
-  type DiodeParams,
   type Element,
-  LawTable,
-  LdoRegulator,
   Pin,
-  PmosChannel,
-  PtcFuseElement,
-  type PtcFuseParams,
   Resistor,
 } from "@sfab-bench/engine-circuit";
 import {
   buildNets,
   compileRules,
   envelopeOf,
-  isScalarParam,
   type LdoParams,
   type Library,
   type LibraryOptions,
@@ -53,6 +44,7 @@ import {
 } from "@sfab-bench/parts";
 
 import { requireStampEnv } from "./env";
+import { formAdapter, stampDiode } from "./forms";
 import { chipFacts, type RailFeed } from "./power-path";
 
 export const CIRCUIT_FORMS = [
@@ -147,18 +139,7 @@ export function circuitNumbers(
   params: Record<string, number | string | boolean>
 ): Record<string, number> | null {
   if (behaviour.kind !== "form" || !isCircuitForm(behaviour.form)) return null;
-  const form = FORM_PARAMS[behaviour.form];
-  const out: Record<string, number> = {};
-  for (const key of Object.keys(form.params)) {
-    const value = behaviour.params[key];
-    if (value !== undefined && isScalarParam(value)) {
-      out[key] = typeof value === "number" ? value : value.v;
-    }
-  }
-  for (const [key, value] of Object.entries(params)) {
-    if (typeof value === "number" && form.params[key]) out[key] = value;
-  }
-  return out;
+  return formAdapter(behaviour.form)?.parse?.(behaviour, params) ?? null;
 }
 
 function nodeName(net: NetPorts, ground: ReadonlySet<string>): string {
@@ -514,160 +495,9 @@ function elementOf(
   capacitive: boolean;
   led?: { path: string; diode: Diode };
 } {
-  if (part.form === "resistor@1") {
-    const a = need(part, "A");
-    const b = need(part, "B");
-    return {
-      elements: [new Resistor(part.path, a, b, needNum(part, "R"))],
-      capacitive: false,
-    };
-  }
-  if (part.form === "table@1") {
-    const law = part.table?.law;
-    if (!law) throw new Error(`${part.path} table is missing its law`);
-    return {
-      elements: [
-        new LawTable(
-          part.path,
-          need(part, law.across[0]),
-          need(part, law.across[1]),
-          law
-        ),
-      ],
-      capacitive: false,
-    };
-  }
-  if (part.form === "ptc-fuse@1") {
-    const params: PtcFuseParams = {
-      rCold: needNum(part, "rCold"),
-      rHot: needNum(part, "rHot"),
-      iHold: needNum(part, "iHold"),
-      iTrip: needNum(part, "iTrip"),
-      tripPower: needNum(part, "tripPower"),
-      tau: needNum(part, "tau"),
-      uReset: needNum(part, "uReset"),
-    };
-    return {
-      elements: [
-        new PtcFuseElement(part.path, need(part, "A"), need(part, "B"), params),
-      ],
-      capacitive: false,
-    };
-  }
-  if (part.form === "pmos-switch@1") {
-    const gate = part.nodes.G;
-    // A net's name is its first port. `t1.G` sorts first on the gate net,
-    // so that string is also a wired gate. Unwired is the same string
-    // with no other part on it.
-    const shared =
-      gate !== undefined &&
-      assigned.some(
-        (other) =>
-          other.path !== part.path && Object.values(other.nodes).includes(gate)
-      );
-    if (!gate || (gate === `${part.path}.G` && !shared)) {
-      throw new Error(`${part.path}: pmos-switch@1 has no gate net`);
-    }
-    const source = need(part, "S");
-    const drain = need(part, "D");
-    const diode: DiodeParams = {
-      Is: needNum(part, "Is"),
-      N: needNum(part, "N"),
-      Rs: part.params.Rs ?? 0,
-      tempC: 25,
-    };
-    return {
-      elements: [
-        new PmosChannel(
-          part.path,
-          source,
-          drain,
-          gate,
-          needNum(part, "rds"),
-          needNum(part, "vth")
-        ),
-        new Diode(`${part.path}#d`, drain, source, diode),
-      ],
-      capacitive: false,
-    };
-  }
-  if (part.form === "capacitor@1") {
-    const a = need(part, "A");
-    const b = need(part, "B");
-    const esr = part.params.esr ?? 0;
-    const c = needNum(part, "C");
-    if (esr > 0) {
-      const mid = `${part.path}#j`;
-      return {
-        elements: [
-          new Resistor(`${part.path}#esr`, a, mid, esr),
-          new Capacitor(part.path, mid, b, c),
-        ],
-        capacitive: true,
-      };
-    }
-    return {
-      elements: [new Capacitor(part.path, a, b, c)],
-      capacitive: true,
-    };
-  }
-  if (part.form === "ldo-regulator@1") {
-    if (!part.ldo) throw new Error(`${part.path} is missing its regulator law`);
-    return {
-      elements: [
-        new LdoRegulator(
-          part.path,
-          need(part, "IN"),
-          need(part, "OUT"),
-          need(part, "GND"),
-          part.ldo
-        ),
-      ],
-      capacitive: false,
-    };
-  }
-  if (part.form === "comparator@1") {
-    return {
-      elements: [
-        new Comparator(
-          part.path,
-          need(part, "P"),
-          need(part, "N"),
-          need(part, "OUT"),
-          need(part, "VP"),
-          need(part, "VN"),
-          part.params.vHyst ?? 0
-        ),
-      ],
-      capacitive: false,
-    };
-  }
-  const params: DiodeParams = {
-    Is: needNum(part, "Is"),
-    N: needNum(part, "N"),
-    Rs: part.params.Rs ?? 0,
-    tempC: 25,
-  };
-  const diode = new Diode(part.path, need(part, "A"), need(part, "K"), params);
-  return {
-    elements: [diode],
-    capacitive: false,
-    ...(part.typeId === "led" ? { led: { path: part.path, diode } } : {}),
-  };
-}
-
-function need(part: AssignedPart, port: string): string {
-  const node = part.nodes[port];
-  if (!node) throw new Error(`${part.path} has no ${port} node`);
-  return node;
-}
-
-function needNum(part: AssignedPart, key: string): number {
-  const value = part.params[key];
-  if (!(typeof value === "number" && Number.isFinite(value))) {
-    throw new Error(`${part.path} is missing ${key}`);
-  }
-  return value;
+  const stamp = formAdapter(part.form)?.stamp;
+  if (stamp) return stamp(part, assigned);
+  return stampDiode(part);
 }
 
 export type BoardStampOptions = {
