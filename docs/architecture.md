@@ -105,6 +105,10 @@ firmware, and part models where a domain does not need its own engine.
 - **One orchestrator owns time.** A 1 ms master step; engines exchange port
   quantities at seams. Tight loops (servo current against rail voltage)
   stay inside one engine; nothing is flattened into one global matrix.
+- **One rail path.** A power island is one circuit. N = 1 is the
+  single-board rail: the same element ids and node names. Pin edges
+  inside a master step are split on every N. An algebraic rail takes one
+  substep; inductance or capacitance takes ten.
 - **Ports are runtime law.** Typed ports with quantities; nets are built
   from port declarations. Prefer effort/flow pairs so domains can meet.
 - **Energy residuals at seams** are the honesty signal when coupling is

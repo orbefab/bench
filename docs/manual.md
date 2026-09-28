@@ -118,7 +118,7 @@ Press **Play** (Space) anytime. The timeline runs.
 
 What you get is whatever you composed. No power part in the tree means Play still works: nothing is powered, live signals stay idle. Bench does not invent a supply, and it does not block Play with an empty-state lecture. Same chrome for a lonely leaf: time can advance; there's just little or nothing to solve.
 
-**Only one thing stops Play:** the open part's file cannot be read at all. Everything else **degrades per part** and says so:
+**Only one thing stops Play:** the open world or part file cannot be read as a document. It is missing, it is not JSON, it is not a document, or it is a version-1 world. Everything else **degrades per part** and says so:
 
 - a part whose chosen level cannot run falls back to the nearest level that can, or sits idle;
 - a part with no power, or a layout that level does not support, sits idle;
