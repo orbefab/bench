@@ -56,6 +56,8 @@ Mac tab: `https://127.0.0.1:7322`. Quest needs the LAN host, not loopback.
 - **Web client** → `apps/web/src/`
 - **Desktop shell** → `apps/desktop/src/`
 - **Shared types** → `packages/contract/`
+- **Parts (L1)** → `packages/parts/`
+- **Circuit engine (L2)** → `packages/engine-circuit/`
 - **Marketing site** → `apps/docs/` (manifesto home; local `:7323`)
 - **How agents use the viewer** → [`.agents/skills/sfab-bench/`](.agents/skills/sfab-bench/)
 - **How to cut a GitHub Release** → [`.agents/skills/release/`](.agents/skills/release/)

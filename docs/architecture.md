@@ -146,5 +146,8 @@ operations, so one undo history covers them.
 Third-party plugins loaded at run time wait for the part registry and
 signing.
 
-Today all of L1–L4 still lives in `apps/server/src/world/`; A1 and A2 move
-it, with no printed self-check line changing.
+L1 is `packages/parts`. The circuit engine (L2) is
+`packages/engine-circuit`. The Node `Store` is
+`apps/server/src/world/node-store.ts`. L3 and L4 still live in
+`apps/server/src/world/`; A2 moves them. Printed self-check lines are
+unchanged apart from the boundary rule's rejection.
