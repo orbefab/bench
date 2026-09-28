@@ -329,10 +329,11 @@ export function loadLibrary(
     );
     return { library: null, diagnostics };
   }
-  // Part ids to pin besides the scene. A root document is one of them.
-  // A `.world.json` import unwraps back to the scene and pins nothing
-  // extra, so an existing world lock still matches.
-  let also: string[] = [];
+  // The open part, pinned from these bytes. A level edit loads a
+  // sibling temp file; looking the id up again would hash the copy
+  // still on disk. A `.world.json` import unwraps back to the scene
+  // and pins nothing extra, so an existing world lock still matches.
+  let opened: PartFile | null = null;
   let world: WorldFileV2;
   if (isPartFile(raw)) {
     const kindOf = (id: string) => {
@@ -343,9 +344,7 @@ export function loadLibrary(
       return environmentKind(found.part);
     };
     world = partToWorld(raw, kindOf);
-    if (typeof world.root.part !== "string" || world.root.part !== raw.id) {
-      also = [raw.id];
-    }
+    opened = raw;
   } else {
     world = raw as WorldFileV2;
     if (world.version !== 2) {
@@ -400,13 +399,19 @@ export function loadLibrary(
   const types = new Map<string, LoadedType>();
   const queue: { id: string | null; inline: PartFile | null; root: boolean }[] =
     [];
-  if (typeof world.root.part === "string") {
+  const openedIsRoot =
+    opened !== null &&
+    typeof world.root.part === "string" &&
+    world.root.part === opened.id;
+  if (openedIsRoot && opened) {
+    queue.push({ id: null, inline: opened, root: true });
+  } else if (typeof world.root.part === "string") {
     queue.push({ id: world.root.part, inline: null, root: true });
   } else {
     queue.push({ id: null, inline: world.root.part, root: true });
   }
-  for (const id of also) {
-    queue.push({ id, inline: null, root: false });
+  if (opened && !openedIsRoot) {
+    queue.push({ id: null, inline: opened, root: false });
   }
 
   while (queue.length) {

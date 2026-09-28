@@ -37,7 +37,12 @@ export function isPartFile(value: unknown): value is PartFile {
  */
 export function assetDir(file: string): string {
   const norm = file.replace(/\\/g, "/");
-  const match = /^(.*)\/parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i.exec(norm);
+  // A level edit loads a sibling `.<name>@ver.json.level-edit` so the
+  // real file stays untouched. It still belongs to the same project.
+  const match =
+    /^(.*)\/parts\/[^/]+\/\.?[^/]+@\d+\.\d+\.\d+\.json(?:\.level-edit)?$/i.exec(
+      norm
+    );
   if (match?.[1]) return match[1];
   return dirname(file);
 }
