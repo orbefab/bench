@@ -9,7 +9,7 @@ import type {
 } from "@sfab-bench/contract";
 
 import { makeDiag, siValue } from "./parts/si";
-import { envelopeOf, tableLawOf, tableVoltage } from "./snapshot-law";
+import { envelopeOf, tableLawOf } from "./snapshot-law";
 
 export type SnapshotLintContext = {
   plausible?: Partial<Record<Quantity, Range>>;
@@ -75,7 +75,6 @@ function paramQuantity(
   if (law && key === "vAxis") {
     return domainQuantity(ctx.ports?.[law.across[0]]?.domain ?? "", "across");
   }
-  if (law && key === "supplyRef") return "Voltage";
   if (snap.form === "hinge@1") {
     if (key === "armature") return "Inertia";
     if (key === "damping") return "TorquePerAngularVelocity";
@@ -89,7 +88,7 @@ function paramQuantity(
 
 /**
  * A bound key is `port.field`. A declared port takes the domain's across
- * or through quantity. `supply` is the feed setpoint, not a part port.
+ * or through quantity. `supply` is not a port of the part.
  */
 function boundQuantity(
   key: string,
@@ -206,35 +205,7 @@ function tableCoverage(snap: SnapshotFile): string | null {
       return "table does not cover its envelope";
     }
   }
-  if (law.supplyPort === undefined) return null;
-  const supply = env.supply;
-  const ref = law.supplyRef;
-  if (!supply || ref === undefined || law.supplyAffine === undefined) {
-    return "table does not cover its envelope";
-  }
-  if (law.supplyAffine === 1) {
-    if (ref < supply[0] || ref > supply[1]) {
-      return "table does not cover its envelope";
-    }
-    return null;
-  }
-  if (supply[0] < ref - 1e-12 || supply[1] > ref + 1e-12) {
-    return "table does not cover its envelope";
-  }
   return null;
-}
-
-function nonPhysical(snap: SnapshotFile): boolean {
-  const law = tableLawOf(snap);
-  const env = envelopeOf(snap);
-  if (!law || !env || !env.supply) return false;
-  if (!(env.supply[0] <= 0 && env.supply[1] >= 0)) return false;
-  for (const amps of law.iAxis) {
-    if (amps < env.current[0] || amps > env.current[1]) continue;
-    const volts = tableVoltage(law, 0, amps);
-    if (Math.abs(volts) > 1e-6) return true;
-  }
-  return false;
 }
 
 function freeRunMeasured(snap: SnapshotFile): boolean {
@@ -307,22 +278,6 @@ function tablePorts(
         left: snap.ports.outputs.join(","),
         right: voltage,
         detail: `table output is missing ${voltage}`,
-      })
-    );
-  }
-  if (
-    law.supplyPort &&
-    !snap.ports.inputs.includes(`${law.supplyPort}.voltage`)
-  ) {
-    diags.push(
-      makeDiag({
-        severity: "error",
-        path,
-        port: law.supplyPort,
-        quantity: "Voltage",
-        left: snap.ports.inputs.join(","),
-        right: `${law.supplyPort}.voltage`,
-        detail: `table input is missing ${law.supplyPort}.voltage`,
       })
     );
   }
@@ -437,13 +392,29 @@ export const FIXTURE_SUPPLY = "a snapshot must not carry its fixture's supply";
  * Envelope bounds on `supply.*`, or on a port this part does not declare.
  * The supply is a part in the scene. The table is a branch of its own ports.
  */
+const FIXTURE_TERMS = ["supplyPort", "supplyRef", "supplyAffine"] as const;
+
 function fixtureSupplyDiags(
   snap: SnapshotFile,
   ctx: SnapshotLintContext
 ): Diagnostic[] {
-  const bounds = snap.envelope?.bounds;
-  if (!bounds) return [];
   const diags: Diagnostic[] = [];
+  for (const key of FIXTURE_TERMS) {
+    if (snap.params[key] === undefined) continue;
+    diags.push(
+      makeDiag({
+        severity: "error",
+        path: snap.part || "snapshot",
+        port: "supply",
+        quantity: "Snapshot",
+        left: key,
+        right: "the part's own ports",
+        detail: FIXTURE_SUPPLY,
+      })
+    );
+  }
+  const bounds = snap.envelope?.bounds;
+  if (!bounds) return diags;
   const ports = ctx.ports;
   for (const key of Object.keys(bounds).sort()) {
     const dot = key.lastIndexOf(".");
@@ -517,19 +488,6 @@ export function lintSnapshot(
   diagnostics.push(...tablePorts(snap, ctx));
   diagnostics.push(...hingeErrors(snap, ctx));
   diagnostics.push(...plausibleErrors(snap, ctx));
-  if (nonPhysical(snap)) {
-    diagnostics.push(
-      makeDiag({
-        severity: "error",
-        path: snap.part || "snapshot",
-        port: "supply.voltage",
-        quantity: "Voltage",
-        left: "nonzero",
-        right: "0",
-        detail: "non-physical output at a 0 V setpoint",
-      })
-    );
-  }
   const quality = earned(snap, diagnostics.length > 0);
   if (snap.quality && exceeds(snap.quality, quality)) {
     diagnostics.push(

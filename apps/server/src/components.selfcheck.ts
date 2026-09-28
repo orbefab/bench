@@ -527,8 +527,8 @@ function servoPulseUs(angle: number): number {
     const nanoLaw = tableLawOf(nano);
     expect(testLaw && nanoLaw, "capture table");
     if (!testLaw || !nanoLaw) throw new Error("capture table");
-    const testV = tableVoltage(testLaw, 0, 0.1);
-    const nanoV = tableVoltage(nanoLaw, 0, 0.1);
+    const testV = tableVoltage(testLaw, 0.1);
+    const nanoV = tableVoltage(nanoLaw, 0.1);
     expect(
       testV > nanoV + 0.05,
       `1N4148 drop ${testV} V is not above the SS14 drop ${nanoV} V`

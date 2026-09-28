@@ -465,8 +465,7 @@ function elementOf(part: AssignedPart): {
           part.path,
           need(part, law.across[0]),
           need(part, law.across[1]),
-          law,
-          0
+          law
         ),
       ],
       capacitive: false,

@@ -1226,7 +1226,6 @@ function warnEnvelope(
   envelope: {
     bounds: Record<string, [number, number]>;
     current: [number, number];
-    supply: [number, number] | null;
   },
   observed: Readonly<Record<string, number>>
 ): void {
@@ -1860,7 +1859,7 @@ function noteBodyEnvelope(partId: string, speed: number): void {
   warnEnvelope(
     partId,
     snap.ref,
-    { bounds: snap.bounds, current: [0, 0], supply: null },
+    { bounds: snap.bounds, current: [0, 0] },
     observed
   );
 }

@@ -1,11 +1,6 @@
 /** Ported from layered-sim E4 (fd10742). Table stamped as one Thevenin segment in the shared MNA. */
 
-import {
-  segmentIndex,
-  segmentThevenin,
-  shiftedVoltage,
-  type TableLaw,
-} from "../snapshot-law";
+import { segmentIndex, segmentThevenin, type TableLaw } from "../snapshot-law";
 import type { StampCtx } from "./context";
 import { type PowerSplit, vBranch, volt } from "./context";
 import type { Element } from "./element";
@@ -33,8 +28,7 @@ export class LawTable implements Element {
     readonly id: string,
     private readonly pName: string,
     private readonly mName: string,
-    private readonly law: TableLaw,
-    private readonly supply: number
+    private readonly law: TableLaw
   ) {
     if (law.iAxis.length < 2) throw new Error(`${id}: table needs two knots`);
   }
@@ -82,7 +76,7 @@ export class LawTable implements Element {
       this.factoredSegment = segment;
       this.frozen = true;
     }
-    const volts = shiftedVoltage(this.law, this.supply);
+    const volts = this.law.vAxis;
     const { r, voc } = segmentThevenin(volts, this.law.iAxis, segment);
     if (this.law.iSense === 1) {
       // Axis current is the branch current. `v = voc − r·i` becomes

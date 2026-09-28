@@ -12,10 +12,6 @@ export type TableLaw = {
   iSense: 1 | -1;
   iAxis: readonly number[];
   vAxis: readonly number[];
-  /** Present together. The named input's voltage shifts `vAxis`. */
-  supplyPort?: string;
-  supplyRef?: number;
-  supplyAffine?: number;
 };
 
 export type SnapshotEnvelope = {
@@ -23,8 +19,6 @@ export type SnapshotEnvelope = {
   bounds: Record<string, [number, number]>;
   /** Through-current bound on `across[0]`. */
   current: [number, number];
-  /** Supply-port voltage bound. Null when the table has no supply term. */
-  supply: [number, number] | null;
 };
 
 export function tableLawOf(snap: SnapshotFile): TableLaw | null {
@@ -36,33 +30,7 @@ export function tableLawOf(snap: SnapshotFile): TableLaw | null {
     return null;
   }
   if (iAxis.length < 2 || iAxis.length !== vAxis.length) return null;
-  const supplyPort = snap.params.supplyPort;
-  const supplyRef = snap.params.supplyRef;
-  const supplyAffine = snap.params.supplyAffine;
-  const mentioned =
-    supplyPort !== undefined ||
-    supplyRef !== undefined ||
-    supplyAffine !== undefined;
-  if (!mentioned) {
-    return { across, iSense, iAxis, vAxis };
-  }
-  if (
-    typeof supplyPort !== "string" ||
-    supplyPort.length === 0 ||
-    typeof supplyRef !== "number" ||
-    typeof supplyAffine !== "number"
-  ) {
-    return null;
-  }
-  return {
-    across,
-    iSense,
-    iAxis,
-    vAxis,
-    supplyPort,
-    supplyRef,
-    supplyAffine,
-  };
+  return { across, iSense, iAxis, vAxis };
 }
 
 export function envelopeOf(snap: SnapshotFile): SnapshotEnvelope | null {
@@ -75,10 +43,7 @@ export function envelopeOf(snap: SnapshotFile): SnapshotEnvelope | null {
   }
   const current = bounds[`${law.across[0]}.current`];
   if (!current) return null;
-  if (!law.supplyPort) return { bounds, current, supply: null };
-  const supply = bounds[`${law.supplyPort}.voltage`];
-  if (!supply) return null;
-  return { bounds, current, supply };
+  return { bounds, current };
 }
 
 function pair(value: unknown): [number, number] | null {
@@ -116,15 +81,6 @@ function num(value: unknown): number | null {
   return null;
 }
 
-/** Voltage axis at `supply`, after the affine shift. No term copies `vAxis`. */
-export function shiftedVoltage(law: TableLaw, supply: number): number[] {
-  if (law.supplyRef === undefined || law.supplyAffine === undefined) {
-    return [...law.vAxis];
-  }
-  const delta = law.supplyAffine * (supply - law.supplyRef);
-  return law.vAxis.map((v) => v + delta);
-}
-
 /** Segment whose knots bracket `amps`. Ends extrapolate. */
 export function segmentIndex(iAxis: readonly number[], amps: number): number {
   const last = iAxis.length - 2;
@@ -150,12 +106,8 @@ export function segmentThevenin(
   return { r, voc: v0 + r * i0 };
 }
 
-export function tableVoltage(
-  law: TableLaw,
-  supply: number,
-  amps: number
-): number {
-  const volts = shiftedVoltage(law, supply);
+export function tableVoltage(law: TableLaw, amps: number): number {
+  const volts = law.vAxis;
   const k = segmentIndex(law.iAxis, amps);
   const { r, voc } = segmentThevenin(volts, law.iAxis, k);
   return voc - r * amps;
@@ -168,21 +120,8 @@ function outsideRange(range: [number, number], value: number): boolean {
 }
 
 /** True when the point sits outside the envelope, past a 1 nA / 1 nV edge. */
-export function outsideEnvelope(
-  env: SnapshotEnvelope,
-  supply: number,
-  amps: number
-): boolean {
-  if (
-    env.supply &&
-    (supply < env.supply[0] - EDGE || supply > env.supply[1] + EDGE)
-  ) {
-    return true;
-  }
-  if (amps < env.current[0] - EDGE || amps > env.current[1] + EDGE) {
-    return true;
-  }
-  return false;
+export function outsideEnvelope(env: SnapshotEnvelope, amps: number): boolean {
+  return amps < env.current[0] - EDGE || amps > env.current[1] + EDGE;
 }
 
 /**
