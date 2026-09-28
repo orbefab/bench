@@ -25,7 +25,7 @@
     {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "7015e11a23ed79613472f3bd08f92d94f1c8e2ad74158ab6fa32944026a3a756",
+      "sha256": "6d0320e615fdcc56b7c9492e520651645a1efa5a08a318f28f8ec54ea5543e7e",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -70,7 +70,7 @@
     {
       "id": "arduino-nano",
       "path": "../../apps/server/catalog/types/arduino-nano.json",
-      "sha256": "a04be684c2ffb7b974c96b1cfe4861f1f4ca1b1408eb5d80b3cc33691f10d306",
+      "sha256": "7cccb410a7873cef899efe3f6fc6ac4063d5134733234764ef4824d139aeaf76",
       "source": "catalog"
     },
     {

@@ -88,7 +88,7 @@
     {
       "id": "sfab/uno-r3@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/uno-r3@1.0.0.json",
-      "sha256": "3674fd4d839cd3481f4d4b8ca835b7dea78f0aff813b00242758e7efed3badd5",
+      "sha256": "2a265ccdab18f72c74b8546af2a89e582d6fbc70c1a005763d8328e8bbf771ca",
       "source": "catalog",
       "version": "1.0.0"
     }
@@ -97,7 +97,7 @@
     {
       "id": "arduino-uno-r3",
       "path": "../../apps/server/catalog/types/arduino-uno-r3.json",
-      "sha256": "480d25e121dba1b167081970b93f85dff2394c94752fd804885762bc7b4240d1",
+      "sha256": "bde92a13555c002553d731cf2aa85c74dcaa91d5b16c63556da15c23f55c1e34",
       "source": "catalog"
     },
     {

@@ -41,6 +41,10 @@
       "ref": "Nano Rev 3.2 schematic, NanoV3.2.sch: C4 is 100 nF from DTR to RESET, and the pull-up is RP1 at 1 kohm. The clone is assumed to match. DTR idle high is the +5V node"
     },
     {
+      "title": "ATmega328P 16 MHz speed grade",
+      "ref": "DS40002061 Figure 33-1, Maximum Frequency vs. VCC. On the 2.7 V / 10 MHz to 4.5 V / 20 MHz segment, 16 MHz needs 3.78 V. Electrical characteristics list VCC up to 5.5 V. The 5V pin operating range is 3.78 V to 5.5 V. Absolute maximum stays 6 V."
+    },
+    {
       "title": "ATmega328P pin",
       "ref": "DS40002061 Figure 35-22 and Figure 35-24 at 25 C and VCC 5 V: Roh and Rol are the fitted resistances. Rpu is the midpoint of 20 kohm to 50 kohm. Input leakage is Iin 1 uA at 5 V, a 5 Mohm path to ground"
     }

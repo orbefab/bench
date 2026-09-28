@@ -49,7 +49,7 @@
       "role": "power",
       "direction": "in",
       "ratings": {
-        "voltage": [5, 5],
+        "voltage": [3.78, 5.5],
         "absMaxVoltage": [0, 6]
       }
     },

@@ -466,8 +466,8 @@ if (fw?.kind === "firmware" && fw.params) {
       fw.params.quiescent === 0.05 &&
       fw.fuses?.extended === "0xFD" &&
       Math.abs((fw.params.resetHoldS ?? 0) - 0.066) < 1e-9 &&
-      uno.ports["5V"]?.ratings?.voltage?.[0] === 5 &&
-      uno.ports["5V"]?.ratings?.voltage?.[1] === 5,
+      uno.ports["5V"]?.ratings?.voltage?.[0] === 3.78 &&
+      uno.ports["5V"]?.ratings?.voltage?.[1] === 5.5,
     "uno catalog numbers match the frozen run"
   );
 }
