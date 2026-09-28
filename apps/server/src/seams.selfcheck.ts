@@ -60,10 +60,10 @@ async function runWorld(
   ms: number,
   before?: (sim: Sim) => void
 ): Promise<RunReport> {
-  let report: RunReport | null = null;
+  const box: { report: RunReport | null } = { report: null };
   const sim = new Sim(
     simHost((next) => {
-      report = next;
+      box.report = next;
     })
   );
   try {
@@ -73,6 +73,7 @@ async function runWorld(
     }
     before?.(sim);
     await sim.step(ms);
+    const report = box.report;
     if (!report) throw new Error(`${world} published no report`);
     return report;
   } finally {
@@ -498,10 +499,10 @@ try {
     })
   );
 
-  let report: RunReport | null = null;
+  const box: { report: RunReport | null } = { report: null };
   const sim = new Sim(
     simHost((next) => {
-      report = next;
+      box.report = next;
     })
   );
   try {
@@ -516,6 +517,7 @@ try {
     await sim.step(250);
     sim.setTarget("servo", 0.5);
     await sim.step(1000);
+    const report = box.report;
     if (!report) throw new Error("lag world published no report");
     const row = motorOf(report, "servo");
     const warning = report.warnings.find(
