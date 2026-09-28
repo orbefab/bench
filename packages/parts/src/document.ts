@@ -11,6 +11,7 @@ import {
   PART_FORMAT,
   type PartFile,
   type PlayBlock,
+  partDocumentProject,
   TARGET_PART_ID,
   type TargetInstance,
   type WorldFileV2,
@@ -39,11 +40,11 @@ export function assetDir(file: string): string {
   const norm = file.replace(/\\/g, "/");
   // A level edit loads a sibling `.<name>@ver.json.level-edit` so the
   // real file stays untouched. It still belongs to the same project.
-  const match =
-    /^(.*)\/parts\/[^/]+\/\.?[^/]+@\d+\.\d+\.\d+\.json(?:\.level-edit)?$/i.exec(
-      norm
-    );
-  if (match?.[1]) return match[1];
+  const opened = norm
+    .replace(/\.level-edit$/, "")
+    .replace(/\/\.(?=[^/]+$)/, "/");
+  const project = partDocumentProject(opened);
+  if (project) return project;
   return dirname(file);
 }
 

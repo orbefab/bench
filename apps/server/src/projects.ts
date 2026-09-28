@@ -17,13 +17,16 @@ import {
   resolve,
   sep,
 } from "node:path";
-import { type CatalogEntry, PART_FORMAT } from "@sfab-bench/contract";
+import {
+  type CatalogEntry,
+  PART_FORMAT,
+  partDocumentProject,
+} from "@sfab-bench/contract";
 import { db } from "./db";
 
 const STEP_RE = /\.(step|stp)$/i;
 const GLB_RE = /\.(glb|gltf)$/i;
 const WORLD_RE = /\.world\.json$/i;
-const PART_FILE_RE = /@\d+\.\d+\.\d+\.json$/i;
 const MAX_FILES = 2500;
 
 const SKIP_DIRS = new Set([
@@ -141,9 +144,7 @@ export function shouldSkipDir(name: string) {
 
 /** A root document: a part file under `parts/<pub>/` that carries `play`. */
 function rootPartFile(dir: string, name: string): boolean {
-  if (!PART_FILE_RE.test(name)) return false;
-  const folder = dir.replace(/\\/g, "/");
-  if (!/(^|\/)parts\/[^/]+$/.test(folder)) return false;
+  if (partDocumentProject(join(dir, name)) === null) return false;
   try {
     const json = JSON.parse(readFileSync(join(dir, name), "utf8")) as {
       format?: string;

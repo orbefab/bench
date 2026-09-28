@@ -9,6 +9,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 
 import {
   extractUrdfJointsAndMeshes,
+  partDocumentProject,
   resolveUrdfMesh,
 } from "@sfab-bench/contract";
 
@@ -93,9 +94,8 @@ export type WorldBytes = {
  */
 export function documentAssetDir(rel: string): string {
   const clean = rel.replace(/\\/g, "/").replace(/^\/+/, "");
-  const match = /^(.*)\/parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i.exec(clean);
-  if (match) return match[1] ?? "";
-  if (/^parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i.test(clean)) return "";
+  const project = partDocumentProject(clean);
+  if (project !== null) return project;
   return parentRel(clean);
 }
 

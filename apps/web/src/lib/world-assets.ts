@@ -1,5 +1,6 @@
 import {
   extractUrdfJointsAndMeshes,
+  partDocumentProject,
   resolveUrdfMesh,
   type UrdfInfo,
   WORLD_TARGET_ROBOT,
@@ -146,13 +147,10 @@ export function relFromWorldFile(
   if (!world || !file || file.startsWith("/") || file.includes(":")) {
     return undefined;
   }
-  const part = /^(.*)\/parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i.exec(world);
-  if (part) {
-    const anchor = part[1] ? `${part[1]}/_.world.json` : "_.world.json";
+  const project = partDocumentProject(world);
+  if (project !== null) {
+    const anchor = project ? `${project}/_.world.json` : "_.world.json";
     return resolveUrdfMesh(anchor, file);
-  }
-  if (/^parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i.test(world)) {
-    return resolveUrdfMesh("_.world.json", file);
   }
   const slash = world.lastIndexOf("/");
   const anchor =

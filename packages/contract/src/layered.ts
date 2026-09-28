@@ -226,14 +226,24 @@ export type BusDecl = {
 export const PART_TYPE_FORMAT = "sfab.part-type@1" as const;
 export const PART_FORMAT = "sfab.part@1" as const;
 
-/** A root part on disk: `parts/<publisher>/<name>@<version>.json`. */
-const PART_DOCUMENT_RE = /(?:^|\/)parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i;
+/**
+ * Project directory of a root part `parts/<publisher>/<name>@<version>.json`.
+ * `parts/sfab/arm@1.0.0.json` is `""`. Anything else is null.
+ */
+const PART_DOCUMENT_RE =
+  /^(?:(.*)\/)?parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i;
+
+export function partDocumentProject(path: string): string | null {
+  const match = PART_DOCUMENT_RE.exec(path.replace(/\\/g, "/"));
+  if (!match) return null;
+  return match[1] ?? "";
+}
 
 /** A legacy world import. */
 const WORLD_DOCUMENT_RE = /\.world\.json$/i;
 
 export function isPartDocumentPath(path: string): boolean {
-  return PART_DOCUMENT_RE.test(path.replace(/\\/g, "/"));
+  return partDocumentProject(path) !== null;
 }
 
 export function isWorldDocumentPath(path: string): boolean {
