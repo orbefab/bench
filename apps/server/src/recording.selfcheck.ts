@@ -16,8 +16,9 @@ import {
   type WorldState,
 } from "@sfab-bench/contract";
 
+import { BROWNOUT_RESET, FIRMWARE_RELOADED } from "@sfab-bench/engine-mcu";
+
 import { closeRootWatches } from "./projects";
-import { BROWNOUT_RESET, FIRMWARE_RELOADED } from "./world/board";
 import {
   attachWorld,
   frameAt,

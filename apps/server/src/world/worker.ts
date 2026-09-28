@@ -29,13 +29,17 @@ import {
   type WorldVec3,
 } from "@sfab-bench/contract";
 import type { PinMode } from "@sfab-bench/engine-circuit";
+import {
+  type AdcConversion,
+  AvrBoard,
+  type CpuResetRegs,
+  FIRMWARE_RELOADED,
+  parseIntelHex,
+} from "@sfab-bench/engine-mcu";
 import { type BatteryParams, boundOutside } from "@sfab-bench/parts";
 
 import { analogRead } from "./analog-pin";
-import { AvrBoard, type CpuResetRegs, FIRMWARE_RELOADED } from "./board";
-import type { AdcConversion } from "./board-adc";
 import { projectReal, readerFor, readInside, type WorldBytes } from "./files";
-import { parseIntelHex } from "./ihex";
 import {
   type CompiledWorld,
   compileWorld,

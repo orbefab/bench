@@ -38,6 +38,7 @@
     "@mujoco/mujoco": "3.14.0",
     "@sfab-bench/contract": "workspace:*",
     "@sfab-bench/engine-circuit": "workspace:*",
+    "@sfab-bench/engine-mcu": "workspace:*",
     "@sfab-bench/parts": "workspace:*",
     "@vitejs/plugin-basic-ssl": "^2.1.0",
     "ai": "^7.0.101",

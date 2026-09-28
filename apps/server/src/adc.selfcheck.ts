@@ -10,9 +10,9 @@ import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
 import { adcCount } from "@sfab-bench/engine-circuit";
+import { BANDGAP_V } from "@sfab-bench/engine-mcu";
 import { loadWorldV2, lockPathFor, writeLock } from "@sfab-bench/parts";
 import { closeRootWatches } from "./projects";
-import { BANDGAP_V } from "./world/board-adc";
 import {
   attachWorld,
   readAdcTrace,

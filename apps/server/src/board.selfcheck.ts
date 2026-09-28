@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { FIRMWARE_RELOADED } from "./world/board";
-import { parseIntelHex } from "./world/ihex";
-import { SERIAL_CAP, SerialRing } from "./world/serial-ring";
+import {
+  FIRMWARE_RELOADED,
+  parseIntelHex,
+  SERIAL_CAP,
+  SerialRing,
+} from "@sfab-bench/engine-mcu";
 
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);

@@ -15,8 +15,14 @@ import {
   type WorldState,
 } from "@sfab-bench/contract";
 
+import {
+  type CpuResetRegs,
+  RX_BACKLOG,
+  type SerialPage,
+  SerialRing,
+} from "@sfab-bench/engine-mcu";
+
 import { subscribeRootWatch } from "../projects";
-import { type CpuResetRegs, RX_BACKLOG } from "./board";
 import {
   dependencyRels,
   dependencyStamp,
@@ -25,7 +31,6 @@ import {
   projectReal,
   resolveInside,
 } from "./files";
-import { type SerialPage, SerialRing } from "./serial-ring";
 import type {
   AdcTrace,
   FromWorker,

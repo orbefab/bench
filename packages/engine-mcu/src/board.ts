@@ -1,6 +1,8 @@
-import type { WorldPinState } from "@sfab-bench/contract";
-import { arduinoPinMask } from "@sfab-bench/contract";
-import type { PinMode } from "@sfab-bench/engine-circuit";
+import {
+  arduinoPinMask,
+  type PinMode,
+  type WorldPinState,
+} from "@sfab-bench/contract";
 import {
   AVRIOPort,
   AVRTimer,

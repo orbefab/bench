@@ -166,6 +166,9 @@ importers:
       '@sfab-bench/engine-circuit':
         specifier: workspace:*
         version: link:../../packages/engine-circuit
+      '@sfab-bench/engine-mcu':
+        specifier: workspace:*
+        version: link:../../packages/engine-mcu
       '@sfab-bench/parts':
         specifier: workspace:*
         version: link:../../packages/parts
@@ -364,6 +367,19 @@ importers:
       '@sfab-bench/contract':
         specifier: workspace:*
         version: link:../contract
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
+  packages/engine-mcu:
+    dependencies:
+      '@sfab-bench/contract':
+        specifier: workspace:*
+        version: link:../contract
+      avr8js:
+        specifier: 0.21.1
+        version: 0.21.1
     devDependencies:
       typescript:
         specifier: ^5.9.2

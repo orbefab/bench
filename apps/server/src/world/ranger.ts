@@ -7,9 +7,7 @@
  */
 
 import type { Pose } from "@sfab-bench/contract";
-
-import type { AvrBoard } from "./board";
-import { CPU_HZ } from "./board";
+import { type AvrBoard, CPU_HZ } from "@sfab-bench/engine-mcu";
 
 /** Include geom group 0 only: targets and static primitives. */
 export const RANGER_GEOM_GROUP = [1, 0, 0, 0, 0, 0];

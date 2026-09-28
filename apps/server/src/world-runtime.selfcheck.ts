@@ -11,10 +11,10 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import type { WorldServerMessage } from "@sfab-bench/contract";
+import { RX_BACKLOG } from "@sfab-bench/engine-mcu";
 
 import { handleProjectFile } from "./cad-pkg";
 import { closeRootWatches, listProjectFiles } from "./projects";
-import { RX_BACKLOG } from "./world/board";
 import { projectReal, readerFor } from "./world/files";
 import {
   attachWorld,
