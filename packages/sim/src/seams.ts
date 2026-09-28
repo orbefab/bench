@@ -9,18 +9,14 @@
  * the body step and after it. The torque is constant over the step, and
  * the speed moves from one value to the other, so the trapezoid is the
  * work the body took. The residual is then `ctrl·(ω_rail − ω̄)·dt`, the
- * coupling lag of one master step.
+ * coupling lag of one body step. `dt` is that step (`opt.timestep`),
+ * and the growth window is 250 ms of those steps.
  */
 
 import type { Diagnostic, SeamEnergy } from "@sfab-bench/contract";
 
-/** Master step the orchestrator samples, in seconds. */
-export const SEAM_STEP_S = 0.001;
-
-/** Window the growth flag is judged on. */
+/** Window the growth flag is judged on, in seconds. */
 export const SEAM_WINDOW_S = 0.25;
-
-export const SEAM_WINDOW_STEPS = Math.round(SEAM_WINDOW_S / SEAM_STEP_S);
 
 /** Absolute floor for a flagged window, in joules. */
 export const SEAM_FLOOR_J = 0.001;
@@ -52,7 +48,7 @@ type Slot = {
 
 export type MotorSeamSample = {
   path: string;
-  /** Seconds. The master step. */
+  /** Seconds. The body's timestep. */
   dt: number;
   /** V·s/rad. */
   k: number;
@@ -100,8 +96,16 @@ export function seamLine(row: SeamEnergy): string {
 export class SeamLedger {
   private readonly slots = new Map<string, Slot>();
   private steps = 0;
+  /** Body timestep of the first sample, in seconds. */
+  private dt = 0;
+  /** Body steps in one window. Derived from `dt`. */
+  private windowSteps = 0;
 
   note(sample: MotorSeamSample): void {
+    if (this.windowSteps === 0 && sample.dt > 0) {
+      this.dt = sample.dt;
+      this.windowSteps = Math.max(1, Math.round(SEAM_WINDOW_S / sample.dt));
+    }
     const em = sample.k * sample.current;
     const sent = em * sample.omega * sample.dt;
     const omegaBar = 0.5 * (sample.omegaBefore + sample.omegaAfter);
@@ -129,17 +133,19 @@ export class SeamLedger {
   }
 
   /**
-   * Close the master step. A full window may raise one warning per seam.
+   * Close one body step. A full window may raise one warning per seam.
    * A seam warns once.
    */
   endStep(): { closed: boolean; warnings: Diagnostic[] } {
-    if (this.slots.size === 0) return { closed: false, warnings: [] };
+    if (this.slots.size === 0 || this.windowSteps === 0) {
+      return { closed: false, warnings: [] };
+    }
     this.steps += 1;
-    if (this.steps % SEAM_WINDOW_STEPS !== 0) {
+    if (this.steps % this.windowSteps !== 0) {
       return { closed: false, warnings: [] };
     }
     const warnings: Diagnostic[] = [];
-    const ms = Math.round(SEAM_WINDOW_S * 1000);
+    const ms = Math.round(this.windowSteps * this.dt * 1000);
     for (const slot of this.slots.values()) {
       const abs = Math.abs(slot.window.residual);
       if (slot.firstAbs === null) {
@@ -195,5 +201,7 @@ export class SeamLedger {
   reset(): void {
     this.slots.clear();
     this.steps = 0;
+    this.dt = 0;
+    this.windowSteps = 0;
   }
 }

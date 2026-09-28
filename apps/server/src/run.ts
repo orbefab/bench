@@ -83,12 +83,9 @@ export async function runHeadless(opts: {
 }): Promise<RunResult> {
   const lines: RunLine[] = [];
   const pending = new Map<string, string>();
-  let seams: SeamEnergy[] = [];
   const sim = new Sim({
-    post(message) {
-      if (message.type === "state" && message.report?.seams) {
-        seams = message.report.seams;
-      }
+    post() {
+      /* serial is drained below; the seam line reads the ledger */
     },
     now: () => performance.now(),
     schedule: (fn, ms) => setTimeout(fn, ms),
@@ -133,7 +130,7 @@ export async function runHeadless(opts: {
         path: row.path,
         message: row.message,
       })),
-      seams,
+      seams: sim.seams(),
     };
   } finally {
     sim.dispose();

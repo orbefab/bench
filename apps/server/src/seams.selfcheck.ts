@@ -15,6 +15,7 @@ import type { RunReport, SeamEnergy } from "@sfab-bench/contract";
 import { sha256Bytes } from "@sfab-bench/parts";
 import { SEAM_WARNING_CODE, seamLine } from "@sfab-bench/sim/seams";
 import { Sim } from "@sfab-bench/sim/sim";
+import { runHeadless } from "./run";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { packageVersion } from "./world/package-version";
 import { nodePlanEnv } from "./world/plan-host";
@@ -114,10 +115,57 @@ function ratioOf(row: SeamEnergy): number {
     ratio < 0.02,
     `healthy |residual| / |sent| ${(ratio * 100).toFixed(2)} %`
   );
-  console.log(seamLine(row));
+  console.log(`healthy arm: ${seamLine(row)}`);
   console.log(
     `servo motor coupling lag: |residual| / |sent| = ${(ratio * 100).toFixed(2)} % ` +
       `over 2000 ms (the rail prices ω from 1 ms earlier; not flagged)`
+  );
+}
+
+{
+  const posted: { sent: number | null } = { sent: null };
+  const sim = new Sim(
+    simHost((next) => {
+      const row = next.seams?.find((item) => item.path === "servo");
+      if (row) posted.sent = row.sent;
+    })
+  );
+  let ledgerSent = 0;
+  try {
+    const loaded = await sim.load({
+      project: armDir,
+      world: "arm.world.json",
+      generation: 1,
+    });
+    if (!loaded.ok) {
+      throw new Error(loaded.errors.map((item) => item.message).join("; "));
+    }
+    await sim.step(1100);
+    const ledger = sim.seams().find((item) => item.path === "servo");
+    expect(ledger, "1100 ms arm has no motor seam");
+    if (!ledger) throw new Error("unreachable");
+    ledgerSent = ledger.sent;
+  } finally {
+    sim.dispose();
+  }
+  const cli = await runHeadless({
+    project: armDir,
+    world: "arm.world.json",
+    ms: 1100,
+  });
+  const printed = cli.seams.find((item) => item.path === "servo");
+  expect(printed, "bench run 1100 ms printed no motor seam");
+  if (!printed) throw new Error("unreachable");
+  expect(
+    printed.sent === ledgerSent,
+    `bench run sent ${printed.sent} J, ledger ${ledgerSent} J`
+  );
+  expect(
+    posted.sent !== null && printed.sent !== posted.sent,
+    "1100 ms total collapsed to the last closed window"
+  );
+  console.log(
+    `bench run 1100 ms: sent ${printed.sent.toFixed(6)} J equals the ledger`
   );
 }
 
@@ -283,7 +331,7 @@ try {
       Math.abs(settledResidual) < settledTol,
     `stall window not closed form sent ${settledSent} received ${settledReceived} residual ${settledResidual}`
   );
-  console.log(seamLine(stall));
+  console.log(`stall stop: ${seamLine(stall)}`);
   console.log(
     `stall settled 250 ms: sent ${settledSent.toExponential(1)} J, ` +
       `received ${settledReceived.toExponential(1)} J, ` +
@@ -529,7 +577,7 @@ try {
       warning.severity === "warning",
       `lag flag severity ${warning.severity}`
     );
-    console.log(seamLine(row));
+    console.log(`growing lag: ${seamLine(row)}`);
     console.log(warning.message);
   } finally {
     sim.dispose();

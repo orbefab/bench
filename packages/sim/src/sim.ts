@@ -22,6 +22,7 @@ import {
   type RecordingPartCatalog,
   type RecordingRead,
   type RunReport,
+  type SeamEnergy,
   type TimelineMarker,
   type TimelineTrack,
   type WorldError,
@@ -63,7 +64,7 @@ import { type BoardPathName, chipFacts, railAttachment } from "./power-path";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
-import { SEAM_STEP_S, SeamLedger } from "./seams";
+import { SeamLedger } from "./seams";
 import { blankTrack, type ServoTrack, trackServo } from "./servo";
 import { targetPosition } from "./targets";
 import {
@@ -2581,10 +2582,13 @@ function createSession(host: SimHost) {
 
   /**
    * Joules across the motor seam. Reads the rail's ω and current and the
-   * joint speed around the body step. Does not write an engine input.
+   * joint speed around the body step. Prices every term with the model's
+   * timestep. Does not write an engine input. The report's `seams` array
+   * is replaced only when a window closes.
    */
   function noteMotorSeams(): void {
     if (!sim) return;
+    const dt = sim.model.opt.timestep;
     let noted = false;
     for (const load of loads) {
       const drive = load.drive;
@@ -2597,7 +2601,7 @@ function createSession(host: SimHost) {
       const ctrl = sim.data.actuator(load.partId).ctrl as number;
       seams.note({
         path: load.partId,
-        dt: SEAM_STEP_S,
+        dt,
         k: drive.law.k,
         omega: connected ? sample.omega : 0,
         current: load.winding,
@@ -2609,12 +2613,10 @@ function createSession(host: SimHost) {
     }
     if (!noted) return;
     const closed = seams.endStep();
-    if (!runReport) return;
-    const rows = seams.rows();
-    if (rows.length === 0) return;
-    runReport.seams = rows;
+    if (!closed.closed || !runReport) return;
+    runReport.seams = seams.rows();
     for (const warning of closed.warnings) runReport.warnings.push(warning);
-    if (closed.closed) reportPending = true;
+    reportPending = true;
   }
 
   function dispose() {
@@ -3007,6 +3009,10 @@ function createSession(host: SimHost) {
     return out;
   }
 
+  function seamRows(): SeamEnergy[] {
+    return seams.rows();
+  }
+
   async function handle(message: ToWorker) {
     if (message.type === "stop") {
       close();
@@ -3106,6 +3112,7 @@ function createSession(host: SimHost) {
     state: sample,
     serialIn,
     drainSerial,
+    seams: seamRows,
     record,
     setTarget,
     play,
@@ -3143,6 +3150,10 @@ export class Sim {
   }
   drainSerial(): SerialChunk[] {
     return this.session.drainSerial();
+  }
+  /** Ledger rows through the last step, including an open window. */
+  seams(): SeamEnergy[] {
+    return this.session.seams();
   }
   record(query: RecordQuery): RecordBody {
     return this.session.record(query);
