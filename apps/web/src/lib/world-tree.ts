@@ -81,6 +81,53 @@ export function treeRows(
   return rows;
 }
 
+/** Deeper than the stage's own children. Depth 0 stays open. */
+export function initialCollapsed(nodes: readonly WorldViewNode[]): Set<string> {
+  const collapsed = new Set<string>();
+  collectCollapsed(nodes, 0, collapsed);
+  return collapsed;
+}
+
+function collectCollapsed(
+  nodes: readonly WorldViewNode[],
+  depth: number,
+  into: Set<string>
+) {
+  for (const node of nodes) {
+    const foldable = node.children.length > 0 || (node.wires?.length ?? 0) > 0;
+    if (depth >= 1 && foldable) into.add(node.id);
+    collectCollapsed(node.children, depth + 1, into);
+  }
+}
+
+/** Open every ancestor so a stage pick is visible. A wire also opens its owner. */
+export function revealCollapsed(
+  collapsed: ReadonlySet<string>,
+  nodes: readonly WorldViewNode[],
+  path: string,
+  kind: "instance" | "wire"
+): Set<string> {
+  const ancestors = ancestorIds(nodes, path);
+  if (!ancestors) return new Set(collapsed);
+  const next = new Set(collapsed);
+  for (const id of ancestors) next.delete(id);
+  if (kind === "wire") next.delete(path);
+  return next;
+}
+
+function ancestorIds(
+  nodes: readonly WorldViewNode[],
+  id: string,
+  prefix: string[] = []
+): string[] | null {
+  for (const node of nodes) {
+    if (node.id === id) return prefix;
+    const child = ancestorIds(node.children, id, [...prefix, node.id]);
+    if (child) return child;
+  }
+  return null;
+}
+
 function descendantWarned(
   node: WorldViewNode,
   warnings: ReadonlySet<string>

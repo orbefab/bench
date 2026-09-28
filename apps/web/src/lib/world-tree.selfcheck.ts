@@ -1,6 +1,6 @@
 import type { WorldViewNode } from "@sfab-bench/contract";
 
-import { treeRows } from "./world-tree";
+import { initialCollapsed, revealCollapsed, treeRows } from "./world-tree";
 
 function expect(cond: boolean, label: string) {
   if (!cond) throw new Error(label);
@@ -77,6 +77,30 @@ expect(
 expect(
   closed.some((row) => row.kind === "wire") === false,
   "a collapsed parent hides its wires"
+);
+
+const seeded = initialCollapsed(tree);
+expect(!seeded.has("scene"), "the top level starts open");
+expect(seeded.has("scene.nano"), "a stage child with parts starts collapsed");
+const top = treeRows(tree, new Set(), seeded);
+expect(
+  top.map((row) => row.name).join("|") === "scene|nano",
+  `top rows ${top.map((row) => row.name).join("|")}`
+);
+const kept = new Set(seeded);
+kept.delete("scene.nano");
+const reloaded = treeRows(tree, new Set(), kept);
+expect(
+  reloaded.some((row) => row.path === "scene.nano.led"),
+  "a reload keeps a row the user expanded"
+);
+const revealed = revealCollapsed(seeded, tree, "scene.nano.led", "instance");
+expect(
+  !revealed.has("scene.nano") &&
+    treeRows(tree, new Set(), revealed).some(
+      (row) => row.path === "scene.nano.led"
+    ),
+  "selecting a nested part opens its ancestors"
 );
 
 console.log("world-tree.selfcheck ok");
