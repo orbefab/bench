@@ -5,11 +5,13 @@
  * bridge ratio, each held speed, and, when the Uno path is on, the fuse
  * resistance after the electrical solve.
  *
- * L = 0 and no board path is one backward-Euler step per millisecond.
- * A board path (it has capacitors) or L > 0 is 10 backward-Euler steps
- * with ω and the bridge ratio held. The fuse temperature, and a
- * battery's state of charge, move once per millisecond, after those
- * steps, not inside them.
+ * L = 0 and no capacitor is one backward-Euler step per millisecond.
+ * An algebraic board, including a class-1 table with no capacitor, is
+ * that one step. A pin edge inside the step is its own piece, still one
+ * step when the rail is algebraic. Inductance or capacitance is 10
+ * backward-Euler steps with ω and the bridge ratio held. The fuse
+ * temperature, and a battery's state of charge, move once per
+ * millisecond, after those steps, not inside them.
  * Implicit damping (E2 scheme (d)) is not applied here. It would stamp
  * ω = 0 and add B(s) on the joint.
  */
@@ -358,7 +360,7 @@ export class RailCircuit {
     this.branchLaws = (realized?.elements ?? []).filter(
       (el): el is LawTable => el instanceof LawTable
     );
-    this.substeps = inductive || board || realized?.capacitive ? SUBSTEPS : 1;
+    this.substeps = inductive || realized?.capacitive ? SUBSTEPS : 1;
     // The board load keeps its knee: full current down to 1 V, then
     // linear to 0 A at 0 V. The supply is the part on `src`.
     this.load = new CurrentLoad(
@@ -985,7 +987,7 @@ function sharedRail(spec: RailCircuitSpec): {
     const realized = realize(board.stamp, board.feed, board.pin ?? AVR_PIN, {
       pinId: (port) => `pin.${board.id}.${port}`,
     });
-    if (realized.capacitive || board.stamp.netlist) capacitive = true;
+    if (realized.capacitive) capacitive = true;
     boardNodes.set(board.id, realized.boardNode);
     const load = new CurrentLoad(
       `load.${board.id}`,
