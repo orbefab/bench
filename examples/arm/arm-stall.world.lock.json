@@ -23,6 +23,27 @@
       "version": "1.0.0"
     },
     {
+      "id": "sfab/capacitor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/capacitor@1.0.0.json",
+      "sha256": "4cd09ef3beba925f97d238c6078aec4b927cc94621011cb534bb313140b60e8e",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/fdn340p@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/fdn340p@1.0.0.json",
+      "sha256": "6b6304c1237f783609efddf04cf47dbbf4a7d3d92dab973fa4a6f035124a1a6b",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/mf-msmf050@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/mf-msmf050@1.0.0.json",
+      "sha256": "18af07f63ce05bab7c68cdb00695804eb7f88e9a3cc8641cc8c3f4a273f4502b",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
       "id": "sfab/sg90-control@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90-control@1.0.0.json",
       "sha256": "854a15e984507289c9c11ce661075f22a4d6f439e356c381195233f4a619b332",
@@ -58,9 +79,16 @@
       "version": "1.0.0"
     },
     {
+      "id": "sfab/uno-power-input@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/uno-power-input@1.0.0.json",
+      "sha256": "d2ebbb276b5a9f12ed1dfd05b23b0681cf54a3c3b9b8b487fb9ebc13c589371e",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
       "id": "sfab/uno-r3@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/uno-r3@1.0.0.json",
-      "sha256": "113757b290163c36cf9f705bcbb993ccc7b925276ec5988c6ac3e8dca3b4c94d",
+      "sha256": "8b35e7980f31d95acac302e819b7985c48e72864e3f4b0d8382a7f603ff7e53f",
       "source": "catalog",
       "version": "1.0.0"
     }
@@ -69,7 +97,7 @@
     {
       "id": "arduino-uno-r3",
       "path": "../../apps/server/catalog/types/arduino-uno-r3.json",
-      "sha256": "26b2e31852af7b77b660e84f2dcf2ccd6ff19790231803c3f5496d369fd4fe4b",
+      "sha256": "480d25e121dba1b167081970b93f85dff2394c94752fd804885762bc7b4240d1",
       "source": "catalog"
     },
     {
@@ -82,6 +110,12 @@
       "id": "bench-supply-cv-cc",
       "path": "../../apps/server/catalog/types/bench-supply-cv-cc.json",
       "sha256": "00d2e6b537f5412b0da315b03461dae6d47709523039c7b26a6fde9e98bee0b4",
+      "source": "catalog"
+    },
+    {
+      "id": "capacitor",
+      "path": "../../apps/server/catalog/types/capacitor.json",
+      "sha256": "cb8a7070edcaad83051a688cc5fefdca8a5800e597892d549cbfbccfdbb3ef13",
       "source": "catalog"
     },
     {
@@ -103,9 +137,27 @@
       "source": "catalog"
     },
     {
+      "id": "pmos-switch",
+      "path": "../../apps/server/catalog/types/pmos-switch.json",
+      "sha256": "61000b474bc830a9eeeaf9f0340f3da45ebe29c188a4db96f8cd265ea1151065",
+      "source": "catalog"
+    },
+    {
       "id": "potentiometer",
       "path": "../../apps/server/catalog/types/potentiometer.json",
       "sha256": "c3dbd8b5a5e46ad450b96003fdf8124c74feab642c0e541d9d9dca9461d08697",
+      "source": "catalog"
+    },
+    {
+      "id": "power-input",
+      "path": "../../apps/server/catalog/types/power-input.json",
+      "sha256": "3eed99108a8d259fddddd12284b837d7127eaf33bc04718f56740553d1573e6e",
+      "source": "catalog"
+    },
+    {
+      "id": "ptc-fuse",
+      "path": "../../apps/server/catalog/types/ptc-fuse.json",
+      "sha256": "98c90dd5f9f84d9a2b772f9ff458ac149bbdb8b94e33269ba55802404ab0b69d",
       "source": "catalog"
     },
     {

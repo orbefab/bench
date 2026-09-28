@@ -67,6 +67,53 @@
             ]
           }
         }
+      },
+      "2": {
+        "default": "circuits",
+        "variants": {
+          "circuits": {
+            "kind": "firmware",
+            "chip": "atmega328p",
+            "imageParam": "firmware",
+            "params": {
+              "brownoutVoltage": 2.7,
+              "brownoutAssertVoltage": 2.675,
+              "brownoutReleaseVoltage": 2.725,
+              "resetHoldS": 0.066,
+              "quiescent": 0.05,
+              "roh": 25.066666666666663,
+              "rol": 23.4,
+              "rpu": 35000,
+              "rLeak": 5000000
+            },
+            "fuses": {
+              "extended": "0xFD"
+            },
+            "board": {
+              "instances": {
+                "power": {
+                  "part": "sfab/uno-power-input@1.0.0"
+                }
+              },
+              "wires": [],
+              "expose": {
+                "VBUS": "power.VBUS",
+                "5V": "power.5V",
+                "GND": "power.GND"
+              }
+            },
+            "omits": [
+              "USB front end, including the rail capacitors, when the header feeds the board",
+              "temperature",
+              "I/O pin impedance",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
+            ]
+          }
+        }
       }
     },
     "body": {

@@ -13,6 +13,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { fileURLToPath } from "node:url";
+
 import type { PartFile } from "@sfab-bench/contract";
 import { ISource, thermalVoltage, VSource } from "./world/circuit/elements";
 import { Engine } from "./world/circuit/engine";
@@ -27,6 +29,7 @@ import {
   type AssignedPart,
   assemblyStampOf,
   type BoardStamp,
+  boardStampOf,
   realize,
 } from "./world/circuit-stamp";
 import {
@@ -35,7 +38,11 @@ import {
   loadPartById,
   loadTypeById,
 } from "./world/parts/library";
-import { catalogRoot } from "./world/plan";
+import { catalogRoot, planWorld } from "./world/plan";
+import { railAttachment } from "./world/power-path";
+import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
+import { UnoReferenceRail } from "./world/uno-reference";
+import { powerFeedsOf } from "./world/wiring";
 
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
@@ -360,4 +367,164 @@ function mosSecond(
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+type Stepped = {
+  setFixed(amps: number): void;
+  setMotor(
+    index: number,
+    fraction: number,
+    omega: number,
+    connected: boolean
+  ): void;
+  solve(): void;
+  tripFuse(): void;
+  boardVoltage: number;
+  readonly tripped: boolean;
+};
+
+const armDir = fileURLToPath(
+  new URL("../../../examples/arm/", import.meta.url)
+);
+
+function worldRails(world: string): {
+  class2: Stepped;
+  alias: Stepped;
+  reference: Stepped;
+  fixed: number;
+} {
+  const planned = planWorld(armDir, world);
+  if (!planned.ok) {
+    throw new Error(planned.errors.map((item) => item.message).join("; "));
+  }
+  const board = planned.plan.boards.find((item) => item.id === "uno");
+  if (!board) throw new Error(`${world} has no uno`);
+  const supplyId = powerFeedsOf(planned.plan).boards[board.id];
+  const supply = planned.plan.supplies.find((item) => item.id === supplyId);
+  if (!supply) throw new Error(`${world} uno has no supply`);
+  const motor = planned.plan.parts.find((part) => part.motor)?.motor;
+  if (!motor) throw new Error(`${world} has no motor`);
+  const motors = [{ resistance: motor.resistance, k: motor.k }];
+  const fixed = board.current + motor.quiescent;
+  const make = (class2: boolean): RailCircuit => {
+    const stamp = class2
+      ? boardStampOf("sfab/uno-r3@1.0.0", "circuits", { boardId: board.id })
+      : undefined;
+    const attached = railAttachment({
+      type: board.type,
+      connector: supply.connector,
+      boardCircuit: class2 ? null : board.boardCircuit,
+      hasNetlist: class2,
+      stamp,
+    });
+    return createRailCircuit({
+      vNom: supply.voltage,
+      rSeries: supply.rSeries,
+      iLimit: supply.currentLimit,
+      motors,
+      ...(attached.boardPath ? { boardPath: attached.boardPath } : {}),
+      ...(attached.stamp && attached.feed
+        ? { stamp: attached.stamp, feed: attached.feed }
+        : {}),
+    });
+  };
+  return {
+    class2: make(true),
+    alias: make(false),
+    reference: new UnoReferenceRail({
+      vNom: supply.voltage,
+      rSeries: supply.rSeries,
+      iLimit: supply.currentLimit,
+      motors,
+      header: supply.connector !== "usb",
+    }),
+    fixed,
+  };
+}
+
+function boardDelta(world: string): { class2: number; alias: number } {
+  const rails = worldRails(world);
+  let class2 = 0;
+  let alias = 0;
+  const step = (fraction: number) => {
+    for (const rail of [rails.class2, rails.alias, rails.reference]) {
+      rail.setFixed(rails.fixed);
+      rail.setMotor(0, fraction, 0, fraction > 0);
+      rail.solve();
+    }
+    class2 = Math.max(
+      class2,
+      Math.abs(rails.class2.boardVoltage - rails.reference.boardVoltage)
+    );
+    alias = Math.max(
+      alias,
+      Math.abs(rails.alias.boardVoltage - rails.reference.boardVoltage)
+    );
+  };
+  for (let i = 0; i < 50; i++) step(0);
+  for (let i = 0; i < 400; i++) step(1);
+  return { class2, alias };
+}
+
+function sci(n: number): string {
+  return n.toExponential(2);
+}
+
+for (const world of ["arm.world.json", "arm-stall.world.json"]) {
+  const delta = boardDelta(world);
+  expect(delta.class2 <= 1e-12, `${world} class 2 Δ ${delta.class2} V`);
+  expect(delta.alias <= 1e-12, `${world} class 1 Δ ${delta.alias} V`);
+  console.log(
+    `uno netlist vs reference: ${world} class 2 ${sci(delta.class2)} V, class 1 ${sci(delta.alias)} V`
+  );
+}
+
+function fuseTrace(startTripped: boolean): {
+  trip: number[];
+  reset: number[];
+  delta: number;
+} {
+  const rails = worldRails("arm.world.json");
+  const order = [rails.class2, rails.alias, rails.reference];
+  const trip = [-1, -1, -1];
+  const reset = [-1, -1, -1];
+  let delta = 0;
+  if (startTripped) for (const rail of order) rail.tripFuse();
+  for (let ms = 1; ms <= 20_000; ms++) {
+    for (let i = 0; i < order.length; i++) {
+      const rail = order[i]!;
+      const cooling = startTripped || (trip[i] ?? -1) > 0;
+      rail.setFixed(cooling ? 0.03 : 2);
+      rail.setMotor(0, 0, 0, false);
+      rail.solve();
+      if (rail.tripped && trip[i] === -1) trip[i] = startTripped ? 0 : ms;
+      if ((trip[i] ?? -1) >= 0 && !rail.tripped && reset[i] === -1)
+        reset[i] = ms;
+    }
+    delta = Math.max(
+      delta,
+      Math.abs(rails.class2.boardVoltage - rails.reference.boardVoltage),
+      Math.abs(rails.alias.boardVoltage - rails.reference.boardVoltage)
+    );
+    if (reset.every((step) => step > 0) && ms > Math.max(...reset) + 2) break;
+  }
+  return { trip, reset, delta };
+}
+
+{
+  const run = fuseTrace(true);
+  expect(run.delta <= 1e-12, `fuseStart board Δ ${run.delta} V`);
+  expect(
+    run.trip[0] === run.trip[1] && run.trip[1] === run.trip[2],
+    `trip ${run.trip}`
+  );
+  expect(
+    run.reset[0] === run.reset[1] &&
+      run.reset[1] === run.reset[2] &&
+      (run.reset[0] ?? 0) > 0,
+    `reset ${run.reset}`
+  );
+  console.log(
+    `uno fuseStart tripped: board Δ ${sci(run.delta)} V, trip ${run.trip.join("/")}, reset ${run.reset.join("/")}`
+  );
 }

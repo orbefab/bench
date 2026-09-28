@@ -18,6 +18,7 @@ import type { RecordingRead, WorldState } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { Engine, TRACE_CASES } from "./world/circuit";
+import { MF_MSMF050, PtcFuseElement } from "./world/circuit/ptc-fuse";
 import {
   type AttachWorldOptions,
   attachWorld,
@@ -33,7 +34,6 @@ import {
   stepBrownout,
 } from "./world/power";
 import {
-  PtcFuse,
   UNO_F1_IHOLD,
   UNO_F1_R,
   UNO_F1_R_HOT,
@@ -173,7 +173,7 @@ function expectRecorded(read: RecordingRead, label: string): void {
 }
 
 function msUntilTrip(amps: number, limitMs: number): number {
-  const fuse = new PtcFuse();
+  const fuse = new PtcFuseElement("f", "a", "b", MF_MSMF050);
   let ms = 0;
   while (!fuse.tripped && ms < limitMs) {
     fuse.advance(amps, 0.001);
@@ -278,7 +278,7 @@ expect(
 }
 
 {
-  const held = new PtcFuse();
+  const held = new PtcFuseElement("f", "a", "b", MF_MSMF050);
   for (let ms = 0; ms < 60_000; ms++) held.advance(UNO_F1_IHOLD, 0.001);
   expect(!held.tripped, `0.5 A tripped, u=${held.u}`);
   const onRail = createRailCircuit({
@@ -289,7 +289,7 @@ expect(
     boardPath: "uno-usb",
   });
   onRail.setFixed(UNO_F1_IHOLD);
-  const matched = new PtcFuse();
+  const matched = new PtcFuseElement("f", "a", "b", MF_MSMF050);
   for (let ms = 0; ms < 100; ms++) {
     onRail.solve();
     expectBoard(onRail, "fuse hold");

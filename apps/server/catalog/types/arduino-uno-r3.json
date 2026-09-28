@@ -53,6 +53,17 @@
         "absMaxVoltage": [0, 6]
       }
     },
+    "VBUS": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in",
+      "internal": true,
+      "connector": "usb",
+      "ratings": {
+        "voltage": [5, 5],
+        "absMaxVoltage": [0, 6]
+      }
+    },
     "3V3": {
       "domain": "electrical",
       "role": "power",

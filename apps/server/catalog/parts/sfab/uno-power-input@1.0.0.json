@@ -1,0 +1,123 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/uno-power-input@1.0.0",
+  "type": "power-input",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Arduino Uno Rev3 USB front end",
+      "ref": "Arduino Uno Rev3 schematic, arduino.cc, CC-BY-SA (A000066). Rev3e bill arduino_Uno_Rev3-02-TH. F1 is MF-MSMF050, T1 is FDN340P, PC2 is 47 uF, C2 C4 C6 C7 are 100 nF on +5V"
+    },
+    {
+      "title": "PC2 ESR",
+      "ref": "Panasonic EEE-1EA470WP. tan delta 0.20 at 120 Hz, +20 C, so ESR = tan delta / (2 pi 120 C). PC1 is the same value on VIN and is not on this net. Ceramic ESR is not on the bill; assumed 0"
+    },
+    {
+      "title": "T1 gate",
+      "ref": "LMV358 VIN comparator; with no VIN the gate is low. The comparator is not in this netlist"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": [
+              "LMV358 VIN comparator; with no VIN the gate is low",
+              "temperature of the surroundings",
+              "trip-time spread",
+              "R1max drift after a trip",
+              "gate charge",
+              "the region between on and off",
+              "temperature"
+            ],
+            "netlist": {
+              "instances": {
+                "f1": {
+                  "part": "sfab/mf-msmf050@1.0.0"
+                },
+                "t1": {
+                  "part": "sfab/fdn340p@1.0.0"
+                },
+                "pc2": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 0.000047,
+                    "esr": 5.64379230822324
+                  }
+                },
+                "c2": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "c4": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "c6": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "c7": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                }
+              },
+              "wires": [
+                ["f1.B", "t1.S"],
+                ["t1.D", "pc2.A"],
+                ["t1.D", "c2.A"],
+                ["t1.D", "c4.A"],
+                ["t1.D", "c6.A"],
+                ["t1.D", "c7.A"],
+                ["t1.G", "pc2.B"],
+                ["t1.G", "c2.B"],
+                ["t1.G", "c4.B"],
+                ["t1.G", "c6.B"],
+                ["t1.G", "c7.B"]
+              ],
+              "expose": {
+                "VBUS": "f1.A",
+                "5V": "t1.D",
+                "GND": "t1.G"
+              }
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.012, 0.008, 0.004],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}

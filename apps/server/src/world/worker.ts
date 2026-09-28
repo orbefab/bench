@@ -48,7 +48,7 @@ import {
   runningBrownout,
   stepBrownout,
 } from "./power";
-import { type BoardPathName, chipFacts, usbPathFor } from "./power-path";
+import { type BoardPathName, chipFacts, railAttachment } from "./power-path";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
@@ -1027,20 +1027,17 @@ function bindRails() {
   for (const supply of supplySpecs) {
     const members = groups.get(supply.id) ?? [];
     const fed = boardOn(supply.id);
-    const chosen = fed
-      ? usbPathFor(
-          supplyConnectorOf(supply.id),
-          fed.boardCircuit,
-          fed.hasNetlist
-        )
-      : null;
-    const path = chosen?.kind === "path" ? chosen.path : null;
     const supplyStamp = runPlan?.supplies.find(
       (item) => item.id === supply.id
     )?.stamp;
-    const stamp = fed?.stamp ?? supplyStamp;
-    const feed =
-      chosen?.kind === "netlist" ? chosen.feed : stamp ? "header" : undefined;
+    const attached = railAttachment({
+      type: fed?.type ?? null,
+      connector: supplyConnectorOf(supply.id),
+      boardCircuit: fed?.boardCircuit ?? null,
+      hasNetlist: fed?.hasNetlist ?? false,
+      stamp: fed?.stamp ?? supplyStamp,
+    });
+    const path = attached.boardPath;
     const circuit = createRailCircuit({
       vNom: supply.voltage,
       rSeries: supply.rSeries,
@@ -1055,12 +1052,14 @@ function bindRails() {
       }),
       ...(path ? { boardPath: path } : {}),
       ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
-      ...(stamp && feed ? { stamp, feed } : {}),
+      ...(attached.stamp && attached.feed
+        ? { stamp: attached.stamp, feed: attached.feed }
+        : {}),
       ...(path === "snapshot-feed" && fed?.powerSnapshot
         ? { law: fed.powerSnapshot.law }
         : {}),
     });
-    if (path === "uno-usb" && fuseStart === "tripped") circuit.tripFuse();
+    if (attached.tripFuse && fuseStart === "tripped") circuit.tripFuse();
     for (let i = 0; i < members.length; i++) {
       const load = members[i];
       if (load) load.railSlot = i;

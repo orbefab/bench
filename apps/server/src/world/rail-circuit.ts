@@ -24,12 +24,12 @@ import {
 import { Engine } from "./circuit/engine";
 import { LawTable } from "./circuit/law-table";
 import { AVR_PIN, type AvrPinParams, type PinMode } from "./circuit/pin";
-import { type BoardStamp, realize } from "./circuit-stamp";
+import { PmosChannel } from "./circuit/pmos-switch";
+import { PtcFuseElement } from "./circuit/ptc-fuse";
+import { type BoardStamp, boardStampOf, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,
   type BoardPathName,
-  createUnoUsbPath,
-  type PtcFuse,
   UNO_BOARD_NODE,
   UNO_TERM_NODE,
 } from "./power-path";
@@ -65,7 +65,7 @@ export type RailCircuitSpec = {
   pin?: AvrPinParams;
   /**
    * Circuit parts for this rail, from the plan or from `boardStampOf`.
-   * Required together with `feed`. The rail does not load a catalog.
+   * `path:uno-usb` with no stamp loads the Uno board netlist.
    */
   stamp?: BoardStamp;
   /**
@@ -125,8 +125,8 @@ export class RailCircuit {
   private readonly motors: BridgeMotor[];
   private readonly termNode: string;
   private readonly boardNode: string;
-  private readonly fuse: PtcFuse | null;
-  private readonly fuseR: { ohms: number } | null;
+  private readonly fuse: PtcFuseElement[];
+  private readonly channels: PmosChannel[];
   private readonly drives: {
     bit: number;
     pin: { setMode(mode: PinMode): void };
@@ -143,12 +143,17 @@ export class RailCircuit {
     const braking = spec.braking ?? "clip";
     const uno = spec.boardPath === "uno-usb";
     const snap = spec.boardPath === "snapshot-feed";
-    const stamp = spec.stamp ?? null;
-    if (stamp && spec.feed !== "usb" && spec.feed !== "header") {
+    let stamp = spec.stamp ?? null;
+    let feed = spec.feed;
+    if (uno && !stamp) {
+      stamp = unoAliasStamp();
+      feed = "usb";
+    }
+    if (stamp && feed !== "usb" && feed !== "header") {
       throw new Error("a board stamp needs feed usb or header");
     }
     const realized = stamp
-      ? realize(stamp, spec.feed ?? "header", spec.pin ?? AVR_PIN)
+      ? realize(stamp, feed ?? "header", spec.pin ?? AVR_PIN)
       : null;
     const nano = realized !== null && stamp?.netlist === true;
     const board = uno || nano;
@@ -218,24 +223,29 @@ export class RailCircuit {
           spec.rSeries,
           spec.iLimit
         );
-    const unoPath = uno ? createUnoUsbPath() : null;
-    this.fuse = unoPath?.fuse ?? null;
-    this.fuseR = unoPath?.resistor ?? null;
-    this.winding = new Float64Array(motors.length);
-    this.engine = new Engine(
-      [
-        supply,
-        this.load,
-        ...motors,
-        ...(unoPath?.elements ?? realized?.elements ?? []),
-      ],
-      {
-        method: "be",
-        h: MASTER_S / this.substeps,
-        atol: 1e-14,
-        rtol: 1e-12,
-      }
+    const stamped = realized?.elements ?? [];
+    this.fuse = stamped.filter(
+      (el): el is PtcFuseElement => el instanceof PtcFuseElement
     );
+    this.channels = stamped.filter(
+      (el): el is PmosChannel => el instanceof PmosChannel
+    );
+    this.winding = new Float64Array(motors.length);
+    this.engine = new Engine([supply, this.load, ...motors, ...stamped], {
+      method: "be",
+      h: MASTER_S / this.substeps,
+      atol: 1e-14,
+      rtol: 1e-12,
+    });
+    // A knee load linearized at 0 V can report more than the supply's
+    // limit when nothing else conducts. The next stamp is then two
+    // currents and no voltage. With no motor, start the nodes at the
+    // setpoint so that load is already in its full-current region.
+    // A motor on the rail already converges from 0 V, and that path
+    // stays on the frozen arm frames.
+    if (this.fuse.length > 0 && motors.length === 0) {
+      this.engine.seedNodes(spec.vNom);
+    }
   }
 
   setFixed(amps: number): void {
@@ -263,12 +273,12 @@ export class RailCircuit {
   }
 
   get tripped(): boolean {
-    return this.fuse?.tripped ?? false;
+    return this.fuse.some((fuse) => fuse.tripped);
   }
 
-  /** Open the fuse before the next solve. No effect without the Uno path. */
+  /** Open every fuse on this rail before the next solve. */
   tripFuse(): void {
-    this.fuse?.trip();
+    for (const fuse of this.fuse) fuse.trip();
   }
 
   /** One stamped pin follows the firmware drive at this master step. */
@@ -303,12 +313,10 @@ export class RailCircuit {
    * The fuse, when there is one, takes one thermal step from this current.
    */
   solve(): void {
-    const fuse = this.fuse;
-    const fuseR = this.fuseR;
-    if (fuse && fuseR && fuseR.ohms !== fuse.ohms) {
-      fuseR.ohms = fuse.ohms;
-      this.engine.dropFactor();
-    }
+    let drop = false;
+    for (const fuse of this.fuse) if (fuse.pull()) drop = true;
+    for (const channel of this.channels) if (channel.apply()) drop = true;
+    if (drop) this.engine.dropFactor();
     const frozen = this.engine.frozenSteps;
     let min = Number.POSITIVE_INFINITY;
     this.resetMarginMin = Number.POSITIVE_INFINITY;
@@ -337,8 +345,19 @@ export class RailCircuit {
       const motor = motors[i]!;
       winding[i] = motor.connected ? this.engine.branchCurrent(motor.id) : 0;
     }
-    fuse?.advance(this.current, MASTER_S);
+    const voltage = (node: string) => this.engine.voltage(node);
+    for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
+    for (const channel of this.channels) channel.latch(voltage);
   }
+}
+
+/** Class-1 `path:uno-usb`. The same netlist class 2 stamps, cached. */
+let aliasStamp: BoardStamp | null = null;
+function unoAliasStamp(): BoardStamp {
+  aliasStamp ??= boardStampOf("sfab/uno-r3@1.0.0", "circuits", {
+    boardId: "uno",
+  });
+  return aliasStamp;
 }
 
 export function createRailCircuit(spec: RailCircuitSpec): RailCircuit {

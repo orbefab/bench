@@ -3,33 +3,18 @@
 // (031dc5e). `nanoRail` there stays the older test circuit, not this board.
 /**
  * A `usb-a-port` wired to an Uno's `5V` is the cable into the USB connector.
- * That is how the arm examples are drawn. A bench supply on `5V` is the
- * header, and the rail stays the supply terminal. Servos on `uno.5V` load
- * the board node. The power walk cannot tell a part on the header from a
- * part on the board, so every motor of that supply sits on the node when
- * the path is on.
+ * That is how the arm examples are drawn. `path:uno-usb` stamps the same
+ * board netlist as class 2. A bench supply on `5V` is the header, and the
+ * rail stays the supply terminal. Servos on `uno.5V` load the board node.
+ * The power walk cannot tell a part on the header from a part on the board,
+ * so every motor of that supply sits on the node when the path is on.
  *
  * Schematic: "Arduino Uno Rev3", arduino.cc, CC-BY-SA (A000066). Parts are
  * the Rev3e bill of materials (arduino_Uno_Rev3-02-TH). Datasheets cited
  * on the constants. A value marked assumed is not in those documents.
  */
 
-import {
-  gStamp,
-  type PowerSplit,
-  type StampCtx,
-  volt,
-} from "./circuit/context";
-import type { Element } from "./circuit/element";
-import {
-  capacitor,
-  type DiodeParams,
-  diode,
-  iSource,
-  resistor,
-  thermalVoltage,
-  vSource,
-} from "./circuit/elements";
+import { type DiodeParams, thermalVoltage } from "./circuit/elements";
 
 /** Supply side of F1. The rail's Thevenin terminal when the path is on. */
 export const UNO_TERM_NODE = "term";
@@ -39,7 +24,6 @@ export const UNO_SW_NODE = "sw";
 export const UNO_BOARD_NODE = "v5";
 /** 1 V: a 5 V board's idle draw falls off here and cannot sink its own rail through 0 V. */
 export const BOARD_LOAD_KNEE_V = 1;
-const PC2_NODE = "pc2";
 
 /**
  * Bourns MF-MSMF series, the MF-MSMF050 row (the schematic's MF-MSMF050-2,
@@ -109,7 +93,6 @@ export const UNO_PC2_ESR = PC2_TAN_DELTA / (2 * Math.PI * 120 * UNO_PC2_C);
  * or the bill. Assumed 0, so each one is an ideal capacitor.
  */
 export const UNO_DECOUPLE_C = 100e-9;
-const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;
 
 /**
  * A cable network that is still a named path. A firmware board netlist
@@ -141,8 +124,9 @@ export function pathRefOf(boardCircuit: string | null): string | null {
  * the supply terminal is the pin. The caller has already checked that
  * this supply feeds that board.
  *
- * `path:uno-usb` is the hand-built cable, and only from a supply whose
- * connector is `usb`. Any other supply on that board is the header.
+ * `path:uno-usb` is an alias for the Uno's board netlist, and only from a
+ * supply whose connector is `usb`. Any other supply on that board is the
+ * header: the USB front end, capacitors included, stays off the rail.
  * A class-2 board (`hasNetlist`) takes `feed: "usb"` from that connector
  * (the cable lands on the board's `usb` port) and `feed: "header"` from
  * any other supply. A class-1 snapshot is `snapshot:<ref>`. The loader
@@ -181,148 +165,48 @@ export function unoUsbPathFor(
 }
 
 /**
- * First-order trip state. `u` is the rise over the trip temperature.
- * `advance` is one master step, after the circuit has been solved.
+ * What the worker puts on one rail. `path:uno-usb` with no stamp is the
+ * class-1 alias: the rail loads the board netlist. A class-2 Uno on the
+ * header drops that stamp, so the pin stays the supply terminal. `tripFuse`
+ * opens every `ptc-fuse@1` on an Uno USB rail. There is no path selector.
  */
-export class PtcFuse {
-  u = 0;
-  tripped = false;
-
-  get ohms(): number {
-    return this.tripped ? UNO_F1_R_HOT : UNO_F1_R;
-  }
-
-  advance(amps: number, dt: number): void {
-    const power = amps * amps * this.ohms;
-    const steady = power / UNO_F1_ALPHA_W;
-    this.u += (dt / UNO_F1_TAU_S) * (steady - this.u);
-    if (this.u < 0) this.u = 0;
-    if (!this.tripped) {
-      if (this.u >= 1) this.tripped = true;
-    } else if (this.u <= UNO_F1_U_RESET) {
-      this.tripped = false;
-    }
-  }
-
-  /** Open before the first solve. The next solve stamps the hot resistance. */
-  trip(): void {
-    this.tripped = true;
-    this.u = 1;
-  }
-}
-
-/**
- * F1 as a conductance. The rail copies `PtcFuse.ohms` in and drops the
- * factored matrix. The thermal step is not part of the stamp.
- */
-class PtcResistor implements Element {
-  readonly form = "ptc-fuse@1";
-  readonly nonlinear = false;
-  ohms: number;
-  private ia = -1;
-  private ib = -1;
-
-  constructor(
-    readonly id: string,
-    private readonly aName: string,
-    private readonly bName: string,
-    ohms: number
-  ) {
-    if (!(ohms > 0)) throw new Error(`${id}: resistance must be positive`);
-    this.ohms = ohms;
-  }
-
-  nodes(): readonly string[] {
-    return [this.aName, this.bName];
-  }
-  branches(): readonly string[] {
-    return [];
-  }
-  bind(nodeOf: (name: string) => number): void {
-    this.ia = nodeOf(this.aName);
-    this.ib = nodeOf(this.bName);
-  }
-  signature(): string {
-    return String(this.ohms);
-  }
-  stamp(ctx: StampCtx): void {
-    gStamp(ctx, this.ia, this.ib, 1 / this.ohms);
-  }
-  commit(): void {}
-  power(ctx: StampCtx): PowerSplit {
-    const v = volt(ctx, this.ia) - volt(ctx, this.ib);
-    const i = v / this.ohms;
-    const p = v * i;
-    return {
-      absorbed: p,
-      delivered: 0,
-      dissipated: p,
-      storedDot: 0,
-      mechanical: 0,
-    };
-  }
-  leaving(ctx: StampCtx): ReadonlyArray<readonly [number, number]> {
-    const i = (volt(ctx, this.ia) - volt(ctx, this.ib)) / this.ohms;
-    return [
-      [this.ia, i],
-      [this.ib, -i],
-    ];
-  }
-}
-
-/** T1, PC2 with its ESR, and the four +5V ceramics. Shared by the trace and the live path. */
-function unoBoardElements(sw: string, board: string): Element[] {
-  return [
-    resistor("t1", sw, board, UNO_T1_RDS),
-    diode("t1d", board, sw, UNO_T1_DIODE),
-    resistor("pc2r", board, PC2_NODE, UNO_PC2_ESR),
-    capacitor("pc2", PC2_NODE, "0", UNO_PC2_C),
-    ...DECOUPLE.map((id) => capacitor(id, board, "0", UNO_DECOUPLE_C)),
-  ];
-}
-
-export type UnoUsbPath = {
-  fuse: PtcFuse;
-  /** Ohms the stamp uses. The rail writes the fuse value here. */
-  resistor: { ohms: number };
-  elements: Element[];
-};
-
-/** F1, T1, and the +5V capacitors, from the supply terminal to the board node. */
-export function createUnoUsbPath(): UnoUsbPath {
-  const fuse = new PtcFuse();
-  const element = new PtcResistor("f1", UNO_TERM_NODE, UNO_SW_NODE, fuse.ohms);
+export function railAttachment<T>(input: {
+  type: string | null;
+  connector: string | null;
+  boardCircuit: string | null;
+  hasNetlist: boolean;
+  stamp: T | undefined;
+}): {
+  boardPath: BoardPathName | null;
+  stamp?: T;
+  feed?: "usb" | "header";
+  tripFuse: boolean;
+} {
+  const chosen = input.type
+    ? usbPathFor(input.connector, input.boardCircuit, input.hasNetlist)
+    : null;
+  const boardPath = chosen?.kind === "path" ? chosen.path : null;
+  const unoHeader =
+    input.type === "arduino-uno-r3" &&
+    chosen?.kind === "netlist" &&
+    chosen.feed === "header";
+  const stamp = unoHeader ? undefined : input.stamp;
+  const feed =
+    chosen?.kind === "netlist" && stamp
+      ? chosen.feed
+      : stamp
+        ? "header"
+        : undefined;
+  const tripFuse =
+    boardPath === "uno-usb" ||
+    (input.type === "arduino-uno-r3" &&
+      chosen?.kind === "netlist" &&
+      chosen.feed === "usb");
   return {
-    fuse,
-    resistor: element,
-    elements: [element, ...unoBoardElements(UNO_SW_NODE, UNO_BOARD_NODE)],
+    boardPath,
+    ...(stamp && feed ? { stamp, feed } : {}),
+    tripFuse,
   };
-}
-
-/**
- * ngspice deck. F1 is the cold class-1 resistance, not the thermal model.
- * USB preset (5 V, 0.5 Ω), T1, the +5V capacitors, the 50 mA board load,
- * and a 0 → 0.714 A step at 1 ms. The probe is the board node.
- */
-export function unoUsbTrace(): Element[] {
-  // The class-1 deck: 5 V, 0.5 Ω, and the Uno's 50 mA quiescent.
-  const board = 0.05;
-  return [
-    vSource("vusb", "src", "0", {
-      kind: "dc",
-      value: 5,
-    }),
-    resistor("rs", "src", UNO_TERM_NODE, 0.5),
-    resistor("f1", UNO_TERM_NODE, UNO_SW_NODE, UNO_F1_R),
-    ...unoBoardElements(UNO_SW_NODE, UNO_BOARD_NODE),
-    iSource("iboard", UNO_BOARD_NODE, "0", { kind: "dc", value: board }),
-    iSource("iload", UNO_BOARD_NODE, "0", {
-      kind: "step",
-      t0: 1e-3,
-      v0: 0,
-      v1: 0.714,
-    }),
-  ];
 }
 
 /**

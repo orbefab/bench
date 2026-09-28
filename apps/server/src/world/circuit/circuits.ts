@@ -1,5 +1,5 @@
 // Ported from layered-sim E1 src/circuits.ts @ 031dc5e and E3 src/circuits.ts @ fc7e8d3.
-import { unoUsbTrace } from "../power-path";
+import { unoUsbTrace } from "../uno-reference";
 import type { Element } from "./element";
 import {
   capacitor,
