@@ -16,6 +16,7 @@ import {
   DEFAULT_PIN_LEVEL,
   EDGE_EXACT,
   Engine,
+  gminFallbackCalls,
   inductor,
   iSource,
   LED_RED,
@@ -567,3 +568,9 @@ for (const rail of POT_RAILS) {
   );
   console.log(`INFO diodes 50 nodes (10%): ${diodeUs.toFixed(2)} µs/step`);
 }
+
+expect(
+  gminFallbackCalls === 0,
+  `gmin fallback ran ${gminFallbackCalls} times on the existing checks`
+);
+console.log(`gmin fallback calls ${gminFallbackCalls}`);

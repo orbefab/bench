@@ -278,7 +278,14 @@ export class VSource implements Element {
     return "";
   }
   stamp(ctx: StampCtx): void {
-    vBranch(ctx, this.ip, this.im, this.ibr, 0, waveAt(this.wave, ctx.t));
+    vBranch(
+      ctx,
+      this.ip,
+      this.im,
+      this.ibr,
+      0,
+      waveAt(this.wave, ctx.t) * ctx.sourceScale
+    );
   }
   commit(): void {}
   power(ctx: StampCtx): PowerSplit {
@@ -328,7 +335,7 @@ export class ISource implements Element {
   }
   /** Current flows from p through the source to m (SPICE sign). */
   stamp(ctx: StampCtx): void {
-    const i = waveAt(this.wave, ctx.t);
+    const i = waveAt(this.wave, ctx.t) * ctx.sourceScale;
     if (this.ip >= 0) ctx.z[this.ip] = (ctx.z[this.ip] as number) - i;
     if (this.im >= 0) ctx.z[this.im] = (ctx.z[this.im] as number) + i;
   }

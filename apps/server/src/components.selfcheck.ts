@@ -23,9 +23,9 @@ import {
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { LED_RED } from "./world/circuit/circuits";
-import { Diode, Resistor, VSource } from "./world/circuit/elements";
-import { Engine } from "./world/circuit/engine";
-import { PIN_ROH } from "./world/circuit/pin";
+import { Diode, ISource, Resistor, VSource } from "./world/circuit/elements";
+import { Engine, gminFallbackCalls } from "./world/circuit/engine";
+import { AVR_PIN, PIN_ROH } from "./world/circuit/pin";
 import { boardStampOf, realize } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,
@@ -452,10 +452,6 @@ function servoPulseUs(angle: number): number {
   const powerInst = board.instances.power;
   if (!powerInst) throw new Error("nano board has no power group");
   powerInst.part = powerId;
-  // The 1N4148's open-circuit point does not return from gmin. A 1 MΩ
-  // on the rail is about 5 µA at 5 V, far below the 0.1 A comparison.
-  board.instances.bleed = { part: "sfab/resistor@1.0.0", params: { R: 1e6 } };
-  board.wires.push(["power.5V", "bleed.A"], ["power.GND", "bleed.B"]);
   const root = mkdtempSync(join(tmpdir(), "sfab-capture-board-"));
   try {
     const dir = join(root, "parts", "sfab");
@@ -465,6 +461,59 @@ function servoPulseUs(angle: number): number {
       JSON.stringify(power)
     );
     writeFileSync(join(dir, "nano-1n4148@1.0.0.json"), JSON.stringify(part));
+    expect(
+      gminFallbackCalls === 0,
+      `gmin fallback ran ${gminFallbackCalls} times before the open diode`
+    );
+    console.log(`gmin fallback calls ${gminFallbackCalls}`);
+    const stamp = boardStampOf(id, "circuits", {
+      boardId: "nano",
+      libraryDir: root,
+    });
+    const openAt = (supply: number, fallback: boolean) => {
+      const realized = realize(stamp, "usb", AVR_PIN);
+      const load = stamp.portNodes["5V"];
+      if (!load) throw new Error("stamp has no 5V");
+      const series = realized.elements.find(
+        (el): el is Diode => el instanceof Diode && el.id.endsWith("s4")
+      );
+      if (!series) throw new Error("stamp has no series diode");
+      const engine = new Engine(
+        [
+          new VSource("v", "src", "0", { kind: "dc", value: supply }),
+          new Resistor("rs", "src", realized.feedNode, 0.5),
+          ...realized.elements,
+          new ISource("load", load, "0", { kind: "dc", value: 0 }),
+        ],
+        { method: "be", h: 1e-3, atol: 1e-14, rtol: 1e-12 }
+      );
+      engine.gminFallback = fallback;
+      return { engine, series, load };
+    };
+    const blocked = openAt(4.75, false);
+    let failure = "";
+    try {
+      blocked.engine.operatingPoint();
+    } catch (err: unknown) {
+      failure = err instanceof Error ? err.message : String(err);
+    }
+    expect(failure.length > 0, "open 1N4148 converged without the fallback");
+    console.log(`open 1N4148 without bleed: ${failure}`);
+    const opened = openAt(4.75, true);
+    opened.engine.operatingPoint();
+    const node = opened.engine.voltage(opened.load);
+    const amps = opened.series.amps;
+    expect(Math.abs(node - 4.75) < 1e-3, `open node ${node} V`);
+    expect(Math.abs(amps) < 1e-6, `diode current ${amps} A`);
+    expect(
+      opened.engine.gminFloor === 0,
+      `shunt floor ${opened.engine.gminFloor}`
+    );
+    console.log(
+      `open 1N4148: converged, 5V ${node.toFixed(4)} V, ` +
+        `diode ${amps.toExponential(2)} A, ` +
+        `${opened.engine.newtonIters} iterations, floor 0`
+    );
     const config = JSON.parse(
       readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
     ) as CaptureFile;
@@ -500,8 +549,7 @@ function servoPulseUs(angle: number): number {
     expect(snap.quality === "Q1", `lint granted ${snap.quality}`);
     console.log(
       `capture 1n4148 board: lint ${snap.quality}, ` +
-        `0.1 A ${testV.toFixed(3)} V vs nano ${nanoV.toFixed(3)} V ` +
-        `(s4 is 1N4148; 1 MΩ holds the open point)`
+        `0.1 A ${testV.toFixed(3)} V vs nano ${nanoV.toFixed(3)} V (s4 is 1N4148)`
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

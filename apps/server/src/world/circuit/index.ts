@@ -47,6 +47,7 @@ export {
 } from "./elements";
 export {
   Engine,
+  gminFallbackCalls,
   type Method,
   type PowerReport,
   type Sample,
