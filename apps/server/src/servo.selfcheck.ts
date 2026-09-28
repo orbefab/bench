@@ -603,18 +603,20 @@ try {
       drives: { robot: "stall-arm", joint: "shoulder" },
     },
   ];
-  // Both arms share this supply so the test can see them disagree.
-  // The limit is high enough that a stall does not sag the rail: this
-  // case is the mechanical split. Shared-rail brownout is power.selfcheck.
+  // Each arm has its own bench. The limit is high enough that a stall
+  // does not sag the rail: this case is the mechanical split. Two
+  // stamped boards cannot share one supply.
   const shared = pair.supplies[0];
   if (!shared) throw new Error("fixture supply");
-  shared.kind = "bench";
-  shared.currentLimit = 2;
+  pair.supplies = [
+    { ...shared, id: "usb", kind: "bench", currentLimit: 2 },
+    { ...shared, id: "bench", kind: "bench", currentLimit: 2 },
+  ];
   pair.wires = [
     ["usb.5V", "hold.5V"],
     ["usb.GND", "hold.GND"],
-    ["usb.5V", "stall.5V"],
-    ["usb.GND", "stall.GND"],
+    ["bench.5V", "stall.5V"],
+    ["bench.GND", "stall.GND"],
     ["hold.D9", "hold-servo.signal"],
     ["hold.5V", "hold-servo.V+"],
     ["hold.GND", "hold-servo.GND"],

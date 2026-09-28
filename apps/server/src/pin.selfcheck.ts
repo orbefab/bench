@@ -198,10 +198,15 @@ try {
         rotation: [1, 0, 0, 0],
       },
     });
-    // An unwired board does not run. This CPU is here for its pins, so
-    // it takes the USB rail. Two boards plus the hold servo stay under
-    // the 500 mA limit, and the rail does not sag.
-    doc.wires.push(["usb.5V", "stall.5V"], ["usb.GND", "stall.GND"]);
+    // An unwired board does not run. This CPU is here for its pins.
+    // Each board has its own USB port: two stamped boards cannot share one.
+    const usb = doc.supplies[0];
+    if (!usb) throw new Error("fixture supply");
+    doc.supplies.push({ ...usb, id: "stall-usb" });
+    doc.wires.push(
+      ["stall-usb.5V", "stall.5V"],
+      ["stall-usb.GND", "stall.GND"]
+    );
     writeDraft(pairRoot, "two.world.json", doc);
     // 55 ms lands inside the stall firmware's longer servo pulse and after
     // the hold firmware's pulse has ended, so D9's level differs.

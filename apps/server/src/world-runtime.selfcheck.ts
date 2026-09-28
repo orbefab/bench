@@ -1164,9 +1164,14 @@ pairDoc.boards.push({
   },
 });
 // An unwired board does not run. The stall CPU is here for its own
-// serial ring, so it takes the same USB rail. Two boards plus the hold
-// servo stay under 500 mA, and neither board browns out.
-pairDoc.wires.push(["usb.5V", "stall.5V"], ["usb.GND", "stall.GND"]);
+// serial ring, on its own USB port. Two stamped boards cannot share one.
+const pairUsb = pairDoc.supplies[0];
+if (!pairUsb) throw new Error("fixture supply");
+pairDoc.supplies.push({ ...pairUsb, id: "stall-usb" });
+pairDoc.wires.push(
+  ["stall-usb.5V", "stall.5V"],
+  ["stall-usb.GND", "stall.GND"]
+);
 writeDraft(pairRoot, "two.world.json", pairDoc);
 const holdHexPath = join(pairRoot, "firmware/hold/hold.hex");
 const goodHex = readFileSync(holdHexPath);
