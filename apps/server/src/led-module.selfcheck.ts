@@ -243,7 +243,7 @@ function pinHigh(state: WorldState, bit: number): boolean {
       item.message.includes("across port NOPE")
     );
     expect(hit, "no across-port diagnostic");
-    console.log(`degraded ${hit.path}: across port NOPE`);
+    console.log(`degraded ${hit.path}: ${hit.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

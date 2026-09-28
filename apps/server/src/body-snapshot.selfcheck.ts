@@ -100,7 +100,7 @@ try {
     (row) => row.message.includes("idle") && row.message.includes("not reached")
   );
   expect(idleHit, "no unreached-shaft diagnostic");
-  console.log(`degraded ${idleHit.path}: shaft not reached`);
+  console.log(`degraded ${idleHit.path}: ${idleHit.message}`);
 
   writeFileSync(
     join(partDir, "bad-servo@1.0.0.json"),
@@ -117,7 +117,7 @@ try {
     row.message.includes("hinge@1 is a body-axis form")
   );
   expect(hingeHit, "no hinge behaviour diagnostic");
-  console.log(`degraded ${hingeHit.path}: hinge@1 is a body-axis form`);
+  console.log(`degraded ${hingeHit.path}: ${hingeHit.message}`);
 
   writeFileSync(
     join(root, "missing-variant.world.json"),
@@ -127,16 +127,10 @@ try {
   expect(missing.ok, "missing variant did not run");
   if (!missing.ok) throw new Error("unreachable");
   const missingHit = (missing.plan.degraded ?? []).find(
-    (row) =>
-      row.message.includes("servo") &&
-      row.message.includes("body") &&
-      row.message.includes("class 1") &&
-      row.message.includes("no-such")
+    (row) => row.path === "servo" && row.message.includes("variant no-such")
   );
   expect(missingHit, "no missing-variant diagnostic");
-  console.log(
-    `degraded ${missingHit.path}: class 1 variant no-such is not on this part`
-  );
+  console.log(`degraded ${missingHit.path}: ${missingHit.message}`);
 
   writeFileSync(
     join(partDir, "two-body@1.0.0.json"),
@@ -187,9 +181,7 @@ try {
       row.message.includes("hobby-servo-3wire")
   );
   expect(typeHit, "no partType diagnostic");
-  console.log(
-    `degraded ${typeHit.path}: partType other-type is not hobby-servo-3wire`
-  );
+  console.log(`degraded ${typeHit.path}: ${typeHit.message}`);
 
   writeFileSync(
     join(snapDir, "ok-hinge@1.0.0.json"),

@@ -334,11 +334,12 @@ export function loadLibrary(
 
   const parts = new Map<string, LoadedPart>();
   const types = new Map<string, LoadedType>();
-  const queue: { id: string | null; inline: PartFile | null }[] = [];
+  const queue: { id: string | null; inline: PartFile | null; root: boolean }[] =
+    [];
   if (typeof world.root.part === "string") {
-    queue.push({ id: world.root.part, inline: null });
+    queue.push({ id: world.root.part, inline: null, root: true });
   } else {
-    queue.push({ id: null, inline: world.root.part });
+    queue.push({ id: null, inline: world.root.part, root: true });
   }
 
   while (queue.length) {
@@ -370,7 +371,11 @@ export function loadLibrary(
       if (parts.has(next.id)) continue;
       const found = loadPartById(worldDir, opts, next.id);
       if (isDiag(found)) {
-        diagnostics.push(found);
+        // A missing child is an idle instance. Only a missing root part
+        // refuses the library, because that is the open document.
+        if (next.root || !found.message.includes("not found")) {
+          diagnostics.push(found);
+        }
         continue;
       }
       loaded = found;
@@ -393,7 +398,7 @@ export function loadLibrary(
       }
     }
     for (const ref of childRefs(loaded.part)) {
-      if (!parts.has(ref)) queue.push({ id: ref, inline: null });
+      if (!parts.has(ref)) queue.push({ id: ref, inline: null, root: false });
     }
   }
 

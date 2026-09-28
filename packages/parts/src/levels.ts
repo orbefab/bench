@@ -343,9 +343,14 @@ export function resolveLevels(
   lib: Library,
   rules: LevelRules,
   fallbackClass?: ReadonlyMap<string, LevelClass>
-): { instances: LiveInstance[]; appliedPaths: Set<string> } {
+): {
+  instances: LiveInstance[];
+  appliedPaths: Set<string>;
+  missing: { path: string; partId: string }[];
+} {
   const instances: LiveInstance[] = [];
   const appliedPaths = new Set<string>();
+  const missing: { path: string; partId: string }[] = [];
 
   const visit = (
     part: PartFile,
@@ -420,9 +425,11 @@ export function resolveLevels(
       for (const [id, child] of Object.entries(netlist.instances)) {
         const childPart = lib.parts.get(child.part);
         if (!childPart) {
-          throw new Error(
-            `missing child part ${child.part} under ${instancePath}`
-          );
+          missing.push({
+            path: childPath(instancePath, id),
+            partId: child.part,
+          });
+          continue;
         }
         visit(
           childPart.part,
@@ -448,5 +455,5 @@ export function resolveLevels(
     lib.world.root.pose
   );
   instances.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return { instances, appliedPaths };
+  return { instances, appliedPaths, missing };
 }

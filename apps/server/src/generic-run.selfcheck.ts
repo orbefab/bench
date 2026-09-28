@@ -454,7 +454,7 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     expect(planned.ok, "sg90 class 2 did not run");
     if (!planned.ok) throw new Error("unreachable");
     const rows = planned.plan.degraded ?? [];
-    const motor = rows.find((item) => item.message.includes("servo.motor"));
+    const motor = rows.find((item) => item.path === "servo.motor");
     expect(
       motor,
       `no servo.motor diagnostic: ${rows.map((item) => item.message).join("; ")}`
@@ -467,7 +467,7 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       rows.every((item) => !item.message.includes("nested instance")),
       rows.map((item) => item.message).join("; ")
     );
-    console.log(`degraded ${motor.path}: no runtime for a declared-only part`);
+    console.log(`degraded ${motor.path}: ${motor.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -672,7 +672,7 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       item.message.includes('unknown chip "no-such"')
     );
     expect(chip, "no unknown-chip diagnostic");
-    console.log(`degraded ${chip.path}: unknown chip "no-such"`);
+    console.log(`degraded ${chip.path}: ${chip.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -829,7 +829,7 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       item.message.includes("r reaches no supply")
     );
     expect(named, "no open-resistor diagnostic");
-    console.log(`degraded ${named.path}: no supply reaches it`);
+    console.log(`degraded ${named.path}: ${named.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

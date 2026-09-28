@@ -482,6 +482,22 @@ function degrade(diag: Diagnostic, code: string): Diagnostic {
   return { ...diag, severity: "degraded", code: diag.code ?? code };
 }
 
+/** The sentence a person reads. The report's port, quantity, and comparison stay on the fields. */
+function humanText(message: string): string {
+  const hit =
+    /^(?:.* )?port .+? quantity .+?: (.*) \([^()\n]* vs [^()\n]*\)$/.exec(
+      message
+    );
+  return hit?.[1] ?? message;
+}
+
+function present(diag: Diagnostic): Diagnostic {
+  const next =
+    diag.severity === "degraded" ? diag : degrade(diag, degradeCode(diag));
+  const message = humanText(next.message);
+  return message === next.message ? next : { ...next, message };
+}
+
 function electricalWires(nets: LiveNet[]): [string, string][] {
   const wires: [string, string][] = [];
   for (const net of nets) {
@@ -1370,13 +1386,8 @@ export function planWorld(
   }
   const fromLoad = loaded.diagnostics
     .filter((diag) => diag.severity === "error")
-    .map((diag) => degrade(diag, degradeCode(diag)));
-  const rows = [
-    ...fromLoad,
-    ...built.diags.map((diag) =>
-      diag.severity === "degraded" ? diag : degrade(diag, degradeCode(diag))
-    ),
-  ];
+    .map((diag) => present(diag));
+  const rows = [...fromLoad, ...built.diags.map((diag) => present(diag))];
   if (rows.length > 0) {
     built.plan.degraded = rows;
     if (built.plan.report) {

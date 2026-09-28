@@ -146,6 +146,8 @@ try {
       `"vin": { "part": "sfab/nano-ch340@1.0.0", "params": { "firmware": "firmware/hold/hold.hex", "source": "firmware/hold/hold.ino" } }`,
       `"pack": { "part": "sfab/battery-2s-lipo@1.0.0", "params": { "vCutoff": "nope" } }`,
       `"servo": { "part": "sfab/sg90@1.0.0" }`,
+      `"badlint": { "part": "sfab/bad-rating@1.0.0" }`,
+      `"ghost": { "part": "sfab/no-such@1.0.0" }`,
     ].join(", "),
     [
       goodWires,
@@ -159,6 +161,43 @@ try {
     mixed,
     `"default": 2, "paths": { "vin": { "behaviour": 1 }, "servo": { "behaviour": 1 } }`,
     "mixed"
+  );
+  writeFileSync(
+    join(dir, "parts", "sfab", "bad-rating@1.0.0.json"),
+    JSON.stringify({
+      format: "sfab.part@1",
+      id: "sfab/bad-rating@1.0.0",
+      type: "resistor",
+      foreign: false,
+      ratings: { NOPE: { voltage: [0, 5] } },
+      axes: {
+        behaviour: {
+          "1": {
+            default: "ohmic",
+            variants: {
+              ohmic: {
+                kind: "form",
+                form: "resistor@1",
+                params: { R: 1000 },
+                omits: ["tolerance"],
+              },
+            },
+          },
+        },
+        body: {
+          "0": {
+            default: "none",
+            variants: { none: { kind: "none", omits: ["none"] } },
+          },
+        },
+        visual: {
+          "0": {
+            default: "none",
+            variants: { none: { kind: "none", omits: ["none"] } },
+          },
+        },
+      },
+    })
   );
   writeScene(
     dir,

@@ -206,10 +206,8 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   }
 
   const lint = lintLibrary(lib);
-  if (
-    lint.some((diag) => diag.severity === "error") ||
-    diagnostics.some((d) => d.severity === "error")
-  ) {
+  const lintErrors = lint.filter((diag) => diag.severity === "error");
+  if (diagnostics.some((d) => d.severity === "error")) {
     const lock = buildLock(lib);
     const sibling = lockPathFor(worldFile);
     if (opts.store.exists(sibling)) {
@@ -233,7 +231,13 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
       lib.worldDir,
       opts
     );
-    if (nearer.size > 0) resolved = resolveLevels(lib, rules, nearer);
+    if (nearer.size > 0) {
+      const again = resolveLevels(lib, rules, nearer);
+      resolved = {
+        ...again,
+        missing: [...resolved.missing, ...again.missing],
+      };
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     diagnostics.push(
@@ -253,6 +257,51 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
       diagnostics,
       lock: buildLock(lib),
     };
+  }
+
+  const bad = new Set(lintErrors.map((diag) => diag.path));
+  const idle = resolved.instances.filter(
+    (inst) =>
+      inst.path !== "$root" && (bad.has(inst.part.id) || bad.has(inst.path))
+  );
+  const idlePaths = new Set(idle.map((inst) => inst.path));
+  const dropped = (path: string) =>
+    idlePaths.has(path) ||
+    [...idlePaths].some((idlePath) => path.startsWith(`${idlePath}.`));
+  if (idle.length > 0) {
+    resolved = {
+      ...resolved,
+      instances: resolved.instances.filter((inst) => !dropped(inst.path)),
+    };
+  }
+  const used = new Set<string>();
+  for (const inst of idle) {
+    const diag = lintErrors.find(
+      (item) => item.path === inst.part.id || item.path === inst.path
+    );
+    if (!diag) continue;
+    used.add(diag.path);
+    diagnostics.push({ ...diag, path: inst.path });
+  }
+  for (const diag of lintErrors) {
+    if (!used.has(diag.path)) diagnostics.push(diag);
+  }
+  diagnostics.push(...lint.filter((diag) => diag.severity !== "error"));
+  const seenMissing = new Set<string>();
+  for (const miss of resolved.missing) {
+    if (seenMissing.has(miss.path)) continue;
+    seenMissing.add(miss.path);
+    diagnostics.push(
+      makeDiag({
+        severity: "error",
+        path: miss.path,
+        port: "part",
+        quantity: "Part",
+        left: miss.partId,
+        right: "library",
+        detail: `part ${miss.partId} is not in the library`,
+      })
+    );
   }
 
   diagnostics.push(...shadowWarnings(lib));

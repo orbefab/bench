@@ -956,9 +956,7 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
       )
     );
     expect(hit, "no netlist diagnostic");
-    console.log(
-      `degraded ${hit.path}: sfab/uno-r3@1.0.0 has no board netlist for path:uno-usb`
-    );
+    console.log(`degraded ${hit.path}: ${hit.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
