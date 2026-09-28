@@ -4,9 +4,15 @@ What "renders correctly" means here, and which parts of it are checked today.
 
 Checks are plain `tsx` scripts named `*.selfcheck.ts`, run by `pnpm test`.
 The desktop packager check is a `node` script next to `package.mjs`.
-No framework. A check either prints `… ok` or throws. Pull requests and
-`main` run that same suite on GitHub Actions, with `pnpm lint:check` and
-`pnpm typecheck`. CI does not package a `.app`.
+No framework. A check either prints `… ok` or throws.
+
+The full suite is a local gate: run `pnpm test` before you land on a shared
+branch. Pull requests and `main` run a light check on GitHub Actions:
+`pnpm lint:check`, `pnpm typecheck`, and `pnpm test:smoke`. The smoke set is
+a few fast checks that catch broken wiring: the layer boundaries, the engine
+face, part loading, the CLI, degrade, a headless run, the arm baseline replay,
+seams, and the web document path. It is not a physics proof. "Run workflow" on
+the CI workflow runs the full suite by hand. CI does not package a `.app`.
 
 ## The ladder
 

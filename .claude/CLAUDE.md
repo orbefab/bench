@@ -35,12 +35,15 @@ Run from the **monorepo root**:
 | Marketing site (local) | `pnpm --filter @sfab-bench/docs dev` |
 | Format + lint (fix) | `pnpm lint:fix` |
 | Lint (check only) | `pnpm lint:check` |
-| Self-checks | `pnpm test` |
+| Self-checks (full; run before landing) | `pnpm test` |
+| Self-checks (smoke; what CI runs) | `pnpm test:smoke` |
 | Production build | `pnpm build` |
 | Serve dist + API | `pnpm serve` |
 
-PRs and `main` run `lint:check`, `typecheck`, and `test` on GitHub Actions.
-Do not wait on a desktop `.app` or `pnpm build` there.
+PRs and `main` run `lint:check`, `typecheck`, and `test:smoke` on GitHub Actions.
+The full `pnpm test` is a local gate: run it before you land on a shared
+branch. "Run workflow" on CI runs it there by hand. Do not wait on a desktop
+`.app` or `pnpm build` in CI.
 
 Mac tab: `https://127.0.0.1:7322`. Quest needs the LAN host, not loopback.
 
