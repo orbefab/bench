@@ -427,6 +427,9 @@ try {
         play?: { levels: never };
       };
       const originalLevels = (originalDoc.play ?? originalDoc.run)?.levels;
+      if (originalLevels === undefined) {
+        throw new Error("document has no levels");
+      }
       expect(
         replaceLevels(after, originalLevels) === before,
         "the edit changed more than run.levels"
