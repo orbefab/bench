@@ -47,7 +47,7 @@ import {
   stampBoard,
   touches,
 } from "./circuit-stamp";
-import { requirePlanEnv } from "./env";
+import type { PlanEnv } from "./env";
 import { formAdapter } from "./forms";
 import { chipFacts } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
@@ -252,10 +252,6 @@ export type PlanResult =
   | { ok: true; plan: RunPlan }
   | { ok: false; errors: WorldError[] };
 
-function catalogDir(): string {
-  return requirePlanEnv().catalogDir();
-}
-
 function schema(message: string, filePath = ""): WorldError {
   return { code: "schema", path: filePath, message };
 }
@@ -271,40 +267,37 @@ function fromDiag(diag: Diagnostic): WorldError {
 
 function opened(
   project: string,
-  worldRel: string
+  worldRel: string,
+  env: PlanEnv
 ): { root: string; abs: string } | { error: string } {
   let root: string;
   try {
-    root = requirePlanEnv().realpath(requirePlanEnv().resolve(project));
+    root = env.realpath(env.resolve(project));
   } catch {
     return {
       error: "The project folder is gone. Hint: open the folder again.",
     };
   }
   const rel = worldRel.trim().replace(/\\/g, "/").replace(/^\/+/, "");
-  if (
-    !rel ||
-    rel.split("/").includes("..") ||
-    requirePlanEnv().isAbsolute(rel)
-  ) {
+  if (!rel || rel.split("/").includes("..") || env.isAbsolute(rel)) {
     return { error: "path escapes the project" };
   }
-  const abs = requirePlanEnv().resolve(root, rel);
-  if (!requirePlanEnv().exists(abs)) {
+  const abs = env.resolve(root, rel);
+  if (!env.exists(abs)) {
     return {
       error: `World "${worldRel}" does not exist. Hint: the path is relative to the project.`,
     };
   }
   let real: string;
   try {
-    real = requirePlanEnv().realpath(abs);
+    real = env.realpath(abs);
   } catch {
     return {
       error: `World "${worldRel}" does not exist. Hint: the path is relative to the project.`,
     };
   }
-  const back = requirePlanEnv().relative(root, real);
-  if (back.startsWith("..") || requirePlanEnv().isAbsolute(back)) {
+  const back = env.relative(root, real);
+  if (back.startsWith("..") || env.isAbsolute(back)) {
     return { error: "path escapes the project" };
   }
   return { root, abs: real };
@@ -313,13 +306,13 @@ function opened(
 function worldRelative(
   assetRoot: string,
   worldDir: string,
-  file: string
+  file: string,
+  env: PlanEnv
 ): string {
-  const io = requirePlanEnv();
-  const abs = io.resolve(assetRoot, file);
-  const rel = io.relative(worldDir, abs).split(io.sep).join("/");
-  if (!rel || rel.startsWith("..") || io.isAbsolute(rel)) {
-    return file.split(io.sep).join("/");
+  const abs = env.resolve(assetRoot, file);
+  const rel = env.relative(worldDir, abs).split(env.sep).join("/");
+  if (!rel || rel.startsWith("..") || env.isAbsolute(rel)) {
+    return file.split(env.sep).join("/");
   }
   return rel;
 }
@@ -843,7 +836,8 @@ function rangerLaw(numbers: Record<string, number>): RangerLaw {
 function build(
   loaded: LoadResult,
   assetRoot: string,
-  worldDir: string
+  worldDir: string,
+  env: PlanEnv
 ): { plan: RunPlan | null; diags: Diagnostic[] } {
   const world = loaded.world;
   if (!world) return { plan: null, diags: loaded.diagnostics };
@@ -891,7 +885,7 @@ function build(
       }
       robots.push({
         id: inst.path,
-        urdf: worldRelative(assetRoot, worldDir, file),
+        urdf: worldRelative(assetRoot, worldDir, file, env),
         pose: poseOf(inst),
       });
       continue;
@@ -947,9 +941,9 @@ function build(
         id: inst.path,
         type: typeId,
         chip: behaviour.chip,
-        firmware: worldRelative(assetRoot, worldDir, image),
+        firmware: worldRelative(assetRoot, worldDir, image, env),
         ...(typeof source === "string"
-          ? { source: worldRelative(assetRoot, worldDir, source) }
+          ? { source: worldRelative(assetRoot, worldDir, source, env) }
           : {}),
         pose: poseOf(inst),
         size,
@@ -1340,12 +1334,16 @@ function build(
 }
 
 /** Load one world file into the plan the run executes. */
-export function planWorld(project: string, worldRel: string): PlanResult {
-  const found = opened(project, worldRel);
+export function planWorld(
+  project: string,
+  worldRel: string,
+  env: PlanEnv
+): PlanResult {
+  const found = opened(project, worldRel, env);
   if ("error" in found) return { ok: false, errors: [schema(found.error)] };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(requirePlanEnv().readText(found.abs)) as unknown;
+    parsed = JSON.parse(env.readText(found.abs)) as unknown;
   } catch {
     return {
       ok: false,
@@ -1364,11 +1362,10 @@ export function planWorld(project: string, worldRel: string): PlanResult {
       errors: [schema(`${WORLD_V1_MESSAGE}. Hint: write a version 2 world.`)],
     };
   }
-  const io = requirePlanEnv();
-  const loaded = loadWorldV2(io.absolutePath(found.abs), {
-    store: io.store,
-    catalogDir: io.absolutePath(catalogDir()),
-    assetRoot: io.absolutePath(found.root),
+  const loaded = loadWorldV2(env.absolutePath(found.abs), {
+    store: env.store,
+    catalogDir: env.absolutePath(env.catalogDir()),
+    assetRoot: env.absolutePath(found.root),
   });
   const errors = loaded.diagnostics.filter((diag) => diag.severity === "error");
   if (errors.length > 0 || !loaded.world) {
@@ -1381,7 +1378,7 @@ export function planWorld(project: string, worldRel: string): PlanResult {
           : [schema("World file did not load.")],
     };
   }
-  const built = build(loaded, found.root, requirePlanEnv().dirname(found.abs));
+  const built = build(loaded, found.root, env.dirname(found.abs), env);
   const blocked = built.diags.filter((diag) => diag.severity === "error");
   if (!built.plan || blocked.length > 0) {
     return { ok: false, errors: blocked.map(fromDiag) };

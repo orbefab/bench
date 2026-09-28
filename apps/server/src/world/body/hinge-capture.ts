@@ -1,10 +1,14 @@
 /** Host binding. Hinge capture lives in `@sfab-bench/sim`. */
-import { installCaptureHost } from "../../capture-host";
-
-installCaptureHost();
-
-export {
+import {
   type HingeCaptureEntry,
   type HingeCaptureInput,
-  writeHingeSnapshot,
+  writeHingeSnapshot as simWriteHingeSnapshot,
 } from "@sfab-bench/sim/hinge-capture";
+
+import { nodeCaptureEnv } from "../../capture-host";
+
+export type { HingeCaptureEntry, HingeCaptureInput };
+
+export function writeHingeSnapshot(input: HingeCaptureInput): Promise<void> {
+  return simWriteHingeSnapshot(input, nodeCaptureEnv);
+}

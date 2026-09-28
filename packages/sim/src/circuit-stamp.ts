@@ -43,7 +43,7 @@ import {
   tableLawOf,
 } from "@sfab-bench/parts";
 
-import { requireStampEnv } from "./env";
+import type { StampEnv } from "./env";
 import { formAdapter, stampDiode } from "./forms";
 import { chipFacts, type RailFeed } from "./power-path";
 
@@ -523,10 +523,6 @@ export type BoardStampOptions = {
 
 const CLASS_KEYS = ["0", "1", "2", "3"] as const;
 
-function defaultCatalog(): string {
-  return requireStampEnv().defaultCatalog();
-}
-
 function asPart(value: LoadedPart | { message: string }): LoadedPart {
   if ("part" in value) return value;
   throw new Error(value.message);
@@ -585,11 +581,11 @@ function variantSlot(
 function snapshotInstOf(
   inst: LiveInstance,
   catalogDir: string,
-  worldDir: string
+  worldDir: string,
+  files: StampEnv
 ): CircuitInst | null {
   const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
   if (behaviour?.kind !== "snapshot") return null;
-  const files = requireStampEnv();
   const found = loadSnapshot(
     files.absolutePath(worldDir),
     {
@@ -681,9 +677,10 @@ export function ldoLaw(
 export function boardStampOf(
   partId: string,
   variant: string,
-  opts: BoardStampOptions = {}
+  opts: BoardStampOptions = {},
+  env: StampEnv
 ): BoardStamp {
-  return stampOf(partId, variant, opts, true);
+  return stampOf(partId, variant, opts, true, env);
 }
 
 /**
@@ -693,19 +690,22 @@ export function boardStampOf(
 export function assemblyStampOf(
   partId: string,
   variant: string,
-  opts: BoardStampOptions = {}
+  opts: BoardStampOptions = {},
+  env: StampEnv
 ): BoardStamp {
-  return stampOf(partId, variant, opts, false);
+  return stampOf(partId, variant, opts, false, env);
 }
 
 function stampOf(
   partId: string,
   variant: string,
   opts: BoardStampOptions,
-  firmwareOnly: boolean
+  firmwareOnly: boolean,
+  files: StampEnv
 ): BoardStamp {
-  const files = requireStampEnv();
-  const catalogDir = files.absolutePath(opts.catalogDir ?? defaultCatalog());
+  const catalogDir = files.absolutePath(
+    opts.catalogDir ?? files.defaultCatalog()
+  );
   const worldDir = files.absolutePath(
     opts.worldDir ?? files.join(catalogDir, ".board-stamp-world")
   );
@@ -821,7 +821,7 @@ function stampOf(
   const circuitParts: CircuitInst[] = [];
   for (const inst of instances) {
     const row =
-      circuitInstOf(inst) ?? snapshotInstOf(inst, catalogDir, worldDir);
+      circuitInstOf(inst) ?? snapshotInstOf(inst, catalogDir, worldDir, files);
     if (row) circuitParts.push(row);
   }
   const built = buildNets(instances, undefined);

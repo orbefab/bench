@@ -31,7 +31,7 @@ import {
   type BoardStamp,
   describeNetlist,
 } from "./circuit-stamp";
-import { requireCaptureEnv } from "./env";
+import type { StampEnv } from "./env";
 
 export type FreeCase = {
   firmware: string;
@@ -148,23 +148,31 @@ export type CaptureRun = {
 };
 
 export async function captureCatalog(
+  env: CaptureEnv,
+  stamp: StampEnv,
   fixtureFile?: string
 ): Promise<CaptureStats> {
-  return captureFromConfig({ ...(fixtureFile ? { fixtureFile } : {}) });
+  return captureFromConfig(
+    { ...(fixtureFile ? { fixtureFile } : {}) },
+    env,
+    stamp
+  );
 }
 
 /** Every config entry. The returned stats are the entry that has free-run cases. */
 export async function captureFromConfig(
-  opts: CaptureRun = {}
+  opts: CaptureRun,
+  env: CaptureEnv,
+  stamp: StampEnv
 ): Promise<CaptureStats> {
-  const catalog = opts.catalogDir ?? requireCaptureEnv().catalogDir();
-  const file = readCaptureFile(catalog, opts.config);
+  const catalog = opts.catalogDir ?? env.catalogDir();
+  const file = readCaptureFile(catalog, opts.config, env);
   if (opts.outFile && file.entries.length !== 1) {
     throw new Error("outFile needs a single capture entry");
   }
   const stats: CaptureStats[] = [];
   for (const entry of file.entries) {
-    stats.push(await captureEntry(entry, file, catalog, opts));
+    stats.push(await captureEntry(entry, file, catalog, opts, env, stamp));
   }
   const ran = stats.find((row) => row.cases.length > 0) ?? stats[0];
   if (!ran) throw new Error("capture config has no entries");
@@ -173,7 +181,8 @@ export async function captureFromConfig(
 
 function readCaptureFile(
   catalog: string,
-  inline: CaptureRun["config"]
+  inline: CaptureRun["config"],
+  env: CaptureEnv
 ): CaptureFile {
   if (inline && "entries" in inline) return inline;
   if (inline) {
@@ -184,9 +193,7 @@ function readCaptureFile(
     };
   }
   return JSON.parse(
-    requireCaptureEnv().readText(
-      requireCaptureEnv().join(catalog, "fixtures", "capture.config.json")
-    )
+    env.readText(env.join(catalog, "fixtures", "capture.config.json"))
   ) as CaptureFile;
 }
 
@@ -194,17 +201,22 @@ async function captureEntry(
   config: CaptureEntry,
   file: CaptureFile,
   catalog: string,
-  opts: CaptureRun
+  opts: CaptureRun,
+  env: CaptureEnv,
+  stampEnv: StampEnv
 ): Promise<CaptureStats> {
   if ((config as { form?: string }).form === "hinge@1") {
-    await writeHingeSnapshot({
-      catalog,
-      entry: config as unknown as HingeCaptureEntry,
-      created: file.created,
-      tool: file.tool,
-      bench: benchVersions(),
-      ...(opts.outFile ? { outFile: opts.outFile } : {}),
-    });
+    await writeHingeSnapshot(
+      {
+        catalog,
+        entry: config as unknown as HingeCaptureEntry,
+        created: file.created,
+        tool: file.tool,
+        bench: benchVersions(env),
+        ...(opts.outFile ? { outFile: opts.outFile } : {}),
+      },
+      env
+    );
     return {
       staticMaxAbsMv: 0,
       lineMaxAbsMv: 0,
@@ -216,31 +228,32 @@ async function captureEntry(
       json: "",
     };
   }
-  const across = acrossOf(config, catalog, opts.libraryDir);
+  const across = acrossOf(config, catalog, env, opts.libraryDir);
   const stampOpts = {
     catalogDir: catalog,
     boardId: config.instance,
     ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),
   };
-  const stamp = assemblyStampOf(config.part, config.variant, {
-    ...stampOpts,
-    across,
-  });
+  const stamp = assemblyStampOf(
+    config.part,
+    config.variant,
+    {
+      ...stampOpts,
+      across,
+    },
+    stampEnv
+  );
   for (const name of [across[0], across[1], config.through]) {
     if (!stamp.portNodes[name]) {
       throw new Error(`${config.part} has no ${name} node`);
     }
   }
-  const dc = (amps: number) =>
-    requireCaptureEnv().branchDc(stamp, across[0], across[1], amps);
+  const dc = (amps: number) => env.branchDc(stamp, across[0], across[1], amps);
   const fixture = config.sweep.fixture
     ? readFixture(
         opts.fixtureFile ??
-          requireCaptureEnv().join(
-            catalog,
-            "fixtures",
-            `${config.sweep.fixture}.fixture.json`
-          )
+          env.join(catalog, "fixtures", `${config.sweep.fixture}.fixture.json`),
+        env
       )
     : null;
   const sweep = fixture
@@ -268,15 +281,15 @@ async function captureEntry(
     if (err > staticMax) staticMax = err;
   }
 
-  const partType = partTypeOf(config.part, catalog, opts.libraryDir);
+  const partType = partTypeOf(config.part, catalog, env, opts.libraryDir);
   const hash = contentHash(describeNetlist(stamp, 0, "header"));
-  const bench = benchVersions();
+  const bench = benchVersions(env);
   const scenes = Object.entries(config.cases ?? {}).map(([name, row]) => ({
     name,
     ...row,
   }));
   const runFree = opts.freeRun ?? scenes.length > 0;
-  const outPath = opts.outFile ?? snapshotPath(catalog, config.id);
+  const outPath = opts.outFile ?? snapshotPath(catalog, config.id, env);
   if (!fixture) throw new Error(`${config.part} capture needs a fixture`);
   const shared = {
     law,
@@ -306,14 +319,14 @@ async function captureEntry(
         : "none-available",
       quality: "Q1",
     });
-    const lint = lintBoard(base, partType, catalog);
+    const lint = lintBoard(base, partType, catalog, env);
     if (lint.diagnostics.length > 0) {
       throw new Error(
         `snapshot lint ${lint.quality}: ${lint.diagnostics.map((d) => d.message).join("; ")}`
       );
     }
     base.quality = lint.quality;
-    const json = writeSnapshot(outPath, base);
+    const json = writeSnapshot(outPath, base, env);
     return {
       staticMaxAbsMv: staticMax * 1000,
       lineMaxAbsMv,
@@ -327,10 +340,11 @@ async function captureEntry(
   }
   writeSnapshot(
     outPath,
-    snapshotOf({ ...shared, error: "none-available", quality: "Q1" })
+    snapshotOf({ ...shared, error: "none-available", quality: "Q1" }),
+    env
   );
   if (!config.freeRun) throw new Error(`${config.id} has no free-run scene`);
-  const free = await runScenes(scenes, config.freeRun);
+  const free = await runScenes(scenes, config.freeRun, env);
   const worstAbs = Math.max(...free.cases.map((row) => row.maxAbsMv)) / 1000;
   const worstRms = Math.max(...free.cases.map((row) => row.rmsMv)) / 1000;
   const quantity = `${config.through}.voltage`;
@@ -366,13 +380,13 @@ async function captureEntry(
     ],
     quality: "Q2a",
   });
-  const lint = lintBoard(done, partType, catalog);
+  const lint = lintBoard(done, partType, catalog, env);
   if (lint.diagnostics.length > 0 || lint.quality !== "Q2a") {
     const text = lint.diagnostics.map((diag) => diag.message).join("; ");
     throw new Error(`snapshot lint ${lint.quality}: ${text}`);
   }
   done.quality = lint.quality;
-  const json = writeSnapshot(outPath, done);
+  const json = writeSnapshot(outPath, done, env);
   return {
     staticMaxAbsMv: staticMax * 1000,
     lineMaxAbsMv,
@@ -385,30 +399,26 @@ async function captureEntry(
   };
 }
 
-function snapshotPath(catalog: string, id: string): string {
+function snapshotPath(catalog: string, id: string, env: CaptureEnv): string {
   const slash = id.indexOf("/");
   const at = id.lastIndexOf("@");
   const publisher = id.slice(0, slash);
   const name = id.slice(slash + 1, at);
   const version = id.slice(at + 1);
-  return requireCaptureEnv().join(
-    catalog,
-    "snapshots",
-    publisher,
-    `${name}@${version}.json`
-  );
+  return env.join(catalog, "snapshots", publisher, `${name}@${version}.json`);
 }
 
 function partTypeOf(
   partId: string,
   catalog: string,
+  env: CaptureEnv,
   libraryDir?: string
 ): string {
-  const worldDir = requireCaptureEnv().join(catalog, ".board-stamp-world");
+  const worldDir = env.join(catalog, ".board-stamp-world");
   const loaded = loadPartById(
     worldDir,
     {
-      store: requireCaptureEnv().store,
+      store: env.store,
       catalogDir: catalog,
       assetRoot: catalog,
       ...(libraryDir ? { libraryDir } : {}),
@@ -420,11 +430,14 @@ function partTypeOf(
   return typeof type === "string" ? type : type.id;
 }
 
-function lintBoard(snap: SnapshotFile, partType: string, catalog: string) {
+function lintBoard(
+  snap: SnapshotFile,
+  partType: string,
+  catalog: string,
+  env: CaptureEnv
+) {
   const type = JSON.parse(
-    requireCaptureEnv().readText(
-      requireCaptureEnv().join(catalog, "types", `${partType}.json`)
-    )
+    env.readText(env.join(catalog, "types", `${partType}.json`))
   ) as PartTypeFile;
   return lintSnapshot(snap, { plausible: type.plausible, ports: type.ports });
 }
@@ -485,14 +498,18 @@ function snapshotOf(input: {
   };
 }
 
-function writeSnapshot(file: string, snap: SnapshotFile): string {
+function writeSnapshot(
+  file: string,
+  snap: SnapshotFile,
+  env: CaptureEnv
+): string {
   const json = `${JSON.stringify(sortValue(snap), null, 2)}\n`;
-  requireCaptureEnv().writeText(file, json);
+  env.writeText(file, json);
   return json;
 }
 
-function readFixture(file: string): FixtureFile {
-  const fixture = JSON.parse(requireCaptureEnv().readText(file)) as FixtureFile;
+function readFixture(file: string, env: CaptureEnv): FixtureFile {
+  const fixture = JSON.parse(env.readText(file)) as FixtureFile;
   if (fixture.format !== FIXTURE_FORMAT) {
     throw new Error(`fixture format ${fixture.format}`);
   }
@@ -517,14 +534,13 @@ function sweepsOf(
 function acrossOf(
   entry: CaptureEntry,
   catalog: string,
+  env: CaptureEnv,
   libraryDir?: string
 ): [string, string] {
   if (entry.across && entry.across.length === 2) return entry.across;
-  const typeId = partTypeOf(entry.part, catalog, libraryDir);
+  const typeId = partTypeOf(entry.part, catalog, env, libraryDir);
   const type = JSON.parse(
-    requireCaptureEnv().readText(
-      requireCaptureEnv().join(catalog, "types", `${typeId}.json`)
-    )
+    env.readText(env.join(catalog, "types", `${typeId}.json`))
   ) as PartTypeFile;
   const exposed = Object.entries(type.ports)
     .filter(([, decl]) => decl.role !== "ground")
@@ -536,8 +552,12 @@ function acrossOf(
   );
 }
 
-function benchVersions(): { version: string; mujoco: string; avr8js: string } {
-  return requireCaptureEnv().bench();
+function benchVersions(env: CaptureEnv): {
+  version: string;
+  mujoco: string;
+  avr8js: string;
+} {
+  return env.bench();
 }
 
 function lineError(current: number[], volts: number[]): number {
@@ -621,22 +641,24 @@ export type CaptureFreeRun = CaptureCase & {
 /** Class 1 against class 2 for these scenes. Does not write a snapshot. */
 export function runClassScenes(
   scene: FreeRunSpec,
-  specs: readonly FreeScene[]
+  specs: readonly FreeScene[],
+  env: CaptureEnv
 ): Promise<{
   cases: CaptureFreeRun[];
   moveUsPerMs: { class1: number; class2: number };
 }> {
-  return runScenes(specs, scene);
+  return runScenes(specs, scene, env);
 }
 
 async function runScenes(
   specs: readonly FreeScene[],
-  scene: FreeRunSpec
+  scene: FreeRunSpec,
+  env: CaptureEnv
 ): Promise<{
   cases: CaptureFreeRun[];
   moveUsPerMs: { class1: number; class2: number };
 }> {
-  const host = requireCaptureEnv();
+  const host = env;
   const examples = host.examplesDir();
   const projectDir = host.join(examples, scene.project);
   const root = host.makeTemp("sfab-capture-");
@@ -656,15 +678,25 @@ async function runScenes(
         host.join(root, scene.stallDir, "stall.ino")
       );
     }
-    writeStop(root);
+    writeStop(root, env);
     for (const spec of specs) {
-      writeScene(root, `${spec.name}-c1`, spec, 1, scene);
-      writeScene(root, `${spec.name}-c2`, spec, 2, scene);
+      writeScene(root, `${spec.name}-c1`, spec, 1, scene, env);
+      writeScene(root, `${spec.name}-c2`, spec, 2, scene, env);
       const t1 = host.now();
-      const low = await runWorld(root, `${spec.name}-c1.world.json`, spec.ms);
+      const low = await runWorld(
+        root,
+        `${spec.name}-c1.world.json`,
+        spec.ms,
+        env
+      );
       const wall1 = host.now() - t1;
       const t2 = host.now();
-      const high = await runWorld(root, `${spec.name}-c2.world.json`, spec.ms);
+      const high = await runWorld(
+        root,
+        `${spec.name}-c2.world.json`,
+        spec.ms,
+        env
+      );
       const wall2 = host.now() - t2;
       if (spec.name === "move") {
         moveUsPerMs.class1 = (wall1 * 1000) / spec.ms;
@@ -688,7 +720,7 @@ async function runScenes(
       });
     }
   } finally {
-    requireCaptureEnv().removeTree(root);
+    env.removeTree(root);
   }
   return { cases, moveUsPerMs };
 }
@@ -744,14 +776,15 @@ function railEnd(
 function runWorld(
   project: string,
   world: string,
-  ms: number
+  ms: number,
+  env: CaptureEnv
 ): Promise<{ state: WorldState; read: RecordingRead }> {
-  return requireCaptureEnv().runWorld(project, world, ms);
+  return env.runWorld(project, world, ms);
 }
 
-function writeStop(dir: string): void {
-  requireCaptureEnv().writeText(
-    requireCaptureEnv().join(dir, "robot", "flag-stop.urdf"),
+function writeStop(dir: string, env: CaptureEnv): void {
+  env.writeText(
+    env.join(dir, "robot", "flag-stop.urdf"),
     `<?xml version="1.0"?>
 <robot name="flag-stop">
   <mujoco><compiler fusestatic="false" discardvisual="false"/></mujoco>
@@ -776,8 +809,8 @@ function writeStop(dir: string): void {
 </robot>
 `
   );
-  requireCaptureEnv().writeText(
-    requireCaptureEnv().join(dir, "parts", "sfab", "flag-stop@1.0.0.json"),
+  env.writeText(
+    env.join(dir, "parts", "sfab", "flag-stop@1.0.0.json"),
     `{
   "format": "sfab.part@1",
   "id": "sfab/flag-stop@1.0.0",
@@ -800,7 +833,8 @@ function writeScene(
   name: string,
   spec: FreeScene,
   behaviour: 1 | 2,
-  scene: FreeRunSpec
+  scene: FreeRunSpec,
+  env: CaptureEnv
 ): void {
   const levels =
     behaviour === 2
@@ -809,8 +843,8 @@ function writeScene(
   const wires = scene.wires
     .map((pair) => JSON.stringify(pair))
     .join(",\n                ");
-  requireCaptureEnv().writeText(
-    requireCaptureEnv().join(dir, "parts", "sfab", `${name}-scene@1.0.0.json`),
+  env.writeText(
+    env.join(dir, "parts", "sfab", `${name}-scene@1.0.0.json`),
     `{
   "format": "sfab.part@1",
   "id": "sfab/${name}-scene@1.0.0",
@@ -846,8 +880,8 @@ function writeScene(
 }
 `
   );
-  requireCaptureEnv().writeText(
-    requireCaptureEnv().join(dir, `${name}.world.json`),
+  env.writeText(
+    env.join(dir, `${name}.world.json`),
     `{
   "version": 2,
   "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },

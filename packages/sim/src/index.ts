@@ -47,13 +47,7 @@ export {
   stampBoard,
   touches,
 } from "./circuit-stamp";
-export {
-  configureCaptureEnv,
-  configurePlanEnv,
-  configureStampEnv,
-  type PlanEnv,
-  type StampEnv,
-} from "./env";
+export { type PlanEnv, type StampEnv } from "./env";
 export {
   type PlanResult,
   planWorld,

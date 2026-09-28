@@ -48,6 +48,7 @@ import {
 import { type BatteryParams, boundOutside } from "@sfab-bench/parts";
 
 import { analogRead } from "./analog-pin";
+import type { PlanEnv } from "./env";
 import { planWorld, type RunBoard, type RunPlan } from "./plan";
 import {
   type BrownoutState,
@@ -85,6 +86,13 @@ export type SimHost = {
     root: string,
     worldRel: string
   ): { read(relativeToWorld: string): Uint8Array | null };
+  /** File host for `planWorld`. One sim, one store. */
+  plan: PlanEnv;
+  /**
+   * Keep serial text for `drainSerial`. The worker leaves this off, so a
+   * live run does not buffer what it already posts.
+   */
+  keepSerial?: boolean;
 };
 
 const INTEGRATORS = [
@@ -272,14 +280,39 @@ type LiveWorld = CompiledWorld & {
 
 type WorldBytes = { read(relativeToWorld: string): Uint8Array | null };
 
-function createSession(host: SimHost): {
-  enqueue(message: ToWorker): Promise<void>;
-} {
+export type LoadInput = {
+  project: string;
+  world: string;
+  generation?: number;
+  fuseStart?: "cold" | "tripped";
+  adcTrace?: boolean;
+};
+
+export type LoadResult =
+  | { ok: true }
+  | { ok: false; errors: WorldError[]; message?: string };
+
+export type SerialChunk = { board: string; text: string };
+
+type HeldFailure = { errors: WorldError[]; message?: string };
+
+function failureText(held: HeldFailure): string {
+  if (held.message) return held.message;
+  const text = held.errors
+    .map((error) => error.message)
+    .filter((line) => line.length > 0)
+    .join("; ");
+  return text || "world failed";
+}
+
+function createSession(host: SimHost) {
   type BoardSpec = { id: string; chip: string; firmware: string };
 
   let generation = 0;
   let project = "";
   let worldRel = "";
+  let failure: HeldFailure | null = null;
+  const serialChunks: SerialChunk[] = [];
   let sim: LiveWorld | null = null;
   /** Agent moves. A held target ignores its path from the next master step. */
   const targetHolds = new Map<string, WorldVec3>();
@@ -444,6 +477,7 @@ function createSession(host: SimHost): {
   }
 
   function fail(errors: WorldError[], message?: string) {
+    failure = message !== undefined ? { errors, message } : { errors };
     post({
       type: "error",
       generation,
@@ -891,7 +925,10 @@ function createSession(host: SimHost): {
         accepted: board.rxAccepted,
       });
     }
-    if (chunks.length > 0) post({ type: "serial", generation, chunks });
+    if (chunks.length > 0) {
+      if (host.keepSerial) serialChunks.push(...chunks);
+      post({ type: "serial", generation, chunks });
+    }
   }
 
   function postState(request?: number) {
@@ -2018,6 +2055,7 @@ function createSession(host: SimHost): {
   }
 
   function dispose() {
+    serialChunks.length = 0;
     playing = false;
     throwOnStep = false;
     recorder = null;
@@ -2070,6 +2108,7 @@ function createSession(host: SimHost): {
   }
 
   async function build(): Promise<boolean> {
+    failure = null;
     dispose();
     const root = host.projectReal(project);
     if (!root) {
@@ -2094,7 +2133,7 @@ function createSession(host: SimHost): {
       return false;
     }
     worldSha256 = host.sha256(bytes);
-    const planned = planWorld(root, worldRel);
+    const planned = planWorld(root, worldRel, host.plan);
     if (!planned.ok) {
       fail(planned.errors);
       return false;
@@ -2198,6 +2237,7 @@ function createSession(host: SimHost): {
   }
 
   function step(n: number, pauseBy?: WorldSender, request?: number) {
+    failure = null;
     if (!sim) return;
     try {
       if (!Number.isInteger(n) || n < 0 || n > MAX_STEP_N) {
@@ -2293,50 +2333,24 @@ function createSession(host: SimHost): {
     });
   }
 
-  function answerRecord(message: Extract<ToWorker, { type: "record" }>) {
-    const reply = (body: RecordBody) => {
-      post({
-        type: "record",
-        generation,
-        request: message.request,
-        body,
-      });
-    };
-    if (message.generation !== generation || !recorder || !sim) {
-      reply({
-        op: "error",
-        message:
-          message.generation !== generation
-            ? "world reloaded"
-            : "world is not running",
-      });
-      return;
+  function record(query: RecordQuery): RecordBody {
+    if (!recorder || !sim) {
+      return { op: "error", message: "world is not running" };
     }
-    const query = message.query;
     if (query.op === "config") {
       if (query.boundMs !== undefined) recorder.setBoundMs(query.boundMs);
       if (query.enabled !== undefined) recorder.enabled = query.enabled;
-      reply({ op: "ack" });
-      return;
+      return { op: "ack" };
     }
     if (query.op === "info") {
-      reply({ op: "info", info: recorder.info(sim.data.time) });
-      return;
+      return { op: "info", info: recorder.info(sim.data.time) };
     }
     if (query.op === "adc") {
-      if (!adcTrace) {
-        reply({ op: "error", message: "ADC trace is off" });
-        return;
-      }
-      reply({
-        op: "adc",
-        trace: { nodes: adcNodes, samples: adcSamples },
-      });
-      return;
+      if (!adcTrace) return { op: "error", message: "ADC trace is off" };
+      return { op: "adc", trace: { nodes: adcNodes, samples: adcSamples } };
     }
     if (query.op === "frame") {
-      reply({ op: "frame", id: recorder.id, frame: recorder.frameAt(query.t) });
-      return;
+      return { op: "frame", id: recorder.id, frame: recorder.frameAt(query.t) };
     }
     if (query.op === "timeline") {
       const info = recorder.info(sim.data.time);
@@ -2351,17 +2365,16 @@ function createSession(host: SimHost): {
         maxFrames: query.maxPoints,
       });
       const built = timelineFromRead(read);
-      reply({
+      return {
         op: "timeline",
         id: info.id,
         from: query.from,
         to: query.to,
         tracks: built.tracks,
         markers: built.markers,
-      });
-      return;
+      };
     }
-    reply({
+    return {
       op: "read",
       read: recorder.read({
         from: query.from,
@@ -2371,13 +2384,67 @@ function createSession(host: SimHost): {
           ? { maxFrames: query.maxFrames }
           : {}),
       }),
+    };
+  }
+
+  function answerRecord(message: Extract<ToWorker, { type: "record" }>) {
+    const body: RecordBody =
+      message.generation !== generation
+        ? { op: "error", message: "world reloaded" }
+        : record(message.query);
+    post({
+      type: "record",
+      generation,
+      request: message.request,
+      body,
     });
+  }
+
+  function heldResult(): LoadResult {
+    const held = failure;
+    if (!held) return { ok: false, errors: [] };
+    return {
+      ok: false,
+      errors: held.errors,
+      ...(held.message !== undefined ? { message: held.message } : {}),
+    };
+  }
+
+  async function load(input: LoadInput): Promise<LoadResult> {
+    generation = input.generation ?? generation + 1;
+    project = input.project;
+    worldRel = input.world;
+    fuseStart = input.fuseStart === "tripped" ? "tripped" : "cold";
+    adcTrace = input.adcTrace === true;
+    if (await build()) return { ok: true };
+    return heldResult();
+  }
+
+  async function reload(): Promise<LoadResult> {
+    stopClock();
+    if (await build()) return { ok: true };
+    return heldResult();
+  }
+
+  function close() {
+    stopClock();
+    dispose();
+  }
+
+  function runSteps(n: number): void {
+    step(n);
+    if (failure) throw new Error(failureText(failure));
+  }
+
+  function drainSerial(): SerialChunk[] {
+    const out = serialChunks.slice();
+    serialChunks.length = 0;
+    return out;
   }
 
   async function handle(message: ToWorker) {
     if (message.type === "stop") {
-      stopClock();
-      dispose();
+      close();
       return;
     }
     if (message.type === "record") {
@@ -2388,18 +2455,18 @@ function createSession(host: SimHost): {
       if (message.generation < generation) return;
     }
     if (message.type === "load") {
-      generation = message.generation;
-      project = message.project;
-      worldRel = message.world;
-      fuseStart = message.fuseStart === "tripped" ? "tripped" : "cold";
-      adcTrace = message.adcTrace === true;
-      await build();
+      await load({
+        project: message.project,
+        world: message.world,
+        generation: message.generation,
+        fuseStart: message.fuseStart,
+        adcTrace: message.adcTrace,
+      });
       return;
     }
     generation = message.generation;
     if (message.type === "reload") {
-      stopClock();
-      await build();
+      await reload();
       return;
     }
     if (message.type === "play") play(message.by);
@@ -2446,16 +2513,64 @@ function createSession(host: SimHost): {
     queue.push(message);
     return pump();
   }
-  return { enqueue };
+  return {
+    enqueue,
+    load,
+    reload,
+    step: runSteps,
+    state: sample,
+    serialIn,
+    drainSerial,
+    record,
+    setTarget,
+    play,
+    pause,
+    dispose: close,
+  };
 }
 
 export class Sim {
-  private readonly enqueue: (message: ToWorker) => Promise<void>;
+  private readonly session: ReturnType<typeof createSession>;
   constructor(host: SimHost) {
-    this.enqueue = createSession(host).enqueue;
+    this.session = createSession(host);
   }
   /** Queue one host message and wait until it has been handled. */
   accept(message: ToWorker): Promise<void> {
-    return this.enqueue(message);
+    return this.session.enqueue(message);
+  }
+  load(input: LoadInput): Promise<LoadResult> {
+    return this.session.load(input);
+  }
+  /** Stop the clock and build the world already loaded. */
+  reload(): Promise<LoadResult> {
+    return this.session.reload();
+  }
+  /** Advance exactly `n` master steps, then resolve. */
+  async step(n: number): Promise<void> {
+    this.session.step(n);
+  }
+  state(): WorldState | null {
+    return this.session.state();
+  }
+  serialIn(board: string, text: string, by?: WorldSender): void {
+    this.session.serialIn(board, text, by);
+  }
+  drainSerial(): SerialChunk[] {
+    return this.session.drainSerial();
+  }
+  record(query: RecordQuery): RecordBody {
+    return this.session.record(query);
+  }
+  setTarget(partId: string, radians: number): void {
+    this.session.setTarget(partId, radians);
+  }
+  play(by?: WorldSender): void {
+    this.session.play(by);
+  }
+  pause(by?: WorldSender): void {
+    this.session.pause(by);
+  }
+  dispose(): void {
+    this.session.dispose();
   }
 }

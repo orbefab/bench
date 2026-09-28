@@ -16,51 +16,13 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
-import { configureCaptureEnv } from "@sfab-bench/sim";
+import type { CaptureEnv } from "@sfab-bench/sim";
 
 import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { nodeStore } from "./world/node-store";
-import { catalogRoot, installPlanHost } from "./world/plan-host";
+import { catalogRoot } from "./world/plan-host";
 import { branchDc } from "./world/snapshot-dc";
-
-let installed = false;
-
-export function installCaptureHost(): void {
-  if (installed) return;
-  installed = true;
-  installPlanHost();
-  configureCaptureEnv({
-    store: nodeStore,
-    catalogDir: catalogRoot,
-    examplesDir: () =>
-      fileURLToPath(new URL("../../../examples/", import.meta.url)),
-    now: () => performance.now(),
-    readText: (file) => readFileSync(file, "utf8"),
-    writeText: (file, text) => {
-      mkdirSync(path.dirname(file), { recursive: true });
-      writeFileSync(file, text);
-    },
-    join: (...parts) => path.join(...parts),
-    dirname: (file) => path.dirname(file),
-    mkdir: (dir) => {
-      mkdirSync(dir, { recursive: true });
-    },
-    copyTree: (from, to) => {
-      cpSync(from, to, { recursive: true });
-    },
-    copyFile: (from, to) => {
-      cpSync(from, to);
-    },
-    makeTemp: (prefix) => mkdtempSync(path.join(tmpdir(), prefix)),
-    removeTree: (dir) => {
-      rmSync(dir, { recursive: true, force: true });
-    },
-    branchDc,
-    runWorld,
-    bench: benchVersions,
-  });
-}
 
 function benchVersions(): { version: string; mujoco: string; avr8js: string } {
   const pkg = JSON.parse(
@@ -120,3 +82,34 @@ async function runWorld(
     closeRootWatches();
   }
 }
+
+export const nodeCaptureEnv: CaptureEnv = {
+  store: nodeStore,
+  catalogDir: catalogRoot,
+  examplesDir: () =>
+    fileURLToPath(new URL("../../../examples/", import.meta.url)),
+  now: () => performance.now(),
+  readText: (file) => readFileSync(file, "utf8"),
+  writeText: (file, text) => {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, text);
+  },
+  join: (...parts) => path.join(...parts),
+  dirname: (file) => path.dirname(file),
+  mkdir: (dir) => {
+    mkdirSync(dir, { recursive: true });
+  },
+  copyTree: (from, to) => {
+    cpSync(from, to, { recursive: true });
+  },
+  copyFile: (from, to) => {
+    cpSync(from, to);
+  },
+  makeTemp: (prefix) => mkdtempSync(path.join(tmpdir(), prefix)),
+  removeTree: (dir) => {
+    rmSync(dir, { recursive: true, force: true });
+  },
+  branchDc,
+  runWorld,
+  bench: benchVersions,
+};

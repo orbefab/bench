@@ -1,10 +1,8 @@
 /**
- * File and clock access the host passes in. This package does not import
- * `node:*`.
+ * File access the host passes in. This package does not import `node:*`.
+ * Callers pass a `PlanEnv` or `StampEnv`. Nothing here is stored.
  */
 import type { Store } from "@sfab-bench/parts";
-
-import type { CaptureEnv } from "./capture";
 
 export type PlanEnv = {
   store: Store;
@@ -26,34 +24,3 @@ export type StampEnv = {
   defaultCatalog(): string;
   join(...parts: string[]): string;
 };
-
-let planEnv: PlanEnv | null = null;
-let stampEnv: StampEnv | null = null;
-let captureEnv: CaptureEnv | null = null;
-
-export function configurePlanEnv(env: PlanEnv): void {
-  planEnv = env;
-}
-
-export function requirePlanEnv(): PlanEnv {
-  if (!planEnv) throw new Error("plan has no file host");
-  return planEnv;
-}
-
-export function configureStampEnv(env: StampEnv): void {
-  stampEnv = env;
-}
-
-export function requireStampEnv(): StampEnv {
-  if (!stampEnv) throw new Error("circuit stamp has no file host");
-  return stampEnv;
-}
-
-export function configureCaptureEnv(env: CaptureEnv): void {
-  captureEnv = env;
-}
-
-export function requireCaptureEnv(): CaptureEnv {
-  if (!captureEnv) throw new Error("capture has no file host");
-  return captureEnv;
-}

@@ -329,3 +329,49 @@ if (seen.size < 10)
 process.stdout.write(
   "boundary: bench run imports neither listen nor app nor http nor live nor ws\n"
 );
+
+/** Public names of one module file, following `export *`. */
+function exportedNames(file: string, seenFiles = new Set<string>()): string[] {
+  if (seenFiles.has(file)) return [];
+  seenFiles.add(file);
+  const text = readFileSync(file, "utf8");
+  const names: string[] = [];
+  const decl =
+    /export\s+(?:async\s+)?(?:function|const|class|let)\s+([A-Za-z0-9_]+)/g;
+  for (const hit of text.matchAll(decl)) {
+    if (hit[1]) names.push(hit[1]);
+  }
+  for (const hit of text.matchAll(/export\s+(?:type\s+)?\{([^}]+)\}/g)) {
+    const body = hit[1] ?? "";
+    for (const part of body.split(",")) {
+      const piece = part.trim().replace(/^type\s+/, "");
+      if (!piece) continue;
+      const name = piece
+        .split(/\s+as\s+/)
+        .pop()
+        ?.trim();
+      if (name) names.push(name);
+    }
+  }
+  for (const hit of text.matchAll(/export\s+\*\s+from\s+["']([^"']+)["']/g)) {
+    const spec = hit[1];
+    if (!spec) continue;
+    const next = resolveSpec(file, spec, packages);
+    if (next) names.push(...exportedNames(next, seenFiles));
+  }
+  return names;
+}
+
+const simPkg = JSON.parse(
+  readFileSync(path.join(root, "packages/sim/package.json"), "utf8")
+) as { exports?: Record<string, string> };
+const simNames: string[] = [];
+for (const target of Object.values(simPkg.exports ?? {})) {
+  if (typeof target !== "string" || !target.endsWith(".ts")) continue;
+  simNames.push(...exportedNames(path.resolve(root, "packages/sim", target)));
+}
+const setters = simNames.filter((name) => name.startsWith("configure"));
+if (setters.length > 0) {
+  throw new Error(`sim exports configure setter: ${setters.join(", ")}`);
+}
+process.stdout.write("boundary: sim exports no configure setter\n");

@@ -2,9 +2,6 @@
  * Node host for one world. Messaging, the play timer, and file reads.
  * The run itself is `Sim`.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { parentPort } from "node:worker_threads";
 
@@ -12,33 +9,8 @@ import { sha256Bytes } from "@sfab-bench/parts";
 import { Sim, type ToWorker } from "@sfab-bench/sim/sim";
 
 import { projectReal, readerFor, readInside } from "./files";
-import { installPlanHost } from "./plan-host";
-
-installPlanHost();
-
-const require = createRequire(import.meta.url);
-
-function packageVersion(name: string): string {
-  try {
-    let dir = dirname(require.resolve(name));
-    for (let hop = 0; hop < 6; hop++) {
-      const pkgPath = join(dir, "package.json");
-      if (existsSync(pkgPath)) {
-        const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
-          name?: string;
-          version?: string;
-        };
-        if (pkg.name === name) return pkg.version ?? "unknown";
-      }
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-  } catch {
-    /* the manifest says unknown rather than failing the run */
-  }
-  return "unknown";
-}
+import { packageVersion } from "./package-version";
+import { nodePlanEnv } from "./plan-host";
 
 const port = parentPort;
 const sim = new Sim({
@@ -53,12 +25,13 @@ const sim = new Sim({
   ledTrace: process.env.SFAB_LED_TRACE === "1",
   sha256: sha256Bytes,
   versions: {
-    mujoco: packageVersion("@mujoco/mujoco"),
-    avr8js: packageVersion("avr8js"),
+    mujoco: packageVersion("@mujoco/mujoco", import.meta.url),
+    avr8js: packageVersion("avr8js", import.meta.url),
   },
   projectReal,
   readInside,
   readerFor,
+  plan: nodePlanEnv,
 });
 
 if (port) {
