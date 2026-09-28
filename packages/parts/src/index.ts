@@ -34,6 +34,17 @@ export {
   typeFileExists,
   typeOf,
 } from "./library";
+export { convertWorldFile, type ConvertedDocument } from "./convert";
+export {
+  assetDir,
+  chooseRootPartId,
+  environmentKind,
+  IMPORT_PART_ID,
+  isPartFile,
+  partFilePath,
+  partToWorld,
+  worldToPart,
+} from "./document";
 export { type LoadOptions, type LoadResult, loadWorldV2 } from "./load";
 export {
   buildLock,

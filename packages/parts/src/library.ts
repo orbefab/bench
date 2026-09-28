@@ -7,8 +7,10 @@ import {
   type Diagnostic,
   DOMAIN_QUANTITIES,
   FORM_PARAMS,
+  GROUND_PART_ID,
   PART_FORMAT,
   PART_TYPE_FORMAT,
+  TARGET_PART_ID,
   type PartFile,
   type PartTypeFile,
   type WorldFileV2,
@@ -19,7 +21,15 @@ import { comparatorFrom } from "./comparator";
 import { expandPartType } from "./expand";
 import { gearTrainErrors } from "./gear-train";
 import { ldoFrom } from "./ldo";
-import { basename, dirname, join, relative, sep } from "./path";
+import {
+  assetDir,
+  environmentKind,
+  IMPORT_PART_ID,
+  isPartFile,
+  partToWorld,
+  worldToPart,
+} from "./document";
+import { basename, join, relative, sep } from "./path";
 import {
   classesOf,
   contentHash,
@@ -295,13 +305,15 @@ export function loadLibrary(
   opts: LibraryOptions
 ): { library: Library | null; diagnostics: Diagnostic[] } {
   const diagnostics: Diagnostic[] = [];
-  const worldDir = dirname(worldFile);
+  // Parts live under `<project>/parts/`. A root part file sits there;
+  // the project directory is what relative URDF and firmware paths use.
+  const worldDir = assetDir(worldFile);
   // The file stem, not the folder: two worlds in one folder, and a copy
   // of the folder keeps the same name.
   const worldName = basename(worldFile).replace(/\.json$/, "");
-  let world: WorldFileV2;
+  let raw: unknown;
   try {
-    world = readJson(opts.store, worldFile) as WorldFileV2;
+    raw = readJson(opts.store, worldFile);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     diagnostics.push(
@@ -317,19 +329,71 @@ export function loadLibrary(
     );
     return { library: null, diagnostics };
   }
-  if (world.version !== 2) {
-    diagnostics.push(
-      makeDiag({
-        severity: "error",
-        path: worldName,
-        port: "version",
-        quantity: "Part",
-        left: String(world.version),
-        right: "2",
-        detail: "world version is not 2",
-      })
-    );
-    return { library: null, diagnostics };
+  // Part ids to pin besides the scene. A root document is one of them.
+  // A `.world.json` import unwraps back to the scene and pins nothing
+  // extra, so an existing world lock still matches.
+  let also: string[] = [];
+  let world: WorldFileV2;
+  if (isPartFile(raw)) {
+    const kindOf = (id: string) => {
+      if (id === GROUND_PART_ID) return "ground" as const;
+      if (id === TARGET_PART_ID) return "target" as const;
+      const found = loadPartById(worldDir, opts, id);
+      if (isDiag(found)) return "other" as const;
+      return environmentKind(found.part);
+    };
+    world = partToWorld(raw, kindOf);
+    if (typeof world.root.part !== "string" || world.root.part !== raw.id) {
+      also = [raw.id];
+    }
+  } else {
+    world = raw as WorldFileV2;
+    if (world.version !== 2) {
+      diagnostics.push(
+        makeDiag({
+          severity: "error",
+          path: worldName,
+          port: "version",
+          quantity: "Part",
+          left: String(world.version),
+          right: "2",
+          detail: "world version is not 2",
+        })
+      );
+      return { library: null, diagnostics };
+    }
+    if (typeof world.root?.part === "string") {
+      const named = world.run?.timestep;
+      try {
+        world = partToWorld(worldToPart(world, IMPORT_PART_ID), (id) =>
+          id === GROUND_PART_ID
+            ? "ground"
+            : id === TARGET_PART_ID
+              ? "target"
+              : "other"
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        diagnostics.push(
+          makeDiag({
+            severity: "error",
+            path: worldName,
+            port: "load",
+            quantity: "Part",
+            left: message,
+            right: "part",
+            detail: "world file did not convert",
+          })
+        );
+        return { library: null, diagnostics };
+      }
+      // A world that did not name a step keeps the engine default, and
+      // the in-memory world does not grow a field the file lacked.
+      if (named === undefined) {
+        const { timestep: _drop, ...run } = world.run;
+        world = { ...world, run };
+      }
+    }
   }
 
   const parts = new Map<string, LoadedPart>();
@@ -340,6 +404,9 @@ export function loadLibrary(
     queue.push({ id: world.root.part, inline: null, root: true });
   } else {
     queue.push({ id: null, inline: world.root.part, root: true });
+  }
+  for (const id of also) {
+    queue.push({ id, inline: null, root: false });
   }
 
   while (queue.length) {

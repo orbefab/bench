@@ -13,6 +13,7 @@ import {
   type WorldFileV2,
 } from "@sfab-bench/contract";
 
+import { environmentKind } from "./document";
 import { type Library, typeOf } from "./library";
 import { pathRefOf } from "./path-ref";
 import { type AxisRequest, classesOf, isLevelClass, specAxes } from "./si";
@@ -431,6 +432,8 @@ export function resolveLevels(
           });
           continue;
         }
+        // Ground and targets are the environment, not level rows.
+        if (environmentKind(childPart.part) !== "other") continue;
         visit(
           childPart.part,
           childPath(instancePath, id),

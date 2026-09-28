@@ -1,6 +1,6 @@
 /**
- * Edit `run.levels` in a world file. Only that value is rewritten, so the
- * rest of the file stays byte-identical.
+ * Edit `run.levels` in a world file, or `play.levels` in a root part.
+ * Only that value is rewritten, so the rest of the file stays byte-identical.
  */
 
 import type {
@@ -190,7 +190,10 @@ function levelsSpan(
         i += 1;
         skip();
         const start = i;
-        const hit = depth === 1 && key === "run" && name.value === "levels";
+        const hit =
+          depth === 1 &&
+          (key === "run" || key === "play") &&
+          name.value === "levels";
         parse(depth + 1, name.value);
         if (hit) span = { key: name.at, start, end: i };
         skip();
