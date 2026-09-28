@@ -1,4 +1,11 @@
-import { warnedPaths, warningsByPath, warningText } from "./world-warnings";
+import {
+  documentWarnings,
+  instanceWarningMap,
+  instanceWarnings,
+  warnedPaths,
+  warningsByPath,
+  warningText,
+} from "./world-warnings";
 
 function expect(cond: boolean, label: string) {
   if (!cond) throw new Error(label);
@@ -73,5 +80,38 @@ expect(
   warningText(servo).includes("stale"),
   "the card text includes the stale capture"
 );
+
+const play = warningsByPath({
+  warnings: [
+    {
+      path: "$root",
+      port: "play",
+      message: "play.timestep 0.002 s is not supported yet; the run steps 1 ms",
+      code: "timestep-unsupported",
+    },
+    {
+      path: "$root",
+      port: "5V",
+      message: "the stage reaches no supply",
+      code: "unpowered",
+    },
+  ],
+});
+expect(
+  documentWarnings(play).length === 1 &&
+    documentWarnings(play)[0]?.code === "timestep-unsupported",
+  "a play diagnostic is document-level"
+);
+expect(
+  instanceWarnings(play, "$root").length === 1 &&
+    instanceWarnings(play, "$root")[0]?.code === "unpowered",
+  "a real warning on $root stays on the stage"
+);
+expect(
+  warnedPaths(play).has("$root") &&
+    instanceWarningMap(play).get("$root")?.length === 1,
+  "the stage icon is the part warning, not the time step"
+);
+expect(documentWarnings(map).length === 1, "an empty path is document-level");
 
 console.log("world-warnings.selfcheck ok");
