@@ -112,7 +112,10 @@ firmware, and part models where a domain does not need its own engine.
 - **Ports are runtime law.** Typed ports with quantities; nets are built
   from port declarations. Prefer effort/flow pairs so domains can meet.
 - **Energy residuals at seams** are the honesty signal when coupling is
-  imperfect. They are reported, not hidden (G2).
+  imperfect. They are reported, not hidden (G2). The run report's `seams`
+  field is joules at each circuit/body cut: energy sent, energy received,
+  the loss the model declares, and the residual. A seam is flagged when
+  that residual grows.
 - **Levels and snapshots are the fidelity dial.** The same exposed ports,
   run live or from a snapshot. The snapshot container is universal (ports,
   a typed form, an envelope, error, provenance); forms stay typed, never
