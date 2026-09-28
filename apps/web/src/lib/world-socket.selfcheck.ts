@@ -6,7 +6,7 @@ function expect(cond: boolean, label: string) {
 
 const open = {
   project: "/abs/proj",
-  world: "examples/arm/arm.world.json",
+  world: "examples/arm/parts/sfab/arm-bench@1.0.0.json",
   loadId: 1,
 };
 

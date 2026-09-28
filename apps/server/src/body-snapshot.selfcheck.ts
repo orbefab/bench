@@ -317,7 +317,7 @@ const nanoSrc = fileURLToPath(
 const e10Dir = mkdtempSync(join(tmpdir(), "sfab-e10-"));
 try {
   cpSync(nanoSrc, e10Dir, { recursive: true });
-  const collapsedPlan = planWorld(e10Dir, "nano-servo-collapsed.world.json");
+  const collapsedPlan = planWorld(e10Dir, "parts/sfab/nano-servo-collapsed@1.0.0.json");
   expect(
     collapsedPlan.ok,
     collapsedPlan.ok
@@ -335,9 +335,9 @@ try {
     `inspector body row: ${card?.snapshot?.ref} · ${card?.snapshot?.quality}`
   );
 
-  const fitted = await runSketch(e10Dir, "nano-servo-usb.world.json");
-  const collapsed = await runSketch(e10Dir, "nano-servo-collapsed.world.json");
-  const repeat = await runSketch(e10Dir, "nano-servo-collapsed.world.json");
+  const fitted = await runSketch(e10Dir, "parts/sfab/nano-servo-usb@1.0.0.json");
+  const collapsed = await runSketch(e10Dir, "parts/sfab/nano-servo-collapsed@1.0.0.json");
+  const repeat = await runSketch(e10Dir, "parts/sfab/nano-servo-collapsed@1.0.0.json");
   expect(
     JSON.stringify(collapsed.read.frames) ===
       JSON.stringify(repeat.read.frames),
@@ -375,11 +375,14 @@ try {
   );
 
   const trainWorld = JSON.parse(
-    readFileSync(join(e10Dir, "nano-servo-collapsed.world.json"), "utf8")
+    readFileSync(join(e10Dir, "parts/sfab/nano-servo-collapsed@1.0.0.json"), "utf8")
   ) as {
-    run: { levels: { paths: { servo: { body: unknown } } } };
+    run?: { levels: { paths: { servo: { body: unknown } } } };
+    play?: { levels: { paths: { servo: { body: unknown } } } };
   };
-  trainWorld.run.levels.paths.servo.body = 2;
+  const trainLevels = trainWorld.play?.levels ?? trainWorld.run?.levels;
+  if (!trainLevels) throw new Error("collapsed servo has no levels");
+  trainLevels.paths.servo.body = 2;
   writeFileSync(
     join(e10Dir, "nano-servo-train.world.json"),
     JSON.stringify(trainWorld)

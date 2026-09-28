@@ -66,7 +66,7 @@ try {
     },
     async () => {
       const escaped = await boardTools.read_serial.execute!(
-        { world: "../arm.world.json", board: "uno" },
+        { world: "../parts/sfab/arm-bench@1.0.0.json", board: "uno" },
         {} as never
       );
       expect(
@@ -77,7 +77,7 @@ try {
       );
 
       const missing = await boardTools.read_serial.execute!(
-        { world: "arm.world.json", board: "no-such" },
+        { world: "parts/sfab/arm-bench@1.0.0.json", board: "no-such" },
         {} as never
       );
       expect(
@@ -87,7 +87,7 @@ try {
         `bad board: ${JSON.stringify(missing)}`
       );
 
-      const attached = await attachWorld(root, "arm.world.json", {
+      const attached = await attachWorld(root, "parts/sfab/arm-bench@1.0.0.json", {
         sender: { kind: "loopback", label: "Mac" },
         onEvent(event) {
           events.push(event);
@@ -114,7 +114,7 @@ try {
       );
 
       const read = await boardTools.read_serial.execute!(
-        { world: "arm.world.json", board: "uno" },
+        { world: "parts/sfab/arm-bench@1.0.0.json", board: "uno" },
         {} as never
       );
       expect(
@@ -129,7 +129,7 @@ try {
       const next =
         read && "next" in read && typeof read.next === "number" ? read.next : 0;
       const fresh = await boardTools.read_serial.execute!(
-        { world: "arm.world.json", board: "uno", from: next },
+        { world: "parts/sfab/arm-bench@1.0.0.json", board: "uno", from: next },
         {} as never
       );
       expect(
@@ -147,7 +147,7 @@ try {
         "playing before the tool"
       );
       const during = await boardTools.read_serial.execute!(
-        { world: "arm.world.json", board: "uno" },
+        { world: "parts/sfab/arm-bench@1.0.0.json", board: "uno" },
         {} as never
       );
       expect(during && "text" in during, "read while playing");
@@ -164,7 +164,7 @@ try {
       );
 
       const sent = await boardTools.send_serial.execute!(
-        { world: "arm.world.json", board: "uno", text: "ping" },
+        { world: "parts/sfab/arm-bench@1.0.0.json", board: "uno", text: "ping" },
         {} as never
       );
       expect(sent && "ok" in sent && sent.ok === true, "send_serial writes");
@@ -179,7 +179,7 @@ try {
         "agent send is echoed"
       );
       const long = await boardTools.send_serial.execute!(
-        { world: "arm.world.json", board: "uno", text: "x".repeat(8001) },
+        { world: "parts/sfab/arm-bench@1.0.0.json", board: "uno", text: "x".repeat(8001) },
         {} as never
       );
       expect(
@@ -190,12 +190,12 @@ try {
   );
 } finally {
   held.handle?.detach();
-  await stopWorld(root, "arm.world.json");
+  await stopWorld(root, "parts/sfab/arm-bench@1.0.0.json");
   closeRootWatches();
   rmSync(root, { recursive: true, force: true });
 }
 
-const rx = boardRx(root, "arm.world.json", "uno");
+const rx = boardRx(root, "parts/sfab/arm-bench@1.0.0.json", "uno");
 expect("error" in rx, "stopped world is not readable");
 
 console.log("board-tools.selfcheck ok");

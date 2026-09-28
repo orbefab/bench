@@ -66,7 +66,7 @@ function near(us: number, target: number): boolean {
 const rooted = projectReal(armDir);
 expect(rooted, "arm fixture resolves");
 if (!rooted) throw new Error("unreachable");
-const loaded = planWorld(rooted, "arm.world.json");
+const loaded = planWorld(rooted, "parts/sfab/arm-bench@1.0.0.json");
 expect(
   loaded.ok,
   loaded.ok ? "" : loaded.errors.map((error) => error.message).join("; ")
@@ -172,7 +172,7 @@ console.log("pulse map: 544/1472/2400, out of range is no signal, clamp 0–180"
 
 const rootReal = projectReal(armDir);
 expect(rootReal, "arm fixture resolves");
-const compiled = await compileAt(armDir, "arm.world.json");
+const compiled = await compileAt(armDir, "parts/sfab/arm-bench@1.0.0.json");
 expect(
   compiled.ok,
   `compile: ${compiled.ok ? "" : compiled.errors.map((e) => e.message).join("; ")}`
@@ -258,7 +258,7 @@ try {
   const rooted = projectReal(solRoot);
   expect(rooted, "temp root resolves");
   if (!rooted) throw new Error("unreachable");
-  const authored = await compileAt(solRoot, "arm.world.json");
+  const authored = await compileAt(solRoot, "parts/sfab/arm-bench@1.0.0.json");
   expect(
     authored.ok,
     `authored solref compiles: ${authored.ok ? "" : authored.errors.map((item) => item.message).join(" | ")}`
@@ -473,7 +473,7 @@ function median(values: number[]): number {
   return sorted[Math.floor(sorted.length / 2)] ?? Number.NaN;
 }
 
-const traced = await sample(armDir, "arm.world.json", 3500, 1);
+const traced = await sample(armDir, "parts/sfab/arm-bench@1.0.0.json", 3500, 1);
 const arm = rows(traced.samples, "arm", "shoulder", "servo", "uno");
 expect(
   arm.every((row) => row.running && row.fault === undefined),
@@ -557,7 +557,7 @@ const pairRoot = mkdtempSync(join(tmpdir(), "sfab-servo-pair-"));
 const limpRoot = mkdtempSync(join(tmpdir(), "sfab-servo-limp-"));
 try {
   cpSync(armDir, pairRoot, { recursive: true });
-  const pair = readDraft(pairRoot, "arm.world.json");
+  const pair = readDraft(pairRoot, "parts/sfab/arm-bench@1.0.0.json");
   const armRobot = pair.robots[0];
   const uno = pair.boards[0];
   const servo = pair.parts[0];
@@ -697,7 +697,7 @@ try {
   );
 
   cpSync(armDir, limpRoot, { recursive: true });
-  const limp = readDraft(limpRoot, "arm.world.json");
+  const limp = readDraft(limpRoot, "parts/sfab/arm-bench@1.0.0.json");
   limp.wires = limp.wires.map((wire) => {
     const ends = [wire[0], wire[1]].sort().join("|");
     return ends === "servo.signal|uno.D9"

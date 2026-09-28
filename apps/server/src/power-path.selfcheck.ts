@@ -486,7 +486,7 @@ async function runWorld(
 }
 
 {
-  const opened = await runWorld(armDir, "arm.world.json", 200, {
+  const opened = await runWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", 200, {
     fuseStart: "tripped",
   });
   expect(opened.state.supplies, "circuit supplies");
@@ -510,7 +510,7 @@ async function runWorld(
 }
 
 {
-  const bench = await runWorld(armDir, "arm-stall.world.json", 2000);
+  const bench = await runWorld(armDir, "parts/sfab/arm-stall@1.0.0.json", 2000);
   const browned = bench.read.frames.some(
     (frame) => frame.boards.uno?.brownoutAny === true
   );
@@ -533,7 +533,7 @@ async function runWorld(
 const usbRoot = mkdtempSync(join(tmpdir(), "sfab-uno-path-"));
 try {
   cpSync(armDir, usbRoot, { recursive: true });
-  const world = readDraft(usbRoot, "arm-stall.world.json");
+  const world = readDraft(usbRoot, "parts/sfab/arm-stall@1.0.0.json");
   world.supplies = [
     {
       id: "usb",

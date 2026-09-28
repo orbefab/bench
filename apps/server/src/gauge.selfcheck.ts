@@ -667,8 +667,8 @@ try {
     `bench supply: sketch ${benchUs} us, ${bench.voltage.toFixed(3)} V, current ${bench.current} A`
   );
 
-  const gaugeWorldPath = path.join(gaugeRoot, "gauge-usb.world.json");
-  const gaugeLockPath = path.join(gaugeRoot, "gauge-usb.world.lock.json");
+  const gaugeWorldPath = path.join(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.json");
+  const gaugeLockPath = path.join(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.lock.json");
   const gaugeWorldText = readFileSync(gaugeWorldPath, "utf8");
   const gaugeLockText = readFileSync(gaugeLockPath, "utf8");
   const gaugeLock = JSON.parse(gaugeLockText) as LockFile;
@@ -690,7 +690,7 @@ try {
       return;
     }
     const text = replaceLevels(gaugeWorldText, levelsFor(nano, sensor));
-    const temp = path.join(gaugeRoot, ".gauge-usb.world.json.level-edit");
+    const temp = path.join(gaugeRoot, ".gauge-usb.level-edit.json");
     writeFileSync(temp, text);
     try {
       const loaded = loadWorldV2(temp, {
@@ -724,7 +724,7 @@ try {
     const events: { type: string; message?: string }[] = [];
     let report: RunReport | null = null;
     const hostEnvelope: string[] = [];
-    const attached = await attachWorld(gaugeRoot, "gauge-usb.world.json", {
+    const attached = await attachWorld(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.json", {
       sender,
       onEvent(event) {
         if (event.type === "error") {
@@ -741,12 +741,12 @@ try {
     try {
       const stepped = await stepWorld(
         gaugeRoot,
-        "gauge-usb.world.json",
+        "parts/sfab/gauge-usb@1.0.0.json",
         7000,
         sender
       );
       if ("error" in stepped) throw new Error(stepped.error);
-      const read = await readRecording(gaugeRoot, "gauge-usb.world.json", {
+      const read = await readRecording(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.json", {
         from: 0,
         to: 7,
       });
@@ -767,7 +767,7 @@ try {
       };
     } finally {
       attached.detach();
-      await stopWorld(gaugeRoot, "gauge-usb.world.json");
+      await stopWorld(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.json");
       closeRootWatches();
     }
   }
@@ -971,7 +971,7 @@ try {
   );
 
   async function nanoOnce(): Promise<string> {
-    const attached = await attachWorld(nanoRoot, "nano-servo-usb.world.json", {
+    const attached = await attachWorld(nanoRoot, "parts/sfab/nano-servo-usb@1.0.0.json", {
       sender,
       onEvent() {},
     });
@@ -979,12 +979,12 @@ try {
     try {
       const stepped = await stepWorld(
         nanoRoot,
-        "nano-servo-usb.world.json",
+        "parts/sfab/nano-servo-usb@1.0.0.json",
         200,
         sender
       );
       if ("error" in stepped) throw new Error(stepped.error);
-      const read = await readRecording(nanoRoot, "nano-servo-usb.world.json", {
+      const read = await readRecording(nanoRoot, "parts/sfab/nano-servo-usb@1.0.0.json", {
         from: 0,
         to: 0.2,
       });
@@ -992,7 +992,7 @@ try {
       return JSON.stringify({ frames: read.frames, events: read.events });
     } finally {
       attached.detach();
-      await stopWorld(nanoRoot, "nano-servo-usb.world.json");
+      await stopWorld(nanoRoot, "parts/sfab/nano-servo-usb@1.0.0.json");
       closeRootWatches();
     }
   }
@@ -1003,8 +1003,8 @@ try {
   console.log("gauge.selfcheck ok");
 } finally {
   await stopWorld(root, "ping.world.json");
-  await stopWorld(gaugeRoot, "gauge-usb.world.json");
-  await stopWorld(nanoRoot, "nano-servo-usb.world.json");
+  await stopWorld(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.json");
+  await stopWorld(nanoRoot, "parts/sfab/nano-servo-usb@1.0.0.json");
   closeRootWatches();
   rmSync(root, { recursive: true, force: true });
   rmSync(gaugeRoot, { recursive: true, force: true });

@@ -485,7 +485,7 @@ function sci(n: number): string {
   return n.toExponential(2);
 }
 
-for (const world of ["arm.world.json", "arm-stall.world.json"]) {
+for (const world of ["parts/sfab/arm-bench@1.0.0.json", "parts/sfab/arm-stall@1.0.0.json"]) {
   const delta = boardDelta(world);
   expect(delta.class2 <= 1e-12, `${world} class 2 Δ ${delta.class2} V`);
   expect(delta.alias <= 1e-12, `${world} class 1 Δ ${delta.alias} V`);
@@ -499,7 +499,7 @@ function fuseTrace(startTripped: boolean): {
   reset: number[];
   delta: number;
 } {
-  const rails = worldRails("arm.world.json");
+  const rails = worldRails("parts/sfab/arm-bench@1.0.0.json");
   const order = [rails.class2, rails.alias, rails.reference];
   const trip = [-1, -1, -1];
   const reset = [-1, -1, -1];
@@ -602,14 +602,17 @@ function seriesDelta(a: number[], b: number[]): { max: number; rms: number } {
 
 function withUnoLevels(file: string, out: string, powerClass: 1 | 2): void {
   const world = JSON.parse(readFileSync(file, "utf8")) as {
-    run: { levels: { paths?: Record<string, { behaviour: number }> } };
+    run?: { levels: { paths?: Record<string, { behaviour: number }> } };
+    play?: { levels: { paths?: Record<string, { behaviour: number }> } };
   };
+  const levels = world.play?.levels ?? world.run?.levels;
+  if (!levels) throw new Error("document has no levels");
   const paths: Record<string, { behaviour: number }> = {
-    ...(world.run.levels.paths ?? {}),
+    ...(levels.paths ?? {}),
     uno: { behaviour: 2 },
   };
   if (powerClass === 1) paths["uno.power"] = { behaviour: 1 };
-  world.run.levels.paths = paths;
+  levels.paths = paths;
   writeFileSync(out, `${JSON.stringify(world, null, 2)}\n`);
 }
 
@@ -676,17 +679,17 @@ function peakSupply(read: RecordingRead): number {
   try {
     cpSync(armDir, dir, { recursive: true });
     withUnoLevels(
-      join(dir, "arm.world.json"),
+      join(dir, "parts/sfab/arm-bench@1.0.0.json"),
       join(dir, "arm-class2.world.json"),
       2
     );
     withUnoLevels(
-      join(dir, "arm.world.json"),
+      join(dir, "parts/sfab/arm-bench@1.0.0.json"),
       join(dir, "arm-mixed.world.json"),
       1
     );
     withUnoLevels(
-      join(dir, "arm-stall.world.json"),
+      join(dir, "parts/sfab/arm-stall@1.0.0.json"),
       join(dir, "arm-stall-mixed.world.json"),
       1
     );
@@ -780,14 +783,14 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
   const dir = mkdtempSync(join(tmpdir(), "sfab-uno-mcu-"));
   try {
     cpSync(armDir, dir, { recursive: true });
-    rmSync(join(dir, "arm.world.lock.json"), { force: true });
+    rmSync(join(dir, "parts/sfab/arm-bench@1.0.0.lock.json"), { force: true });
     const scene = join(dir, "parts", "sfab", "arm-scene@1.0.0.json");
     const text = readFileSync(scene, "utf8")
       .replaceAll('"uno"', '"mcu"')
       .replaceAll("uno.", "mcu.");
     writeFileSync(scene, text);
-    const original = await armLines(armDir, "arm.world.json");
-    const renamed = await armLines(dir, "arm.world.json");
+    const original = await armLines(armDir, "parts/sfab/arm-bench@1.0.0.json");
+    const renamed = await armLines(dir, "parts/sfab/arm-bench@1.0.0.json");
     let delta = 0;
     const n = Math.min(original.board.length, renamed.board.length);
     expect(n > 0 && n === original.board.length, "mcu frames");
@@ -812,7 +815,7 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
   const dir = mkdtempSync(join(tmpdir(), "sfab-two-uno-"));
   try {
     cpSync(armDir, dir, { recursive: true });
-    rmSync(join(dir, "arm.world.lock.json"), { force: true });
+    rmSync(join(dir, "parts/sfab/arm-bench@1.0.0.lock.json"), { force: true });
     const scene = join(dir, "parts", "sfab", "arm-scene@1.0.0.json");
     const part = JSON.parse(readFileSync(scene, "utf8")) as PartFile;
     const slot = part.axes?.behaviour?.["2"];
@@ -830,7 +833,7 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
       ["usb.GND", "other.GND"]
     );
     writeFileSync(scene, `${JSON.stringify(part, null, 2)}\n`);
-    const planned = planWorld(dir, "arm.world.json");
+    const planned = planWorld(dir, "parts/sfab/arm-bench@1.0.0.json");
     if (!planned.ok) {
       throw new Error(
         `two class-1 Unos planned: ${planned.errors.map((item) => item.message).join("; ")}`
@@ -937,7 +940,7 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
   const dir = mkdtempSync(join(tmpdir(), "sfab-uno-no-net-"));
   try {
     cpSync(armDir, dir, { recursive: true });
-    rmSync(join(dir, "arm.world.lock.json"), { force: true });
+    rmSync(join(dir, "parts/sfab/arm-bench@1.0.0.lock.json"), { force: true });
     const part = readPart("uno-r3@1.0.0");
     const behaviour = part.axes?.behaviour;
     if (behaviour) delete behaviour["2"];
@@ -947,7 +950,7 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
       join(folder, "uno-r3@1.0.0.json"),
       `${JSON.stringify(part, null, 2)}\n`
     );
-    const planned = planWorld(dir, "arm.world.json");
+    const planned = planWorld(dir, "parts/sfab/arm-bench@1.0.0.json");
     expect(planned.ok, "a Uno with no netlist did not run");
     if (!planned.ok) throw new Error("unreachable");
     const hit = (planned.plan.degraded ?? []).find((item) =>

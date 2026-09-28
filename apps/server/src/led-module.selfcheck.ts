@@ -79,16 +79,19 @@ function pinHigh(state: WorldState, bit: number): boolean {
   try {
     cpSync(nanoExample, dir, { recursive: true });
     const world = JSON.parse(
-      readFileSync(join(dir, "nano-led-module.world.json"), "utf8")
+      readFileSync(join(dir, "parts/sfab/nano-led-module@1.0.0.json"), "utf8")
     ) as {
-      run: { levels: { paths?: Record<string, { behaviour: number }> } };
+      run?: { levels: { paths?: Record<string, { behaviour: number }> } };
+      play?: { levels: { paths?: Record<string, { behaviour: number }> } };
     };
-    world.run.levels.paths = { module: { behaviour: 2 } };
+    const levels = world.play?.levels ?? world.run?.levels;
+    if (!levels) throw new Error("led module has no levels");
+    levels.paths = { module: { behaviour: 2 } };
     writeFileSync(
       join(dir, "nano-led-module-c2.world.json"),
       `${JSON.stringify(world, null, 2)}\n`
     );
-    const low = await runWorld(dir, "nano-led-module.world.json");
+    const low = await runWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
     const high = await runWorld(dir, "nano-led-module-c2.world.json");
     expect(pinHigh(low, 9) && pinHigh(high, 9), "D9 is not driven HIGH");
     const supply = (state: WorldState) =>
@@ -107,7 +110,7 @@ function pinHigh(state: WorldState, bit: number): boolean {
     console.log(
       `led-module leds class 1: ${JSON.stringify(leds1)} (no inner LED at the snapshot); class 2: ${JSON.stringify(leds2)}`
     );
-    const planned = planWorld(dir, "nano-led-module.world.json");
+    const planned = planWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
     expect(planned.ok, "class 1 module did not plan");
     if (planned.ok) {
       const row = planned.plan.boards
@@ -137,7 +140,7 @@ function pinHigh(state: WorldState, bit: number): boolean {
       failed: null,
       state: null,
     };
-    const attached = await attachWorld(dir, "nano-led-module.world.json", {
+    const attached = await attachWorld(dir, "parts/sfab/nano-led-module@1.0.0.json", {
       sender: { kind: "loopback", label: "Mac" },
       onEvent(event) {
         if (event.type === "error") {
@@ -163,7 +166,7 @@ function pinHigh(state: WorldState, bit: number): boolean {
       );
     } finally {
       attached.detach();
-      await stopWorld(dir, "nano-led-module.world.json");
+      await stopWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
       closeRootWatches();
     }
   } finally {
@@ -214,7 +217,7 @@ function pinHigh(state: WorldState, bit: number): boolean {
   const dir = mkdtempSync(join(tmpdir(), "sfab-led-across-"));
   try {
     cpSync(nanoExample, dir, { recursive: true });
-    rmSync(join(dir, "nano-led-module.world.lock.json"));
+    rmSync(join(dir, "parts/sfab/nano-led-module@1.0.0.lock.json"));
     const snapPath = join(
       dir,
       "snapshots",
@@ -236,7 +239,7 @@ function pinHigh(state: WorldState, bit: number): boolean {
     const params = snap.params as { across?: string[] };
     params.across = ["NOPE", "GND"];
     writeFileSync(snapPath, `${JSON.stringify(snap)}\n`);
-    const planned = planWorld(dir, "nano-led-module.world.json");
+    const planned = planWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
     expect(planned.ok, "bad across port did not run");
     if (!planned.ok) throw new Error("unreachable");
     const hit = (planned.plan.degraded ?? []).find((item) =>

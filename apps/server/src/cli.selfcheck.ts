@@ -32,18 +32,18 @@ expect(missing.kind === "help", "open without dir is help");
 const ran = parseCli([
   "run",
   "/tmp/gauge",
-  "gauge-usb.world.json",
+  "parts/sfab/gauge-usb@1.0.0.json",
   "--ms",
   "3000",
 ]);
 expect(
   ran.kind === "run" &&
     ran.project === resolve("/tmp/gauge") &&
-    ran.world === "gauge-usb.world.json" &&
+    ran.world === "parts/sfab/gauge-usb@1.0.0.json" &&
     ran.ms === 3000,
   "run --ms"
 );
-const ranDefault = parseCli(["run", "/tmp/gauge", "gauge-usb.world.json"]);
+const ranDefault = parseCli(["run", "/tmp/gauge", "parts/sfab/gauge-usb@1.0.0.json"]);
 expect(
   ranDefault.kind === "run" && ranDefault.ms === undefined,
   "run default span"

@@ -7,11 +7,11 @@ function expect(cond: boolean, label: string) {
 const fileOnly = new URLSearchParams("project=/abs/path&file=cad/a.step");
 applyOpenDocument(fileOnly, {
   kind: "world",
-  path: "examples/arm/arm.world.json",
+  path: "examples/arm/parts/sfab/arm-bench@1.0.0.json",
 });
 expect(!fileOnly.has("file"), "opening a world clears ?file=");
 expect(
-  fileOnly.get("world") === "examples/arm/arm.world.json",
+  fileOnly.get("world") === "examples/arm/parts/sfab/arm-bench@1.0.0.json",
   "world path is set"
 );
 expect(fileOnly.get("project") === "/abs/path", "project stays");
@@ -26,11 +26,11 @@ expect(!fileOnly.has("file") && !fileOnly.has("world"), "close clears both");
 expect(fileOnly.get("project") === "/abs/path", "close keeps the folder");
 
 const both = readOpenDocument(
-  "?project=/abs/path&file=cad/a.step&world=examples/arm/arm.world.json"
+  "?project=/abs/path&file=cad/a.step&world=examples/arm/parts/sfab/arm-bench@1.0.0.json"
 );
 expect(both.kind === "world", "a URL that names both opens the world");
 if (both.kind === "world") {
-  expect(both.path === "examples/arm/arm.world.json", "world path is read");
+  expect(both.path === "examples/arm/parts/sfab/arm-bench@1.0.0.json", "world path is read");
 }
 
 const file = readOpenDocument("?file=cad/a.step");

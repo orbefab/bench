@@ -106,7 +106,7 @@ expect(
   "close clears a part"
 );
 
-worldStore.getState().open("examples/arm/arm.world.json");
+worldStore.getState().open("examples/arm/parts/sfab/arm-bench@1.0.0.json");
 worldStore.getState().select(link);
 expect(
   worldStore.getState().selection?.kind === "link",
@@ -115,7 +115,7 @@ expect(
 worldStore.getState().close();
 expect(worldStore.getState().selection === null, "the store clears on close");
 
-worldStore.getState().open("examples/arm/arm.world.json");
+worldStore.getState().open("examples/arm/parts/sfab/arm-bench@1.0.0.json");
 worldStore.getState().select(board);
 worldStore.getState().setOutline({
   robots: [

@@ -149,7 +149,7 @@ function ledDeck(board: number): number {
 }
 
 {
-  const planned = planWorld(nanoDir, "nano-led.world.json");
+  const planned = planWorld(nanoDir, "parts/sfab/nano-led@1.0.0.json");
   if (!planned.ok) {
     throw new Error(planned.errors.map((item) => item.message).join("; "));
   }
@@ -254,7 +254,7 @@ async function runLed(
   const root = mkdtempSync(join(tmpdir(), "sfab-led-"));
   try {
     cpSync(nanoDir, root, { recursive: true });
-    const class2 = await runLed(root, "nano-led.world.json", 500);
+    const class2 = await runLed(root, "parts/sfab/nano-led@1.0.0.json", 500);
     const frame = class2.frames.find((item) => item.boards.nano?.leds?.led);
     expect(frame, "class 2 recording has no leds.led");
     const alias = frame.boards.nano?.ledCurrent;
@@ -263,7 +263,7 @@ async function runLed(
       alias !== undefined && onboard !== undefined && alias === onboard,
       `recorded alias ${alias} is not leds nano.led ${onboard}`
     );
-    const worldFile = join(root, "nano-led.world.json");
+    const worldFile = join(root, "parts/sfab/nano-led@1.0.0.json");
     writeFileSync(
       worldFile,
       readFileSync(worldFile, "utf8").replace(
@@ -281,12 +281,12 @@ async function runLed(
       lockPathFor(worldFile),
       `${JSON.stringify(sortValue(loaded.lock), null, 2)}\n`
     );
-    const class1 = await runLed(root, "nano-led.world.json", 500);
+    const class1 = await runLed(root, "parts/sfab/nano-led@1.0.0.json", 500);
     expect(
       class1.frames.some((item) => (item.boards.nano?.leds?.led ?? 0) > 0),
       "class 1 recording has no breadboard LED current"
     );
-    const planned1 = planWorld(root, "nano-led.world.json");
+    const planned1 = planWorld(root, "parts/sfab/nano-led@1.0.0.json");
     if (!planned1.ok) {
       throw new Error(planned1.errors.map((item) => item.message).join("; "));
     }
@@ -333,7 +333,7 @@ function servoPulseUs(angle: number): number {
   process.env.SFAB_LED_TRACE = "1";
   try {
     cpSync(nanoDir, root, { recursive: true });
-    const read = await runLed(root, "nano-led.world.json", 1500);
+    const read = await runLed(root, "parts/sfab/nano-led@1.0.0.json", 1500);
     const pulseUs = servoPulseUs(10);
     const periodUs = 20_000;
     let serial = "";

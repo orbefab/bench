@@ -358,9 +358,9 @@ function holdWindows(
   return holds;
 }
 
-const demo1 = await recordedRun(armDir, "arm.world.json", 3500);
+const demo1 = await recordedRun(armDir, "parts/sfab/arm-bench@1.0.0.json", 3500);
 try {
-  const foot = await recordingInfo(armDir, "arm.world.json");
+  const foot = await recordingInfo(armDir, "parts/sfab/arm-bench@1.0.0.json");
   if ("error" in foot) throw new Error(foot.error);
   const bytes = recordingFootprint({
     joints: foot.tracks.joints.length,
@@ -406,7 +406,7 @@ try {
     expect(voltage >= 4.5, `recorded rail ${voltage} V at ${frame.t}`);
   }
   const printed = serialOf(demo1.read.events, "uno");
-  const ring = readSerial(armDir, "arm.world.json", "uno", 0);
+  const ring = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
   if ("error" in ring) throw new Error(ring.error);
   expect(
     printed === ring.text,
@@ -429,10 +429,10 @@ try {
   );
 } finally {
   demo1.attached.detach();
-  await stopWorld(armDir, "arm.world.json");
+  await stopWorld(armDir, "parts/sfab/arm-bench@1.0.0.json");
 }
 
-const demo2 = await recordedRun(armDir, "arm-stall.world.json", 2000);
+const demo2 = await recordedRun(armDir, "parts/sfab/arm-stall@1.0.0.json", 2000);
 try {
   const resets = demo2.read.events.filter((event) => event.kind === "reset");
   const reboots = demo2.read.events.filter((event) => event.kind === "reboot");
@@ -499,13 +499,13 @@ try {
   );
 } finally {
   demo2.attached.detach();
-  await stopWorld(armDir, "arm-stall.world.json");
+  await stopWorld(armDir, "parts/sfab/arm-stall@1.0.0.json");
 }
 
 const reloadRoot = mkdtempSync(join(tmpdir(), "sfab-record-reload-"));
 try {
   cpSync(armDir, reloadRoot, { recursive: true });
-  const trace = openTrace(reloadRoot, "arm.world.json");
+  const trace = openTrace(reloadRoot, "parts/sfab/arm-bench@1.0.0.json");
   const attached = await trace.attached;
   if ("error" in attached) throw new Error(attached.error);
   try {
@@ -528,7 +528,7 @@ try {
       if (Date.now() - started > 10000) throw new Error("hex reload timed out");
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    const afterHex = await readRecording(reloadRoot, "arm.world.json", {
+    const afterHex = await readRecording(reloadRoot, "parts/sfab/arm-bench@1.0.0.json", {
       from: 0,
       to: 1,
     });
@@ -536,10 +536,10 @@ try {
     const reloads = afterHex.events.filter((event) => event.kind === "reload");
     expect(reloads.length === 1, `reload events ${reloads.length}`);
     expect(msOf(reloads[0]?.t ?? -1) === 200, `reload at ${reloads[0]?.t}`);
-    const still = await recordingInfo(reloadRoot, "arm.world.json");
+    const still = await recordingInfo(reloadRoot, "parts/sfab/arm-bench@1.0.0.json");
     if ("error" in still) throw new Error(still.error);
     expect(still.id === id, `hex restart changed recording ${still.id}`);
-    const worldPath = join(reloadRoot, "arm.world.json");
+    const worldPath = join(reloadRoot, "parts/sfab/arm-bench@1.0.0.json");
     const at = trace.events.length;
     writeFileSync(worldPath, readFileSync(worldPath));
     const startedDoc = Date.now();
@@ -568,7 +568,7 @@ try {
     );
   } finally {
     attached.detach();
-    await stopWorld(reloadRoot, "arm.world.json");
+    await stopWorld(reloadRoot, "parts/sfab/arm-bench@1.0.0.json");
   }
 } finally {
   rmSync(reloadRoot, { recursive: true, force: true });
@@ -576,13 +576,13 @@ try {
 
 const seekTraceA: WorldServerMessage[] = [];
 const seekTraceB: WorldServerMessage[] = [];
-const seekA = await attachWorld(armDir, "arm.world.json", {
+const seekA = await attachWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", {
   sender: { kind: "loopback", label: "Mac" },
   onEvent(event) {
     seekTraceA.push(event);
   },
 });
-const seekB = await attachWorld(armDir, "arm.world.json", {
+const seekB = await attachWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", {
   sender: { kind: "paired", label: "Quest" },
   onEvent(event) {
     seekTraceB.push(event);
@@ -634,7 +634,7 @@ try {
       last.state.playing === false,
     "seek moved the shared run"
   );
-  const exact = await frameAt(armDir, "arm.world.json", 0.05);
+  const exact = await frameAt(armDir, "parts/sfab/arm-bench@1.0.0.json", 0.05);
   if (!exact || "error" in exact) throw new Error("frameAt missed 0.05 s");
   expect(msOf(exact.t) === 50, "host frameAt");
   console.log(
@@ -643,13 +643,13 @@ try {
 } finally {
   seekA.detach();
   seekB.detach();
-  await stopWorld(armDir, "arm.world.json");
+  await stopWorld(armDir, "parts/sfab/arm-bench@1.0.0.json");
 }
 
 const pairRoot = mkdtempSync(join(tmpdir(), "sfab-record-pair-"));
 try {
   cpSync(armDir, pairRoot, { recursive: true });
-  const world = readDraft(pairRoot, "arm.world.json");
+  const world = readDraft(pairRoot, "parts/sfab/arm-bench@1.0.0.json");
   const robot = world.robots[0];
   const uno = world.boards[0];
   const servo = world.parts[0];
@@ -766,12 +766,12 @@ try {
 }
 
 async function factor(enabled: boolean): Promise<number> {
-  const trace = openTrace(armDir, "arm.world.json");
+  const trace = openTrace(armDir, "parts/sfab/arm-bench@1.0.0.json");
   const attached = await trace.attached;
   if ("error" in attached) throw new Error(attached.error);
   try {
     if (!enabled) {
-      const off = await setRecordingEnabled(armDir, "arm.world.json", false);
+      const off = await setRecordingEnabled(armDir, "parts/sfab/arm-bench@1.0.0.json", false);
       if ("error" in off) throw new Error(off.error);
     }
     attached.step(200);
@@ -783,7 +783,7 @@ async function factor(enabled: boolean): Promise<number> {
     return 1500 / wall;
   } finally {
     attached.detach();
-    await stopWorld(armDir, "arm.world.json");
+    await stopWorld(armDir, "parts/sfab/arm-bench@1.0.0.json");
   }
 }
 
@@ -798,15 +798,15 @@ expect(
   `recorder factor ${withRecorder.toFixed(2)} is below 80% of ${without.toFixed(2)}`
 );
 
-const boundTrace = openTrace(armDir, "arm.world.json");
+const boundTrace = openTrace(armDir, "parts/sfab/arm-bench@1.0.0.json");
 const boundHandle = await boundTrace.attached;
 if ("error" in boundHandle) throw new Error(boundHandle.error);
 try {
-  const set = await setRecordingBound(armDir, "arm.world.json", 40);
+  const set = await setRecordingBound(armDir, "parts/sfab/arm-bench@1.0.0.json", 40);
   if ("error" in set) throw new Error(set.error);
   boundHandle.step(200);
   await boundTrace.at(0.2);
-  const boundedInfo = await recordingInfo(armDir, "arm.world.json");
+  const boundedInfo = await recordingInfo(armDir, "parts/sfab/arm-bench@1.0.0.json");
   if ("error" in boundedInfo) throw new Error(boundedInfo.error);
   expect(
     boundedInfo.from > 0,
@@ -817,7 +817,7 @@ try {
   );
 } finally {
   boundHandle.detach();
-  await stopWorld(armDir, "arm.world.json");
+  await stopWorld(armDir, "parts/sfab/arm-bench@1.0.0.json");
   closeRootWatches();
 }
 

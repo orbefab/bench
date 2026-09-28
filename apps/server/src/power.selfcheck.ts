@@ -69,7 +69,7 @@ function jointLimitRad(
   return { lower: Number(lower[1]), upper: Number(upper[1]) };
 }
 
-const holdPlan = planWorld(armDir, "arm.world.json");
+const holdPlan = planWorld(armDir, "parts/sfab/arm-bench@1.0.0.json");
 expect(
   holdPlan.ok,
   holdPlan.ok ? "" : holdPlan.errors.map((error) => error.message).join("; ")
@@ -426,7 +426,7 @@ function stateAfter(
   });
 }
 
-const holdRows = await sample(armDir, "arm.world.json", 3500, 1, ["uno"]);
+const holdRows = await sample(armDir, "parts/sfab/arm-bench@1.0.0.json", 3500, 1, ["uno"]);
 let holdMin = Infinity;
 for (const row of holdRows) {
   const voltage = row.state.boards.uno?.voltage ?? Number.NaN;
@@ -445,12 +445,12 @@ console.log(`hold minimum voltage ${holdMin.toFixed(3)} V`);
 
 const stallRows = await sample(
   armDir,
-  "arm-stall.world.json",
+  "parts/sfab/arm-stall@1.0.0.json",
   2000,
   1,
   ["uno"],
   () => {
-    const snap = brownoutBootSnapshot(armDir, "arm-stall.world.json", "uno");
+    const snap = brownoutBootSnapshot(armDir, "parts/sfab/arm-stall@1.0.0.json", "uno");
     expect(snap, "brownout reboot did not snapshot registers");
     if (!snap) return;
     expect(
@@ -580,7 +580,7 @@ console.log(
 const usbRoot = mkdtempSync(join(tmpdir(), "sfab-power-usb-"));
 try {
   cpSync(armDir, usbRoot, { recursive: true });
-  const usbWorld = readDraft(usbRoot, "arm-stall.world.json");
+  const usbWorld = readDraft(usbRoot, "parts/sfab/arm-stall@1.0.0.json");
   usbWorld.supplies = [
     {
       id: "usb",
@@ -643,7 +643,7 @@ try {
 }
 
 function twoArm(root: string, sharedRail: boolean): string {
-  const world = readDraft(root, "arm.world.json");
+  const world = readDraft(root, "parts/sfab/arm-bench@1.0.0.json");
   const robot = world.robots[0];
   const uno = world.boards[0];
   const servo = world.parts[0];
@@ -806,7 +806,7 @@ try {
   const reloadRoot = mkdtempSync(join(tmpdir(), "sfab-power-reload-"));
   try {
     cpSync(armDir, reloadRoot, { recursive: true });
-    const trace = openTrace(reloadRoot, "arm-stall.world.json");
+    const trace = openTrace(reloadRoot, "parts/sfab/arm-stall@1.0.0.json");
     const attached = await trace.attached;
     if ("error" in attached) throw new Error(attached.error);
     try {
@@ -865,7 +865,7 @@ try {
       );
     } finally {
       attached.detach();
-      await stopWorld(reloadRoot, "arm-stall.world.json");
+      await stopWorld(reloadRoot, "parts/sfab/arm-stall@1.0.0.json");
     }
   } finally {
     rmSync(reloadRoot, { recursive: true, force: true });

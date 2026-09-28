@@ -341,14 +341,14 @@ for (const yaw of [0, 0.7, -2.1]) {
     note("a STEP path is the spawn document");
   }
   if (
-    spawnDocumentKey("examples/arm/arm.world.json", "") !==
-    "examples/arm/arm.world.json"
+    spawnDocumentKey("examples/arm/parts/sfab/arm-bench@1.0.0.json", "") !==
+    "examples/arm/parts/sfab/arm-bench@1.0.0.json"
   ) {
     note("a world path is the spawn document");
   }
   if (
-    spawnDocumentKey("examples/arm/arm.world.json", "cad/a.step") !==
-    "examples/arm/arm.world.json"
+    spawnDocumentKey("examples/arm/parts/sfab/arm-bench@1.0.0.json", "cad/a.step") !==
+    "examples/arm/parts/sfab/arm-bench@1.0.0.json"
   ) {
     note("a world wins when both paths are set");
   }
@@ -366,7 +366,7 @@ for (const yaw of [0, 0.7, -2.1]) {
     "STEP spawns"
   );
   last = { session: sess, url: stepA };
-  const world = spawnDocumentKey("examples/arm/arm.world.json", "");
+  const world = spawnDocumentKey("examples/arm/parts/sfab/arm-bench@1.0.0.json", "");
   placed(
     shouldPlaceAtGaze({ session: sess, url: world, last }),
     true,

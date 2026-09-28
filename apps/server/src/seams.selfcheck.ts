@@ -96,7 +96,7 @@ function ratioOf(row: SeamEnergy): number {
 }
 
 {
-  const report = await runWorld(ledDir, "nano-led.world.json", 300);
+  const report = await runWorld(ledDir, "parts/sfab/nano-led@1.0.0.json", 300);
   expect(report.seams === undefined, "a world with no motor gained a seam");
   expect(
     !report.warnings.some((item) => item.code === SEAM_WARNING_CODE),
@@ -106,7 +106,7 @@ function ratioOf(row: SeamEnergy): number {
 }
 
 {
-  const report = await runWorld(armDir, "arm.world.json", 2000);
+  const report = await runWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", 2000);
   const row = motorOf(report, "servo");
   const ratio = ratioOf(row);
   expect(!row.flagged, `healthy servo flagged\n${seamLine(row)}`);
@@ -134,7 +134,7 @@ function ratioOf(row: SeamEnergy): number {
   try {
     const loaded = await sim.load({
       project: armDir,
-      world: "arm.world.json",
+      world: "parts/sfab/arm-bench@1.0.0.json",
       generation: 1,
     });
     if (!loaded.ok) {
@@ -150,7 +150,7 @@ function ratioOf(row: SeamEnergy): number {
   }
   const cli = await runHeadless({
     project: armDir,
-    world: "arm.world.json",
+    world: "parts/sfab/arm-bench@1.0.0.json",
     ms: 1100,
   });
   const printed = cli.seams.find((item) => item.path === "servo");

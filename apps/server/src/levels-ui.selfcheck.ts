@@ -67,7 +67,7 @@ const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
 
-const gauge = openReport(gaugeDir, "gauge-usb.world.json");
+const gauge = openReport(gaugeDir, "parts/sfab/gauge-usb@1.0.0.json");
 const nanoCard = levelCard(gauge.report, "nano");
 expect(nanoCard !== null, "gauge nano has a level card");
 const nanoBehaviour = nanoCard.axes.find((row) => row.axis === "behaviour");
@@ -94,7 +94,7 @@ expect(
   "capture suggested stays on a deeper fallback"
 );
 
-const class1 = openReport(nanoDir, "nano-vcc-class1.world.json");
+const class1 = openReport(nanoDir, "parts/sfab/nano-vcc-class1@1.0.0.json");
 const class1Nano = levelCard(class1.report, "nano");
 expect(class1Nano?.snapshot === null, "class 1 nano carries its own snapshot");
 const class1Power = class1Nano?.nested.find((row) => row.path === "nano.power");
@@ -128,12 +128,15 @@ console.log(
 const nestedDir = mkdtempSync(join(tmpdir(), "sfab-nested-snap-"));
 try {
   cpSync(nanoDir, nestedDir, { recursive: true });
-  const nestedFile = join(nestedDir, "nano-vcc-usb.world.json");
+  const nestedFile = join(nestedDir, "parts/sfab/nano-vcc-usb@1.0.0.json");
   const nestedWorld = JSON.parse(readFileSync(nestedFile, "utf8")) as {
-    run: { levels: { paths?: Record<string, { behaviour: number }> } };
+    run?: { levels: { paths?: Record<string, { behaviour: number }> } };
+    play?: { levels: { paths?: Record<string, { behaviour: number }> } };
   };
-  nestedWorld.run.levels.paths = {
-    ...(nestedWorld.run.levels.paths ?? {}),
+  const nestedLevels = nestedWorld.play?.levels ?? nestedWorld.run?.levels;
+  if (!nestedLevels) throw new Error("nested world has no levels");
+  nestedLevels.paths = {
+    ...(nestedLevels.paths ?? {}),
     "nano.power": { behaviour: 1 },
   };
   writeFileSync(nestedFile, `${JSON.stringify(nestedWorld, null, 2)}\n`);
@@ -143,7 +146,7 @@ try {
       import.meta.url
     )
   );
-  const lockFile = join(nestedDir, "nano-vcc-usb.world.lock.json");
+  const lockFile = join(nestedDir, "parts/sfab/nano-vcc-usb@1.0.0.lock.json");
   const lock = JSON.parse(readFileSync(lockFile, "utf8")) as {
     snapshots?: {
       id: string;
@@ -161,7 +164,7 @@ try {
     },
   ];
   writeFileSync(lockFile, `${JSON.stringify(lock, null, 2)}\n`);
-  const mixed = openReport(nestedDir, "nano-vcc-usb.world.json");
+  const mixed = openReport(nestedDir, "parts/sfab/nano-vcc-usb@1.0.0.json");
   const boardCard = levelCard(mixed.report, "nano");
   const power = boardCard?.nested.find((row) => row.path === "nano.power");
   expect(
@@ -178,7 +181,7 @@ try {
   rmSync(nestedDir, { recursive: true, force: true });
 }
 
-const moduleWorld = openReport(nanoDir, "nano-led-module.world.json");
+const moduleWorld = openReport(nanoDir, "parts/sfab/nano-led-module@1.0.0.json");
 const moduleView = viewOf(moduleWorld.plan);
 const modulePart = moduleView.parts.find((part) => part.id === "module");
 const moduleBox = moduleView.boxes.find((box) => box.id === "module");
@@ -233,7 +236,7 @@ expect(
 const ids = gaugeView.boxes.map((box) => box.id);
 expect(new Set(ids).size === ids.length, `duplicate boxes ${ids.join(",")}`);
 
-const vcc = openReport(nanoDir, "nano-vcc-usb.world.json");
+const vcc = openReport(nanoDir, "parts/sfab/nano-vcc-usb@1.0.0.json");
 const vccView = viewOf(vcc.plan);
 expect(
   !vccView.boxes.some((box) => box.id === "flag"),
@@ -255,7 +258,7 @@ expect(
   vccView.boxes.every((box) => !robotIds.has(box.id)),
   "no box shares an id with a URDF body"
 );
-const servoUsb = openReport(nanoDir, "nano-servo-usb.world.json");
+const servoUsb = openReport(nanoDir, "parts/sfab/nano-servo-usb@1.0.0.json");
 const servoUsbBox = viewOf(servoUsb.plan).boxes.find(
   (box) => box.id === "servo"
 );
@@ -296,10 +299,10 @@ const usbPose = (
     `usb ${world}: position [${box?.pose.position.join(", ")}] rotation [${box?.pose.rotation.join(", ")}]`
   );
 };
-usbPose("nano-led.world.json", [-0.038, 0, 0.0025]);
-usbPose("nano-divider.world.json", [-0.038, 0, 0.0025]);
-usbPose("nano-servo-usb.world.json", [0.042, 0, 0.0025]);
-usbPose("nano-vcc-usb.world.json", [0.042, 0, 0.0025]);
+usbPose("parts/sfab/nano-led@1.0.0.json", [-0.038, 0, 0.0025]);
+usbPose("parts/sfab/nano-divider@1.0.0.json", [-0.038, 0, 0.0025]);
+usbPose("parts/sfab/nano-servo-usb@1.0.0.json", [0.042, 0, 0.0025]);
+usbPose("parts/sfab/nano-vcc-usb@1.0.0.json", [0.042, 0, 0.0025]);
 console.log(
   `gauge boxes unchanged: sensor [${sensorBox?.size.join(", ")}] at [${sensorBox?.pose.position.join(", ")}], MG90S [${servoBox?.size.join(", ")}] at z ${servoBox?.pose.position[2]}`
 );
@@ -307,8 +310,8 @@ console.log("boxes: HC-SR04, MG90S, no URDF duplicate");
 
 const root = mkdtempSync(join(tmpdir(), "sfab-levels-ui-"));
 cpSync(nanoDir, root, { recursive: true });
-const worldFile = join(root, "nano-vcc-usb.world.json");
-const lockFile = join(root, "nano-vcc-usb.world.lock.json");
+const worldFile = join(root, "parts/sfab/nano-vcc-usb@1.0.0.json");
+const lockFile = join(root, "parts/sfab/nano-vcc-usb@1.0.0.lock.json");
 const partFile = join(root, "parts/sfab/flag@1.0.0.json");
 const before = readFileSync(worldFile, "utf8");
 const events: WorldServerMessage[] = [];
@@ -325,7 +328,7 @@ try {
         partBefore.replace("a box vane", "a drifted vane")
       );
       const drifted = await call(worldTools.world_set_level, {
-        world: "nano-vcc-usb.world.json",
+        world: "parts/sfab/nano-vcc-usb@1.0.0.json",
         scope: "path",
         key: "nano",
         class: 1,
@@ -345,7 +348,7 @@ try {
       );
       writeFileSync(partFile, partBefore);
 
-      const handle = await attachWorld(root, "nano-vcc-usb.world.json", {
+      const handle = await attachWorld(root, "parts/sfab/nano-vcc-usb@1.0.0.json", {
         sender: { kind: "loopback", label: "Mac" },
         onEvent(event) {
           events.push(event);
@@ -355,7 +358,7 @@ try {
       held.push(handle);
 
       const missing = await call(worldTools.world_set_level, {
-        world: "nano-vcc-usb.world.json",
+        world: "parts/sfab/nano-vcc-usb@1.0.0.json",
         scope: "path",
         key: "no-such-part",
         class: 1,
@@ -366,7 +369,7 @@ try {
       );
       expect(readFileSync(worldFile, "utf8") === before, "bad path wrote");
       const removedDefault = await call(worldTools.world_set_level, {
-        world: "nano-vcc-usb.world.json",
+        world: "parts/sfab/nano-vcc-usb@1.0.0.json",
         scope: "default",
         class: null,
       });
@@ -383,7 +386,7 @@ try {
         (event) => event.type === "reloaded"
       ).length;
       const set = await call(worldTools.world_set_level, {
-        world: "nano-vcc-usb.world.json",
+        world: "parts/sfab/nano-vcc-usb@1.0.0.json",
         scope: "path",
         key: "nano",
         class: 1,
@@ -400,7 +403,7 @@ try {
       );
       const snap = isRecord(behaviour) ? behaviour.snapshot : null;
       expect(!isRecord(snap), `set snapshot ${JSON.stringify(snap)}`);
-      const planned = planWorld(root, "nano-vcc-usb.world.json");
+      const planned = planWorld(root, "parts/sfab/nano-vcc-usb@1.0.0.json");
       if (!planned.ok) {
         throw new Error(planned.errors.map((item) => item.message).join("; "));
       }
@@ -412,8 +415,11 @@ try {
         `set power snapshot ${setPower?.ref} ${setPower?.quality}`
       );
       const after = readFileSync(worldFile, "utf8");
-      const originalLevels = (JSON.parse(before) as { run: { levels: never } })
-        .run.levels;
+      const originalDoc = JSON.parse(before) as {
+        run?: { levels: never };
+        play?: { levels: never };
+      };
+      const originalLevels = (originalDoc.play ?? originalDoc.run)?.levels;
       expect(
         replaceLevels(after, originalLevels) === before,
         "the edit changed more than run.levels"
@@ -431,7 +437,7 @@ try {
       expect(reloads - reloadsAt === 1, `reloads ${reloads - reloadsAt}`);
 
       const cleared = await call(worldTools.world_set_level, {
-        world: "nano-vcc-usb.world.json",
+        world: "parts/sfab/nano-vcc-usb@1.0.0.json",
         scope: "path",
         key: "nano",
         class: null,
@@ -458,7 +464,7 @@ try {
   );
 } finally {
   for (const handle of held) handle.detach();
-  await stopWorld(root, "nano-vcc-usb.world.json");
+  await stopWorld(root, "parts/sfab/nano-vcc-usb@1.0.0.json");
   closeRootWatches();
   rmSync(root, { recursive: true, force: true });
 }

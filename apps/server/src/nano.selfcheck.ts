@@ -250,11 +250,14 @@ function point(
 
 function class1Of(dir: string, stem: string): string {
   const world = JSON.parse(
-    readFileSync(join(dir, `${stem}.world.json`), "utf8")
+    readFileSync(join(dir, "parts", "sfab", `${stem}@1.0.0.json`), "utf8")
   ) as {
-    run: { levels: unknown };
+    play?: { levels: unknown };
+    run?: { levels: unknown };
   };
-  world.run.levels = { default: 1 };
+  if (world.play) world.play.levels = { default: 1 };
+  else if (world.run) world.run.levels = { default: 1 };
+  else throw new Error(`${stem} has no levels`);
   const name = `${stem}-c1.world.json`;
   writeFileSync(join(dir, name), `${JSON.stringify(world, null, 2)}\n`);
   return name;
@@ -682,8 +685,8 @@ try {
   expect(on >= 5 && off >= 5, `D13 samples on ${on}, off ${off}`);
   console.log(`D13 on current ${(onCurrent * 1000).toFixed(2)} mA`);
 
-  const first = await runWorld(root, "nano-servo-usb.world.json", 3000);
-  const second = await runWorld(root, "nano-servo-usb.world.json", 3000);
+  const first = await runWorld(root, "parts/sfab/nano-servo-usb@1.0.0.json", 3000);
+  const second = await runWorld(root, "parts/sfab/nano-servo-usb@1.0.0.json", 3000);
   expect(
     JSON.stringify(first.read) === JSON.stringify(second.read),
     "class 2 Nano runs are not byte-identical"
@@ -694,7 +697,7 @@ try {
   );
   console.log(`nano on USB, SG90 on D9, class 2, 3 s, two runs byte-identical`);
 
-  const vcc = await runWorld(root, "nano-vcc-usb.world.json", 1000);
+  const vcc = await runWorld(root, "parts/sfab/nano-vcc-usb@1.0.0.json", 1000);
   const match = {
     vNom: usb.voltage,
     rSeries: usb.rSeries,

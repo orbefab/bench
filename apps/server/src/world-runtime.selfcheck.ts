@@ -87,7 +87,7 @@ function waitUntil(
 const rootReal = projectReal(armDir);
 expect(rootReal, "arm fixture resolves");
 if (!rootReal) throw new Error("unreachable");
-const planned = planWorld(rootReal, "arm.world.json");
+const planned = planWorld(rootReal, "parts/sfab/arm-bench@1.0.0.json");
 expect(
   planned.ok,
   planned.ok ? "" : planned.errors.map((error) => error.message).join("; ")
@@ -95,7 +95,7 @@ expect(
 if (!planned.ok) throw new Error("unreachable");
 const compiled = await compileWorld(
   planned.plan,
-  readerFor(rootReal, "arm.world.json")
+  readerFor(rootReal, "parts/sfab/arm-bench@1.0.0.json")
 );
 expect(
   compiled.ok,
@@ -177,7 +177,7 @@ writeFileSync(
 const bareReal = projectReal(bareRoot);
 expect(bareReal, "bare copy resolves");
 if (!bareReal) throw new Error("unreachable");
-const barePlanned = planWorld(bareReal, "arm.world.json");
+const barePlanned = planWorld(bareReal, "parts/sfab/arm-bench@1.0.0.json");
 expect(
   barePlanned.ok,
   barePlanned.ok
@@ -187,7 +187,7 @@ expect(
 if (!barePlanned.ok) throw new Error("unreachable");
 const bare = await compileWorld(
   barePlanned.plan,
-  readerFor(bareReal, "arm.world.json")
+  readerFor(bareReal, "parts/sfab/arm-bench@1.0.0.json")
 );
 expect(
   bare.ok,
@@ -261,7 +261,7 @@ worker.on("message", (message: FromWorker) => {
 worker.postMessage({
   type: "load",
   project: armDir,
-  world: "arm.world.json",
+  world: "parts/sfab/arm-bench@1.0.0.json",
   generation: 1,
 } satisfies ToWorker);
 await withTimeout(
@@ -344,7 +344,7 @@ let handleA: WorldHandle | null = null;
 let handleB: WorldHandle | null = null;
 try {
   const attachedA = await withTimeout(
-    attachWorld(shared, "arm.world.json", {
+    attachWorld(shared, "parts/sfab/arm-bench@1.0.0.json", {
       sender: { kind: "paired", label: "Headset A" },
       onEvent(event) {
         eventsA.push(event);
@@ -356,7 +356,7 @@ try {
   if ("error" in attachedA) throw new Error(String(attachedA.error));
   handleA = attachedA;
   const attachedB = await withTimeout(
-    attachWorld(shared, "arm.world.json", {
+    attachWorld(shared, "parts/sfab/arm-bench@1.0.0.json", {
       sender: { kind: "paired", label: "Headset B" },
       onEvent(event) {
         eventsB.push(event);
@@ -407,7 +407,7 @@ try {
   }
   const eventsC: WorldServerMessage[] = [];
   const attachedC = await withTimeout(
-    attachWorld(shared, "arm.world.json", {
+    attachWorld(shared, "parts/sfab/arm-bench@1.0.0.json", {
       sender: { kind: "paired", label: "Headset C" },
       onEvent(event) {
         eventsC.push(event);
@@ -490,8 +490,8 @@ try {
 
   const beforeReload = eventsB.length;
   writeFileSync(
-    join(shared, "arm.world.json"),
-    readFileSync(join(shared, "arm.world.json"))
+    join(shared, "parts/sfab/arm-bench@1.0.0.json"),
+    readFileSync(join(shared, "parts/sfab/arm-bench@1.0.0.json"))
   );
   await waitUntil(() => {
     const slice = eventsB.slice(beforeReload);
@@ -510,7 +510,7 @@ try {
 } finally {
   handleA?.detach();
   handleB?.detach();
-  await stopWorld(shared, "arm.world.json");
+  await stopWorld(shared, "parts/sfab/arm-bench@1.0.0.json");
   rmSync(shared, { recursive: true, force: true });
 }
 expect(worldWorkerCount() === 0, `worker leaked (${worldWorkerCount()})`);
@@ -527,7 +527,7 @@ try {
   );
   const errors: WorldServerMessage[] = [];
   const attached = await withTimeout(
-    attachWorld(bad, "arm.world.json", {
+    attachWorld(bad, "parts/sfab/arm-bench@1.0.0.json", {
       sender: { kind: "agent" },
       onEvent(event) {
         errors.push(event);
@@ -551,7 +551,7 @@ try {
   );
   const again: WorldServerMessage[] = [];
   const reattached = await withTimeout(
-    attachWorld(bad, "arm.world.json", {
+    attachWorld(bad, "parts/sfab/arm-bench@1.0.0.json", {
       sender: { kind: "paired", label: "Retry" },
       onEvent(event) {
         again.push(event);
@@ -574,7 +574,7 @@ try {
   }
   if (!("error" in attached)) attached.detach();
   if (!("error" in reattached)) reattached.detach();
-  await stopWorld(bad, "arm.world.json");
+  await stopWorld(bad, "parts/sfab/arm-bench@1.0.0.json");
   expect(worldWorkerCount() === 0, "stop leaves no worker");
 } finally {
   rmSync(bad, { recursive: true, force: true });
@@ -586,7 +586,7 @@ const faultEvents: WorldServerMessage[] = [];
 let faultHandle: WorldHandle | null = null;
 try {
   const attached = await withTimeout(
-    attachWorld(faultRoot, "arm.world.json", {
+    attachWorld(faultRoot, "parts/sfab/arm-bench@1.0.0.json", {
       sender: { kind: "loopback", label: "Mac" },
       onEvent(event) {
         faultEvents.push(event);
@@ -598,7 +598,7 @@ try {
   if ("error" in attached) throw new Error(String(attached.error));
   faultHandle = attached;
   expect(worldWorkerCount() === 1, "fault world has one worker");
-  faultWorld(faultRoot, "arm.world.json");
+  faultWorld(faultRoot, "parts/sfab/arm-bench@1.0.0.json");
   faultHandle.step(1);
   await waitUntil(
     () => faultEvents.some((event) => event.type === "error"),
@@ -616,7 +616,7 @@ try {
   expect(process.exitCode == null, "the host process is still running");
   const lateFault: WorldServerMessage[] = [];
   const lateFaultAttach = await withTimeout(
-    attachWorld(faultRoot, "arm.world.json", {
+    attachWorld(faultRoot, "parts/sfab/arm-bench@1.0.0.json", {
       sender: { kind: "paired", label: "Late" },
       onEvent(event) {
         lateFault.push(event);
@@ -639,7 +639,7 @@ try {
   lateFaultAttach.detach();
 } finally {
   faultHandle?.detach();
-  await stopWorld(faultRoot, "arm.world.json");
+  await stopWorld(faultRoot, "parts/sfab/arm-bench@1.0.0.json");
   rmSync(faultRoot, { recursive: true, force: true });
 }
 expect(worldWorkerCount() === 0, "fault world did not leak a worker");
@@ -683,7 +683,7 @@ writeFileSync(
 </robot>
 `
 );
-const twoWorld = readDraft(twoRoot, "arm.world.json");
+const twoWorld = readDraft(twoRoot, "parts/sfab/arm-bench@1.0.0.json");
 twoWorld.robots.push({
   id: "crane",
   urdf: "robot/crane.urdf",
@@ -856,13 +856,13 @@ try {
 const catalog = listProjectFiles(armDir);
 expect(
   catalog.some(
-    (file) => file.path === "arm.world.json" && file.kind === "world"
+    (file) => file.path === "parts/sfab/arm-bench@1.0.0.json" && file.kind === "world"
   ),
   "catalog lists the world"
 );
 expect(
   catalog.some(
-    (file) => file.path === "arm-stall.world.json" && file.kind === "world"
+    (file) => file.path === "parts/sfab/arm-stall@1.0.0.json" && file.kind === "world"
   ),
   "catalog lists the stall world"
 );
@@ -885,7 +885,7 @@ expect(
   `stl type ${stl.headers.get("content-type")}`
 );
 const worldFile = await handleProjectFile(
-  new Request("http://bench.local/api/files/arm.world.json"),
+  new Request("http://bench.local/api/files/parts/sfab/arm-bench@1.0.0.json"),
   armDir
 );
 expect(worldFile.status === 200, "world json is served");
@@ -941,7 +941,7 @@ const serialEvents: WorldServerMessage[] = [];
 let serialHandle: WorldHandle | null = null;
 try {
   const attached = await withTimeout(
-    attachWorld(armDir, "arm.world.json", {
+    attachWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", {
       sender: { kind: "loopback", label: "Mac" },
       onEvent(event) {
         serialEvents.push(event);
@@ -956,14 +956,14 @@ try {
   serialHandle.step(3500);
   await withTimeout(
     waitUntil(() => {
-      const page = readSerial(armDir, "arm.world.json", "uno", 0);
+      const page = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
       return !("error" in page) && page.text.includes("120\r\n");
     }, "hold printed 120"),
     30000,
     "hold printed 120"
   );
   const wallS = (performance.now() - started) / 1000;
-  const page = readSerial(armDir, "arm.world.json", "uno", 0);
+  const page = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
   if ("error" in page) throw new Error(page.error);
   expect(
     inOrder(page.text, ["10\r\n", "90\r\n", "120\r\n"]),
@@ -973,11 +973,11 @@ try {
     `board lockstep rtf ${(3.5 / wallS).toFixed(3)} (3.500 sim s / ${wallS.toFixed(3)} wall s)`
   );
   const mid = page.text.indexOf("90\r\n");
-  const newer = readSerial(armDir, "arm.world.json", "uno", mid);
+  const newer = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", mid);
   if ("error" in newer) throw new Error(newer.error);
   expect(newer.text === page.text.slice(mid), "from returns only newer text");
   expect(newer.next === page.next, "next is the ring end");
-  const done = readSerial(armDir, "arm.world.json", "uno", page.next);
+  const done = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", page.next);
   if ("error" in done) throw new Error(done.error);
   expect(done.text === "", "from next is empty");
   expect(
@@ -991,33 +991,33 @@ try {
   );
 
   serialHandle.pause();
-  const frozen = readSerial(armDir, "arm.world.json", "uno", 0);
+  const frozen = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
   if ("error" in frozen) throw new Error(frozen.error);
   await sleep(300);
-  const still = readSerial(armDir, "arm.world.json", "uno", 0);
+  const still = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
   if ("error" in still) throw new Error(still.error);
   expect(still.next === frozen.next, "pausing stops serial");
 
   serialHandle.play();
   await withTimeout(
     waitUntil(() => {
-      const live = readSerial(armDir, "arm.world.json", "uno", 0);
+      const live = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
       return !("error" in live) && live.next > frozen.next;
     }, "serial while playing"),
     8000,
     "serial while playing"
   );
   serialHandle.pause();
-  const paused = readSerial(armDir, "arm.world.json", "uno", 0);
+  const paused = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
   if ("error" in paused) throw new Error(paused.error);
   await sleep(350);
-  const held = readSerial(armDir, "arm.world.json", "uno", 0);
+  const held = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
   if ("error" in held) throw new Error(held.error);
   expect(held.next === paused.next, "pause after play stops serial");
 
   const late: WorldServerMessage[] = [];
   const lateAttached = await withTimeout(
-    attachWorld(armDir, "arm.world.json", {
+    attachWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", {
       sender: { kind: "paired", label: "Late" },
       onEvent(event) {
         late.push(event);
@@ -1061,15 +1061,15 @@ try {
     expect(echo.nonce === "line-1", "echo nonce");
   }
   await waitUntil(() => {
-    const rx = boardRx(armDir, "arm.world.json", "uno");
+    const rx = boardRx(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno");
     return !("error" in rx) && rx.queued === 4 && rx.accepted === 0;
   }, "rx queued while paused");
   serialHandle.step(5);
   await waitUntil(() => {
-    const rx = boardRx(armDir, "arm.world.json", "uno");
+    const rx = boardRx(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno");
     return !("error" in rx) && rx.accepted > 0;
   }, "rx reached the USART");
-  const rx = boardRx(armDir, "arm.world.json", "uno");
+  const rx = boardRx(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno");
   if ("error" in rx) throw new Error(rx.error);
   console.log(
     `serial-send reached USART0 RX (hold.ino does not echo): accepted ${rx.accepted}, still queued ${rx.queued}`
@@ -1091,14 +1091,14 @@ try {
   }
   expect(fitted * chunk.length <= RX_BACKLOG, "accepted sends fit in the cap");
   await waitUntil(() => {
-    const queued = boardRx(armDir, "arm.world.json", "uno");
+    const queued = boardRx(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno");
     return (
       !("error" in queued) &&
       queued.queued === fitted * chunk.length &&
       queued.queued <= RX_BACKLOG
     );
   }, "rx backlog stayed within the cap");
-  const backlog = boardRx(armDir, "arm.world.json", "uno");
+  const backlog = boardRx(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno");
   if ("error" in backlog) throw new Error(backlog.error);
   expect(backlog.queued <= RX_BACKLOG, `queued ${backlog.queued}`);
   console.log(
@@ -1145,12 +1145,12 @@ try {
   );
 } finally {
   serialHandle?.detach();
-  await stopWorld(armDir, "arm.world.json");
+  await stopWorld(armDir, "parts/sfab/arm-bench@1.0.0.json");
 }
 
 const pairRoot = mkdtempSync(join(tmpdir(), "sfab-world-boards-"));
 cpSync(armDir, pairRoot, { recursive: true });
-const pairDoc = readDraft(pairRoot, "arm.world.json");
+const pairDoc = readDraft(pairRoot, "parts/sfab/arm-bench@1.0.0.json");
 const pairUno = pairDoc.boards[0];
 if (!pairUno) throw new Error("fixture board");
 pairDoc.boards.push({

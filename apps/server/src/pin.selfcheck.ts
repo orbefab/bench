@@ -163,7 +163,7 @@ function pinsOf(state: WorldState, id: string): WorldPinState {
 }
 
 try {
-  const hold = await stepWorld(armDir, "arm.world.json", 100);
+  const hold = await stepWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", 100);
   expect(hold.simTime.toFixed(3) === "0.100", `hold simTime ${hold.simTime}`);
   const uno = pinsOf(hold, "uno");
   expect(
@@ -185,7 +185,7 @@ try {
   const pairRoot = mkdtempSync(join(tmpdir(), "sfab-pins-"));
   try {
     cpSync(armDir, pairRoot, { recursive: true });
-    const doc = readDraft(pairRoot, "arm.world.json");
+    const doc = readDraft(pairRoot, "parts/sfab/arm-bench@1.0.0.json");
     const unoBoard = doc.boards[0];
     if (!unoBoard) throw new Error("fixture board");
     doc.boards.push({

@@ -47,7 +47,7 @@ const torqueLimit = 0.176;
 const root = projectReal(armDir);
 expect(root, "arm fixture");
 if (!root) throw new Error("unreachable");
-const planned = planWorld(root, "arm.world.json");
+const planned = planWorld(root, "parts/sfab/arm-bench@1.0.0.json");
 expect(
   planned.ok,
   planned.ok ? "" : planned.errors.map((error) => error.message).join("; ")
@@ -55,7 +55,7 @@ expect(
 if (!planned.ok) throw new Error("unreachable");
 const compiled = await compileWorld(
   planned.plan,
-  readerFor(root, "arm.world.json")
+  readerFor(root, "parts/sfab/arm-bench@1.0.0.json")
 );
 expect(
   compiled.ok,

@@ -12,7 +12,7 @@ import { attachWorld, readRecording, stepWorld, stopWorld } from "./world/host";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const gaugeDir = join(root, "examples/gauge");
-const world = "gauge-usb.world.json";
+const world = "parts/sfab/gauge-usb@1.0.0.json";
 const ms = 3000;
 const bin = fileURLToPath(new URL("../bin/sfab-bench.mjs", import.meta.url));
 

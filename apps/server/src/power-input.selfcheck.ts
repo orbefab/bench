@@ -192,10 +192,13 @@ function serialOf(read: RecordingRead): string {
 
 function withPowerLevel(file: string, out: string): void {
   const world = JSON.parse(readFileSync(file, "utf8")) as {
-    run: { levels: { paths?: Record<string, { behaviour: number }> } };
+    run?: { levels: { paths?: Record<string, { behaviour: number }> } };
+    play?: { levels: { paths?: Record<string, { behaviour: number }> } };
   };
-  world.run.levels.paths = {
-    ...(world.run.levels.paths ?? {}),
+  const levels = world.play?.levels ?? world.run?.levels;
+  if (!levels) throw new Error("document has no levels");
+  levels.paths = {
+    ...(levels.paths ?? {}),
     "nano.power": { behaviour: 1 },
   };
   writeFileSync(out, `${JSON.stringify(world, null, 2)}\n`);
@@ -227,10 +230,10 @@ function seriesDelta(a: number[], b: number[]): { max: number; rms: number } {
   try {
     cpSync(nanoExample, dir, { recursive: true });
     withPowerLevel(
-      join(dir, "nano-vcc-usb.world.json"),
+      join(dir, "parts/sfab/nano-vcc-usb@1.0.0.json"),
       join(dir, "nano-vcc-mixed.world.json")
     );
-    const full = await runProject(dir, "nano-vcc-usb.world.json", 1200);
+    const full = await runProject(dir, "parts/sfab/nano-vcc-usb@1.0.0.json", 1200);
     const mixed = await runProject(dir, "nano-vcc-mixed.world.json", 1200);
     const again = await runProject(dir, "nano-vcc-mixed.world.json", 1200);
     const rail = seriesDelta(full.voltages, mixed.voltages);
@@ -275,11 +278,11 @@ function seriesDelta(a: number[], b: number[]): { max: number; rms: number } {
   try {
     cpSync(gaugeExample, dir, { recursive: true });
     withPowerLevel(
-      join(dir, "gauge-usb.world.json"),
+      join(dir, "parts/sfab/gauge-usb@1.0.0.json"),
       join(dir, "gauge-mixed.world.json")
     );
     const started = Date.now();
-    const full = await runProject(dir, "gauge-usb.world.json", 7000);
+    const full = await runProject(dir, "parts/sfab/gauge-usb@1.0.0.json", 7000);
     const mixed = await runProject(dir, "gauge-mixed.world.json", 7000);
     console.log(
       `INFO mixed gauge: ${((Date.now() - started) / 1000).toFixed(1)} s wall`

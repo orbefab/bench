@@ -53,7 +53,7 @@ const armDir = fileURLToPath(
 const root = mkdtempSync(join(tmpdir(), "sfab-world-tools-"));
 cpSync(armDir, root, { recursive: true });
 
-const arm = readDraft(root, "arm.world.json");
+const arm = readDraft(root, "parts/sfab/arm-bench@1.0.0.json");
 const robot = arm.robots[0];
 const uno = arm.boards[0];
 const servo = arm.parts[0];
@@ -162,14 +162,14 @@ try {
   );
   expect(worldWorkerCount() === 0, "a worker was already up");
   const closed = await call(worldTools.world_status, {
-    world: "arm.world.json",
+    world: "parts/sfab/arm-bench@1.0.0.json",
   });
   expect(
     errorOf(closed) === "no project open",
     `closed ${JSON.stringify(closed)}`
   );
   const closedRead = await call(worldTools.read_recording, {
-    world: "arm.world.json",
+    world: "parts/sfab/arm-bench@1.0.0.json",
     tracks: ["part:servo.pulseUs"],
   });
   expect(
@@ -190,22 +190,22 @@ try {
         world: "missing.world.json",
       });
       const escaped = await call(worldTools.world_play, {
-        world: "../arm.world.json",
+        world: "../parts/sfab/arm-bench@1.0.0.json",
       });
       const badPart = await call(worldTools.read_pulses, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         part: "no-such-servo",
       });
       const low = await call(worldTools.world_step, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         ms: 0,
       });
       const high = await call(worldTools.world_step, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         ms: 10_001,
       });
       const fraction = await call(worldTools.world_step, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         ms: 1.5,
       });
       const badTracks = [
@@ -218,7 +218,7 @@ try {
       ];
       for (const track of badTracks) {
         const bad = await call(worldTools.read_recording, {
-          world: "arm.world.json",
+          world: "parts/sfab/arm-bench@1.0.0.json",
           tracks: [track],
         });
         expect(
@@ -228,7 +228,7 @@ try {
       }
       expect(worldWorkerCount() === 0, "an unknown track started a worker");
       expect(
-        !worldDocumentOpen(root, "arm.world.json"),
+        !worldDocumentOpen(root, "parts/sfab/arm-bench@1.0.0.json"),
         "an unknown track opened the arm"
       );
 
@@ -249,7 +249,7 @@ try {
       }
       expect(worldWorkerCount() === 0, "an error started a worker");
       expect(
-        !worldDocumentOpen(root, "arm.world.json"),
+        !worldDocumentOpen(root, "parts/sfab/arm-bench@1.0.0.json"),
         "an error opened the arm"
       );
       expect(
@@ -257,7 +257,7 @@ try {
         "a missing world was opened"
       );
 
-      const attached = await attachWorld(root, "arm.world.json", {
+      const attached = await attachWorld(root, "parts/sfab/arm-bench@1.0.0.json", {
         sender: { kind: "loopback", label: "Mac" },
         onEvent(event) {
           events.push(event);
@@ -267,7 +267,7 @@ try {
       held.push(attached);
 
       const restarted = await call(worldTools.world_restart, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
       });
       expect(!errorOf(restarted), `restart ${JSON.stringify(restarted)}`);
       if (!isRecord(restarted) || !isRecord(restarted.recording)) {
@@ -292,7 +292,7 @@ try {
       );
 
       const stepped = await call(worldTools.world_step, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         ms: 3500,
       });
       expect(!errorOf(stepped), `step ${JSON.stringify(stepped)}`);
@@ -317,7 +317,7 @@ try {
       );
 
       const pulses = await call(worldTools.read_pulses, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         part: "servo",
         from: 0,
         to: 3.5,
@@ -344,7 +344,7 @@ try {
       }
 
       const recorded = await call(worldTools.read_recording, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         from: 0,
         to: 3.5,
         tracks: ["part:servo.pulseUs"],
@@ -420,7 +420,7 @@ try {
 
       const beforePlay = events.length;
       const played = await call(worldTools.world_play, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
       });
       expect(
         isRecord(played) &&
@@ -441,7 +441,7 @@ try {
 
       const beforePause = events.length;
       const paused = await call(worldTools.world_pause, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
       });
       expect(
         isRecord(paused) && paused.playing === false,
@@ -456,7 +456,7 @@ try {
       );
 
       const late: WorldServerMessage[] = [];
-      const second = await attachWorld(root, "arm.world.json", {
+      const second = await attachWorld(root, "parts/sfab/arm-bench@1.0.0.json", {
         sender: { kind: "paired", label: "Quest" },
         onEvent(event) {
           late.push(event);
@@ -475,7 +475,7 @@ try {
       );
 
       const mid = await call(worldTools.world_status, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
       });
       if (!isRecord(mid) || typeof mid.simTime !== "number") {
         throw new Error(`status ${JSON.stringify(mid)}`);
@@ -483,7 +483,7 @@ try {
       expect(mid.playing === false, "status stayed paused");
       const origin = msOf(mid.simTime);
       const exact = await call(worldTools.world_step, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         ms: 200,
       });
       if (!isRecord(exact) || typeof exact.simTime !== "number") {
@@ -496,9 +496,9 @@ try {
       );
 
       const beforeStep = events.length;
-      await call(worldTools.world_play, { world: "arm.world.json" });
+      await call(worldTools.world_play, { world: "parts/sfab/arm-bench@1.0.0.json" });
       const steppedLive = await call(worldTools.world_step, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         ms: 50,
       });
       expect(
@@ -515,7 +515,7 @@ try {
 
       const beforeRestart = events.length;
       const again = await call(worldTools.world_restart, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
       });
       if (!isRecord(again) || !isRecord(again.recording)) {
         throw new Error(`second restart ${JSON.stringify(again)}`);
@@ -545,11 +545,11 @@ try {
       const desktop = held[0];
       if (!desktop) throw new Error("no subscriber");
       const overlapping = call(worldTools.world_step, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         ms: 400,
       });
       await waitUntil(
-        () => worldStepInFlight(root, "arm.world.json"),
+        () => worldStepInFlight(root, "parts/sfab/arm-bench@1.0.0.json"),
         "agent step is in flight"
       );
       desktop.step(1000);
@@ -571,16 +571,16 @@ try {
       );
 
       const interrupted = call(worldTools.world_step, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
         ms: 8000,
       });
       await waitUntil(
-        () => worldStepInFlight(root, "arm.world.json"),
+        () => worldStepInFlight(root, "parts/sfab/arm-bench@1.0.0.json"),
         "long step is in flight"
       );
       const interruptStarted = Date.now();
       const restartDuring = call(worldTools.world_restart, {
-        world: "arm.world.json",
+        world: "parts/sfab/arm-bench@1.0.0.json",
       });
       const interruptedResult = await interrupted;
       const interruptWait = Date.now() - interruptStarted;
@@ -599,14 +599,14 @@ try {
       );
 
       const stallRestart = await call(worldTools.world_restart, {
-        world: "arm-stall.world.json",
+        world: "parts/sfab/arm-stall@1.0.0.json",
       });
       expect(
         !errorOf(stallRestart),
         `stall restart ${JSON.stringify(stallRestart)}`
       );
       const stall = await call(worldTools.world_step, {
-        world: "arm-stall.world.json",
+        world: "parts/sfab/arm-stall@1.0.0.json",
         ms: 2000,
       });
       expect(!errorOf(stall), `stall step ${JSON.stringify(stall)}`);
@@ -619,7 +619,7 @@ try {
         `stall resets ${JSON.stringify(stallBoard)}`
       );
       const stallRec = await call(worldTools.read_recording, {
-        world: "arm-stall.world.json",
+        world: "parts/sfab/arm-stall@1.0.0.json",
         from: 0,
         to: 2,
         maxFrames: 500,
@@ -746,8 +746,8 @@ try {
   );
 } finally {
   for (const handle of held) handle.detach();
-  await stopWorld(root, "arm.world.json");
-  await stopWorld(root, "arm-stall.world.json");
+  await stopWorld(root, "parts/sfab/arm-bench@1.0.0.json");
+  await stopWorld(root, "parts/sfab/arm-stall@1.0.0.json");
   await stopWorld(root, "two.world.json");
   await stopWorld(root, "unpowered.world.json");
   closeRootWatches();

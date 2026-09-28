@@ -386,8 +386,8 @@ try {
 const example = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
-const first = open(example, "nano-vcc-class1.world.json");
-const second = open(example, "nano-vcc-class1.world.json");
+const first = open(example, "parts/sfab/nano-vcc-class1@1.0.0.json");
+const second = open(example, "parts/sfab/nano-vcc-class1@1.0.0.json");
 expect(
   canonicalJson(first) === canonicalJson(second),
   "reports differ across loads"
