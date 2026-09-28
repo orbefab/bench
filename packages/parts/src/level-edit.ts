@@ -281,6 +281,107 @@ export function lockAfterLevels(
   };
 }
 
+/**
+ * The lock after any document edit. The open part is re-pinned. Parts
+ * and types the edit started using gain a row; rows nothing resolves
+ * any more are dropped. A hash change on anything else is drift.
+ * Snapshot rows may appear or disappear with the levels. Row key order
+ * stays as the file had it, so a byte-identical undo can print it back.
+ */
+export function lockAfterEdit(
+  pinned: LockFile,
+  resolved: LockFile,
+  refresh: readonly string[]
+): { lock: LockFile } | { error: string } {
+  if (pinned.format !== resolved.format) {
+    return {
+      error: `lockfile format mismatch (${String(pinned.format)} vs ${String(resolved.format)})`,
+    };
+  }
+  if (pinned.world !== resolved.world) {
+    return {
+      error: `lockfile world name mismatch (${pinned.world} vs ${resolved.world})`,
+    };
+  }
+  const refreshing = new Set(refresh);
+  const parts = mergeRows("part", pinned.parts, resolved.parts, refreshing);
+  if ("error" in parts) return parts;
+  const types = mergeRows("part type", pinned.types, resolved.types, new Set());
+  if ("error" in types) return types;
+  const snapshot = snapshotDrift(
+    pinned.snapshots ?? [],
+    resolved.snapshots ?? []
+  );
+  if (snapshot) return { error: snapshot };
+  const lock = structuredClone(pinned);
+  lock.parts = parts.rows;
+  lock.types = types.rows;
+  const snapshots = shapeSnapshots(
+    pinned.snapshots ?? [],
+    resolved.snapshots ?? []
+  );
+  if (snapshots.length > 0) lock.snapshots = snapshots;
+  else delete lock.snapshots;
+  return { lock };
+}
+
+function mergeRows<T extends { id: string; sha256: string }>(
+  kind: "part" | "part type",
+  pinned: T[],
+  resolved: T[],
+  refresh: ReadonlySet<string>
+): { rows: T[] } | { error: string } {
+  const have = new Map(pinned.map((row) => [row.id, row]));
+  const sample = pinned[0];
+  const rows: T[] = [];
+  for (const next of resolved) {
+    const prev = have.get(next.id);
+    if (!prev) {
+      rows.push(shapeLike(sample, next));
+      continue;
+    }
+    if (prev.sha256 !== next.sha256 && !refresh.has(next.id)) {
+      return {
+        error: `${next.id} port file quantity sha256: lockfile hash mismatch on a ${kind} (content changed, lockfile did not) (${prev.sha256} vs ${next.sha256})`,
+      };
+    }
+    if (prev.sha256 !== next.sha256) {
+      const copy = structuredClone(prev);
+      copy.sha256 = next.sha256;
+      rows.push(copy);
+    } else {
+      rows.push(prev);
+    }
+  }
+  return { rows };
+}
+
+function shapeSnapshots(
+  pinned: LockSnapshot[],
+  resolved: LockSnapshot[]
+): LockSnapshot[] {
+  const have = new Map(pinned.map((row) => [row.id, row]));
+  const sample = pinned[0];
+  return resolved.map((next) => {
+    const prev = have.get(next.id);
+    if (prev && prev.sha256 === next.sha256) return prev;
+    return shapeLike(sample, next);
+  });
+}
+
+function shapeLike<T extends object>(sample: T | undefined, row: T): T {
+  if (!sample) return row;
+  const out: Record<string, unknown> = {};
+  const src = row as Record<string, unknown>;
+  for (const key of Object.keys(sample)) {
+    if (key in src) out[key] = src[key];
+  }
+  for (const key of Object.keys(src)) {
+    if (!(key in out)) out[key] = src[key];
+  }
+  return out as T;
+}
+
 function rowDrift(
   kind: "part" | "part type",
   pinned: { id: string; sha256: string }[],

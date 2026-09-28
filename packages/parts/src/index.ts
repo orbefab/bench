@@ -11,13 +11,36 @@ export {
   partToWorld,
   worldToPart,
 } from "./document";
+export {
+  applyEdit,
+  documentNetlist,
+  type EditContext,
+  type EditSuccess,
+  editLabel,
+  quantityOn,
+  readEditOp,
+} from "./edit";
+export {
+  type AppliedEdit,
+  EditSession,
+  type EditSessionOptions,
+  EXTERNAL_EDIT,
+} from "./edit-session";
 export { expandPartType } from "./expand";
+export { formatPart, type PartStyle, partStyle } from "./format-part";
 export { type GearWalk, gearTrainErrors, walkGearTrain } from "./gear-train";
+export {
+  emptyHistory,
+  HISTORY_DEPTH,
+  type History,
+  type HistoryStep,
+} from "./history";
 export { type DropoutKnot, type LdoParams, ldoFrom } from "./ldo";
 export {
   applyLevelEdit,
   type LevelEdit,
   type LevelTable,
+  lockAfterEdit,
   lockAfterLevels,
   replaceLevels,
 } from "./level-edit";
