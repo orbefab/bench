@@ -5,6 +5,7 @@
  */
 
 import type {
+  AxisLevel,
   AxisName,
   Diagnostic,
   EditOp,
@@ -94,9 +95,15 @@ export function readEditOp(value: unknown): EditOp | { error: string } {
   }
   const document = row.document;
   switch (row.kind) {
-    case "add-instance":
+    case "add-instance": {
       if (typeof row.id !== "string" || typeof row.part !== "string") {
         return { error: "add-instance needs an id and a part" };
+      }
+      let level: LevelSpec | undefined;
+      if (row.level !== undefined) {
+        const read = readLevelSpec(row.level);
+        if ("error" in read) return read;
+        level = read.level;
       }
       return {
         kind: "add-instance",
@@ -105,8 +112,9 @@ export function readEditOp(value: unknown): EditOp | { error: string } {
         part: row.part,
         ...(isPose(row.pose) ? { pose: row.pose } : {}),
         ...(isParams(row.params) ? { params: row.params } : {}),
-        ...(row.level !== undefined ? { level: row.level as LevelSpec } : {}),
+        ...(level !== undefined ? { level } : {}),
       };
+    }
     case "remove-instance":
       if (typeof row.id !== "string")
         return { error: "remove-instance needs an id" };
@@ -321,10 +329,18 @@ function applyAdd(
     const poseError = checkPose(op.pose);
     if (poseError) return fail(op.id, "pose", "Pose", op.id, "pose", poseError);
   }
+  let level: LevelSpec | undefined;
+  if (op.level !== undefined) {
+    const read = readLevelSpec(op.level);
+    if ("error" in read) {
+      return fail(op.id, "level", "Level", "level", "class", read.error);
+    }
+    level = read.level;
+  }
   const instance: NetlistInstance = { part: op.part };
   if (op.pose) instance.pose = structuredClone(op.pose);
   if (op.params) instance.params = structuredClone(op.params);
-  if (op.level !== undefined) instance.level = structuredClone(op.level);
+  if (level !== undefined) instance.level = structuredClone(level);
   netlist.instances[op.id] = instance;
   return {
     inverse: { kind: "remove-instance", document: op.document, id: op.id },
@@ -1092,6 +1108,49 @@ function checkPose(pose: Pose): string | null {
   if (!nums.every((n) => typeof n === "number" && Number.isFinite(n)))
     return "pose is not finite";
   return null;
+}
+
+function readLevelSpec(
+  value: unknown
+): { level: LevelSpec } | { error: string } {
+  const bad = { error: "add-instance level is not a class" };
+  if (value === 0 || value === 1 || value === 2 || value === 3) {
+    return { level: value };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return bad;
+  const row = value as Record<string, unknown>;
+  const keys = Object.keys(row);
+  if (keys.length === 0) return bad;
+  const spec: Partial<Record<AxisName, AxisLevel>> = {};
+  for (const key of keys) {
+    if (key !== "behaviour" && key !== "body" && key !== "visual") return bad;
+    const axis = readAxisLevel(row[key]);
+    if (!axis) return bad;
+    spec[key] = axis;
+  }
+  return { level: spec };
+}
+
+function readAxisLevel(value: unknown): AxisLevel | null {
+  if (value === 0 || value === 1 || value === 2 || value === 3) return value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const keys = Object.keys(row);
+  if (!keys.includes("class")) return null;
+  for (const key of keys) {
+    if (key !== "class" && key !== "variant") return null;
+  }
+  if (
+    row.class !== 0 &&
+    row.class !== 1 &&
+    row.class !== 2 &&
+    row.class !== 3
+  ) {
+    return null;
+  }
+  if (row.variant === undefined) return row.class;
+  if (typeof row.variant !== "string" || row.variant.length === 0) return null;
+  return { class: row.class, variant: row.variant };
 }
 
 function isPose(value: unknown): value is Pose {

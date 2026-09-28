@@ -407,6 +407,17 @@ try {
   );
   reject(
     work,
+    SCENE,
+    docOp(SCENE, {
+      kind: "add-instance",
+      id: "extra",
+      part: "sfab/led-red@1.0.0",
+      level: { body: "collapsed" },
+    }),
+    "add-instance level is not a class"
+  );
+  reject(
+    work,
     USB,
     docOp(USB, {
       kind: "set-level",
