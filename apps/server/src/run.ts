@@ -4,11 +4,17 @@
 import { performance } from "node:perf_hooks";
 
 import type { SeamEnergy, WorldState } from "@sfab-bench/contract";
-import { sha256Bytes } from "@sfab-bench/parts";
+import { healTornWrite, sha256Bytes } from "@sfab-bench/parts";
 import { seamLine } from "@sfab-bench/sim/seams";
 import { type LoadResult, Sim } from "@sfab-bench/sim/sim";
 
-import { projectReal, readerFor, readInside } from "./world/files";
+import {
+  projectReal,
+  readerFor,
+  readInside,
+  resolveInside,
+} from "./world/files";
+import { nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
 import { nodePlanEnv } from "./world/plan-host";
 
@@ -81,6 +87,14 @@ export async function runHeadless(opts: {
   world: string;
   ms: number;
 }): Promise<RunResult> {
+  const root = projectReal(opts.project);
+  if (root) {
+    const file = resolveInside(root, opts.world);
+    if (file) {
+      const healed = healTornWrite(nodeStore, file);
+      if (healed) throw new Error(healed.error);
+    }
+  }
   const lines: RunLine[] = [];
   const pending = new Map<string, string>();
   const sim = new Sim({

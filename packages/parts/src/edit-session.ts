@@ -4,7 +4,8 @@
  * temp file in the project. Both the part and the lock are written to
  * `*.edit-tmp` markers, the part is renamed, then the lock. The markers
  * stay until both renames land. A crash between them leaves the lock
- * marker, and the next open finishes it.
+ * marker. The next open of an edit or a run finishes it. A part marker
+ * with no lock marker is an edit that never committed; it is removed.
  */
 
 import type {
@@ -23,7 +24,7 @@ import { lockAfterEdit, replaceLevels } from "./level-edit";
 import { type LibraryOptions, loadPartById, loadTypeById } from "./library";
 import { loadWorldV2 } from "./load";
 import { lockPathFor } from "./lock";
-import { basename, normalize } from "./path";
+import { normalize } from "./path";
 import { sha256Hex } from "./sha256";
 import { canonicalJson } from "./si";
 import type { Store } from "./store";
@@ -377,9 +378,13 @@ function markerPath(file: string): string {
 
 /**
  * A lock marker finishes the pair. An empty one deletes the lock.
- * A part marker with no lock marker cannot be completed.
+ * A part marker with no lock marker is removed; the part on disk is
+ * still the one from before the edit.
  */
-function healTornWrite(store: Store, file: string): { error: string } | null {
+export function healTornWrite(
+  store: Store,
+  file: string
+): { error: string } | null {
   const lockPath = lockPathFor(file);
   const partTmp = markerPath(file);
   const lockTmp = markerPath(lockPath);
@@ -387,9 +392,14 @@ function healTornWrite(store: Store, file: string): { error: string } | null {
   const lockMarker = store.exists(lockTmp);
   if (!partMarker && !lockMarker) return null;
   if (partMarker && !lockMarker) {
-    return {
-      error: `${basename(partTmp)}: the part was written without its lock`,
-    };
+    try {
+      store.remove(partTmp);
+    } catch (err: unknown) {
+      return {
+        error: err instanceof Error ? err.message : "could not finish the edit",
+      };
+    }
+    return null;
   }
   try {
     if (partMarker) store.rename(partTmp, file);

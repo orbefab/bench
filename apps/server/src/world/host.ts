@@ -23,6 +23,8 @@ import {
   SerialRing,
 } from "@sfab-bench/engine-mcu";
 
+import { healTornWrite } from "@sfab-bench/parts";
+
 import { subscribeRootWatch } from "../projects";
 import {
   dependencyRels,
@@ -32,6 +34,7 @@ import {
   projectReal,
   resolveInside,
 } from "./files";
+import { nodeStore } from "./node-store";
 import type {
   AdcTrace,
   FromWorker,
@@ -610,6 +613,15 @@ async function load(
   doc: Doc,
   reason: "attach" | "change" | "restart"
 ): Promise<void> {
+  const torn = repairDocument(doc.project, doc.world);
+  if (torn) {
+    doc.errors = [];
+    doc.errorMessage = torn;
+    doc.lastState = null;
+    doc.report = null;
+    broadcast(doc, { type: "error", errors: [], message: torn });
+    return;
+  }
   const before = doc.stamp;
   refreshDeps(doc);
   if (reason === "change" && doc.stamp === before) return;
@@ -626,6 +638,14 @@ async function load(
   refreshDeps(doc);
   refreshFirmware(doc);
   doc.ready = true;
+}
+
+/** Finish a torn part and lock write before the loader reads the lock. */
+function repairDocument(project: string, world: string): string | null {
+  const file = resolveInside(project, world);
+  if (!file) return null;
+  const healed = healTornWrite(nodeStore, file);
+  return healed ? healed.error : null;
 }
 
 function refreshFirmware(doc: Doc) {

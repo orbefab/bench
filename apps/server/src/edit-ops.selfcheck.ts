@@ -7,6 +7,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -34,6 +35,7 @@ import type { SerialChunk } from "@sfab-bench/sim/sim";
 import { Sim } from "@sfab-bench/sim/sim";
 import { partWriteRefusal } from "./local-sandbox";
 import { closeRootWatches } from "./projects";
+import { runHeadless } from "./run";
 import { runViewerContext } from "./viewer-context";
 import { handleLiveEdit } from "./world/edit";
 import { projectReal, readerFor, readInside } from "./world/files";
@@ -474,7 +476,8 @@ try {
     console.log(`edit undo refused: ${refused.error}`);
   }
   putPair(work, USB, externalBefore);
-  proveHeal(work, USB);
+  await proveHeal(work, USB);
+  await proveOrphan(work, USB);
 
   const editedLevel = openSession(frames, USB).apply(
     docOp(USB, {
@@ -596,7 +599,7 @@ try {
 expect(worldWorkerCount() === 0, "a world worker was left behind");
 console.log("edit-ops.selfcheck ok");
 
-function proveHeal(project: string, world: string) {
+async function proveHeal(project: string, world: string) {
   const saved = pairOf(project, world);
   const session = openSession(project, world);
   const poked = session.apply(
@@ -605,17 +608,34 @@ function proveHeal(project: string, world: string) {
   if ("error" in poked) throw new Error(poked.error);
   const healed = pairOf(project, world);
   putPair(project, world, saved);
-  const file = absolutePath(join(project, world));
+  const file = realpathSync(join(project, world));
   const lock = lockPathFor(file);
   writeFileSync(`${file}.edit-tmp`, healed.part);
   writeFileSync(`${lock}.edit-tmp`, healed.lock ?? "");
   renameSync(`${file}.edit-tmp`, file);
-  openSession(project, world);
+  const ran = await runHeadless({ project, world, ms: 20 });
+  expect(ran.frames > 0, "torn write did not load");
   expect(samePair(pairOf(project, world), healed), "torn write was not healed");
   expect(!existsSync(`${lock}.edit-tmp`), "lock marker remains");
   expect(!existsSync(`${file}.edit-tmp`), "part marker remains");
-  console.log(`edit open: healed a torn write of ${basename(world)}`);
+  console.log(
+    `edit open: healed a torn write of ${basename(world)}, run loaded`
+  );
   putPair(project, world, saved);
+}
+
+async function proveOrphan(project: string, world: string) {
+  const saved = pairOf(project, world);
+  const file = realpathSync(join(project, world));
+  writeFileSync(`${file}.edit-tmp`, "not a part\n");
+  const ran = await runHeadless({ project, world, ms: 20 });
+  expect(ran.frames > 0, "orphan marker did not load");
+  expect(!existsSync(`${file}.edit-tmp`), "orphan marker remains");
+  expect(
+    samePair(pairOf(project, world), saved),
+    "orphan changed the document"
+  );
+  console.log(`edit open: removed an orphan part marker of ${basename(world)}`);
 }
 
 function call(

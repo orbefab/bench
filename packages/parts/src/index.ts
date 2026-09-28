@@ -25,6 +25,7 @@ export {
   EditSession,
   type EditSessionOptions,
   EXTERNAL_EDIT,
+  healTornWrite,
 } from "./edit-session";
 export { expandPartType } from "./expand";
 export { formatPart, type PartStyle, partStyle } from "./format-part";
