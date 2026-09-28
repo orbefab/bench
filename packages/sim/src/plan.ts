@@ -29,6 +29,7 @@ import {
   type LiveNet,
   type LoadResult,
   loadWorldV2,
+  makeDiag,
   pathRefOf,
   siValue,
   tableLawOf,
@@ -50,8 +51,9 @@ import {
   railPowerPorts,
   stampBoard,
 } from "./circuit-stamp";
-import type { PlanEnv } from "./env";
+import type { PlanEnv, StampEnv } from "./env";
 import { formAdapter } from "./forms";
+import { provenanceHash } from "./freshness";
 import { chipFacts } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
 import { readTargets } from "./targets";
@@ -1465,7 +1467,58 @@ export function planWorld(
       };
     }
   }
+  noteFreshness(built.plan.report ?? null, loaded, found.root, env);
   return { ok: true, plan: built.plan };
+}
+
+/**
+ * A capture is stale when its stored hash no longer matches the part.
+ * It still runs. A hash that cannot be recomputed is left unmarked.
+ */
+function noteFreshness(
+  report: RunReport | null,
+  loaded: LoadResult,
+  root: string,
+  env: PlanEnv
+): void {
+  if (!report) return;
+  const catalog = env.absolutePath(env.catalogDir());
+  const world = env.absolutePath(root);
+  const stamp = stampEnv(env);
+  for (const row of report.snapshots) {
+    const from = row.provenance?.from;
+    if (!from?.hash) continue;
+    const snap = loaded.snapshots.find((item) => item.id === row.ref);
+    if (!snap) continue;
+    const fresh = provenanceHash(
+      snap.file,
+      { catalogDir: catalog, worldDir: world, assetRoot: world },
+      stamp
+    );
+    if (!fresh.checked || fresh.hash === from.hash) continue;
+    row.stale = true;
+    report.warnings.push(
+      makeDiag({
+        severity: "warning",
+        code: "stale-capture",
+        path: from.part,
+        port: snap.path,
+        quantity: "Snapshot",
+        left: from.level,
+        right: row.ref,
+        detail: `stale capture of ${from.part} class ${from.level} (${snap.path})`,
+      })
+    );
+  }
+}
+
+function stampEnv(env: PlanEnv): StampEnv {
+  return {
+    store: env.store,
+    absolutePath: (file) => env.absolutePath(file),
+    defaultCatalog: () => env.absolutePath(env.catalogDir()),
+    join: (...parts) => env.resolve(...parts),
+  };
 }
 
 function degradeCode(diag: Diagnostic): string {

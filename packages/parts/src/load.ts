@@ -339,10 +339,11 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     }
   }
 
-  const { nets, wires } = buildNets(
+  const { nets, wires, broken } = buildNets(
     resolved.instances,
     lib.world.run.levels.nets
   );
+  diagnostics.push(...broken);
   const snapshots: LoadedSnapshot[] = [];
   const snapshotRuns: LoadResult["snapshotRuns"] = [];
   const ran: {
@@ -469,7 +470,13 @@ function provenanceOf(
   return {
     source: source.source,
     ...(source.from
-      ? { from: { part: source.from.part, level: source.from.level } }
+      ? {
+          from: {
+            part: source.from.part,
+            level: source.from.level,
+            hash: source.from.hash,
+          },
+        }
       : {}),
     ...(source.fixture ? { fixture: source.fixture.ref } : {}),
     ...(source.tool

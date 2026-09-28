@@ -81,11 +81,22 @@ export function editLabel(op: EditOp): string {
       return "set play";
     case "batch":
       return op.label;
+    case "pin-expose":
+      return op.remove ? "unpinned ports" : "pinned ports";
   }
 }
 
 /** A tool or socket payload, checked before it is applied. */
 export function readEditOp(value: unknown): EditOp | { error: string } {
+  const read = readEditOpRaw(value);
+  if ("error" in read || !value || typeof value !== "object") return read;
+  const confirm = (value as { confirm?: unknown }).confirm;
+  if (confirm === undefined) return read;
+  if (confirm !== "break") return { error: "confirm must be break" };
+  return { ...read, confirm: "break" };
+}
+
+function readEditOpRaw(value: unknown): EditOp | { error: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { error: "edit is not an operation" };
   }
@@ -235,7 +246,30 @@ function applyTo(
       return applyRename(part, op);
     case "set-play":
       return applyPlay(part, op);
+    case "pin-expose":
+      return applyPin(part, op);
   }
+}
+
+function applyPin(
+  part: PartFile,
+  op: Extract<EditOp, { kind: "pin-expose" }>
+): { inverse: EditOp } | { error: Diagnostic } {
+  const netlist = needNetlist(part);
+  if ("error" in netlist) return netlist;
+  if (op.remove) {
+    for (const entry of op.entries) delete netlist.expose[entry.key];
+  } else {
+    for (const entry of op.entries) netlist.expose[entry.key] = entry.ref;
+  }
+  return {
+    inverse: {
+      kind: "pin-expose",
+      document: op.document,
+      entries: op.entries.map((entry) => ({ ...entry })),
+      remove: !op.remove,
+    },
+  };
 }
 
 function applyBatch(

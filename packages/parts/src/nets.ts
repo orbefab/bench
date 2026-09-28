@@ -2,13 +2,17 @@
 
 import {
   type BehaviourImpl,
+  type Diagnostic,
   DOMAIN_QUANTITIES,
   type Netlist,
+  type PartFile,
+  type PortDecl,
   type Ratings,
 } from "@sfab-bench/contract";
 
 import { behaviourNetlist, type LiveInstance } from "./levels";
-import { splitPortRef } from "./si";
+import { collectPartPorts, type PortWorld } from "./ports";
+import { makeDiag, splitPortRef } from "./si";
 
 export type LivePort = {
   full: string;
@@ -113,11 +117,14 @@ export function netlistOf(inst: LiveInstance): Netlist | null {
 export function buildNets(
   instances: LiveInstance[],
   netRules: Record<string, "digital" | "analog"> | undefined
-): { nets: LiveNet[]; wires: Wire[] } {
+): { nets: LiveNet[]; wires: Wire[]; broken: Diagnostic[] } {
   const ports = collectPorts(instances);
   const uf = new UnionFind();
   for (const full of ports.keys()) uf.add(full);
   const wires: Wire[] = [];
+  const broken: Diagnostic[] = [];
+  const world = portWorld(instances);
+  const seen = new Set<string>();
 
   const locate = (parent: string, ref: string): WireEnd | null => {
     const split = splitPortRef(ref);
@@ -129,6 +136,47 @@ export function buildNets(
       port: split.port,
       full: `${instPath}.${split.port}`,
     };
+  };
+
+  const concrete = (end: WireEnd, stack: Set<string>): string[] | null => {
+    if (ports.has(end.full)) return [end.full];
+    if (stack.has(end.full)) return null;
+    const inst = instances.find((item) => item.path === end.path);
+    if (!inst) return null;
+    stack.add(end.full);
+    const found = collectPartPorts(world, inst.part.id).find(
+      (port) => port.name === end.port
+    );
+    if (!found) return null;
+    const fulls: string[] = [];
+    for (const ref of found.refs) {
+      const inner = locate(inst.path, ref);
+      if (!inner) continue;
+      const nested = concrete(inner, stack);
+      if (!nested) continue;
+      for (const full of nested) {
+        if (!fulls.includes(full)) fulls.push(full);
+      }
+    }
+    return fulls.length > 0 ? fulls : null;
+  };
+
+  const noteBroken = (parent: LiveInstance, wire: string, missing: string) => {
+    const key = `${parent.part.id}|${wire}|${missing}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    broken.push(
+      makeDiag({
+        severity: "warning",
+        code: "broken-port",
+        path: parent.part.id,
+        port: missing,
+        quantity: "Port",
+        left: wire,
+        right: "missing",
+        detail: `wire ${wire} names missing port ${missing}`,
+      })
+    );
   };
 
   for (const inst of instances) {
@@ -145,8 +193,21 @@ export function buildNets(
       const fa = locate(inst.path, a);
       const fb = locate(inst.path, b);
       if (!fa || !fb) continue;
-      wires.push({ a: fa, b: fb });
-      if (ports.has(fa.full) && ports.has(fb.full)) uf.union(fa.full, fb.full);
+      const left = concrete(fa, new Set());
+      const right = concrete(fb, new Set());
+      if (!left || !right) {
+        if (!left) noteBroken(inst, `${a}—${b}`, fa.full);
+        if (!right) noteBroken(inst, `${a}—${b}`, fb.full);
+        continue;
+      }
+      const direct = ports.has(fa.full) && ports.has(fb.full);
+      if (direct) wires.push({ a: fa, b: fb });
+      const fulls = [...left, ...right];
+      for (let i = 1; i < fulls.length; i++) {
+        const head = fulls[0];
+        const tail = fulls[i];
+        if (head && tail) uf.union(head, tail);
+      }
     }
   }
 
@@ -175,7 +236,24 @@ export function buildNets(
     });
   }
   nets.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return { nets, wires };
+  return { nets, wires, broken };
+}
+
+function portWorld(instances: LiveInstance[]): PortWorld {
+  const parts = new Map<string, PartFile>();
+  const types = new Map<string, Record<string, PortDecl>>();
+  for (const inst of instances) {
+    if (!parts.has(inst.part.id)) parts.set(inst.part.id, inst.part);
+    if (!types.has(inst.part.id)) types.set(inst.part.id, inst.type.ports);
+  }
+  return {
+    part(id) {
+      return parts.get(id) ?? null;
+    },
+    typePorts(part) {
+      return types.get(part.id) ?? null;
+    },
+  };
 }
 
 function classify(

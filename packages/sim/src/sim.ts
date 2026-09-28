@@ -3118,6 +3118,7 @@ function createSession(host: SimHost) {
     serialIn,
     drainSerial,
     seams: seamRows,
+    report: () => runReport,
     record,
     setTarget,
     play,
@@ -3159,6 +3160,10 @@ export class Sim {
   /** Ledger rows through the last step, including an open window. */
   seams(): SeamEnergy[] {
     return this.session.seams();
+  }
+  /** The report from the last load, including stale-capture warnings. */
+  report(): RunReport | null {
+    return this.session.report();
   }
   record(query: RecordQuery): RecordBody {
     return this.session.record(query);

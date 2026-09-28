@@ -9,4 +9,6 @@ export type Store = {
   writeText(path: string, text: string): void;
   rename(from: string, to: string): void;
   remove(path: string): void;
+  /** Entry names in a directory. Throws when `path` is not a directory. */
+  list(path: string): string[];
 };

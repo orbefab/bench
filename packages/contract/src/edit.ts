@@ -17,7 +17,7 @@ import type {
   Pose,
 } from "./layered";
 
-export type EditOp =
+export type EditOp = (
   | AddInstanceOp
   | RemoveInstanceOp
   | SetPoseOp
@@ -27,7 +27,9 @@ export type EditOp =
   | UnwireOp
   | RenameInstanceOp
   | SetPlayOp
-  | BatchOp;
+  | BatchOp
+  | PinExposeOp
+) & { confirm?: "break" };
 
 export type AddInstanceOp = {
   kind: "add-instance";
@@ -136,4 +138,16 @@ export type BatchOp = {
   document: string;
   label: string;
   ops: EditOp[];
+};
+
+/**
+ * The session writes this when an edit would rename or merge a fixed
+ * auto port. It is one undo step with the edit that caused it. `remove`
+ * is the inverse.
+ */
+export type PinExposeOp = {
+  kind: "pin-expose";
+  document: string;
+  entries: { key: string; ref: PortRef }[];
+  remove?: boolean;
 };

@@ -2,6 +2,7 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -44,5 +45,8 @@ export const nodeStore: Store = {
   },
   remove(file) {
     rmSync(absolutePath(file), { force: true });
+  },
+  list(file) {
+    return readdirSync(absolutePath(file));
   },
 };

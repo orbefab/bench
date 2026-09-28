@@ -161,16 +161,29 @@ export function parseWorldClient(raw: string): ParsedClient {
     }
     return { type: "seek", t, nonce };
   }
-  if (type === "undo") return { type: "undo" };
-  if (type === "redo") return { type: "redo" };
+  if (type === "undo" || type === "redo") {
+    const part = (value as { part?: unknown }).part;
+    if (part !== undefined && typeof part !== "string") {
+      return { error: "part must be a part id" };
+    }
+    return { type, ...(typeof part === "string" ? { part } : {}) };
+  }
   if (type === "edit") {
     const ops = (value as { ops?: unknown }).ops;
     const label = (value as { label?: unknown }).label;
+    const part = (value as { part?: unknown }).part;
+    const confirm = (value as { confirm?: unknown }).confirm;
     if (!Array.isArray(ops) || ops.length === 0) {
       return { error: "edit needs operations" };
     }
     if (label !== undefined && typeof label !== "string") {
       return { error: "edit needs operations" };
+    }
+    if (part !== undefined && typeof part !== "string") {
+      return { error: "part must be a part id" };
+    }
+    if (confirm !== undefined && confirm !== "break") {
+      return { error: "confirm must be break" };
     }
     const parsed: EditOp[] = [];
     for (const item of ops) {
@@ -182,6 +195,8 @@ export function parseWorldClient(raw: string): ParsedClient {
       type: "edit",
       ops: parsed,
       ...(typeof label === "string" ? { label } : {}),
+      ...(typeof part === "string" ? { part } : {}),
+      ...(confirm === "break" ? { confirm } : {}),
     };
   }
   return { error: "unknown world message" };

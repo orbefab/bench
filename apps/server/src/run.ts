@@ -30,12 +30,15 @@ export type RunResult = {
   resets: number;
   degraded: { path: string; message: string }[];
   seams: SeamEnergy[];
+  /** broken-port and stale-capture lines. Empty on a clean run. */
+  warnings: string[];
 };
 
 export function formatRun(result: RunResult): string {
   const lines = result.degraded.map(
     (row) => `degraded ${row.path}: ${row.message}`
   );
+  lines.push(...result.warnings);
   lines.push(...result.lines.map((row) => `${row.board}: ${row.line}`));
   lines.push(...result.seams.map((row) => seamLine(row)));
   lines.push(
@@ -145,6 +148,11 @@ export async function runHeadless(opts: {
         message: row.message,
       })),
       seams: sim.seams(),
+      warnings: (sim.report()?.warnings ?? [])
+        .filter(
+          (row) => row.code === "broken-port" || row.code === "stale-capture"
+        )
+        .map((row) => row.message),
     };
   } finally {
     sim.dispose();

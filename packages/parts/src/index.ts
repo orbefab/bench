@@ -22,10 +22,12 @@ export {
 } from "./edit";
 export {
   type AppliedEdit,
+  type EditResult,
   EditSession,
   type EditSessionOptions,
   EXTERNAL_EDIT,
   healTornWrite,
+  type NeedsConfirm,
 } from "./edit-session";
 export { expandPartType } from "./expand";
 export { formatPart, type PartStyle, partStyle } from "./format-part";
@@ -65,6 +67,7 @@ export {
   loadLibrary,
   loadPartById,
   loadTypeById,
+  partPorts,
   shadowWarnings,
   typeFileExists,
   typeOf,
@@ -87,6 +90,20 @@ export {
   type WireEnd,
 } from "./nets";
 export { pathRefOf } from "./path-ref";
+export {
+  bindDependents,
+  collectPartPorts,
+  confirmSentence,
+  findPartFile,
+  lockedRootsUsing,
+  type PartPort,
+  type PortDependent,
+  type PortLevel,
+  type PortSource,
+  type PortWorld,
+  portDependents,
+  portNames,
+} from "./ports";
 export { buildReport } from "./report";
 export { sha256Bytes, sha256Hex } from "./sha256";
 export {

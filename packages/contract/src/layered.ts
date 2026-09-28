@@ -758,12 +758,17 @@ export type RunReport = {
      */
     provenance?: {
       source: SnapshotFile["provenance"]["source"];
-      from?: { part: string; level: string };
+      from?: { part: string; level: string; hash?: string };
       fixture?: string;
       tool?: { name: string; version: string };
     };
     /** Envelope warnings for this instance. Absent when the row has none. */
     envelope?: string[];
+    /**
+     * The capture's `from.hash` no longer matches the part at `from.level`.
+     * Absent when the capture is fresh or the hash was not checked.
+     */
+    stale?: true;
   }[];
   snapshotQuality: string;
   notSimulated: {

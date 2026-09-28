@@ -5,7 +5,7 @@
  */
 
 import { realpathSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 
 import type {
   EditOp,
@@ -14,9 +14,12 @@ import type {
   WorldServerMessage,
 } from "@sfab-bench/contract";
 import {
+  confirmSentence,
   EditSession,
   EXTERNAL_EDIT,
   editLabel,
+  type NeedsConfirm,
+  partFilePath,
   readEditOp,
 } from "@sfab-bench/parts";
 
@@ -32,15 +35,18 @@ export type DocumentEdit = {
   canRedo: boolean;
   report: RunReport;
   sentence: string;
+  warnings?: string[];
 };
 
 export async function applyDocumentEdit(
   project: string,
   world: string,
   ops: EditOp[],
-  label?: string
-): Promise<DocumentEdit | { error: string }> {
-  const session = openSession(project, world);
+  label?: string,
+  part?: string,
+  confirm?: "break"
+): Promise<DocumentEdit | NeedsConfirm | { error: string }> {
+  const session = openSession(project, world, part);
   if ("error" in session) return session;
   if (ops.length === 0) return { error: "edit needs operations" };
   const op: EditOp =
@@ -52,7 +58,15 @@ export async function applyDocumentEdit(
           label: label ?? "edit",
           ops,
         };
+  if (
+    confirm === "break" ||
+    op.confirm === "break" ||
+    ops.some((item) => item.confirm === "break")
+  ) {
+    op.confirm = "break";
+  }
   const applied = session.apply(op, label);
+  if ("needsConfirm" in applied) return applied;
   if ("error" in applied) return applied;
   const restarted = await restartWorld(project, world);
   if ("error" in restarted) return restarted;
@@ -64,11 +78,13 @@ export async function applyDocumentEdit(
 
 export async function undoDocument(
   project: string,
-  world: string
+  world: string,
+  part?: string
 ): Promise<DocumentEdit | { error: string }> {
-  const session = openSession(project, world);
+  const session = openSession(project, world, part);
   if ("error" in session) return session;
   const applied = session.undo();
+  if ("needsConfirm" in applied) return { error: "nothing to undo" };
   if ("error" in applied) return applied;
   const restarted = await restartWorld(project, world);
   if ("error" in restarted) return restarted;
@@ -80,11 +96,13 @@ export async function undoDocument(
 
 export async function redoDocument(
   project: string,
-  world: string
+  world: string,
+  part?: string
 ): Promise<DocumentEdit | { error: string }> {
-  const session = openSession(project, world);
+  const session = openSession(project, world, part);
   if ("error" in session) return session;
   const applied = session.redo();
+  if ("needsConfirm" in applied) return { error: "nothing to redo" };
   if ("error" in applied) return applied;
   const restarted = await restartWorld(project, world);
   if ("error" in restarted) return restarted;
@@ -113,15 +131,16 @@ export async function handleLiveEdit(
   message: Extract<WorldClientMessage, { type: "edit" | "undo" | "redo" }>
 ): Promise<WorldServerMessage> {
   if (message.type === "undo")
-    return editedMessage(await undoDocument(project, world));
+    return editedMessage(await undoDocument(project, world, message.part));
   if (message.type === "redo")
-    return editedMessage(await redoDocument(project, world));
+    return editedMessage(await redoDocument(project, world, message.part));
+  const allowed = documentNames(project, world, message.part);
   const ops: EditOp[] = [];
   for (const item of message.ops) {
     const read = readEditOp(item);
     if ("error" in read)
       return { type: "error", errors: [], message: read.error };
-    if (read.document !== world) {
+    if (!allowed.has(read.document)) {
       return {
         type: "error",
         errors: [],
@@ -138,14 +157,31 @@ export async function handleLiveEdit(
       project,
       world,
       ops,
-      message.label ?? editLabel(ops[0] as EditOp)
+      message.label ?? editLabel(ops[0] as EditOp),
+      message.part,
+      message.confirm
     )
   );
 }
 
 function editedMessage(
-  result: DocumentEdit | { error: string }
+  result: DocumentEdit | NeedsConfirm | { error: string }
 ): WorldServerMessage {
+  if ("needsConfirm" in result) {
+    return {
+      type: "needs-confirm",
+      count: result.count,
+      ports: result.ports.map((port) => ({
+        name: port.name,
+        dependents: port.dependents.map((dep) =>
+          dep.kind === "snapshot"
+            ? `capture ${dep.ref}`
+            : `${dep.kind} ${dep.owner} ${dep.ref}`
+        ),
+      })),
+      message: confirmSentence(result.ports),
+    };
+  }
   if ("error" in result)
     return { type: "error", errors: [], message: result.error };
   return {
@@ -153,27 +189,58 @@ function editedMessage(
     label: result.label,
     canUndo: result.canUndo,
     canRedo: result.canRedo,
+    ...(result.warnings && result.warnings.length > 0
+      ? { warnings: result.warnings }
+      : {}),
   };
 }
 
 function openSession(
   project: string,
-  world: string
+  world: string,
+  part?: string
 ): EditSession | { error: string } {
-  const file = absolutePath(join(project, world));
-  const key = canonical(file);
+  const root = absolutePath(project);
+  const located = locatePart(root, world, part);
+  if ("error" in located) return located;
+  const key = canonical(located.file);
   const found = sessions.get(key);
   if (found) return found;
   const opened = EditSession.open({
     file: key,
-    names: [world, file, key],
+    names: [...located.names, key],
     store: nodeStore,
     catalogDir: absolutePath(catalogRoot()),
-    assetRoot: absolutePath(project),
+    assetRoot: root,
   });
   if ("error" in opened) return opened;
   sessions.set(key, opened);
   return opened;
+}
+
+function locatePart(
+  root: string,
+  world: string,
+  part?: string
+): { file: string; names: string[] } | { error: string } {
+  if (!part) {
+    const file = absolutePath(join(root, world));
+    return { file, names: [world, file] };
+  }
+  const file = partFilePath(root, part);
+  if (!file) return { error: `no part ${part}` };
+  const rel = relative(root, file).split(sep).join("/");
+  return { file, names: [part, rel, file] };
+}
+
+function documentNames(
+  project: string,
+  world: string,
+  part?: string
+): Set<string> {
+  const located = locatePart(absolutePath(project), world, part);
+  if ("error" in located) return new Set([world]);
+  return new Set(located.names);
 }
 
 function canonical(file: string): string {

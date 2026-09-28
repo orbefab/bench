@@ -23,6 +23,7 @@
     "./capture": "./src/capture.ts",
     "./hinge-capture": "./src/body/hinge-capture.ts",
     "./env": "./src/env.ts",
+    "./freshness": "./src/freshness.ts",
     "./sim": "./src/sim.ts"
   },
   "scripts": {

@@ -30,6 +30,7 @@ import { expandPartType } from "./expand";
 import { gearTrainErrors } from "./gear-train";
 import { ldoFrom } from "./ldo";
 import { basename, join, relative, sep } from "./path";
+import { collectPartPorts, type PortLevel, type PortWorld } from "./ports";
 import {
   classesOf,
   contentHash,
@@ -495,6 +496,30 @@ export function typeOf(lib: Library, part: PartFile): PartTypeFile {
   return loaded.type;
 }
 
+/** Ports of a part: type, expose, then bubbled free nets. */
+export function partPorts(
+  lib: Library,
+  partId: string,
+  spec?: PortLevel
+): ReturnType<typeof collectPartPorts> {
+  return collectPartPorts(worldOf(lib), partId, spec);
+}
+
+function worldOf(lib: Library): PortWorld {
+  return {
+    part(id) {
+      return lib.parts.get(id)?.part ?? null;
+    },
+    typePorts(part) {
+      try {
+        return typeOf(lib, part).ports;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
 export function typeFileExists(
   worldDir: string,
   opts: LibraryOptions,
@@ -895,8 +920,9 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
             : null;
       if (!netlist) continue;
       const { instances, wires, expose } = netlist;
+      const typed = Object.keys(parentType.ports).length > 0;
       for (const [outer, inner] of Object.entries(expose)) {
-        if (!parentType.ports[outer]) {
+        if (typed && !parentType.ports[outer]) {
           diags.push(
             makeDiag({
               severity: "error",
@@ -906,6 +932,19 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
               left: outer,
               right: inner,
               detail: "expose names an outer port the type does not have",
+            })
+          );
+        }
+        if (!typed && outer.includes(".")) {
+          diags.push(
+            makeDiag({
+              severity: "error",
+              path: part.id,
+              port: outer,
+              quantity: "Port",
+              left: outer,
+              right: inner,
+              detail: "a port name cannot contain a dot",
             })
           );
         }
@@ -925,17 +964,20 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
           );
           continue;
         }
-        const childType = typeOf(lib, childFile);
-        if (!childType.ports[ref.port]) {
+        const childNames = collectPartPorts(worldOf(lib), childFile.id).map(
+          (port) => port.name
+        );
+        if (!childNames.includes(ref.port)) {
           diags.push(
             makeDiag({
-              severity: "error",
+              severity: "warning",
+              code: "broken-port",
               path: part.id,
               port: ref.port,
               quantity: "Port",
               left: inner,
               right: "missing",
-              detail: "expose target port does not exist",
+              detail: `expose ${outer} names missing port ${inner}`,
             })
           );
         }

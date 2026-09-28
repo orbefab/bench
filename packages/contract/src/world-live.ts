@@ -320,10 +320,19 @@ export type WorldClientMessage =
   | { type: "timeline"; from: number; to: number; maxPoints: number }
   /** This client wants the recorded frame at `t`. Does not move the run. */
   | { type: "seek"; t: number; nonce: string }
-  /** Change the open document. One undo step. */
-  | { type: "edit"; ops: EditOp[]; label?: string }
-  | { type: "undo" }
-  | { type: "redo" };
+  /**
+   * Change one part. `part` is a part id in the world; the root is the
+   * default. `confirm: "break"` applies an edit that drops fixed ports.
+   */
+  | {
+      type: "edit";
+      ops: EditOp[];
+      label?: string;
+      part?: string;
+      confirm?: "break";
+    }
+  | { type: "undo"; part?: string }
+  | { type: "redo"; part?: string };
 
 export type WorldServerMessage =
   | { type: "state"; state: WorldState; report?: RunReport }
@@ -378,7 +387,24 @@ export type WorldServerMessage =
    */
   | { type: "timeline-error"; message: string; nonce?: string }
   /** An edit, undo, or redo landed. The run reloads separately. */
-  | { type: "edited"; label: string; canUndo: boolean; canRedo: boolean };
+  | {
+      type: "edited";
+      label: string;
+      canUndo: boolean;
+      canRedo: boolean;
+      /** Ports a break disconnected. Absent when the edit broke none. */
+      warnings?: string[];
+    }
+  /**
+   * The edit would remove or rename a fixed port. Nothing was written.
+   * Stay is not sending it again. Break sends `confirm: "break"`.
+   */
+  | {
+      type: "needs-confirm";
+      count: number;
+      ports: { name: string; dependents: string[] }[];
+      message: string;
+    };
 
 /** One frame every 10 ms of sim time. The name is the unit. */
 export const RECORD_FRAME_MS = 10;

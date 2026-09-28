@@ -1,11 +1,9 @@
 /**
- * One open document. Apply, undo, and redo go through the pure edit,
- * then a load that reads the new text from an overlay instead of a
- * temp file in the project. Both the part and the lock are written to
- * `*.edit-tmp` markers, the part is renamed, then the lock. The markers
- * stay until both renames land. A crash between them leaves the lock
- * marker. The next open of an edit or a run finishes it. A part marker
- * with no lock marker is an edit that never committed; it is removed.
+ * One open part. Apply, undo, and redo go through the pure edit, then a
+ * load that reads the new text from an overlay. The part and every root
+ * lock the edit re-pins are written to `*.edit-tmp` markers. A manifest
+ * (`*.edit-set`) is the commit point when more than the part and its own
+ * lock change. The next open of an edit or a run finishes a torn write.
  */
 
 import type {
@@ -16,7 +14,13 @@ import type {
 } from "@sfab-bench/contract";
 
 import { assetDir, isPartFile } from "./document";
-import { applyEdit, type EditContext, editLabel, quantityOn } from "./edit";
+import {
+  applyEdit,
+  documentNetlist,
+  type EditContext,
+  editLabel,
+  quantityOn,
+} from "./edit";
 import { expandPartType } from "./expand";
 import { formatPart, partStyle } from "./format-part";
 import { HISTORY_DEPTH, type HistoryStep } from "./history";
@@ -25,15 +29,31 @@ import { type LibraryOptions, loadPartById, loadTypeById } from "./library";
 import { loadWorldV2 } from "./load";
 import { lockPathFor } from "./lock";
 import { normalize } from "./path";
+import {
+  bindDependents,
+  collectPartPorts,
+  lockedRootsUsing,
+  type PortDependent,
+  type PortWorld,
+  portDependents,
+  portNames,
+} from "./ports";
 import { sha256Hex } from "./sha256";
 import { canonicalJson } from "./si";
 import type { Store } from "./store";
 
 export const EXTERNAL_EDIT = "the document changed outside this session";
 
+type SavedFile = {
+  path: string;
+  before: string | null;
+  after: string | null;
+};
+
 type SessionStep = HistoryStep & {
   lockBefore: string | null;
   lockAfter: string | null;
+  files: SavedFile[];
 };
 
 export type EditSessionOptions = {
@@ -52,7 +72,17 @@ export type AppliedEdit = {
   canUndo: boolean;
   canRedo: boolean;
   report: RunReport;
+  /** Ports a break disconnected. Absent when the edit broke none. */
+  warnings?: string[];
 };
+
+export type NeedsConfirm = {
+  needsConfirm: true;
+  count: number;
+  ports: { name: string; dependents: PortDependent[] }[];
+};
+
+export type EditResult = AppliedEdit | { error: string } | NeedsConfirm;
 
 export class EditSession {
   readonly file: string;
@@ -66,6 +96,8 @@ export class EditSession {
   private lockText: string | null;
   private undoStack: SessionStep[] = [];
   private redoStack: SessionStep[] = [];
+  /** Hashes of files the last edit wrote, so an outside change clears history. */
+  private watched: { path: string; hash: string | null }[] = [];
 
   private constructor(opts: EditSessionOptions, text: string, part: PartFile) {
     this.file = opts.file;
@@ -109,27 +141,23 @@ export class EditSession {
     return this.redoStack.length > 0;
   }
 
-  apply(op: EditOp, label?: string): AppliedEdit | { error: string } {
+  apply(op: EditOp, label?: string): EditResult {
     const noted = this.noteDisk();
     if (noted === "bad") return { error: "world file is not a document" };
     if (noted === "drifted") {
       this.undoStack = [];
       this.redoStack = [];
+      this.watched = [];
     }
     if (this.readOnly()) return { error: "catalog part is read-only" };
-    return this.commit(op, label ?? editLabel(op), true);
+    return this.commit(op, label ?? editLabel(op));
   }
 
-  undo(): AppliedEdit | { error: string } {
+  undo(): EditResult {
     const step = this.undoStack[this.undoStack.length - 1];
     if (!step) return { error: "nothing to undo" };
-    if (this.diskHash() !== step.after) return { error: EXTERNAL_EDIT };
-    const applied = this.commit(
-      step.inverse,
-      step.label,
-      false,
-      step.lockBefore
-    );
+    if (!this.filesMatch(step, "after")) return { error: EXTERNAL_EDIT };
+    const applied = this.restore(step, "before");
     if ("error" in applied) return applied;
     this.undoStack.pop();
     this.redoStack.push(step);
@@ -141,11 +169,11 @@ export class EditSession {
     };
   }
 
-  redo(): AppliedEdit | { error: string } {
+  redo(): EditResult {
     const step = this.redoStack[this.redoStack.length - 1];
     if (!step) return { error: "nothing to redo" };
-    if (this.diskHash() !== step.before) return { error: EXTERNAL_EDIT };
-    const applied = this.commit(step.op, step.label, false, step.lockAfter);
+    if (!this.filesMatch(step, "before")) return { error: EXTERNAL_EDIT };
+    const applied = this.restore(step, "after");
     if ("error" in applied) return applied;
     this.redoStack.pop();
     this.undoStack.push(step);
@@ -157,17 +185,23 @@ export class EditSession {
     };
   }
 
-  private commit(
-    op: EditOp,
-    label: string,
-    record: boolean,
-    lockOverride?: string | null
-  ): AppliedEdit | { error: string } {
+  private commit(op: EditOp, label: string): EditResult {
     const edited = applyEdit(this.part, op, this.context());
     if ("error" in edited) return { error: edited.error.message };
+    const sealed = this.sealPorts(this.part, edited.part, edited.inverse);
+    if ("error" in sealed) return sealed;
+    if (sealed.broken.length > 0 && op.confirm !== "break") {
+      const count = sealed.broken.reduce(
+        (n, port) => n + port.dependents.length,
+        0
+      );
+      return { needsConfirm: true, count, ports: sealed.broken };
+    }
+    const part = sealed.part;
+    const inverse = sealed.inverse;
     let nextText: string;
     try {
-      nextText = this.serialize(edited.part, op);
+      nextText = this.serialize(part, op);
     } catch (err: unknown) {
       return {
         error: err instanceof Error ? err.message : "could not edit the part",
@@ -175,45 +209,60 @@ export class EditSession {
     }
     const loaded = this.validate(nextText);
     if ("error" in loaded) return loaded;
-    const built =
-      lockOverride !== undefined
-        ? lockOverride
-        : this.nextLock(loaded.lock, edited.part.id);
-    if (typeof built !== "string" && built !== null) return built;
-    const lockText = built;
-    const written = this.writePair(nextText, lockText);
+    const parents = this.retargetRoots(part.id, nextText);
+    if ("error" in parents) return parents;
+    const own =
+      this.lockText || parents.rows.length === 0
+        ? this.nextLock(loaded.lock, part.id)
+        : null;
+    if (own !== null && typeof own !== "string") return own;
+    const lockText = own;
+    const files = this.changedFiles(nextText, lockText, parents.rows);
+    const written = this.writeFiles(files);
     if (written) return written;
-    let part: PartFile;
-    try {
-      part = JSON.parse(nextText) as PartFile;
-    } catch {
-      return { error: "world file is not JSON" };
-    }
     const before = sha256Hex(this.text);
     const after = sha256Hex(nextText);
     const lockBefore = this.lockText;
+    const saved = files.map((file) => ({
+      path: file.path,
+      before: file.before,
+      after: file.text,
+    }));
     this.text = nextText;
     this.part = part;
     this.lockText = lockText;
-    if (record && (before !== after || lockBefore !== lockText)) {
+    this.watched = saved.map((file) => ({
+      path: file.path,
+      hash: file.after === null ? null : sha256Hex(file.after),
+    }));
+    if (saved.length > 0) {
       this.redoStack = [];
       this.undoStack.push({
         label,
         op,
-        inverse: edited.inverse,
+        inverse,
         before,
         after,
         lockBefore,
         lockAfter: lockText,
+        files: saved,
       });
       if (this.undoStack.length > HISTORY_DEPTH) this.undoStack.shift();
     }
     if (!loaded.report) return { error: "world file did not load" };
+    const warnings =
+      op.confirm === "break"
+        ? sealed.broken.map(
+            (port) =>
+              `port ${port.name} (${port.dependents.map((dep) => dep.ref).join(", ")})`
+          )
+        : [];
     return {
       label,
       canUndo: this.canUndo,
       canRedo: this.canRedo,
       report: loaded.report,
+      ...(warnings && warnings.length > 0 ? { warnings } : {}),
     };
   }
 
@@ -222,6 +271,247 @@ export class EditSession {
       return replaceLevels(this.text, part.play.levels);
     }
     return formatPart(part, partStyle(this.text));
+  }
+
+  /**
+   * An auto port that already has a dependent keeps its name. When the
+   * edit would rename it, or merge or split its net, the old name is
+   * written into `expose` on the same undo step.
+   */
+  private sealPorts(
+    before: PartFile,
+    after: PartFile,
+    inverse: EditOp
+  ):
+    | {
+        part: PartFile;
+        inverse: EditOp;
+        broken: { name: string; dependents: PortDependent[] }[];
+      }
+    | { error: string } {
+    const project = assetDir(this.file);
+    const deps = portDependents(
+      this.store,
+      project,
+      {
+        catalogDir: this.catalogDir,
+        ...(this.libraryDir ? { libraryDir: this.libraryDir } : {}),
+      },
+      before.id
+    );
+    const prior = bindDependents(
+      collectPartPorts(this.portWorld(before), before.id),
+      deps
+    );
+    const netlist = documentNetlist(after);
+    const pins: { key: string; ref: string }[] = [];
+    if (netlist) {
+      let derived = collectPartPorts(this.portWorld(after), after.id);
+      for (const port of prior) {
+        if (port.source !== "auto" || port.dependents.length === 0) continue;
+        const same = derived.find(
+          (item) => item.name === port.name && sameRefs(item.refs, port.refs)
+        );
+        if (same) continue;
+        const remaining = port.refs.filter((ref) =>
+          derived.some((item) => item.refs.includes(ref))
+        );
+        if (remaining.length === 0) continue;
+        const target = [...remaining].sort()[0];
+        if (!target || netlist.expose[port.name]) continue;
+        netlist.expose[port.name] = target;
+        pins.push({ key: port.name, ref: target });
+        derived = collectPartPorts(this.portWorld(after), after.id);
+      }
+    }
+    const names = new Set(
+      bindDependents(
+        collectPartPorts(this.portWorld(after), after.id),
+        deps
+      ).map((port) => port.name)
+    );
+    const broken = prior
+      .filter((port) => port.fixed && !names.has(port.name))
+      .map((port) => ({ name: port.name, dependents: port.dependents }));
+    let nextInverse = inverse;
+    if (pins.length > 0) {
+      nextInverse = {
+        kind: "batch",
+        document: inverse.document,
+        label: "pin",
+        ops: [
+          inverse,
+          {
+            kind: "pin-expose",
+            document: inverse.document,
+            entries: pins,
+            remove: true,
+          },
+        ],
+      };
+    }
+    return { part: after, inverse: nextInverse, broken };
+  }
+
+  private retargetRoots(
+    partId: string,
+    nextText: string
+  ):
+    | { rows: { path: string; before: string; after: string }[] }
+    | { error: string } {
+    const project = assetDir(this.file);
+    const roots = lockedRootsUsing(
+      this.store,
+      project,
+      {
+        catalogDir: this.catalogDir,
+        ...(this.libraryDir ? { libraryDir: this.libraryDir } : {}),
+      },
+      partId,
+      this.file
+    );
+    const rows: { path: string; before: string; after: string }[] = [];
+    for (const root of roots) {
+      const lockPath = lockPathFor(root.file);
+      let before: string;
+      try {
+        before = this.store.readText(lockPath);
+      } catch (err: unknown) {
+        return {
+          error: err instanceof Error ? err.message : "lock file did not load",
+        };
+      }
+      const loaded = loadWorldV2(root.file, {
+        ...this.options(),
+        store: overlayStore(this.store, this.file, nextText, lockPath),
+      });
+      const blocked = loaded.diagnostics.filter(
+        (diag) => diag.severity === "error"
+      );
+      if (blocked.length > 0 || !loaded.lock) {
+        const message = blocked.map((diag) => diag.message).join("; ");
+        return { error: message || `${root.id} did not load` };
+      }
+      let pinned: LockFile;
+      try {
+        pinned = JSON.parse(before) as LockFile;
+      } catch {
+        return { error: "lock file is not JSON" };
+      }
+      const decided = lockAfterEdit(pinned, loaded.lock, [partId]);
+      if ("error" in decided) return decided;
+      rows.push({
+        path: lockPath,
+        before,
+        after: formatLock(decided.lock, before),
+      });
+    }
+    return { rows };
+  }
+
+  private changedFiles(
+    nextText: string,
+    lockText: string | null,
+    parents: { path: string; before: string; after: string }[]
+  ): { path: string; text: string | null; before: string | null }[] {
+    const files: {
+      path: string;
+      text: string | null;
+      before: string | null;
+    }[] = [];
+    if (nextText !== this.text) {
+      files.push({ path: this.file, text: nextText, before: this.text });
+    }
+    const lockPath = lockPathFor(this.file);
+    if (lockText !== this.lockText) {
+      files.push({ path: lockPath, text: lockText, before: this.lockText });
+    }
+    for (const parent of parents) {
+      if (parent.after !== parent.before) {
+        files.push({
+          path: parent.path,
+          text: parent.after,
+          before: parent.before,
+        });
+      }
+    }
+    return files;
+  }
+
+  private restore(
+    step: SessionStep,
+    which: "before" | "after"
+  ): AppliedEdit | { error: string } {
+    const files = step.files.map((file) => ({
+      path: file.path,
+      text: file[which],
+      before: null,
+    }));
+    const written = this.writeFiles(files);
+    if (written) return written;
+    const partFile = step.files.find((file) => file.path === this.file);
+    const partText = partFile ? partFile[which] : this.text;
+    if (partText === null) return { error: "world file is not a document" };
+    let part: PartFile;
+    try {
+      part = JSON.parse(partText) as PartFile;
+    } catch {
+      return { error: "world file is not JSON" };
+    }
+    if (!isPartFile(part)) return { error: "world file is not a document" };
+    const lockFile = step.files.find(
+      (file) => file.path === lockPathFor(this.file)
+    );
+    this.text = partText;
+    this.part = part;
+    if (lockFile) this.lockText = lockFile[which];
+    this.watched = step.files.map((file) => ({
+      path: file.path,
+      hash: file[which] === null ? null : sha256Hex(file[which] as string),
+    }));
+    const loaded = this.validate(partText);
+    if ("error" in loaded) return loaded;
+    if (!loaded.report) return { error: "world file did not load" };
+    return {
+      label: step.label,
+      canUndo: this.canUndo,
+      canRedo: this.canRedo,
+      report: loaded.report,
+    };
+  }
+
+  private filesMatch(step: SessionStep, which: "before" | "after"): boolean {
+    if (step.files.length === 0) {
+      const want = which === "after" ? step.after : step.before;
+      return this.diskHash() === want;
+    }
+    for (const file of step.files) {
+      const disk = this.diskText(file.path);
+      const want = file[which];
+      if (disk === null && want === null) continue;
+      if (disk === null || want === null) return false;
+      if (sha256Hex(disk) !== sha256Hex(want)) return false;
+    }
+    return true;
+  }
+
+  private writeFiles(
+    files: { path: string; text: string | null }[]
+  ): { error: string } | null {
+    if (files.length === 0) return null;
+    const lockPath = lockPathFor(this.file);
+    const pair = files.every(
+      (file) => file.path === this.file || file.path === lockPath
+    );
+    if (pair) {
+      const part = files.find((file) => file.path === this.file);
+      const lock = files.find((file) => file.path === lockPath);
+      return this.writePair(
+        part?.text ?? this.text,
+        lock ? lock.text : this.lockText
+      );
+    }
+    return writeEditSet(this.store, files);
   }
 
   private validate(
@@ -299,6 +589,11 @@ export class EditSession {
   }
 
   private noteDisk(): "same" | "drifted" | "bad" {
+    if (this.watchedDrifted()) {
+      this.undoStack = [];
+      this.redoStack = [];
+      this.watched = [];
+    }
     let disk: string;
     try {
       disk = this.store.readText(this.file);
@@ -321,11 +616,45 @@ export class EditSession {
   }
 
   private diskHash(): string | null {
+    const text = this.diskText(this.file);
+    return text === null ? null : sha256Hex(text);
+  }
+
+  private diskText(path: string): string | null {
+    if (!this.store.exists(path)) return null;
     try {
-      return sha256Hex(this.store.readText(this.file));
+      return this.store.readText(path);
     } catch {
       return null;
     }
+  }
+
+  private watchedDrifted(): boolean {
+    for (const file of this.watched) {
+      const disk = this.diskText(file.path);
+      const hash = disk === null ? null : sha256Hex(disk);
+      if (hash !== file.hash) return true;
+    }
+    return false;
+  }
+
+  private portWorld(focus?: PartFile): PortWorld {
+    const worldDir = assetDir(this.file);
+    const opts = this.options();
+    return {
+      part(id) {
+        if (focus && id === focus.id) return focus;
+        const found = loadPartById(worldDir, opts, id);
+        return "part" in found ? found.part : null;
+      },
+      typePorts(part) {
+        if (typeof part.type !== "string") {
+          return expandPartType(part.type).ports;
+        }
+        const type = loadTypeById(worldDir, opts, part.type);
+        return "type" in type ? type.type.ports : null;
+      },
+    };
   }
 
   private readOnly(): boolean {
@@ -343,16 +672,7 @@ export class EditSession {
         const found = loadPartById(worldDir, opts, id);
         return "part" in found ? found.part : null;
       },
-      portsOf(id) {
-        const found = loadPartById(worldDir, opts, id);
-        if (!("part" in found)) return null;
-        const part = found.part;
-        if (typeof part.type !== "string") {
-          return Object.keys(expandPartType(part.type).ports);
-        }
-        const type = loadTypeById(worldDir, opts, part.type);
-        return "type" in type ? Object.keys(type.type.ports) : null;
-      },
+      portsOf: (id) => portNames(this.portWorld(), id),
       quantityOf(id, name) {
         const found = loadPartById(worldDir, opts, id);
         return "part" in found ? quantityOn(found.part, name) : null;
@@ -385,6 +705,8 @@ export function healTornWrite(
   store: Store,
   file: string
 ): { error: string } | null {
+  const set = finishEditSet(store, file);
+  if (set) return set.error ? { error: set.error } : null;
   const lockPath = lockPathFor(file);
   const partTmp = markerPath(file);
   const lockTmp = markerPath(lockPath);
@@ -424,9 +746,131 @@ function formatLock(lock: LockFile, previous: string | null): string {
   return `${JSON.stringify(lock, null, 2)}\n`;
 }
 
-function overlayStore(inner: Store, file: string, text: string): Store {
+function sameRefs(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((ref, index) => ref === right[index]);
+}
+
+const EDIT_SET = ".edit-set";
+
+type SetRow = { path: string; empty: boolean };
+
+function writeEditSet(
+  store: Store,
+  files: { path: string; text: string | null }[]
+): { error: string } | null {
+  const rows: SetRow[] = files.map((file) => ({
+    path: file.path,
+    empty: file.text === null,
+  }));
+  const manifest = (committed: boolean) =>
+    `${JSON.stringify({ committed, files: rows })}\n`;
+  let committed = false;
+  try {
+    for (const file of files) {
+      store.writeText(`${file.path}${EDIT_SET}`, manifest(false));
+    }
+    for (const file of files) {
+      store.writeText(`${file.path}${EDIT_MARKER}`, file.text ?? "");
+    }
+    for (const file of files) {
+      store.writeText(`${file.path}${EDIT_SET}`, manifest(true));
+    }
+    committed = true;
+    for (const file of files) {
+      const tmp = `${file.path}${EDIT_MARKER}`;
+      if (file.text === null) {
+        if (store.exists(file.path)) store.remove(file.path);
+        if (store.exists(tmp)) store.remove(tmp);
+      } else {
+        store.rename(tmp, file.path);
+      }
+    }
+    for (const file of files) store.remove(`${file.path}${EDIT_SET}`);
+  } catch (err: unknown) {
+    if (!committed) {
+      for (const file of files) {
+        try {
+          store.remove(`${file.path}${EDIT_MARKER}`);
+          store.remove(`${file.path}${EDIT_SET}`);
+        } catch {
+          /* the write error is the one we return */
+        }
+      }
+    }
+    return {
+      error: err instanceof Error ? err.message : "could not write the part",
+    };
+  }
+  return null;
+}
+
+/**
+ * A committed manifest finishes every file in the set. An uncommitted
+ * one is discarded. Returns null when this file has no manifest.
+ */
+function finishEditSet(store: Store, file: string): { error?: string } | null {
+  const markers = [`${file}${EDIT_SET}`, `${lockPathFor(file)}${EDIT_SET}`];
+  const marker = markers.find((path) => store.exists(path));
+  if (!marker) return null;
+  let parsed: { committed?: boolean; files?: SetRow[] };
+  try {
+    parsed = JSON.parse(store.readText(marker)) as {
+      committed?: boolean;
+      files?: SetRow[];
+    };
+  } catch (err: unknown) {
+    return {
+      error: err instanceof Error ? err.message : "could not finish the edit",
+    };
+  }
+  const files = parsed.files ?? [];
+  try {
+    if (!parsed.committed) {
+      for (const row of files) {
+        if (store.exists(`${row.path}${EDIT_MARKER}`)) {
+          store.remove(`${row.path}${EDIT_MARKER}`);
+        }
+        if (store.exists(`${row.path}${EDIT_SET}`)) {
+          store.remove(`${row.path}${EDIT_SET}`);
+        }
+      }
+      return {};
+    }
+    for (const row of files) {
+      const tmp = `${row.path}${EDIT_MARKER}`;
+      if (!store.exists(tmp)) continue;
+      if (row.empty) {
+        if (store.exists(row.path)) store.remove(row.path);
+        store.remove(tmp);
+      } else {
+        store.rename(tmp, row.path);
+      }
+    }
+    for (const row of files) {
+      if (store.exists(`${row.path}${EDIT_SET}`)) {
+        store.remove(`${row.path}${EDIT_SET}`);
+      }
+    }
+  } catch (err: unknown) {
+    return {
+      error: err instanceof Error ? err.message : "could not finish the edit",
+    };
+  }
+  return {};
+}
+
+function overlayStore(
+  inner: Store,
+  file: string,
+  text: string,
+  alsoHide?: string
+): Store {
   const doc = normalize(file);
-  const lock = normalize(lockPathFor(file));
+  const hidden = new Set<string>([normalize(lockPathFor(file))]);
+  if (alsoHide) hidden.add(normalize(alsoHide));
   const refuse = (): never => {
     throw new Error("an overlay store does not write");
   };
@@ -440,11 +884,14 @@ function overlayStore(inner: Store, file: string, text: string): Store {
       // The lock on disk still describes the previous text. Hiding it
       // lets the load build a lock instead of refusing the pin this
       // edit is about to replace.
-      if (key === lock) return false;
+      if (hidden.has(key)) return false;
       return inner.exists(path);
     },
     writeText: refuse,
     rename: refuse,
     remove: refuse,
+    list(path) {
+      return inner.list(path);
+    },
   };
 }

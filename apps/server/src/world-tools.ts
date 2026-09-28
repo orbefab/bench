@@ -19,7 +19,7 @@ import {
   type WorldSender,
   type WorldState,
 } from "@sfab-bench/contract";
-import { readEditOp } from "@sfab-bench/parts";
+import { confirmSentence, readEditOp } from "@sfab-bench/parts";
 import { tool } from "ai";
 import { z } from "zod";
 import { viewerProjectRoot } from "./viewer-context";
@@ -1102,13 +1102,15 @@ export const worldTools = {
   }),
   world_edit: tool({
     description:
-      "Change the open part through typed edit operations, as one undo step, then restart the run. world is the project-relative part path from get_viewer. ops is add-instance, remove-instance, set-pose, set-param, set-level, wire, unwire, rename-instance, set-play, or a batch of those. Each op's document is that path. A catalog part is read-only. Returns what changed and whether undo is available.",
+      "Change one part through typed edit operations, as one undo step, then restart the run. world is the project-relative part path from get_viewer. part is a part id inside that world; the root is the default. ops is add-instance, remove-instance, set-pose, set-param, set-level, wire, unwire, rename-instance, set-play, or a batch of those. Each op's document is the part's path. A catalog part is read-only. break: true applies an edit that drops fixed ports. Without it, removing a fixed port changes nothing and the sentence says to send it again. Returns what changed and whether undo is available.",
     inputSchema: z.object({
       world: z.string(),
       ops: z.array(z.record(z.string(), z.unknown())).min(1),
       label: z.string().optional(),
+      part: z.string().optional(),
+      break: z.boolean().optional(),
     }),
-    execute: async ({ world, ops, label }) => {
+    execute: async ({ world, ops, label, part, break: breaking }) => {
       const found = await openRun(world);
       if ("error" in found) return found;
       const parsed: EditOp[] = [];
@@ -1116,7 +1118,9 @@ export const worldTools = {
         const read = readEditOp({
           ...item,
           document:
-            typeof item.document === "string" ? item.document : found.world,
+            typeof item.document === "string"
+              ? item.document
+              : (part ?? found.world),
         });
         if ("error" in read) return read;
         parsed.push(read);
@@ -1125,32 +1129,41 @@ export const worldTools = {
         found.root,
         found.world,
         parsed,
-        label
+        label,
+        part,
+        breaking ? "break" : undefined
       );
+      if ("needsConfirm" in applied) return confirmSentence(applied.ports);
       if ("error" in applied) return applied;
       return applied.sentence;
     },
   }),
   world_undo: tool({
     description:
-      "Undo the last edit of the open part, then restart the run. world is the project-relative part path from get_viewer. Refuses when the file changed outside this session.",
-    inputSchema: z.object({ world: z.string() }),
-    execute: async ({ world }) => {
+      "Undo the last edit of one part, then restart the run. world is the project-relative part path from get_viewer. part is a part id; the root is the default. Refuses when a file in the step changed outside this session.",
+    inputSchema: z.object({
+      world: z.string(),
+      part: z.string().optional(),
+    }),
+    execute: async ({ world, part }) => {
       const found = await openRun(world);
       if ("error" in found) return found;
-      const applied = await undoDocument(found.root, found.world);
+      const applied = await undoDocument(found.root, found.world, part);
       if ("error" in applied) return applied;
       return applied.sentence;
     },
   }),
   world_redo: tool({
     description:
-      "Redo the last undone edit of the open part, then restart the run. world is the project-relative part path from get_viewer.",
-    inputSchema: z.object({ world: z.string() }),
-    execute: async ({ world }) => {
+      "Redo the last undone edit of one part, then restart the run. world is the project-relative part path from get_viewer. part is a part id; the root is the default.",
+    inputSchema: z.object({
+      world: z.string(),
+      part: z.string().optional(),
+    }),
+    execute: async ({ world, part }) => {
       const found = await openRun(world);
       if ("error" in found) return found;
-      const applied = await redoDocument(found.root, found.world);
+      const applied = await redoDocument(found.root, found.world, part);
       if ("error" in applied) return applied;
       return applied.sentence;
     },
@@ -1196,6 +1209,8 @@ export const worldTools = {
           class: level,
         },
       ]);
+      if ("needsConfirm" in applied)
+        return { error: confirmSentence(applied.ports) };
       if ("error" in applied) return applied;
       return {
         rows: levelRows(
