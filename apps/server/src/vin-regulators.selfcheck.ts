@@ -755,7 +755,7 @@ try {
     expect(dPass <= 1e-9, `regulator Δ ${dPass}`);
     expect(dS4 <= 1e-9, `S4 Δ ${dS4}`);
     console.log(
-      `nano USB and VIN 9 V: regulator ${pass.toFixed(6)} A, S4 ${s4.toExponential(2)} A, regulator supplies the board`
+      `nano USB and VIN 9 V island rail: regulator ${pass.toFixed(6)} A, S4 ${s4.toExponential(2)} A, matches the hand-built circuit`
     );
     const ran = await runProject(dir, "dual.world.json", 50, "nano");
     const reg = ran.frames.reduce(
