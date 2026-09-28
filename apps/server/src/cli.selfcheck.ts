@@ -1,5 +1,7 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { parseCli } from "./cli-parse";
 
@@ -56,5 +58,40 @@ const bin = readFileSync(
   "utf8"
 );
 expect(bin.startsWith("#!/usr/bin/env node\n"), "bin shebang");
+
+const binPath = fileURLToPath(
+  new URL("../bin/sfab-bench.mjs", import.meta.url)
+);
+function runMissing(args: string[], initCwd: string) {
+  return spawnSync(process.execPath, [binPath, "run", ...args], {
+    encoding: "utf8",
+    env: { ...process.env, INIT_CWD: initCwd },
+    timeout: 60_000,
+  });
+}
+const relative = runMissing(
+  ["no-such-project", "w.world.json"],
+  "/tmp/sfab-bench-init-a2b"
+);
+expect(relative.status === 1, "relative missing project exits 1");
+expect(
+  relative.stderr ===
+    "bench run: /tmp/sfab-bench-init-a2b/no-such-project not found\n",
+  `relative project resolves against INIT_CWD (${relative.stderr})`
+);
+expect(
+  !relative.stdout.includes("undefined"),
+  "relative failure has no undefined"
+);
+const absent = runMissing(
+  ["/tmp/sfab-bench-missing-a2b", "w.world.json"],
+  "/tmp/sfab-bench-other-cwd"
+);
+expect(absent.status === 1, "missing folder exits 1");
+expect(
+  absent.stderr === "bench run: /tmp/sfab-bench-missing-a2b not found\n",
+  `missing folder line (${absent.stderr})`
+);
+expect(!absent.stdout.includes("undefined"), "missing folder has no undefined");
 
 console.log("cli.selfcheck ok");

@@ -38,7 +38,7 @@ export function parseCli(argv: string[]): CliAction {
     }
     const rest = args.slice(3);
     if (rest.length === 0) {
-      return { kind: "run", project: resolve(expandUserPath(project)), world };
+      return { kind: "run", project: expandUserPath(project), world };
     }
     if (rest[0] !== "--ms" || rest.length !== 2) {
       return { kind: "help", error: `unknown flag: ${rest[0]}` };
@@ -52,7 +52,7 @@ export function parseCli(argv: string[]): CliAction {
     }
     return {
       kind: "run",
-      project: resolve(expandUserPath(project)),
+      project: expandUserPath(project),
       world,
       ms,
     };

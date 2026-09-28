@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
+
 import { parseCli } from "./cli-parse";
 import { loadHomeEnv } from "./config";
 
@@ -20,9 +22,14 @@ async function main() {
     process.exit(action.error ? 1 : 0);
   }
   if (action.kind === "run") {
+    const project = resolveRunProject(action.project);
+    if (!existsSync(project) || !statSync(project).isDirectory()) {
+      console.error(`bench run: ${project} not found`);
+      process.exit(1);
+    }
     const { DEFAULT_RUN_MS, runCli } = await import("./run");
     await runCli({
-      project: action.project,
+      project,
       world: action.world,
       ms: action.ms ?? DEFAULT_RUN_MS,
     });
@@ -35,6 +42,13 @@ async function main() {
     return;
   }
   await import("./listen");
+}
+
+/** Relative `run` paths follow pnpm's `INIT_CWD`, then the process cwd. */
+function resolveRunProject(project: string): string {
+  if (isAbsolute(project)) return project;
+  const base = process.env.INIT_CWD?.trim() || process.cwd();
+  return resolve(base, project);
 }
 
 void main();
