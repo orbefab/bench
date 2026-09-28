@@ -512,6 +512,10 @@ export type RecordedFrame = {
       voltage: number;
       /** Lowest 5V-node voltage in the window. */
       minVoltage: number;
+      /** Regulator pass current into this 5V node at t. 0 when none feeds it. */
+      regulatorA: number;
+      /** Peak of that current in the window. */
+      regulatorMax: number;
       /**
        * Forward current of each LED on this rail, keyed by instance path.
        * The time-weighted mean over this frame's circuit steps.

@@ -1226,6 +1226,8 @@ function build(
   for (const board of boards) {
     const onRail = supplyOnPort(board.id, board.voltagePin, supplies, nets);
     const onVin = supplyOnPort(board.id, "VIN", supplies, nets);
+    // VIN feeds the regulator. Parts on the regulated port take this
+    // supply in the feed walk; their load sits on the 5V node.
     board.vinFeed = onRail === null && onVin !== null;
   }
   const boardsOn = new Map<string, RunBoard[]>();

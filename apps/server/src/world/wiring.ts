@@ -199,6 +199,27 @@ function supplyOn(plan: RunPlan, reached: Set<string>): string | null {
   return null;
 }
 
+/**
+ * A part on a VIN-fed board's regulated rail has no wire to the supply.
+ * The regulator is that connection: the part's feed is the board's.
+ */
+function regulatedSupply(
+  plan: RunPlan,
+  boards: Readonly<Record<string, string | null>>,
+  reached: ReadonlySet<string>
+): string | null {
+  for (const board of plan.boards) {
+    if (!board.vinFeed) continue;
+    const onRail = board.powerInputs.some((pin) =>
+      reached.has(`${board.id}.${pin}`)
+    );
+    if (!onRail) continue;
+    const feed = boards[board.id];
+    if (feed) return feed;
+  }
+  return null;
+}
+
 /** Which supply reaches each board and each part. Same walk as the v1 feeds. */
 export function powerFeedsOf(plan: RunPlan): PowerFeeds {
   const adjacent = powerAdjacent(plan);
@@ -217,18 +238,20 @@ export function powerFeedsOf(plan: RunPlan): PowerFeeds {
   const parts: Record<string, string | null> = {};
   for (const part of plan.parts) {
     let feed: string | null = null;
+    const reached = new Set<string>();
     for (const [pin, spec] of Object.entries(part.pins)) {
       if (spec.kind !== "power") continue;
-      feed = supplyOn(plan, reachedFrom(`${part.id}.${pin}`, adjacent));
+      const hit = reachedFrom(`${part.id}.${pin}`, adjacent);
+      for (const node of hit) reached.add(node);
+      feed = supplyOn(plan, hit);
       if (feed) break;
     }
-    parts[part.id] = feed;
+    parts[part.id] = feed ?? regulatedSupply(plan, boards, reached);
   }
   for (const ranger of plan.rangers ?? []) {
-    parts[ranger.id] = supplyOn(
-      plan,
-      reachedFrom(`${ranger.id}.VCC`, adjacent)
-    );
+    const hit = reachedFrom(`${ranger.id}.VCC`, adjacent);
+    parts[ranger.id] =
+      supplyOn(plan, hit) ?? regulatedSupply(plan, boards, hit);
   }
   return { boards, parts };
 }

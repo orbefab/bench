@@ -674,6 +674,7 @@ function fillRecorder(full: boolean) {
     const id = lay.boards[i];
     const board = boards.find((item) => item.id === id);
     rec.boardVoltage[i] = id ? boardVolts(id) : 0;
+    rec.regulatorA[i] = id ? regulatorAmps(id) : 0;
     if (rec.ledOn[i]) {
       const supplyId = id ? boardPower.get(id)?.supplyId : undefined;
       const frame = supplyId ? ledFrameOf(supplyId) : undefined;
@@ -1134,6 +1135,8 @@ function bindRails() {
             return {
               resistance: drive.law.resistance,
               k: drive.law.k,
+              // The terminal is VIN. The winding sits on this board's 5V node.
+              boardId: drive.board?.id,
             };
           }),
           ...(path ? { boardPath: path } : {}),
@@ -1192,6 +1195,13 @@ function ledCurrentOf(boardId: string): number | undefined {
   const key = `${boardId}.led`;
   if (!group.circuit.ledPaths.includes(key)) return undefined;
   return group.circuit.leds[key] ?? 0;
+}
+
+/** Pass current into this board's 5V node. Zero when no regulator feeds it. */
+function regulatorAmps(boardId: string): number {
+  const supplyId = boardPower.get(boardId)?.supplyId;
+  if (!supplyId) return 0;
+  return rails.get(supplyId)?.circuit.regulatorOut(boardId) ?? 0;
 }
 
 function ledReading(boardId: string): {

@@ -112,6 +112,8 @@ type Chunk = {
   supplySoc: Float32Array;
   boardVoltage: Float32Array;
   boardMinVoltage: Float32Array;
+  regulatorA: Float32Array;
+  regulatorMax: Float32Array;
   /** Null when no board on this run records D13 LED current. */
   boardLed: Float32Array | null;
   /** Null when this run stamps no LED. One sample per `ledPaths` entry. */
@@ -173,6 +175,8 @@ export class RunRecorder {
   readonly supplySoc: Float64Array;
   /** Volts on each board's 5V node. */
   readonly boardVoltage: Float64Array;
+  /** Regulator pass current into that node. */
+  readonly regulatorA: Float64Array;
   /** Amperes through each board's onboard LED. Read only where `ledOn` is set. */
   readonly ledCurrent: Float64Array;
   /** True when this board's frames carry `ledCurrent`. */
@@ -207,6 +211,7 @@ export class RunRecorder {
   private readonly minV: Float64Array;
   private readonly maxSupply: Float64Array;
   private readonly minBoardV: Float64Array;
+  private readonly maxRegulator: Float64Array;
   private readonly worst: Uint8Array;
   private readonly partMax: Float64Array;
   private readonly brownAny: Uint8Array;
@@ -262,6 +267,7 @@ export class RunRecorder {
     this.supplySoc = new Float64Array(nS);
     this.supplySoc.fill(Number.NaN);
     this.boardVoltage = new Float64Array(nD);
+    this.regulatorA = new Float64Array(nD);
     this.ledCurrent = new Float64Array(nD);
     this.ledOn = spec.boardLed ?? this.boards.map(() => false);
     this.ledPaths = spec.leds ?? [];
@@ -276,6 +282,7 @@ export class RunRecorder {
     this.minV = new Float64Array(nS);
     this.maxSupply = new Float64Array(nS);
     this.minBoardV = new Float64Array(nD);
+    this.maxRegulator = new Float64Array(nD);
     this.worst = new Uint8Array(nP);
     this.partMax = new Float64Array(nP);
     this.brownAny = new Uint8Array(nD);
@@ -423,6 +430,10 @@ export class RunRecorder {
       if (voltage < (this.minBoardV[i] ?? Number.POSITIVE_INFINITY)) {
         this.minBoardV[i] = voltage;
       }
+      const pass = this.regulatorA[i] ?? 0;
+      if (pass > (this.maxRegulator[i] ?? Number.NEGATIVE_INFINITY)) {
+        this.maxRegulator[i] = pass;
+      }
       if ((this.brownout[i] ?? 0) !== 0) this.brownAny[i] = 1;
       if ((this.belowSoa[i] ?? 0) !== 0) this.soaAny[i] = 1;
     }
@@ -436,6 +447,7 @@ export class RunRecorder {
     this.minV.fill(Number.POSITIVE_INFINITY);
     this.maxSupply.fill(Number.NEGATIVE_INFINITY);
     this.minBoardV.fill(Number.POSITIVE_INFINITY);
+    this.maxRegulator.fill(Number.NEGATIVE_INFINITY);
     this.worst.fill(0);
     this.partMax.fill(Number.NEGATIVE_INFINITY);
     this.brownAny.fill(0);
@@ -491,6 +503,8 @@ export class RunRecorder {
       chunk.belowSoa[channel(i, slot)] = this.soaAny[i] ?? 0;
       chunk.boardVoltage[channel(i, slot)] = this.boardVoltage[i] ?? 0;
       chunk.boardMinVoltage[channel(i, slot)] = this.minBoardV[i] ?? 0;
+      chunk.regulatorA[channel(i, slot)] = this.regulatorA[i] ?? 0;
+      chunk.regulatorMax[channel(i, slot)] = this.maxRegulator[i] ?? 0;
       if (chunk.boardLed) {
         chunk.boardLed[channel(i, slot)] = this.ledCurrent[i] ?? 0;
       }
@@ -662,6 +676,9 @@ export class RunRecorder {
     const minBoard = this.boards.map(
       (_item, i) => chosen.chunk.boardMinVoltage[channel(i, chosen.slot)] ?? 0
     );
+    const maxPass = this.boards.map(
+      (_item, i) => chosen.chunk.regulatorMax[channel(i, chosen.slot)] ?? 0
+    );
     const past = this.joints.map(
       (_item, i) => chosen.chunk.limitDeg[channel(i, chosen.slot)] ?? 0
     );
@@ -690,6 +707,8 @@ export class RunRecorder {
         }
         const voltage = slot.chunk.boardMinVoltage[channel(i, slot.slot)] ?? 0;
         if (voltage < (minBoard[i] ?? 0)) minBoard[i] = voltage;
+        const pass = slot.chunk.regulatorMax[channel(i, slot.slot)] ?? 0;
+        if (pass > (maxPass[i] ?? 0)) maxPass[i] = pass;
       }
       for (let i = 0; i < this.joints.length; i++) {
         const deg = slot.chunk.limitDeg[channel(i, slot.slot)] ?? 0;
@@ -717,6 +736,7 @@ export class RunRecorder {
       row.brownoutAny = brown[i] ?? row.brownoutAny;
       row.belowSoa = soa[i] ?? row.belowSoa;
       row.minVoltage = minBoard[i] ?? row.minVoltage;
+      row.regulatorMax = maxPass[i] ?? row.regulatorMax;
     }
     for (let i = 0; i < this.joints.length; i++) {
       const spec = this.joints[i];
@@ -825,6 +845,8 @@ export class RunRecorder {
         belowSoa: (slot.chunk.belowSoa[channel(i, slot.slot)] ?? 0) !== 0,
         voltage: slot.chunk.boardVoltage[channel(i, slot.slot)] ?? 0,
         minVoltage: slot.chunk.boardMinVoltage[channel(i, slot.slot)] ?? 0,
+        regulatorA: slot.chunk.regulatorA[channel(i, slot.slot)] ?? 0,
+        regulatorMax: slot.chunk.regulatorMax[channel(i, slot.slot)] ?? 0,
         ...(this.ledOn[i]
           ? {
               ledCurrent: slot.chunk.boardLed?.[channel(i, slot.slot)] ?? 0,
@@ -850,6 +872,8 @@ export class RunRecorder {
         belowSoa: (slot.chunk.belowSoa[at] ?? 0) !== 0,
         voltage: slot.chunk.boardVoltage[at] ?? 0,
         minVoltage: slot.chunk.boardMinVoltage[at] ?? 0,
+        regulatorA: slot.chunk.regulatorA[at] ?? 0,
+        regulatorMax: slot.chunk.regulatorMax[at] ?? 0,
         ...(this.ledOn[i]
           ? { ledCurrent: slot.chunk.boardLed?.[at] ?? 0 }
           : {}),
@@ -1004,6 +1028,8 @@ function createChunk(counts: {
     supplySoc: new Float32Array(counts.supplies * CHUNK).fill(Number.NaN),
     boardVoltage: new Float32Array(counts.boards * CHUNK),
     boardMinVoltage: new Float32Array(counts.boards * CHUNK),
+    regulatorA: new Float32Array(counts.boards * CHUNK),
+    regulatorMax: new Float32Array(counts.boards * CHUNK),
     boardLed: counts.boardLed ? new Float32Array(counts.boards * CHUNK) : null,
     leds: counts.leds ? new Float32Array(counts.leds * CHUNK) : null,
     rangerDistance: counts.ranger

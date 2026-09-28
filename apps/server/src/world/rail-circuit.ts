@@ -27,6 +27,7 @@ import {
 } from "./circuit/elements";
 import { Engine } from "./circuit/engine";
 import { LawTable } from "./circuit/law-table";
+import { LdoRegulator } from "./circuit/ldo";
 import { AVR_PIN, type AvrPinParams, type PinMode } from "./circuit/pin";
 import { PmosChannel } from "./circuit/pmos-switch";
 import { PtcFuseElement } from "./circuit/ptc-fuse";
@@ -149,6 +150,7 @@ export class RailCircuit {
   private readonly fuse: PtcFuseElement[];
   private readonly channels: PmosChannel[];
   private readonly comparators: Comparator[];
+  private readonly ldos: LdoRegulator[];
   private readonly drives: {
     bit: number;
     pin: { setMode(mode: PinMode): void };
@@ -211,6 +213,7 @@ export class RailCircuit {
       this.fuse = built.fuse;
       this.channels = built.channels;
       this.comparators = built.comparators;
+      this.ldos = built.ldos;
       this.drives = built.drives;
       this.ledDiodes = built.ledDiodes;
       this.ledAlias = built.ledAlias;
@@ -270,6 +273,7 @@ export class RailCircuit {
       motors.push(
         new BridgeMotor(
           `m${i}`,
+          // The regulated node. A VIN feed's terminal is the input, not this.
           this.boardNode,
           law.resistance,
           inductance,
@@ -314,6 +318,9 @@ export class RailCircuit {
     );
     this.comparators = stamped.filter(
       (el): el is Comparator => el instanceof Comparator
+    );
+    this.ldos = stamped.filter(
+      (el): el is LdoRegulator => el instanceof LdoRegulator
     );
     this.winding = new Float64Array(motors.length);
     this.engine = new Engine([supply, this.load, ...motors, ...stamped], {
@@ -418,6 +425,21 @@ export class RailCircuit {
   setDrive(bit: number, mode: PinMode): void {
     const found = this.drives.find((row) => row.bit === bit);
     found?.pin.setMode(mode);
+  }
+
+  /**
+   * Pass current of the regulator whose OUT is this board's 5V node.
+   * Zero when that node is not a regulator output.
+   */
+  regulatorOut(boardId?: string): number {
+    const node =
+      (boardId ? this.boardNodes.get(boardId) : undefined) ?? this.boardNode;
+    let sum = 0;
+    for (const ldo of this.ldos) {
+      if (ldo.outName !== node) continue;
+      sum += this.engine.branchCurrent(ldo.id);
+    }
+    return sum;
   }
 
   /**
@@ -731,6 +753,7 @@ function sharedRail(spec: RailCircuitSpec): {
   fuse: PtcFuseElement[];
   channels: PmosChannel[];
   comparators: Comparator[];
+  ldos: LdoRegulator[];
   drives: { bit: number; pin: { setMode(mode: PinMode): void } }[];
   ledDiodes: { path: string; diode: Diode }[];
   ledAlias: string;
@@ -875,6 +898,9 @@ function sharedRail(spec: RailCircuitSpec): {
     ),
     comparators: stamped.filter(
       (el): el is Comparator => el instanceof Comparator
+    ),
+    ldos: stamped.filter(
+      (el): el is LdoRegulator => el instanceof LdoRegulator
     ),
     drives,
     ledDiodes,
