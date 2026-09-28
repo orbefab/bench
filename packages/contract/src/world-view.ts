@@ -59,6 +59,49 @@ export type PowerFeeds = {
 
 export type WorldViewFeeds = PowerFeeds;
 
+export type WorldViewRole =
+  | "robot"
+  | "board"
+  | "supply"
+  | "part"
+  | "leaf"
+  | "ground"
+  | "target"
+  | "assembly";
+
+/** A port on a tree node. The run's port model, without dependents. */
+export type WorldViewPort = {
+  name: string;
+  source: "type" | "expose" | "auto";
+  fixed: boolean;
+};
+
+/**
+ * One resolved instance. `id` is the run path (`nano`, `fleet.rig2.servo`,
+ * `$root`). Ground and targets use their instance id; they are not level rows.
+ */
+export type WorldViewNode = {
+  id: string;
+  /** Instance id. `$root` uses the stage's instance id. */
+  name: string;
+  part: string;
+  type: string;
+  role: WorldViewRole;
+  /** The instance pose. Flat, the same pose the old fields draw. */
+  pose: Pose;
+  ports: WorldViewPort[];
+  children: WorldViewNode[];
+};
+
+/** The open document and its stage, then the instance tree. */
+export type WorldViewTree = {
+  /** Document part id. An import uses the synthetic id. */
+  part: string;
+  /** Stage part id. The unwrapped scene, or the document when it is the stage. */
+  stage: string;
+  nodes: WorldViewNode[];
+};
+
 export type WorldView = {
   environment: {
     ground: { plane: boolean };
@@ -74,4 +117,6 @@ export type WorldView = {
   boxes: WorldViewBox[];
   wires: [string, string][];
   feeds: WorldViewFeeds;
+  /** Part tree. The fields above stay until the editor shell reads this. */
+  tree: WorldViewTree;
 };

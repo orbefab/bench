@@ -15,6 +15,7 @@ import {
   type WorldPrimitive,
   type WorldStepProp,
   type WorldTarget,
+  type WorldViewTree,
 } from "@sfab-bench/contract";
 import { collapse } from "@sfab-bench/engine-body";
 import { type AvrPinParams, avrPinParams } from "@sfab-bench/engine-circuit";
@@ -57,6 +58,7 @@ import { provenanceHash } from "./freshness";
 import { chipFacts } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
 import { readTargets } from "./targets";
+import { runTree } from "./tree";
 
 /** Shown where a world fails to load, in the UI and in the agent tools. */
 export const WORLD_V1_MESSAGE = "World v1 is no longer supported";
@@ -268,6 +270,11 @@ export type RunPlan = {
    * every part placed.
    */
   degraded?: Diagnostic[];
+  /**
+   * Instance tree for the view. Absent on a plan built by hand.
+   * The run does not read it.
+   */
+  tree?: WorldViewTree;
 };
 
 export type PlanResult =
@@ -1396,6 +1403,19 @@ function build(
       report: loaded.report,
       ...(spans.length > 0 ? { spans } : {}),
       ...(diags.length > 0 ? { degraded: diags } : {}),
+      tree: runTree({
+        run,
+        resolved: loaded.resolved,
+        robots,
+        boards,
+        supplies,
+        parts,
+        rangers,
+        leaves,
+        store: env.store,
+        projectDir: worldDir,
+        catalogDir: env.absolutePath(env.catalogDir()),
+      }),
     },
     diags,
   };
