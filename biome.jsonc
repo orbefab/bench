@@ -15,7 +15,7 @@
       // Recorded at full float precision; formatting would rewrite the baseline.
       "!**/apps/server/fixtures/arm-baseline.json",
       // Capture writes this as canonical JSON with 2-space indentation. Formatting it again would diverge from the tool.
-      "!**/apps/server/catalog/snapshots/**",
+      "!**/apps/server/catalog/snapshots",
       // cadgen writes this sidecar as one line. Formatting it would diverge from the generator.
       "!**/*.step.json",
       "!**/apps/docs/src/routeTree.gen.ts",
@@ -134,6 +134,105 @@
         "rules": {
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/parts/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["node:*", "node:*/**"],
+                    "message": "parts imports neither node nor an engine nor the server nor apps"
+                  },
+                  {
+                    "group": [
+                      "@sfab-bench/engine-*",
+                      "@sfab-bench/engine-*/**",
+                      "**/packages/engine-*/**"
+                    ],
+                    "message": "parts imports neither node nor an engine nor the server nor apps"
+                  },
+                  {
+                    "group": [
+                      "@sfab-bench/server",
+                      "@sfab-bench/server/**",
+                      "**/apps/**",
+                      "apps/**"
+                    ],
+                    "message": "parts imports neither node nor an engine nor the server nor apps"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/engine-*/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["node:*", "node:*/**"],
+                    "message": "an engine imports neither node nor parts nor the server nor apps"
+                  },
+                  {
+                    "group": [
+                      "@sfab-bench/parts",
+                      "@sfab-bench/parts/**",
+                      "**/packages/parts/**"
+                    ],
+                    "message": "an engine imports neither node nor parts nor the server nor apps"
+                  },
+                  {
+                    "group": [
+                      "@sfab-bench/server",
+                      "@sfab-bench/server/**",
+                      "**/apps/**",
+                      "apps/**"
+                    ],
+                    "message": "an engine imports neither node nor parts nor the server nor apps"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/web/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@sfab-bench/parts",
+                      "@sfab-bench/parts/**",
+                      "@sfab-bench/engine-*",
+                      "@sfab-bench/engine-*/**"
+                    ],
+                    "message": "the web client imports neither parts nor an engine"
+                  }
+                ]
+              }
+            }
           }
         }
       }
