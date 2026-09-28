@@ -524,7 +524,7 @@ export class EditSession {
     const blocked = loaded.diagnostics.filter(
       (diag) => diag.severity === "error"
     );
-    if (blocked.length > 0 || !loaded.world || !loaded.lock) {
+    if (blocked.length > 0 || !loaded.run || !loaded.lock) {
       const message = blocked.map((diag) => diag.message).join("; ");
       return { error: message || "world file did not load" };
     }

@@ -609,6 +609,11 @@ export type AxisLevel = LevelClass | { class: LevelClass; variant: string };
 
 export type LevelSpec = LevelClass | Partial<Record<AxisName, AxisLevel>>;
 
+/**
+ * Import-only. A `.world.json` the loader converts into a part. A run
+ * reads the part, not this type. `convert` and the legacy level-text
+ * edit are the other readers.
+ */
 export type WorldFileV2 = {
   version: 2;
   environment: {

@@ -13,7 +13,6 @@ import {
   type PartFile,
   type PartTypeFile,
   TARGET_PART_ID,
-  type WorldFileV2,
 } from "@sfab-bench/contract";
 
 import { batteryFrom } from "./battery";
@@ -21,10 +20,10 @@ import { comparatorFrom } from "./comparator";
 import {
   assetDir,
   environmentKind,
-  IMPORT_PART_ID,
+  importedRun,
   isPartFile,
-  partToWorld,
-  worldToPart,
+  type RunRoot,
+  runRootOf,
 } from "./document";
 import { expandPartType } from "./expand";
 import { gearTrainErrors } from "./gear-train";
@@ -60,7 +59,8 @@ export type LoadedType = {
 export type Library = {
   worldDir: string;
   worldName: string;
-  world: WorldFileV2;
+  /** Play, stage, ground, and targets read off the open part. */
+  run: RunRoot;
   assetRoot: string;
   parts: Map<string, LoadedPart>;
   types: Map<string, LoadedType>;
@@ -335,7 +335,7 @@ export function loadLibrary(
   // still on disk. A `.world.json` import unwraps back to the scene
   // and pins nothing extra, so an existing world lock still matches.
   let opened: PartFile | null = null;
-  let world: WorldFileV2;
+  let run: RunRoot;
   if (isPartFile(raw)) {
     const kindOf = (id: string) => {
       if (id === GROUND_PART_ID) return "ground" as const;
@@ -344,74 +344,49 @@ export function loadLibrary(
       if (isDiag(found)) return "other" as const;
       return environmentKind(found.part);
     };
-    world = partToWorld(raw, kindOf);
+    run = runRootOf(raw, kindOf);
     opened = raw;
   } else {
-    world = raw as WorldFileV2;
-    if (world.version !== 2) {
+    const imported = importedRun(raw, (id) =>
+      id === GROUND_PART_ID ? "ground" : id === TARGET_PART_ID ? "target" : "other"
+    );
+    if (!imported.ok) {
       diagnostics.push(
         makeDiag({
           severity: "error",
           path: worldName,
-          port: "version",
+          port: imported.port,
           quantity: "Part",
-          left: String(world.version),
-          right: "2",
-          detail: "world version is not 2",
+          left: imported.left,
+          right: imported.port === "version" ? "2" : "part",
+          detail:
+            imported.port === "version"
+              ? "world version is not 2"
+              : "world file did not convert",
         })
       );
       return { library: null, diagnostics };
     }
-    if (typeof world.root?.part === "string") {
-      const named = world.run?.timestep;
-      try {
-        world = partToWorld(worldToPart(world, IMPORT_PART_ID), (id) =>
-          id === GROUND_PART_ID
-            ? "ground"
-            : id === TARGET_PART_ID
-              ? "target"
-              : "other"
-        );
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        diagnostics.push(
-          makeDiag({
-            severity: "error",
-            path: worldName,
-            port: "load",
-            quantity: "Part",
-            left: message,
-            right: "part",
-            detail: "world file did not convert",
-          })
-        );
-        return { library: null, diagnostics };
-      }
-      // A world that did not name a step keeps the engine default, and
-      // the in-memory world does not grow a field the file lacked.
-      if (named === undefined) {
-        const { timestep: _drop, ...run } = world.run;
-        world = { ...world, run };
-      }
-    }
+    run = imported.run;
   }
 
   const parts = new Map<string, LoadedPart>();
   const types = new Map<string, LoadedType>();
   const queue: { id: string | null; inline: PartFile | null; root: boolean }[] =
     [];
-  const openedIsRoot =
+  const stagePart = run.stage.part;
+  const openedIsStage =
     opened !== null &&
-    typeof world.root.part === "string" &&
-    world.root.part === opened.id;
-  if (openedIsRoot && opened) {
+    typeof stagePart === "string" &&
+    stagePart === opened.id;
+  if (openedIsStage && opened) {
     queue.push({ id: null, inline: opened, root: true });
-  } else if (typeof world.root.part === "string") {
-    queue.push({ id: world.root.part, inline: null, root: true });
+  } else if (typeof stagePart === "string") {
+    queue.push({ id: stagePart, inline: null, root: true });
   } else {
-    queue.push({ id: null, inline: world.root.part, root: true });
+    queue.push({ id: null, inline: stagePart, root: true });
   }
-  if (opened && !openedIsRoot) {
+  if (opened && !openedIsStage) {
     queue.push({ id: null, inline: opened, root: false });
   }
 
@@ -476,11 +451,17 @@ export function loadLibrary(
   }
 
   if (diagnostics.length) return { library: null, diagnostics };
+  for (const slot of run.slots) {
+    const found = parts.get(slot.part);
+    if (!found) continue;
+    const type = found.part.type;
+    slot.type = typeof type === "string" ? type : type.id;
+  }
   return {
     library: {
       worldDir,
       worldName,
-      world,
+      run,
       assetRoot: opts.assetRoot,
       parts,
       types,

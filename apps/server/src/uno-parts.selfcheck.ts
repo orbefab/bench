@@ -308,11 +308,19 @@ function mosSecond(
     assetRoot: catalog,
     parts: new Map([[part.id, { ...loaded, part }]]),
     types: new Map([[type.type.id, type]]),
-    world: {
-      version: 2,
-      environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
-      run: { seed: 1, levels: { default: 1 } },
-      root: { id: "r", part: part.id },
+    run: {
+      document: part.id,
+      play: {
+        gravity: [0, 0, -9.81],
+        seed: 1,
+        timestep: 0.001,
+        levels: { default: 1 },
+      },
+      stage: { id: "r", part: part.id },
+      unwrapped: false,
+      slots: [],
+      ground: true,
+      targets: [],
     },
   };
   const hit = lintLibrary(lib).find((diag) =>

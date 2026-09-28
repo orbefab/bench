@@ -6,9 +6,12 @@ export {
   chooseRootPartId,
   environmentKind,
   IMPORT_PART_ID,
+  importedRun,
   isPartFile,
   partFilePath,
-  partToWorld,
+  type RunRoot,
+  type RunSlot,
+  runRootOf,
   worldToPart,
 } from "./document";
 export {

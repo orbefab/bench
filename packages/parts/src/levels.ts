@@ -10,10 +10,9 @@ import {
   type PartFile,
   type PartTypeFile,
   type Pose,
-  type WorldFileV2,
 } from "@sfab-bench/contract";
 
-import { environmentKind } from "./document";
+import { environmentKind, type RunRoot } from "./document";
 import { type Library, typeOf } from "./library";
 import { pathRefOf } from "./path-ref";
 import { type AxisRequest, classesOf, isLevelClass, specAxes } from "./si";
@@ -69,19 +68,19 @@ export type LevelRules = {
   paths: Record<string, Partial<Record<AxisName, AxisRequest>>>;
 };
 
-export function compileRules(world: WorldFileV2): LevelRules {
-  const def = specAxes(world.run.levels.default);
+export function compileRules(run: RunRoot): LevelRules {
+  const def = specAxes(run.play.levels.default);
   for (const axis of AXES) {
     if (!isLevelClass(def[axis]?.class)) {
       throw new Error(`world default must set ${axis}`);
     }
   }
   const types: LevelRules["types"] = {};
-  for (const [id, spec] of Object.entries(world.run.levels.types ?? {})) {
+  for (const [id, spec] of Object.entries(run.play.levels.types ?? {})) {
     types[id] = specAxes(spec);
   }
   const paths: LevelRules["paths"] = {};
-  for (const [id, spec] of Object.entries(world.run.levels.paths ?? {})) {
+  for (const [id, spec] of Object.entries(run.play.levels.paths ?? {})) {
     paths[id] = specAxes(spec);
   }
   return {
@@ -446,17 +445,13 @@ export function resolveLevels(
     }
   };
 
+  const stage = lib.run.stage;
   const rootPart =
-    typeof lib.world.root.part === "string"
-      ? lib.parts.get(lib.world.root.part)?.part
-      : lib.world.root.part;
+    typeof stage.part === "string"
+      ? lib.parts.get(stage.part)?.part
+      : stage.part;
   if (!rootPart) throw new Error("root part did not resolve");
-  visit(
-    rootPart,
-    "$root",
-    { ...(lib.world.root.params ?? {}) },
-    lib.world.root.pose
-  );
+  visit(rootPart, "$root", { ...(stage.params ?? {}) }, stage.pose);
   instances.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { instances, appliedPaths, missing };
 }

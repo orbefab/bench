@@ -336,19 +336,16 @@ function writeJson(file: string, value: unknown) {
       join(dir, "parts/sfab/played-root@1.0.0.json"),
       libraryOpts(dir)
     );
-    expect(loaded.world, loaded.diagnostics.map((d) => d.message).join("; "));
+    expect(loaded.run, loaded.diagnostics.map((d) => d.message).join("; "));
     expect(
-      JSON.stringify(loaded.world?.environment.gravity) ===
+      JSON.stringify(loaded.run?.play.gravity) ===
         JSON.stringify([0, 0, -9.81]),
-      `nested gravity ${JSON.stringify(loaded.world?.environment.gravity)}`
+      `nested gravity ${JSON.stringify(loaded.run?.play.gravity)}`
     );
+    expect(loaded.run?.play.seed === 1, `nested seed ${loaded.run?.play.seed}`);
     expect(
-      loaded.world?.run.seed === 1,
-      `nested seed ${loaded.world?.run.seed}`
-    );
-    expect(
-      loaded.world?.run.timestep === 0.001,
-      `nested timestep ${loaded.world?.run.timestep}`
+      loaded.run?.play.timestep === 0.001,
+      `nested timestep ${loaded.run?.play.timestep}`
     );
     const planned = planWorld(dir, "parts/sfab/played-root@1.0.0.json");
     if (!planned.ok) {
@@ -617,7 +614,7 @@ function writeJson(file: string, value: unknown) {
       libraryOpts(dir)
     );
     expect(
-      loaded.world?.environment.ground.plane === false,
+      loaded.run?.ground === false,
       "a root with no ground part still has a ground"
     );
     const run = await recorded(dir, "parts/sfab/drop-bench@1.0.0.json");

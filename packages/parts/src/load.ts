@@ -13,9 +13,9 @@ import {
   type RunReport,
   type SnapshotFile,
   SUPPLY_FORMS,
-  type WorldFileV2,
 } from "@sfab-bench/contract";
 import { checkWorld } from "./check";
+import type { RunRoot } from "./document";
 import {
   compileRules,
   type LevelRules,
@@ -136,7 +136,8 @@ function nearestFallback(
 }
 
 export type LoadResult = {
-  world: WorldFileV2 | null;
+  /** Null when the file did not load. */
+  run: RunRoot | null;
   resolved: LiveInstance[];
   nets: LiveNet[];
   /** Wires as written in the part netlists, before nets merge them. */
@@ -152,7 +153,7 @@ export type LoadResult = {
 
 export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   const empty: LoadResult = {
-    world: null,
+    run: null,
     resolved: [],
     nets: [],
     wires: [],
@@ -171,7 +172,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
 
   let rules: LevelRules;
   try {
-    rules = compileRules(lib.world);
+    rules = compileRules(lib.run);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     diagnostics.push(
@@ -185,10 +186,10 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
         detail: message,
       })
     );
-    return { ...empty, world: lib.world, diagnostics, lock: buildLock(lib) };
+    return { ...empty, run: lib.run, diagnostics, lock: buildLock(lib) };
   }
 
-  for (const typeId of Object.keys(lib.world.run.levels.types ?? {})) {
+  for (const typeId of Object.keys(lib.run.play.levels.types ?? {})) {
     const known =
       lib.types.has(typeId) || typeFileExists(lib.worldDir, opts, typeId);
     if (!known) {
@@ -216,7 +217,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     }
     return {
       ...empty,
-      world: lib.world,
+      run: lib.run,
       diagnostics: [...diagnostics, ...lint],
       lock,
     };
@@ -225,7 +226,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   let resolved: ReturnType<typeof resolveLevels>;
   try {
     resolved = resolveLevels(lib, rules);
-    const first = buildNets(resolved.instances, lib.world.run.levels.nets);
+    const first = buildNets(resolved.instances, lib.run.play.levels.nets);
     const nearer = nearestFallback(
       resolved.instances,
       first.nets,
@@ -254,7 +255,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     );
     return {
       ...empty,
-      world: lib.world,
+      run: lib.run,
       diagnostics,
       lock: buildLock(lib),
     };
@@ -341,7 +342,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
 
   const { nets, wires, broken } = buildNets(
     resolved.instances,
-    lib.world.run.levels.nets
+    lib.run.play.levels.nets
   );
   diagnostics.push(...broken);
   const snapshots: LoadedSnapshot[] = [];
@@ -428,7 +429,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   diagnostics.push(
     ...checkWorld(resolved.instances, nets, wires, opts.assetRoot, opts.store)
   );
-  const step = lib.world.run.timestep;
+  const step = lib.run.play.timestep;
   if (typeof step === "number" && step !== DEFAULT_TIMESTEP_S) {
     diagnostics.push({
       severity: "warning",
@@ -443,7 +444,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   }
   const built = buildReport({
     world: lib.worldName,
-    seed: lib.world.run.seed,
+    seed: lib.run.play.seed,
     lock,
     instances: resolved.instances,
     nets,
@@ -451,7 +452,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     ran,
   });
   return {
-    world: lib.world,
+    run: lib.run,
     resolved: resolved.instances,
     nets,
     wires,

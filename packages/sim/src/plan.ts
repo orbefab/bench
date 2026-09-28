@@ -909,8 +909,8 @@ function build(
   worldDir: string,
   env: PlanEnv
 ): { plan: RunPlan | null; diags: Diagnostic[] } {
-  const world = loaded.world;
-  if (!world) return { plan: null, diags: loaded.diagnostics };
+  const run = loaded.run;
+  if (!run) return { plan: null, diags: loaded.diagnostics };
   const diags: Diagnostic[] = [];
   const robots: RunRobot[] = [];
   const boards: RunBoard[] = [];
@@ -1345,8 +1345,7 @@ function build(
     });
   }
 
-  const environment = world.environment;
-  const targets = readTargets(environment.targets);
+  const targets = readTargets(run.targets);
   if (!targets.ok) {
     diags.push({
       severity: "degraded",
@@ -1362,17 +1361,17 @@ function build(
   notePlaceholderBoxes(loaded);
   return {
     plan: {
-      ...(world.run.timestep === DEFAULT_TIMESTEP_S
+      ...(run.play.timestep === DEFAULT_TIMESTEP_S
         ? { timestep: DEFAULT_TIMESTEP_S }
         : {}),
       environment: {
-        ground: { plane: environment.ground.plane },
-        gravity: [...environment.gravity],
-        ...(Array.isArray(environment.primitives)
-          ? { primitives: environment.primitives as WorldPrimitive[] }
+        ground: { plane: run.ground },
+        gravity: [...run.play.gravity],
+        ...(Array.isArray(run.play.primitives)
+          ? { primitives: run.play.primitives as WorldPrimitive[] }
           : {}),
-        ...(Array.isArray(environment.stepProps)
-          ? { stepProps: environment.stepProps as WorldStepProp[] }
+        ...(Array.isArray(run.play.stepProps)
+          ? { stepProps: run.play.stepProps as WorldStepProp[] }
           : {}),
         targets: targets.ok ? targets.targets : [],
       },
@@ -1436,7 +1435,7 @@ export function planWorld(
     catalogDir: env.absolutePath(env.catalogDir()),
     assetRoot: env.absolutePath(found.root),
   });
-  if (!loaded.world) {
+  if (!loaded.run) {
     const shown = loaded.diagnostics;
     return {
       ok: false,

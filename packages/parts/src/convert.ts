@@ -54,7 +54,7 @@ export function convertWorldFile(
   const part = worldToPart(raw, partId);
   opts.store.writeText(partFile, `${JSON.stringify(part, null, 2)}\n`);
   const loaded = loadWorldV2(partFile, { ...opts, assetRoot: project });
-  if (!loaded.lock || !loaded.world) {
+  if (!loaded.lock || !loaded.run) {
     const message = loaded.diagnostics.map((diag) => diag.message).join("; ");
     throw new Error(message || "converted part did not load");
   }

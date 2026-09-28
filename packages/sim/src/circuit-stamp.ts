@@ -858,24 +858,30 @@ function stampOf(
     assetRoot,
     parts,
     types,
-    world: {
-      version: 2,
-      environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
-      run: {
+    // The wrapper is the stage. Unwrapping it would make the board
+    // `$root` and move every stamp path.
+    run: {
+      document: wrapper.id,
+      play: {
+        gravity: [0, 0, -9.81],
         seed: 1,
         levels: {
           default: { behaviour: 2, body: 0, visual: 0 },
           paths: { [boardId]: { behaviour: Number(classKey) as LevelClass } },
         },
       },
-      root: { id: "stamp", part: wrapper },
+      stage: { id: "stamp", part: wrapper },
+      unwrapped: false,
+      slots: [{ id: boardId, part: partId, kind: "other" }],
+      ground: true,
+      targets: [],
     },
   };
   const errors = lintLibrary(lib).filter((diag) => diag.severity === "error");
   if (errors.length > 0) {
     throw new Error(errors.map((diag) => diag.message).join("; "));
   }
-  const { instances } = resolveLevels(lib, compileRules(lib.world));
+  const { instances } = resolveLevels(lib, compileRules(lib.run));
   const board = instances.find((inst) => inst.path === boardId);
   if (!board || !netlistOf(board)) {
     throw new Error(
