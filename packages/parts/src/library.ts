@@ -348,7 +348,11 @@ export function loadLibrary(
     opened = raw;
   } else {
     const imported = importedRun(raw, (id) =>
-      id === GROUND_PART_ID ? "ground" : id === TARGET_PART_ID ? "target" : "other"
+      id === GROUND_PART_ID
+        ? "ground"
+        : id === TARGET_PART_ID
+          ? "target"
+          : "other"
     );
     if (!imported.ok) {
       diagnostics.push(
@@ -376,9 +380,7 @@ export function loadLibrary(
     [];
   const stagePart = run.stage.part;
   const openedIsStage =
-    opened !== null &&
-    typeof stagePart === "string" &&
-    stagePart === opened.id;
+    opened !== null && typeof stagePart === "string" && stagePart === opened.id;
   if (openedIsStage && opened) {
     queue.push({ id: null, inline: opened, root: true });
   } else if (typeof stagePart === "string") {
