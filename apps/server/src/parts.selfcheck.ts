@@ -187,12 +187,12 @@ broken(
 );
 broken(
   "missing-port",
-  "error",
+  "warning",
   (diag) =>
-    diag.path === "servo" &&
-    diag.port === "missing" &&
-    diag.quantity === "Voltage" &&
-    diag.left === "missing"
+    diag.code === "broken-port" &&
+    diag.port === "servo.missing" &&
+    diag.quantity === "Port" &&
+    diag.left === "uno.D9—servo.missing"
 );
 broken(
   "ma-as-a",
