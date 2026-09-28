@@ -251,7 +251,7 @@ No ground part means no ground. A target instance keeps the same shape, size, po
 
 ### Legacy import
 
-A `.world.json` is an import, not a document. The loader converts it in memory on read. `bench run` and the server still open one. A v1 file is still the hard stop: **World v1 is no longer supported**.
+A `.world.json` is an import, not a document. The loader converts it in memory on read, then the run reads the run root below, not `WorldFileV2`. That type stays in the contract for the importer, `convert`, and the legacy level-text edit. `bench run` and the server still open a world file. A v1 file is still the hard stop: **World v1 is no longer supported**.
 
 Opening a `.world.json` leaves `report.world` as the file stem (`arm.world`). The in-memory conversion does not pin the synthetic import part, the ground part, or the target part into that lock, so an existing report stays byte-identical. Opening the root part names `report.world` and `report.lock` for that part; those are the fields that differ.
 
@@ -283,6 +283,58 @@ type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual",
 **Targets.** A target is a box, sphere or cylinder that moves, and that a ray can hit. It is a MuJoCo mocap body with `contype` and `conaffinity` 0, so it does not push a robot; a mocap body would not move from contact anyway. `path` is `{ t, position }[]`, times in seconds, strictly increasing. The position is linear between keyframes, the first keyframe before its time, and held after the last. With no path the target stays at `pose`. The viewer draws it where it is, and the recording keeps that pose on the robot id `target` (`target/<id>`), the same way a link pose is kept, so scrubbing shows it move. `world_move_target` sets the position from the next master step and records a `move-target` event. A world whose targets only follow `path` stays byte-identical across runs. Dragging a target in the view is later.
 
 **Paths:** the root is `$root` and does not prefix children (`fleet.rig2.servo`).
+
+### Run root
+
+The loader keeps what a run reads:
+
+```ts
+type RunRoot = {
+  document: string;                                    // part id; an import uses sfab/import@1.0.0
+  play: {
+    gravity: Vec3;
+    seed: number;
+    timestep?: number;                                 // absent when an imported world omitted the step
+    levels: PlayBlock["levels"];
+    air?: { density: number };
+    primitives?: unknown[];
+    stepProps?: unknown[];
+  };
+  stage: { id: string; part: string | PartFile; pose?: Pose; params?: Params };
+  unwrapped: boolean;
+  slots: { id: string; part: string; kind: "scene" | "ground" | "target" | "other"; pose?: Pose; type?: string }[];
+  ground: boolean;
+  targets: { id: string; shape: string; size: unknown; pose: Pose; path?: unknown[] }[];
+};
+```
+
+`play` is the open part's block. `slots` is that part's netlist, in file order. One other instance becomes the stage (`unwrapped`), so `$root` is that scene part and paths stay scene-relative. Any other shape is itself the stage. Ground and targets are taken only from that document's netlist. A pose is the instance pose.
+
+`timestep` is absent only when the import flag says the world file did not name `run.timestep`. A part document always records a step, using `0.001` when `play` omits it. `RunPlan.timestep` is set only when the recorded step is `0.001`. Any other named step warns `timestep-unsupported` and the body still steps 1 ms.
+
+### World view
+
+`GET /api/world/view` adds `tree` beside `robots`, `boards`, `supplies`, `parts`, `boxes`, `wires`, and `feeds`. Those fields stay. The editor shell will read `tree` and then delete them.
+
+```ts
+type WorldViewTree = {
+  part: string;                                        // document part id
+  stage: string;                                       // stage part id
+  nodes: WorldViewNode[];
+};
+type WorldViewNode = {
+  id: string;                                          // run path: nano, fleet.rig2.servo, $root
+  name: string;                                        // instance id; $root uses the stage id
+  part: string;
+  type: string;
+  role: "robot" | "board" | "supply" | "part" | "leaf" | "ground" | "target" | "assembly";
+  pose: Pose;                                          // flat instance pose
+  ports: { name: string; source: "type" | "expose" | "auto"; fixed: boolean }[];
+  children: WorldViewNode[];
+};
+```
+
+Children follow the resolved instances, in netlist order, so `fleet.rig2.servo` is a child of `fleet.rig2`. Every id in the old fields is a node id with that role. A box whose id is not in `parts` or `supplies` is a `leaf`. Ground and targets are nodes from the document netlist. Their ids are instance ids; they are not rows in `report.levels`.
 
 **Level resolution** (D-005, amended by D-023.3):
 1. Per axis, a path rule beats a type rule, which beats the default.

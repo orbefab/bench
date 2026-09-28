@@ -169,8 +169,10 @@ and write port quantities). The Node `Store` is
 
 L3 is `packages/sim`. It holds the plan, wiring, circuit stamps, the
 form registry, the `Sim` orchestrator, the recorder, and the capture
-runner. It does not read files or the clock. The host passes a `Store`,
-absolute paths, package versions, and `now`. `apps/server/src/world/`
+runner. The plan reads a run root from the open part — play, the stage,
+ground, and targets. A `.world.json` reaches it only as an import. It
+does not read files or the clock. The host passes a `Store`, absolute
+paths, package versions, and `now`. `apps/server/src/world/`
 keeps thin shims so existing imports still resolve, plus the test
 references (Uno, Nano, snapshot DC). The worker
 (`apps/server/src/world/worker.ts`) is the Node host: thread messages,
