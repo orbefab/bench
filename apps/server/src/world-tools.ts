@@ -1185,13 +1185,19 @@ export const worldTools = {
             "world file did not load",
         };
       }
-      let parsed: { run?: { levels?: LevelTable } };
+      let parsed: {
+        run?: { levels?: LevelTable };
+        play?: { levels?: LevelTable };
+      };
       try {
-        parsed = JSON.parse(before) as { run?: { levels?: LevelTable } };
+        parsed = JSON.parse(before) as {
+          run?: { levels?: LevelTable };
+          play?: { levels?: LevelTable };
+        };
       } catch {
         return { error: "world file is not JSON" };
       }
-      const current = parsed.run?.levels;
+      const current = parsed.play?.levels ?? parsed.run?.levels;
       if (!current) return { error: "world file has no run.levels" };
       const edited = applyLevelEdit(current, {
         scope,

@@ -13,6 +13,8 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
+import { isPartDocumentPath } from "@sfab-bench/contract";
+
 import { cacheDir } from "./config";
 import { buildStepPackage } from "./occt/build";
 import { insideRoot, posixRel } from "./projects";
@@ -215,7 +217,9 @@ function mimeFor(file: string) {
  * STL is `model/stl`. Firmware images and other files stay unserved.
  */
 function worldAssetType(rel: string): string | null {
-  if (/\.world\.json$/i.test(rel)) return "application/json";
+  if (/\.world\.json$/i.test(rel) || isPartDocumentPath(rel)) {
+    return "application/json";
+  }
   if (/\.urdf$/i.test(rel)) return "application/xml";
   if (/\.stl$/i.test(rel)) return "model/stl";
   if (/\.obj$/i.test(rel)) return "text/plain";

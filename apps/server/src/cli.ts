@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { parseCli } from "./cli-parse";
 import { loadHomeEnv } from "./config";
@@ -12,6 +12,7 @@ const HELP = `sfab-bench — CAD workbench
   sfab-bench open <dir>   open that folder, then serve
   sfab-bench open <dir> --dev
   sfab-bench run <projectDir> <world> [--ms N]
+  sfab-bench convert <world.json>
 `;
 
 async function main() {
@@ -20,6 +21,25 @@ async function main() {
     if (action.error) console.error(action.error);
     console.log(HELP);
     process.exit(action.error ? 1 : 0);
+  }
+  if (action.kind === "convert") {
+    const world = resolve(action.world);
+    if (!existsSync(world) || !statSync(world).isFile()) {
+      console.error(`bench convert: ${world} not found`);
+      process.exit(1);
+    }
+    const { convertWorldFile } = await import("@sfab-bench/parts");
+    const { nodeStore } = await import("./world/node-store");
+    const { catalogRoot } = await import("./world/plan-host");
+    const project = dirname(world);
+    const wrote = convertWorldFile(world, {
+      store: nodeStore,
+      catalogDir: catalogRoot(),
+      assetRoot: project,
+    });
+    const rel = (file: string) => relative(project, file) || file;
+    process.stdout.write(`${rel(wrote.partFile)}\n${rel(wrote.lockFile)}\n`);
+    return;
   }
   if (action.kind === "run") {
     const project = resolveRunProject(action.project);

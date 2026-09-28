@@ -26,6 +26,7 @@ import {
   type LiveInstance,
   type LiveNet,
   type LoadResult,
+  assetDir,
   loadWorldV2,
   pathRefOf,
   siValue,
@@ -213,6 +214,11 @@ export type { RunRanger };
  * written in the scene (`arm`, `uno`, `servo`), so wires stay `uno.D9`.
  */
 export type RunPlan = {
+  /**
+   * Master step, seconds. Absent means the body engine's 1 ms default,
+   * so a world that does not name a step stays on that step.
+   */
+  timestep?: number;
   environment: {
     ground: { plane: boolean };
     /** Metres per second squared. Passed to the MuJoCo model. */
@@ -1353,6 +1359,9 @@ function build(
   notePlaceholderBoxes(loaded);
   return {
     plan: {
+      ...(typeof world.run.timestep === "number"
+        ? { timestep: world.run.timestep }
+        : {}),
       environment: {
         ground: { plane: environment.ground.plane },
         gravity: [...environment.gravity],
@@ -1434,7 +1443,7 @@ export function planWorld(
           : [schema("World file did not load.")],
     };
   }
-  const built = build(loaded, found.root, env.dirname(found.abs), env);
+  const built = build(loaded, found.root, assetDir(found.abs), env);
   if (!built.plan) {
     return { ok: false, errors: [schema("World file did not load.")] };
   }

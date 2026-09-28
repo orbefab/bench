@@ -781,7 +781,12 @@ function createSession(host: SimHost) {
         ? (frame.leds[row.path] ?? 0)
         : (group?.circuit.leds[row.path] ?? 0);
     }
-    if (full && host.ledTrace && worldRel.endsWith("nano-led.world.json")) {
+    if (
+      full &&
+      host.ledTrace &&
+      (worldRel.endsWith("nano-led.world.json") ||
+        worldRel.endsWith("nano-led@1.0.0.json"))
+    ) {
       const supplyId = boardPower.get("nano")?.supplyId;
       const frame = supplyId ? ledFrames.get(supplyId) : undefined;
       const ms = simMs();

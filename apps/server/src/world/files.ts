@@ -87,8 +87,29 @@ export type WorldBytes = {
   read(relativeToWorld: string): Uint8Array | null;
 };
 
+/**
+ * Project directory for URDF and firmware paths. A root part lives
+ * under `parts/<pub>/`; those paths stay relative to the project.
+ */
+export function documentAssetDir(rel: string): string {
+  const clean = rel.replace(/\\/g, "/").replace(/^\/+/, "");
+  const match = /^(.*)\/parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i.exec(clean);
+  if (match) return match[1] ?? "";
+  if (/^parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i.test(clean)) return "";
+  return parentRel(clean);
+}
+
+/** Lock beside the document, not beside the project directory. */
+export function documentLockRel(rel: string): string {
+  const clean = rel.replace(/\\/g, "/").replace(/^\/+/, "");
+  const slash = clean.lastIndexOf("/");
+  const dir = slash === -1 ? "" : clean.slice(0, slash);
+  const stem = pathBasename(clean);
+  return dir ? `${dir}/${stem}.lock.json` : `${stem}.lock.json`;
+}
+
 export function readerFor(rootReal: string, worldRel: string): WorldBytes {
-  const dir = parentRel(worldRel);
+  const dir = documentAssetDir(worldRel);
   return {
     read(rel: string) {
       const full = joinRel(dir, rel);
@@ -116,7 +137,7 @@ export function dependencyRels(rootReal: string, worldRel: string): string[] {
   const rels = [worldRel];
   const planned = planWorld(rootReal, worldRel);
   if (!planned.ok) return rels;
-  const worldDir = parentRel(worldRel);
+  const worldDir = documentAssetDir(worldRel);
   for (const robot of planned.plan.robots) {
     const urdfRel = joinRel(worldDir, robot.urdf);
     if (!urdfRel) continue;
@@ -134,7 +155,7 @@ export function dependencyRels(rootReal: string, worldRel: string): string[] {
       if (meshRel) rels.push(meshRel);
     }
   }
-  const lockRel = joinRel(worldDir, `${pathBasename(worldRel)}.lock.json`);
+  const lockRel = documentLockRel(worldRel);
   if (lockRel && resolveInside(rootReal, lockRel)) rels.push(lockRel);
   for (const partRel of partRels(rootReal, worldDir)) rels.push(partRel);
   return rels;
@@ -190,7 +211,7 @@ export function firmwareWatch(
 ): FirmwareWatch[] {
   const planned = planWorld(rootReal, worldRel);
   if (!planned.ok) return [];
-  const worldDir = parentRel(worldRel);
+  const worldDir = documentAssetDir(worldRel);
   const out: FirmwareWatch[] = [];
   for (const board of planned.plan.boards) {
     const rel = joinRel(worldDir, board.firmware);

@@ -26,6 +26,8 @@ type BodyMotor = {
  * assignable: the extra fields stay with the host.
  */
 export type BodyScene = {
+  /** Seconds. Absent means `TIMESTEP_S`. */
+  timestep?: number;
   environment: {
     ground: { plane: boolean };
     gravity: [number, number, number];
@@ -267,8 +269,9 @@ function worldXml(plan: BodyScene): string {
     })
     .join("");
   const gravity = plan.environment.gravity.map((n) => String(n)).join(" ");
+  const timestep = plan.timestep ?? TIMESTEP_S;
   return `<mujoco model="world">
-    <option timestep="${TIMESTEP_S}" gravity="${gravity}" integrator="implicitfast"/>
+    <option timestep="${timestep}" gravity="${gravity}" integrator="implicitfast"/>
     <worldbody>
       ${geoms.join("\n")}
       ${mounts}
@@ -540,7 +543,7 @@ export async function compileWorld(
     const worldError = mj.mjs_getError(scene);
     if (worldError) return { ok: false, errors: [schemaError(worldError)] };
     forceCompiler(scene);
-    scene.option.timestep = TIMESTEP_S;
+    scene.option.timestep = worldDoc.timestep ?? TIMESTEP_S;
     scene.option.integrator = mj.mjtIntegrator.mjINT_IMPLICITFAST
       .value as unknown as typeof scene.option.integrator;
 

@@ -2,6 +2,7 @@ import {
   type Dirent,
   existsSync,
   type FSWatcher,
+  readFileSync,
   readdirSync,
   statSync,
   watch,
@@ -16,12 +17,13 @@ import {
   resolve,
   sep,
 } from "node:path";
-import type { CatalogEntry } from "@sfab-bench/contract";
+import { PART_FORMAT, type CatalogEntry } from "@sfab-bench/contract";
 import { db } from "./db";
 
 const STEP_RE = /\.(step|stp)$/i;
 const GLB_RE = /\.(glb|gltf)$/i;
 const WORLD_RE = /\.world\.json$/i;
+const PART_FILE_RE = /@\d+\.\d+\.\d+\.json$/i;
 const MAX_FILES = 2500;
 
 const SKIP_DIRS = new Set([
@@ -137,6 +139,26 @@ export function shouldSkipDir(name: string) {
   return skipDir(name);
 }
 
+/** A root document: a part file under `parts/<pub>/` that carries `play`. */
+function rootPartFile(dir: string, name: string): boolean {
+  if (!PART_FILE_RE.test(name)) return false;
+  const folder = dir.replace(/\\/g, "/");
+  if (!/(^|\/)parts\/[^/]+$/.test(folder)) return false;
+  try {
+    const json = JSON.parse(readFileSync(join(dir, name), "utf8")) as {
+      format?: string;
+      play?: unknown;
+    };
+    return (
+      json.format === PART_FORMAT &&
+      json.play !== null &&
+      typeof json.play === "object"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function walk(dir: string, root: string, acc: CatalogEntry[]) {
   if (acc.length >= MAX_FILES || !existsSync(dir)) return;
   let ents: Dirent[];
@@ -157,7 +179,7 @@ function walk(dir: string, root: string, acc: CatalogEntry[]) {
       acc.push({ path: posixRel(root, join(dir, ent.name)), kind: "step" });
     } else if (GLB_RE.test(ent.name) && !/\.raw\.(glb|gltf)$/i.test(ent.name)) {
       acc.push({ path: posixRel(root, join(dir, ent.name)), kind: "glb" });
-    } else if (WORLD_RE.test(ent.name)) {
+    } else if (WORLD_RE.test(ent.name) || rootPartFile(dir, ent.name)) {
       acc.push({ path: posixRel(root, join(dir, ent.name)), kind: "world" });
     }
   }

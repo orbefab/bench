@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import {
+  isRunDocumentPath,
   type RecordedFrame,
   type RecordingInfo,
   type RecordingRead,
@@ -178,7 +179,7 @@ function docKey(
   const root = projectReal(project);
   if (!root) return { error: "the project folder is gone" };
   const world = worldRel.trim().replace(/\\/g, "/").replace(/^\/+/, "");
-  if (!world || !world.toLowerCase().endsWith(".world.json")) {
+  if (!world || !isRunDocumentPath(world)) {
     return { error: "not a world document" };
   }
   if (world.split("/").includes("..")) {

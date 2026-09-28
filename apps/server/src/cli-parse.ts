@@ -5,7 +5,8 @@ import { expandUserPath } from "./projects";
 export type CliAction =
   | { kind: "help"; error?: string }
   | { kind: "dev" | "serve"; project?: string }
-  | { kind: "run"; project: string; world: string; ms?: number };
+  | { kind: "run"; project: string; world: string; ms?: number }
+  | { kind: "convert"; world: string };
 
 export function parseCli(argv: string[]): CliAction {
   const args = [...argv];
@@ -27,6 +28,16 @@ export function parseCli(argv: string[]): CliAction {
   }
   if (head === "dev") return { kind: "dev" };
   if (head === "serve") return { kind: "serve" };
+  if (head === "convert") {
+    const world = args[1];
+    if (!world) {
+      return {
+        kind: "help",
+        error: "usage: sfab-bench convert <world.json>",
+      };
+    }
+    return { kind: "convert", world: expandUserPath(world) };
+  }
   if (head === "run") {
     const project = args[1];
     const world = args[2];

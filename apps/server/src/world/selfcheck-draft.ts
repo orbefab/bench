@@ -88,15 +88,33 @@ function sceneNetlist(worldFile: string): {
   instances: SceneFile["axes"]["behaviour"]["2"]["variants"]["netlist"]["netlist"]["instances"];
   wires: [string, string][];
 } {
-  const world = JSON.parse(readFileSync(worldFile, "utf8")) as {
+  const doc = JSON.parse(readFileSync(worldFile, "utf8")) as {
+    format?: string;
     root?: { part?: string };
+    play?: unknown;
+    axes?: SceneFile["axes"];
   };
-  const partId = world.root?.part;
+  let partId = doc.root?.part;
+  let base = path.dirname(worldFile);
+  if (doc.format === "sfab.part@1" && doc.play) {
+    const instances =
+      doc.axes?.behaviour?.["2"]?.variants?.netlist?.netlist?.instances ?? {};
+    const scene = Object.values(instances).find(
+      (inst) =>
+        inst.part !== "sfab/ground-plane@1.0.0" &&
+        inst.part !== "sfab/target@1.0.0"
+    );
+    if (!scene) throw new Error("root part has no scene");
+    partId = scene.part;
+    const marker = `${path.sep}parts${path.sep}`;
+    const at = worldFile.lastIndexOf(marker);
+    base = at === -1 ? base : worldFile.slice(0, at);
+  }
   if (typeof partId !== "string") throw new Error("world has no root part");
   const parsed = partId.match(/^([^/]+)\/([^@]+)@(.+)$/);
   if (!parsed) throw new Error(partId);
   const partFile = path.join(
-    path.dirname(worldFile),
+    base,
     "parts",
     parsed[1] ?? "",
     `${parsed[2]}@${parsed[3]}.json`
