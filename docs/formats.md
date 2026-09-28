@@ -291,7 +291,7 @@ type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual",
 5. A bare class runs that class's default variant. `{ class, variant }` selects that named variant in that class. A variant the part does not have is a plan error naming the path, axis, class and variant. It does not fall back. The level row shows the variant, and the reason says the rule chose it. A named variant does not inherit a parent class.
 6. Levels are fixed for a run (D-017).
 
-`world_set_level` writes a class number onto one axis. When that axis held a variant rule, the write replaces the rule with the class alone. The other axes keep their variant objects.
+`world_set_level` writes a class number onto one axis. When that axis held a variant rule, the write replaces the rule with the class alone. An optional `variant` with that axis writes `{ class, variant }` instead. The other axes keep their variant objects.
 
 ## 4.1 Edit operations
 
@@ -307,7 +307,8 @@ type EditOp =
       value?: number | string | boolean }
   | { kind: "set-level"; document: string;
       scope: "default" | "type" | "path"; key?: string;
-      axis?: "behaviour" | "body" | "visual"; class: 0 | 1 | 2 | 3 | null }
+      axis?: "behaviour" | "body" | "visual"; class: 0 | 1 | 2 | 3 | null;
+      variant?: string }
   | { kind: "wire"; document: string; a: PortRef; b: PortRef }
   | { kind: "unwire"; document: string; a: PortRef; b: PortRef }
   | { kind: "rename-instance"; document: string; id: string; to: string }
@@ -316,7 +317,7 @@ type EditOp =
   | { kind: "batch"; document: string; label: string; ops: EditOp[] };
 ```
 
-A port ref is `instance.port`, split at the last dot. `add-instance` adds a child of the document part's composite netlist. `remove-instance` also drops the wires, `expose` entries, and `play.levels.paths` rules that name that instance. `set-param` is SI and is checked against the part's param quantities. `set-level` is the same table edit as `world_set_level`: a class number, or `null` to remove a type or path rule. The default cannot be removed. `rename-instance` rewrites wires, `expose`, and path keys in this document. It does not rename the part file. `set-play` may store a timestep other than `0.001`; the run still steps 1 ms and warns. `batch` is one undo step.
+A port ref is `instance.port`, split at the last dot. `add-instance` adds a child of the document part's composite netlist. `remove-instance` also drops the wires, `expose` entries, and `play.levels.paths` rules that name that instance. `set-param` is SI and is checked against the part's param quantities. `set-level` is the same table edit as `world_set_level`: a class number, or `null` to remove a type or path rule. With `axis` and `variant` it writes `{ class, variant }`. A path variant is checked against that part's variants on the axis. A type does not own variants; the check uses the expanded parts of that type, and refuses when none were expanded. The default cannot be removed. `rename-instance` rewrites wires, `expose`, and path keys in this document. It does not rename the part file. `set-play` may store a timestep other than `0.001`; the run still steps 1 ms and warns. `batch` is one undo step.
 
 The inverse is an `EditOp` that restores the previous part. `remove-instance` inverts to `add-instance` carrying the instance, its wires, its expose entries, and its path rules, including their order. `wire` inverts to `unwire`, and `unwire` remembers the wire's index. `rename-instance` inverts to the swap. `set-pose`, `set-param`, and `set-play` invert to the previous value, or to a clear when the field was absent. `set-level` inverts to the previous `play.levels` table, because a class number cannot restore a variant rule. A batch inverts to its inverses in reverse order, with the same label.
 

@@ -5,8 +5,10 @@
  */
 
 import type {
+  AxisName,
   Diagnostic,
   EditOp,
+  LevelClass,
   LevelSpec,
   Netlist,
   NetlistInstance,
@@ -22,6 +24,7 @@ import {
   type Params,
 } from "@sfab-bench/contract";
 
+import { environmentKind } from "./document";
 import { applyLevelEdit } from "./level-edit";
 import { makeDiag, splitPortRef } from "./si";
 
@@ -142,6 +145,12 @@ export function readEditOp(value: unknown): EditOp | { error: string } {
       ) {
         return { error: "set-level needs a class" };
       }
+      if (
+        row.variant !== undefined &&
+        (typeof row.variant !== "string" || row.variant.length === 0)
+      ) {
+        return { error: "set-level variant is not a name" };
+      }
       return {
         kind: "set-level",
         document,
@@ -153,6 +162,7 @@ export function readEditOp(value: unknown): EditOp | { error: string } {
           ? { axis: row.axis }
           : {}),
         class: row.class,
+        ...(typeof row.variant === "string" ? { variant: row.variant } : {}),
       };
     }
     case "wire":
@@ -208,7 +218,7 @@ function applyTo(
     case "set-param":
       return applyParam(part, op, ctx);
     case "set-level":
-      return applyLevel(part, op);
+      return applyLevel(part, op, ctx);
     case "wire":
       return applyWire(part, op, ctx);
     case "unwire":
@@ -540,7 +550,8 @@ function applyParam(
 
 function applyLevel(
   part: PartFile,
-  op: Extract<EditOp, { kind: "set-level" }>
+  op: Extract<EditOp, { kind: "set-level" }>,
+  ctx: EditContext
 ): { inverse: EditOp } | { error: Diagnostic } {
   if (!part.play) {
     return fail(
@@ -557,11 +568,16 @@ function applyLevel(
     part.play.levels = structuredClone(op.levels);
     return { inverse: levelInverse(op, previous) };
   }
+  if (op.variant) {
+    const known = variantKnown(part, op, ctx);
+    if (known) return known;
+  }
   const edited = applyLevelEdit(part.play.levels, {
     scope: op.scope,
     ...(op.key !== undefined ? { key: op.key } : {}),
     ...(op.axis !== undefined ? { axis: op.axis } : {}),
     class: op.class,
+    ...(op.variant !== undefined ? { variant: op.variant } : {}),
   });
   if ("error" in edited) {
     return fail(part.id, "levels", "Level", op.scope, "rule", edited.error);
@@ -580,6 +596,7 @@ function levelInverse(
     scope: op.scope,
     ...(op.key !== undefined ? { key: op.key } : {}),
     ...(op.axis !== undefined ? { axis: op.axis } : {}),
+    ...(op.variant !== undefined ? { variant: op.variant } : {}),
     class: op.class,
     levels: previous,
   };
@@ -848,6 +865,121 @@ function applyPlay(
   return { inverse };
 }
 
+function variantKnown(
+  part: PartFile,
+  op: Extract<EditOp, { kind: "set-level" }>,
+  ctx: EditContext
+): { error: Diagnostic } | null {
+  if (!op.variant || !op.axis || op.class === null) return null;
+  if (op.scope === "path") {
+    if (!op.key) return null;
+    const found = partAtPath(part, op.key, ctx);
+    if ("error" in found) {
+      return fail(op.key, op.axis, "Level", op.key, "instance", found.error);
+    }
+    return variantOn(found, op.axis, op.class, op.variant);
+  }
+  if (op.scope === "type") {
+    if (!op.key) return null;
+    const parts = partsOfType(part, op.key, ctx);
+    if (parts.length === 0) {
+      return fail(
+        op.key,
+        op.axis,
+        "Level",
+        op.variant,
+        "no expanded part",
+        `type ${op.key} has no expanded part, so variant ${op.variant} cannot be checked`
+      );
+    }
+    for (const item of parts) {
+      const miss = variantOn(item, op.axis, op.class, op.variant);
+      if (miss) return miss;
+    }
+    return null;
+  }
+  for (const item of expandedParts(part, ctx)) {
+    const miss = variantOn(item, op.axis, op.class, op.variant);
+    if (miss) return miss;
+  }
+  return null;
+}
+
+function variantOn(
+  part: PartFile,
+  axis: AxisName,
+  level: LevelClass,
+  name: string
+): { error: Diagnostic } | null {
+  const slot = part.axes?.[axis]?.[String(level) as "0"];
+  const names = slot ? Object.keys(slot.variants) : [];
+  if (names.includes(name)) return null;
+  return fail(
+    part.id,
+    axis,
+    "Level",
+    name,
+    names.join(",") || "none",
+    `class ${level} variant ${name} is not on this part`
+  );
+}
+
+/** The part a path rule names, after the loader's single-scene unwrap. */
+function partAtPath(
+  root: PartFile,
+  path: string,
+  ctx: EditContext
+): PartFile | { error: string } {
+  let current = scenePart(root, ctx);
+  for (const seg of path.split(".")) {
+    if (!seg) return { error: `no path "${path}"` };
+    const netlist = documentNetlist(current);
+    const inst = netlist?.instances[seg];
+    if (!inst) return { error: `no path "${path}"` };
+    const child = ctx.partById(inst.part);
+    if (!child) return { error: `part ${inst.part} is not in the library` };
+    current = child;
+  }
+  return current;
+}
+
+function partsOfType(
+  root: PartFile,
+  typeId: string,
+  ctx: EditContext
+): PartFile[] {
+  return expandedParts(root, ctx).filter((part) => part.type === typeId);
+}
+
+function expandedParts(root: PartFile, ctx: EditContext): PartFile[] {
+  const out: PartFile[] = [];
+  const seen = new Set<string>();
+  const walk = (part: PartFile) => {
+    if (seen.has(part.id)) return;
+    seen.add(part.id);
+    out.push(part);
+    const netlist = documentNetlist(part);
+    if (!netlist) return;
+    for (const inst of Object.values(netlist.instances)) {
+      const child = ctx.partById(inst.part);
+      if (child) walk(child);
+    }
+  };
+  walk(scenePart(root, ctx));
+  return out;
+}
+
+function scenePart(root: PartFile, ctx: EditContext): PartFile {
+  const netlist = documentNetlist(root);
+  if (!netlist) return root;
+  const rest = Object.values(netlist.instances).filter((inst) => {
+    const child = ctx.partById(inst.part);
+    return !child || environmentKind(child) === "other";
+  });
+  if (rest.length !== 1) return root;
+  return ctx.partById(rest[0]?.part ?? "") ?? root;
+}
+
 function levelLabel(op: Extract<EditOp, { kind: "set-level" }>): string {
   const where =
     op.scope === "default"
@@ -855,7 +987,8 @@ function levelLabel(op: Extract<EditOp, { kind: "set-level" }>): string {
       : `${op.scope} ${op.key ?? ""}`.trim();
   const axis = op.axis ? ` ${op.axis}` : "";
   if (op.class === null) return `cleared ${where}${axis}`;
-  return `set ${where}${axis} to class ${op.class}`;
+  const named = op.variant ? ` variant ${op.variant}` : "";
+  return `set ${where}${axis} to class ${op.class}${named}`;
 }
 
 function namesThis(op: EditOp, ctx: EditContext): { error: Diagnostic } | null {

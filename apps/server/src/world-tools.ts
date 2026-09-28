@@ -1157,7 +1157,7 @@ export const worldTools = {
   }),
   world_set_level: tool({
     description:
-      "Set or remove one level rule in the open world file, then restart the run. world is the project-relative .world.json path from get_viewer. scope is default, type, or path. key is the part type or the instance path (nano, fleet.rig2.servo); default takes no key. axis is behaviour, body, or visual; omit it and the class applies to all three. class is 0, 1, 2, 3, or null. null removes that rule. The default cannot be removed. A type or path that is not in the loaded world is an error and the file is left unchanged. Returns the new level rows for the instances that rule covers, including a snapshot when one ran.",
+      "Set or remove one level rule in the open world file, then restart the run. world is the project-relative .world.json path from get_viewer. scope is default, type, or path. key is the part type or the instance path (nano, fleet.rig2.servo); default takes no key. axis is behaviour, body, or visual; omit it and the class applies to all three. class is 0, 1, 2, 3, or null. null removes that rule. variant, with an axis, writes { class, variant } on that axis. The default cannot be removed. A type or path that is not in the loaded world is an error and the file is left unchanged. Returns the new level rows for the instances that rule covers, including a snapshot when one ran.",
     inputSchema: z.object({
       world: z.string(),
       scope: z.enum(["default", "type", "path"]),
@@ -1170,8 +1170,9 @@ export const worldTools = {
         z.literal(3),
         z.null(),
       ]),
+      variant: z.string().min(1).optional(),
     }),
-    execute: async ({ world, scope, key, axis, class: level }) => {
+    execute: async ({ world, scope, key, axis, class: level, variant }) => {
       const found = await openRun(world);
       if ("error" in found) return found;
       const report = found.plan.report;
@@ -1191,6 +1192,7 @@ export const worldTools = {
           scope,
           ...(key !== undefined ? { key } : {}),
           ...(axis !== undefined ? { axis } : {}),
+          ...(variant !== undefined ? { variant } : {}),
           class: level,
         },
       ]);

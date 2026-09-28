@@ -15,7 +15,12 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
-import { type EditOp, emptySnapshot, type Pose } from "@sfab-bench/contract";
+import {
+  type EditOp,
+  emptySnapshot,
+  type Pose,
+  type RunReport,
+} from "@sfab-bench/contract";
 import {
   EditSession,
   EXTERNAL_EDIT,
@@ -24,6 +29,7 @@ import {
   partStyle,
   sha256Bytes,
 } from "@sfab-bench/parts";
+import type { SerialChunk } from "@sfab-bench/sim/sim";
 import { Sim } from "@sfab-bench/sim/sim";
 import { partWriteRefusal } from "./local-sandbox";
 import { closeRootWatches } from "./projects";
@@ -399,6 +405,19 @@ try {
     docOp(SCENE, { kind: "remove-instance", id: "missing" }),
     'no instance "missing"'
   );
+  reject(
+    work,
+    USB,
+    docOp(USB, {
+      kind: "set-level",
+      scope: "path",
+      key: "servo",
+      axis: "body",
+      class: 1,
+      variant: "no-such",
+    }),
+    "variant no-such is not on this part"
+  );
   const catalogBefore = readFileSync(catalogLed, "utf8");
   const catalogWorld = catalogLed;
   const catalogSession = EditSession.open({
@@ -444,8 +463,6 @@ try {
   }
   putPair(work, USB, externalBefore);
 
-  const usbReport = loads(frames, USB);
-  expect(usbReport, "usb report");
   const editedLevel = openSession(frames, USB).apply(
     docOp(USB, {
       kind: "set-level",
@@ -453,28 +470,25 @@ try {
       key: "servo",
       axis: "body",
       class: 1,
+      variant: "collapsed",
     })
   );
   if ("error" in editedLevel) throw new Error(editedLevel.error);
-  const editedFrames = await recorded(frames, USB);
-  const collapsedFrames = await recorded(nanoDir, COLLAPSED);
-  const editedReport = loads(frames, USB);
-  const collapsedReport = loads(nanoDir, COLLAPSED);
-  const editedBody = editedReport?.levels.find(
-    (row) => row.path === "servo" && row.axis === "body"
+  const editedRun = await recorded(frames, USB);
+  const collapsedRun = await recorded(nanoDir, COLLAPSED);
+  expect(editedRun.frames === collapsedRun.frames, "collapsed frames differ");
+  expect(
+    editedRun.serial.join("\n") === collapsedRun.serial.join("\n"),
+    "collapsed serial differs"
   );
-  const collapsedBody = collapsedReport?.levels.find(
-    (row) => row.path === "servo" && row.axis === "body"
+  const fields = differing(loads(frames, USB), loads(nanoDir, COLLAPSED));
+  expect(
+    fields.length === 2 && fields[0] === "lock" && fields[1] === "world",
+    `collapsed report fields ${fields.join(", ")}`
   );
-  if (editedFrames.frames === collapsedFrames.frames) {
-    console.log(
-      `edit set-level path servo body 1: ${SPAN_MS} ms frames byte-identical to nano-servo-collapsed`
-    );
-  } else {
-    console.log(
-      `edit set-level path servo body 1: frames differ from nano-servo-collapsed (class 1 runs body variant ${editedBody?.variant ?? "unknown"}; collapsed pins ${collapsedBody?.variant ?? "unknown"})`
-    );
-  }
+  console.log(
+    `edit set-level path servo body collapsed: ${SPAN_MS} ms, ${editedRun.count} frames byte-identical, serial ${editedRun.serial.length} lines identical, report differs only in world, lock`
+  );
 
   await runViewerContext(
     { root: tools, file: "", snapshot: emptySnapshot(), show: () => {} },
@@ -581,10 +595,10 @@ function call(
 async function recorded(
   project: string,
   world: string
-): Promise<{ frames: string }> {
+): Promise<{ frames: string; serial: string[]; count: number }> {
   const sim = new Sim({
     post() {
-      /* serial is drained by the host in a run; frames are the proof */
+      /* serial is drained after the step */
     },
     now: () => performance.now(),
     schedule: (fn, ms) => setTimeout(fn, ms),
@@ -614,8 +628,48 @@ async function recorded(
     if (!settled) throw new Error(`${world} produced no state`);
     const body = sim.record({ op: "read", from: 0, to: settled.simTime });
     if (body.op !== "read") throw new Error(`${world} produced no recording`);
-    return { frames: JSON.stringify(body.read.frames) };
+    return {
+      frames: JSON.stringify(body.read.frames),
+      serial: takeLines(sim.drainSerial()),
+      count: body.read.frames.length,
+    };
   } finally {
     sim.dispose();
   }
+}
+
+function takeLines(chunks: SerialChunk[]): string[] {
+  const pending = new Map<string, string>();
+  const lines: string[] = [];
+  for (const chunk of chunks) {
+    const buf = (pending.get(chunk.board) ?? "") + chunk.text;
+    const parts = buf.split("\n");
+    pending.set(chunk.board, parts.pop() ?? "");
+    for (const part of parts) {
+      const line = part.replace(/\r$/, "").trim();
+      if (line.length > 0) lines.push(`${chunk.board}: ${line}`);
+    }
+  }
+  for (const [board, rest] of pending) {
+    const line = rest.replace(/\r$/, "").trim();
+    if (line.length > 0) lines.push(`${board}: ${line}`);
+  }
+  return lines;
+}
+
+function differing(
+  left: RunReport | null | undefined,
+  right: RunReport | null | undefined
+): string[] {
+  if (!left || !right) return ["missing"];
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]) as Set<
+    keyof RunReport
+  >;
+  const fields: string[] = [];
+  for (const key of keys) {
+    if (JSON.stringify(left[key]) !== JSON.stringify(right[key])) {
+      fields.push(key);
+    }
+  }
+  return fields.sort();
 }

@@ -85,6 +85,11 @@ export type SetLevelOp = {
   axis?: AxisName;
   class: LevelClass | null;
   /**
+   * With `axis`, the rule is `{ class, variant }`. Without it, `class`
+   * is the bare number, as before.
+   */
+  variant?: string;
+  /**
    * Inverse: the previous `play.levels` table. A variant rule is not a
    * class number, so `class` alone cannot restore it.
    */

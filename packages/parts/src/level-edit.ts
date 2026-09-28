@@ -24,6 +24,8 @@ export type LevelEdit = {
   key?: string;
   axis?: AxisName;
   class: LevelClass | null;
+  /** With `axis`, write `{ class, variant }` instead of the bare class. */
+  variant?: string;
 };
 
 const AXES: readonly AxisName[] = ["behaviour", "body", "visual"];
@@ -32,6 +34,8 @@ export function applyLevelEdit(
   levels: LevelTable,
   edit: LevelEdit
 ): { levels: LevelTable } | { error: string } {
+  const variantError = variantNeeds(edit);
+  if (variantError) return { error: variantError };
   if (edit.scope === "default") {
     if (edit.key) return { error: "default takes no key" };
     if (edit.class === null) {
@@ -40,7 +44,7 @@ export function applyLevelEdit(
     if (!edit.axis)
       return { levels: ordered({ ...levels, default: edit.class }) };
     const spec = axesOf(levels.default);
-    spec[edit.axis] = edit.class;
+    spec[edit.axis] = axisValue(edit);
     return { levels: ordered({ ...levels, default: collapse(spec) }) };
   }
   if (!edit.key) return { error: `${edit.scope} needs a key` };
@@ -71,7 +75,7 @@ export function applyLevelEdit(
     table[edit.key] = edit.class;
   } else {
     const spec = table[edit.key] === undefined ? {} : axesOf(table[edit.key]);
-    spec[edit.axis] = edit.class;
+    spec[edit.axis] = axisValue(edit);
     table[edit.key] = collapse(spec);
   }
   return { levels: ordered({ ...levels, [tableName]: table }) };
@@ -89,6 +93,20 @@ function ordered(levels: LevelTable): LevelTable {
     out.nets = levels.nets;
   }
   return out;
+}
+
+function variantNeeds(edit: LevelEdit): string | null {
+  if (!edit.variant) return null;
+  if (!edit.axis) return "a variant needs an axis";
+  if (edit.class === null) return "a variant needs a class";
+  return null;
+}
+
+function axisValue(edit: LevelEdit): AxisLevel {
+  if (edit.variant && edit.class !== null) {
+    return { class: edit.class, variant: edit.variant };
+  }
+  return edit.class as LevelClass;
 }
 
 function axesOf(spec: LevelSpec): Partial<Record<AxisName, AxisLevel>> {
