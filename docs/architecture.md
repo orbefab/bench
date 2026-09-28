@@ -146,12 +146,20 @@ operations, so one undo history covers them.
 Third-party plugins loaded at run time wait for the part registry and
 signing.
 
-L1 is `packages/parts`. The circuit engine (L2) is
-`packages/engine-circuit`, the MCU engine is `packages/engine-mcu`,
+L1 is `packages/parts`, including level edits. The circuit engine (L2)
+is `packages/engine-circuit`, the MCU engine is `packages/engine-mcu`,
 and the body engine is `packages/engine-body`. Each implements the
 `Engine` face in the contract (init, advance to a master time, read
 and write port quantities). The Node `Store` is
-`apps/server/src/world/node-store.ts`. The plan, the worker, and the
-capture runner still live in `apps/server/src/world/`; A2b moves them
-into `packages/sim`. Printed self-check lines are unchanged apart from
-the boundary rule's rejections and the three engine lines.
+`apps/server/src/world/node-store.ts`.
+
+L3 is `packages/sim`. It holds the plan, wiring, circuit stamps, the
+form registry, the `Sim` orchestrator, the recorder, and the capture
+runner. It does not read files or the clock. The host passes a `Store`,
+absolute paths, package versions, and `now`. `apps/server/src/world/`
+keeps thin shims so existing imports still resolve, plus the test
+references (Uno, Nano, snapshot DC). The worker
+(`apps/server/src/world/worker.ts`) is the Node host: thread messages,
+the play timer, and file reads around `Sim`. `host.ts` and `live.ts`
+stay in the server and talk to that worker. `sfab-bench run` builds
+`Sim` in process and prints each board's serial lines.
