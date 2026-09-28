@@ -99,15 +99,21 @@ export type RailCircuitSpec = {
   /** V_RST / VCC. From the stamp when omitted. */
   resetFraction?: number;
   /**
-   * Every board on this supply. Two or more are one circuit: one
-   * source, each board's netlist under its own path. One board keeps
-   * `stamp` and `feed`.
+   * Every board on this rail. N = 1 is the single-board rail: the same
+   * element ids and node names. Two or more share one source, each
+   * netlist under its own path. Pin edges are split on every N.
    */
   boards?: readonly SharedBoard[];
 };
 
 const MASTER_S = 0.001;
 const SUBSTEPS = 10;
+
+/** One slice of a master step, between pin edges. */
+type RailPiece = {
+  dt: number;
+  drive: readonly { bit: number; mode: PinMode; boardId?: string }[];
+};
 
 export class RailCircuit {
   readonly winding: Float64Array;
@@ -122,6 +128,11 @@ export class RailCircuit {
   boardMinVoltage = 0;
   /** Electrical steps inside one 1 ms master step. */
   readonly substeps: number;
+  /**
+   * Pin-edge pieces inside the last master step. 0 when every stamped
+   * pin was held for the whole millisecond.
+   */
+  lastPieceCount = 0;
   /** Frozen-factor steps during the last master step. */
   lastFrozen = 0;
   /**
@@ -203,6 +214,22 @@ export class RailCircuit {
   >();
 
   constructor(spec: RailCircuitSpec) {
+    // One board is the shared rail with N = 1: same ids, same nodes.
+    const listed = spec.boards;
+    if ((listed?.length ?? 0) === 1) {
+      const only = listed?.[0];
+      if (!only) throw new Error("a rail board is missing");
+      spec = {
+        ...spec,
+        boards: undefined,
+        stamp: only.stamp,
+        feed: only.feed,
+        pin: only.pin ?? spec.pin,
+        ledAlias: spec.ledAlias ?? only.stamp.ledAlias ?? undefined,
+        resetFraction:
+          spec.resetFraction ?? only.stamp.resetFraction ?? undefined,
+      };
+    }
     if ((spec.boards?.length ?? 0) > 1) {
       const built = sharedRail(spec);
       this.winding = built.winding;
@@ -552,16 +579,9 @@ export class RailCircuit {
    * intervals between those edges. Their durations sum to one master step.
    * With no pieces the pin is held and the grid is the one used before.
    */
-  solve(
-    pieces?: readonly {
-      dt: number;
-      drive: readonly { bit: number; mode: PinMode }[];
-    }[]
-  ): void {
+  solve(pieces?: readonly RailPiece[]): void {
     if (this.shared) {
-      // Pin edges are split on a single-board rail only; a shared rail
-      // holds each board's pins for the master step.
-      this.solveShared();
+      this.solveShared(pieces);
       return;
     }
     let drop = false;
@@ -606,10 +626,11 @@ export class RailCircuit {
     for (const channel of this.channels) channel.latch(voltage);
     for (const cmp of this.comparators) cmp.latch(voltage);
     this.battery?.advance(this.current, MASTER_S);
+    this.lastPieceCount = pieces?.length ?? 0;
   }
 
   /** Several boards, one source. Each board keeps its own node and load. */
-  private solveShared(): void {
+  private solveShared(pieces?: readonly RailPiece[]): void {
     let drop = false;
     for (const fuse of this.fuse) if (fuse.pull()) drop = true;
     for (const cmp of this.comparators) if (cmp.apply()) drop = true;
@@ -634,6 +655,28 @@ export class RailCircuit {
       this.engine.operatingPoint();
       this.ready = true;
       note(0);
+    } else if (pieces && pieces.length > 0) {
+      const h = this.engine.h;
+      for (const piece of pieces) {
+        for (const drive of piece.drive) {
+          if (drive.boardId) {
+            this.setBoardDrive(drive.boardId, drive.bit, drive.mode);
+          } else {
+            this.setDrive(drive.bit, drive.mode);
+          }
+        }
+        let left = piece.dt;
+        while (left > h * (1 + 1e-9)) {
+          this.engine.advance(h);
+          note(h);
+          left -= h;
+        }
+        if (left > 1e-15) {
+          this.engine.advance(left);
+          note(left);
+        }
+      }
+      this.engine.parkGrid(this.substeps);
     } else {
       const n = this.substeps;
       const dt = this.engine.h;
@@ -642,6 +685,7 @@ export class RailCircuit {
         note(dt);
       }
     }
+    this.lastPieceCount = pieces?.length ?? 0;
     this.lastFrozen = this.engine.frozenSteps - frozen;
     this.voltage = this.engine.voltage(this.termNode);
     this.current = -this.engine.branchCurrent("src");
@@ -908,7 +952,7 @@ function sharedRail(spec: RailCircuitSpec): {
     ),
     drives,
     ledDiodes,
-    ledAlias: first?.stamp.ledAlias ?? "",
+    ledAlias: spec.ledAlias ?? first?.stamp.ledAlias ?? "",
     resetFraction: first?.stamp.resetFraction ?? null,
     resetNode: first?.stamp.resetNode ?? null,
     branchLaws: stamped.filter((el): el is LawTable => el instanceof LawTable),

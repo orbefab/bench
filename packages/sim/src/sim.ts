@@ -1133,7 +1133,8 @@ function createSession(host: SimHost) {
         stamp: fed?.stamp ?? supplyStamp,
       });
       const path = attached.boardPath;
-      const shared = stamped.length >= 2 && stamped.length === fedBoards.length;
+      // One stamped board is the shared rail with N = 1.
+      const shared = stamped.length >= 1 && stamped.length === fedBoards.length;
       const circuit = shared
         ? createRailCircuit({
             vNom: supply.voltage,
@@ -1148,6 +1149,10 @@ function createSession(host: SimHost) {
                 boardId: drive.board?.id,
               };
             }),
+            ...(stamped.length === 1 && path ? { boardPath: path } : {}),
+            ...(stamped.length === 1 && fed
+              ? { pin: fed.pin, ledAlias: `${fed.id}.led` }
+              : {}),
             ...(supply.battery ? { battery: supply.battery } : {}),
             boards: stamped.map((board) => {
               const one = railAttachment({
@@ -1428,6 +1433,92 @@ function createSession(host: SimHost) {
     return pieces.length > 0 ? pieces : null;
   }
 
+  /**
+   * Pin edges of every board on one rail, merged onto one timeline.
+   * A board that does not toggle contributes its held mode to each piece.
+   */
+  function pinPiecesUnion(
+    specs: readonly { id: string }[],
+    circuit: RailCircuit
+  ): { dt: number; drive: { bit: number; mode: PinMode; boardId: string }[] }[] | null {
+    type Edge = { boardId: string; bit: number; when: number; high: boolean };
+    const edges: Edge[] = [];
+    const modes = new Map<string, Map<number, PinMode>>();
+    const bitsOf = new Map<string, readonly number[]>();
+    for (const spec of specs) {
+      const avr = boards.find((item) => item.id === spec.id);
+      const bits = circuit.driveBitsOf(spec.id);
+      const start = driveAtStart.get(spec.id);
+      if (!avr || !start || bits.length === 0) continue;
+      bitsOf.set(spec.id, bits);
+      modes.set(spec.id, new Map(start));
+      const wanted = new Set(bits);
+      const span = avr.cycles() - avr.stepOrigin;
+      if (!(span > 0)) continue;
+      for (const edge of avr.pinChanges) {
+        if (!wanted.has(edge.bit) || edge.cycle < avr.stepOrigin) continue;
+        edges.push({
+          boardId: spec.id,
+          bit: edge.bit,
+          when: ((edge.cycle - avr.stepOrigin) / span) * 0.001,
+          high: edge.high,
+        });
+      }
+    }
+    if (edges.length === 0) return null;
+    edges.sort((a, b) =>
+      a.when < b.when
+        ? -1
+        : a.when > b.when
+          ? 1
+          : a.boardId < b.boardId
+            ? -1
+            : a.boardId > b.boardId
+              ? 1
+              : a.bit - b.bit
+    );
+    const pieces: {
+      dt: number;
+      drive: { bit: number; mode: PinMode; boardId: string }[];
+    }[] = [];
+    let t = 0;
+    let changed = false;
+    const driveOf = () => {
+      const drive: { bit: number; mode: PinMode; boardId: string }[] = [];
+      for (const spec of specs) {
+        const bits = bitsOf.get(spec.id);
+        const mode = modes.get(spec.id);
+        if (!bits || !mode) continue;
+        for (const bit of bits) {
+          drive.push({
+            boardId: spec.id,
+            bit,
+            mode: mode.get(bit) ?? "input",
+          });
+        }
+      }
+      return drive;
+    };
+    for (const edge of edges) {
+      const dt = edge.when - t;
+      if (dt > 1e-12) pieces.push({ dt, drive: driveOf() });
+      const mode = modes.get(edge.boardId);
+      const prev = mode?.get(edge.bit);
+      if (mode && (prev === "high" || prev === "low")) {
+        const next: PinMode = edge.high ? "high" : "low";
+        if (next !== prev) {
+          mode.set(edge.bit, next);
+          changed = true;
+        }
+      }
+      if (edge.when > t) t = edge.when;
+    }
+    if (!changed) return null;
+    const rest = 0.001 - t;
+    if (rest > 1e-12) pieces.push({ dt: rest, drive: driveOf() });
+    return pieces.length > 0 ? pieces : null;
+  }
+
   function solveOneRail(
     supplyId: string,
     fixed: number
@@ -1459,11 +1550,14 @@ function createSession(host: SimHost) {
           (quiescent.get(first.id) ?? 0);
         circuit.setBoardLoad(first.id, base + ranger);
       }
-      for (const spec of specs) {
-        const avr = boards.find((item) => item.id === spec.id);
-        if (!avr) continue;
-        for (const bit of circuit.driveBitsOf(spec.id)) {
-          circuit.setBoardDrive(spec.id, bit, avr.driveMode(bit));
+      pieces = pinPiecesUnion(specs, circuit);
+      if (!pieces) {
+        for (const spec of specs) {
+          const avr = boards.find((item) => item.id === spec.id);
+          if (!avr) continue;
+          for (const bit of circuit.driveBitsOf(spec.id)) {
+            circuit.setBoardDrive(spec.id, bit, avr.driveMode(bit));
+          }
         }
       }
     } else {
