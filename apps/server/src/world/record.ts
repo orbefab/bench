@@ -86,7 +86,7 @@ export type RecordSpec = {
   boards: string[];
   /** Parallel to `boards`. True when that board records `leds[`${id}.led`]`. */
   boardLed?: boolean[];
-  /** LED paths on each board. Frames store one ampere sample per entry. */
+  /** LED paths on each board. Each frame stores that LED's mean current. */
   leds?: { board: string; path: string }[];
 };
 

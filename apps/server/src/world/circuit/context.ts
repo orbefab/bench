@@ -22,6 +22,11 @@ export type StampCtx = {
   z: Float64Array;
   /** Last accepted solution, then the newest Newton guess. */
   x: Float64Array;
+  /**
+   * Scales independent sources. 1 on every solve that Newton accepts
+   * by itself, so those stamps stay the unscaled value.
+   */
+  sourceScale: number;
 };
 
 export type PowerSplit = {

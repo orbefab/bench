@@ -19,7 +19,9 @@ import {
   readRecording,
   stopWorld,
 } from "./world/host";
-import { planWorld } from "./world/plan";
+import { loadWorldV2 } from "./world/parts/load";
+import { lockPathFor, writeLock } from "./world/parts/lock";
+import { catalogRoot, planWorld } from "./world/plan";
 import type { AdcSampleStamp, AdcTrace } from "./world/worker";
 
 const nanoDir = fileURLToPath(
@@ -414,5 +416,81 @@ async function assertTraceOff(project: string, world: string): Promise<void> {
   );
   console.log(
     `channels: A0 0, A1 1023, 1.1 V ref 1023, bandgap ${bgCount}, MUX 15 0, OUTPUT HIGH 1023, INPUT_PULLUP 1023`
+  );
+
+  const divider = await runWorld(nanoDir, "nano-divider.world.json", 400);
+  assertDivider(divider, 1);
+  const class2Dir = mkdtempSync(join(tmpdir(), "sfab-divider-"));
+  try {
+    cpSync(nanoDir, class2Dir, { recursive: true });
+    const worldFile = join(class2Dir, "nano-divider.world.json");
+    writeFileSync(
+      worldFile,
+      `{
+  "version": 2,
+  "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },
+  "run": {
+    "seed": 1,
+    "levels": { "default": 1, "types": { "arduino-nano": { "behaviour": 2 } } }
+  },
+  "root": { "id": "scene", "part": "sfab/nano-divider-scene@1.0.0" }
+}
+`
+    );
+    rmSync(lockPathFor(worldFile), { force: true });
+    const loaded = loadWorldV2(worldFile, {
+      catalogDir: catalogRoot(),
+      assetRoot: class2Dir,
+    });
+    const lockErrors = loaded.diagnostics.filter(
+      (diag) => diag.severity === "error"
+    );
+    expect(
+      lockErrors.length === 0 && loaded.lock,
+      lockErrors.map((diag) => diag.message).join("; ") || "no class 2 lock"
+    );
+    if (loaded.lock) writeLock(lockPathFor(worldFile), loaded.lock);
+    const high = await runWorld(class2Dir, "nano-divider.world.json", 400);
+    assertDivider(high, 2);
+  } finally {
+    rmSync(class2Dir, { recursive: true, force: true });
+  }
+}
+
+/** 10 kΩ + 10 kΩ from the board node to ground, midpoint on A0. */
+function assertDivider(
+  run: { read: RecordingRead; trace: AdcTrace },
+  behaviour: number
+): void {
+  const text = serialOf(run.read, "nano");
+  const printed = [...text.matchAll(/^(\d+)\s*$/gm)].map((match) =>
+    Number(match[1])
+  );
+  expect(printed.length > 0, `class ${behaviour} printed no A0 count`);
+  const sample = run.trace.samples.find(
+    (item) => item.board === "nano" && item.mux === "A0" && item.ms >= 200
+  );
+  expect(sample, `class ${behaviour} has no A0 sample`);
+  if (!sample) return;
+  const vcc = nodeAt(run.trace, "nano", sample.ms - 1);
+  const closed = Math.round((1023 * sample.voltage) / vcc);
+  const count = adcCount(sample.voltage, vcc);
+  const last = printed[printed.length - 1];
+  expect(
+    sample.count === count && last === count,
+    `class ${behaviour} A0 ${sample.count} printed ${last}, floor is ${count}`
+  );
+  // The pin leak sits on the lower resistor, so Vmid is just under Vcc/2
+  // and both the count and round(1023·Vmid/Vcc) are 511, not 512.
+  expect(
+    sample.count === closed,
+    `class ${behaviour} A0 ${sample.count} is not round(1023·${sample.voltage}/${vcc}) = ${closed}`
+  );
+  expect(
+    Math.abs(sample.rSource - 5000) / 5000 < 0.02,
+    `class ${behaviour} rSource ${sample.rSource} ohm is not 5 kΩ`
+  );
+  console.log(
+    `divider class ${behaviour}: A0 ${sample.count} (round(1023·Vmid/Vcc) ${closed}, Vmid ${sample.voltage.toFixed(4)} V, Vcc ${vcc.toFixed(4)} V), rSource ${sample.rSource.toFixed(1)} ohm`
   );
 }

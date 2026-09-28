@@ -878,9 +878,15 @@ try {
 
   for (const frame of gauge.frames) {
     const reading = [...readings].reverse().find((item) => item.t <= frame.t);
-    if (!reading) continue;
-    const led = frame.boards.nano?.ledCurrent ?? 0;
+    const prior = [...readings]
+      .reverse()
+      .find((item) => item.t <= frame.t - 0.01 + 1e-9);
+    if (!reading || !prior) continue;
     const on = reading.us > 0 && reading.d < 15;
+    const was = prior.us > 0 && prior.d < 15;
+    // The frame that contains the threshold write mixes both currents.
+    if (on !== was) continue;
+    const led = frame.boards.nano?.ledCurrent ?? 0;
     expect(
       on ? led > 1e-4 : led < 1e-5,
       `D13 ${led} A at ${frame.t} s, d ${reading.d}`

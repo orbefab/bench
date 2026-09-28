@@ -19,6 +19,7 @@ import * as THREE from "three";
 import { applyMeshHighlights, clearHighlights } from "@/cad/highlights";
 import { useXrSession } from "@/hooks/useXrSession";
 import {
+  type LoadedPrimitive,
   type LoadedVisual,
   type LoadedWorld,
   loadWorldAssets,
@@ -151,7 +152,7 @@ function PrimitiveMesh({
   primitive,
   material,
 }: {
-  primitive: WorldPrimitive;
+  primitive: WorldPrimitive | LoadedPrimitive;
   material: THREE.Material;
 }) {
   if (primitive.shape === "box") {
@@ -503,19 +504,24 @@ export function WorldScene({
                       xyz={visual.xyz}
                       rpy={visual.rpy}
                     >
-                      {visual.mesh.kind === "stl" ? (
+                      {visual.mesh?.kind === "stl" ? (
                         <mesh
                           geometry={visual.mesh.geometry}
                           material={material}
                           scale={visual.scale}
                         />
-                      ) : (
+                      ) : visual.mesh?.kind === "obj" ? (
                         <ObjVisual
                           object={visual.mesh.object}
                           material={material}
                           scale={visual.scale}
                         />
-                      )}
+                      ) : visual.primitive ? (
+                        <PrimitiveMesh
+                          primitive={visual.primitive}
+                          material={material}
+                        />
+                      ) : null}
                     </VisualOrigin>
                   ))}
                 </group>

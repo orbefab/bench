@@ -1,6 +1,6 @@
 {
   "format": "sfab.part@1",
-  "id": "sfab/nano-vcc-scene@1.0.0",
+  "id": "sfab/nano-divider-scene@1.0.0",
   "type": "assembly",
   "foreign": false,
   "axes": {
@@ -13,43 +13,52 @@
             "omits": ["no snapshot of this assembly"],
             "netlist": {
               "instances": {
-                "flag": {
-                  "part": "sfab/flag@1.0.0",
-                  "pose": {
-                    "position": [0, 0, 0],
-                    "rotation": [1, 0, 0, 0]
-                  }
-                },
                 "nano": {
                   "part": "sfab/nano-ch340@1.0.0",
                   "pose": {
-                    "position": [0.08, 0, 0.004],
+                    "position": [0, 0, 0.004],
                     "rotation": [1, 0, 0, 0]
                   },
                   "params": {
-                    "firmware": "firmware/vcc/vcc.hex",
-                    "source": "firmware/vcc/vcc.ino"
+                    "firmware": "firmware/divider/divider.hex",
+                    "source": "firmware/divider/divider.ino"
                   }
                 },
                 "usb": {
                   "part": "sfab/usb-port-500ma@1.0.0",
                   "pose": {
-                    "position": [0.042, 0, 0.0025],
+                    "position": [-0.038, 0, 0.0025],
                     "rotation": [1, 0, 0, 0]
                   }
                 },
-                "servo": {
-                  "part": "sfab/sg90@1.0.0"
+                "rtop": {
+                  "part": "sfab/resistor@1.0.0",
+                  "pose": {
+                    "position": [0.04, 0.01, 0.004],
+                    "rotation": [1, 0, 0, 0]
+                  },
+                  "params": {
+                    "R": 10000
+                  }
+                },
+                "rbot": {
+                  "part": "sfab/resistor@1.0.0",
+                  "pose": {
+                    "position": [0.04, -0.01, 0.004],
+                    "rotation": [1, 0, 0, 0]
+                  },
+                  "params": {
+                    "R": 10000
+                  }
                 }
               },
               "wires": [
                 ["usb.5V", "nano.5V"],
                 ["usb.GND", "nano.GND"],
-                ["nano.D9", "servo.signal"],
-                ["nano.5V", "servo.V+"],
-                ["nano.GND", "servo.GND"],
-                ["servo.shaft", "flag.hinge"],
-                ["servo.mount", "flag.base"]
+                ["nano.5V", "rtop.A"],
+                ["rtop.B", "nano.A0"],
+                ["nano.A0", "rbot.A"],
+                ["rbot.B", "nano.GND"]
               ],
               "expose": {}
             }

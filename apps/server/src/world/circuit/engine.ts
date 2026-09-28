@@ -57,6 +57,11 @@ export type Sample = {
 const ATOL = 1e-8;
 const RTOL = 1e-6;
 const MAX_ITER = 60;
+/**
+ * Times the source-stepping fallback ran. A circuit that converges on
+ * the first path leaves this at 0.
+ */
+export let gminFallbackCalls = 0;
 /** E2: relative conductance tolerance that keeps the frozen Jacobian. */
 const BYPASS_EPS = 0.5;
 
@@ -87,6 +92,10 @@ export class Engine {
   private readonly laws: LawTable[];
   private readonly nonlinear: boolean;
   private readonly xSave: Float64Array;
+  /** Diagonal shunt used only while source stepping. Zero afterwards. */
+  private nodeGmin = 0;
+  /** Extra Newton iterations for the fallback only. 0 uses `maxIter`. */
+  private iterCap = 0;
   private readonly diodeLimit: Float64Array;
   private opDone = false;
   private lastPower: PowerReport | null = null;
@@ -151,6 +160,7 @@ export class Engine {
       A: this.A,
       z: this.z,
       x: this.x,
+      sourceScale: 1,
     };
     this.switches = elements.filter((el): el is Switch => el instanceof Switch);
     this.sigLU = new Uint8Array(this.switches.length);
@@ -187,6 +197,18 @@ export class Engine {
   frozenSteps = 0;
   /** Transient steps that rebuilt the factorization. */
   refactorSteps = 0;
+  /**
+   * Source stepping after Newton fails. Off, a failure throws the same
+   * error as before.
+   */
+  gminFallback = true;
+  /** Newton iterations spent in the last `newton` call. */
+  newtonIters = 0;
+  /**
+   * Node shunt left by the fallback, siemens. 0 when the continuation
+   * removes it, or when the fallback did not run.
+   */
+  gminFloor = 0;
 
   /** True when every switch is in the state the factorization saw. */
   private sameStructure(t: number): boolean {
@@ -285,6 +307,12 @@ export class Engine {
   private stampAll(): void {
     const els = this.elements;
     for (let i = 0; i < els.length; i++) els[i]!.stamp(this.ctx);
+    const g = this.nodeGmin;
+    if (!(g > 0) || this.ctx.rhsOnly) return;
+    const A = this.A;
+    const n = this.n;
+    const nodes = this.nodeNames.length;
+    for (let i = 0; i < nodes; i++) A[i * n + i] += g;
   }
 
   private commitAll(): void {
@@ -356,7 +384,9 @@ export class Engine {
 
   private tryNewton(): boolean {
     let dumped = 0;
-    for (let iter = 0; iter < this.maxIter; iter++) {
+    const cap = this.iterCap > 0 ? this.iterCap : this.maxIter;
+    for (let iter = 0; iter < cap; iter++) {
+      this.newtonIters += 1;
       this.xOld.set(this.x);
       this.A.fill(0);
       this.z.fill(0);
@@ -391,11 +421,28 @@ export class Engine {
 
   private newton(): void {
     this.ctx.freezeNonlinear = false;
-    if (this.tryNewton()) return;
+    this.newtonIters = 0;
+    this.gminFloor = 0;
+    if (this.withDiodeGmin()) return;
+    if (this.sourceFallback()) return;
+    const where =
+      this.ctx.t === 0
+        ? "at the operating point (t = 0)"
+        : `at t=${this.ctx.t}`;
+    throw new Error(
+      `Newton did not converge ${where} after ${this.newtonIters} iterations`
+    );
+  }
+
+  /**
+   * Bare Newton, then the diode's own gmin ladder. Returns false without
+   * changing the source. The ladder is the path a converging diode already
+   * took; source stepping calls it at each rung.
+   */
+  private withDiodeGmin(): boolean {
+    if (this.tryNewton()) return true;
     const diodes = this.diodes;
-    if (diodes.length === 0) {
-      throw new Error(`Newton did not converge at t=${this.ctx.t}`);
-    }
+    if (diodes.length === 0) return false;
     const saved = diodes.map((d) => d.gmin);
     const up = [1e-8, 1e-6, 1e-4, 1e-3];
     let reached = saved[0] ?? 1e-12;
@@ -410,7 +457,7 @@ export class Engine {
     }
     if (!ok) {
       for (let i = 0; i < diodes.length; i++) diodes[i]!.gmin = saved[i]!;
-      throw new Error(`Newton did not converge at t=${this.ctx.t}`);
+      return false;
     }
     const down = [1e-4, 1e-6, 1e-8, 1e-10, 1e-12];
     for (const g of down) {
@@ -421,9 +468,103 @@ export class Engine {
       if (!this.tryNewton()) break;
     }
     for (let i = 0; i < diodes.length; i++) diodes[i]!.gmin = saved[i]!;
-    if (!this.tryNewton()) {
-      throw new Error(`Newton failed returning from gmin at t=${this.ctx.t}`);
+    return this.tryNewton();
+  }
+
+  /**
+   * Raise every independent source from 0 to its value, with a node shunt
+   * that is then removed. A shunt alone stops on a high current. Runs only
+   * after the diode-gmin ladder has already failed at full scale.
+   */
+  private sourceFallback(): boolean {
+    if (!this.gminFallback) return false;
+    gminFallbackCalls += 1;
+    const diodes = this.diodes;
+    for (let i = 0; i < diodes.length; i++) diodes[i]!.limitRestore(0);
+    this.x.fill(0);
+    this.nodeGmin = 1e-6;
+    const held = new Float64Array(this.n);
+    const limits = new Float64Array(diodes.length);
+    const keep = () => {
+      held.set(this.x);
+      for (let i = 0; i < diodes.length; i++) {
+        limits[i] = diodes[i]!.limitCheckpoint();
+      }
+    };
+    const revert = () => {
+      this.x.set(held);
+      for (let i = 0; i < diodes.length; i++) {
+        diodes[i]!.limitRestore(limits[i] as number);
+      }
+    };
+    this.ctx.sourceScale = 0;
+    if (!this.withDiodeGmin()) {
+      this.nodeGmin = 0;
+      this.ctx.sourceScale = 1;
+      return false;
     }
+    let scale = 0;
+    let step = 0.25;
+    keep();
+    while (scale < 1 - 1e-15) {
+      const next = Math.min(1, scale + step);
+      this.ctx.sourceScale = next;
+      if (this.withDiodeGmin()) {
+        scale = next;
+        keep();
+        if (step < 0.25) step = Math.min(0.25, step * 2);
+        continue;
+      }
+      revert();
+      step *= 0.5;
+      if (step < 1e-8) {
+        this.nodeGmin = 0;
+        this.ctx.sourceScale = 1;
+        return false;
+      }
+    }
+    let g = 1e-6;
+    while (g > 1e-15) {
+      const next = g / 2;
+      this.nodeGmin = next;
+      if (!this.withDiodeGmin()) {
+        this.iterCap = 400;
+        const longer = this.withDiodeGmin();
+        this.iterCap = 0;
+        if (longer) {
+          g = next;
+          keep();
+          continue;
+        }
+        revert();
+        this.nodeGmin = g;
+        if (!this.withDiodeGmin()) {
+          this.nodeGmin = 0;
+          this.ctx.sourceScale = 1;
+          return false;
+        }
+        break;
+      }
+      g = next;
+      keep();
+    }
+    if (g > 0) {
+      this.nodeGmin = 0;
+      this.iterCap = 400;
+      const cleared = this.withDiodeGmin();
+      this.iterCap = 0;
+      if (cleared) g = 0;
+      else {
+        revert();
+        this.nodeGmin = g;
+        this.withDiodeGmin();
+      }
+    }
+    this.gminFloor = g;
+    this.nodeGmin = g;
+    this.ctx.sourceScale = 1;
+    if (g !== 0) this.haveLU = false;
+    return true;
   }
 
   private acceptTransient(): void {
@@ -470,6 +611,25 @@ export class Engine {
     this.commitAll();
     this.opDone = true;
     this.stepIndex = 0;
+  }
+
+  /**
+   * One transient step of `dt` seconds. Unlike `stepFast`, the width need
+   * not be the grid `h`, so a pin edge can land inside a master step.
+   */
+  advance(dt: number): void {
+    if (!(dt > 0)) return;
+    this.stepTo(this.t + dt);
+  }
+
+  /**
+   * `stepFast` places time on `stepIndex * h`. After one or more `advance`
+   * calls that together cover `steps` grid intervals, park there so the
+   * next `stepFast` continues the same grid.
+   */
+  parkGrid(steps: number): void {
+    this.stepIndex += steps;
+    this.t = this.stepIndex * this.h;
   }
 
   /**
@@ -549,6 +709,23 @@ export class Engine {
     const i = this.nodeNames.indexOf(name);
     if (i < 0) throw new Error(`no node ${name}`);
     return this.x[i] as number;
+  }
+
+  /**
+   * Small-signal resistance at a node, ohms. One backsolve of the factor
+   * already built for this step, with a 1 A injection and sources shorted.
+   * Null when this step has no factor, or the name is not a node.
+   */
+  thevenin(name: string): number | null {
+    if (name === "0") return 0;
+    if (!this.haveLU) return null;
+    const i = this.nodeNames.indexOf(name);
+    if (i < 0) return null;
+    const b = new Float64Array(this.n);
+    const y = new Float64Array(this.n);
+    b[i] = 1;
+    luSolve(this.A, this.n, this.perm, b, y);
+    return y[i] as number;
   }
 
   branchCurrent(name: string): number {

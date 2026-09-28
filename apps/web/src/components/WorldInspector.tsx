@@ -10,6 +10,7 @@ import { SerialConsole } from "@/components/SerialConsole";
 import { SourceView } from "@/components/SourceView";
 import { Button } from "@/components/ui/button";
 import { sendBoardSerial } from "@/hooks/useWorldRun";
+import { ampsText } from "@/lib/amps-text";
 import {
   boardStatusLabel,
   boardWarningLine,
@@ -385,10 +386,6 @@ function commandText(deg: number | null): string {
 
 function voltsText(voltage: number): string {
   return `${voltage.toFixed(2)} V`;
-}
-
-function ampsText(current: number): string {
-  return `${Math.round(current * 1000)} mA`;
 }
 
 function motionText(state: string | undefined): string {
