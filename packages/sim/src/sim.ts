@@ -1117,7 +1117,9 @@ function createSession(host: SimHost) {
     for (const part of plan.parts) {
       if (!part.motor || part.torqueNm === undefined) continue;
       const supplyId = partFeeds[part.id] ?? null;
-      if (!supplyId) noteDegraded(part.id, "unpowered", "no supply reaches it");
+      if (!supplyId) {
+        noteDegraded(part.id, "unpowered", `${part.id} reaches no supply`);
+      }
       const signal = drives.find((item) => item.partId === part.id);
       let drive: ServoDrive | null = null;
       if (part.drives && sim) {
@@ -1187,17 +1189,119 @@ function createSession(host: SimHost) {
       const island = islandOf.get(supply.id);
       if (!runPlan || !island || island.supplyIds.length < 2) continue;
       if (builtIsland.has(island.id)) continue;
-      const fed = runPlan.boards.filter((board) =>
+      const plan = runPlan;
+      const fed = plan.boards.filter((board) =>
         island.supplyIds.includes(boardPower.get(board.id)?.supplyId ?? "")
       );
       const stamped = fed.filter((board) => board.stamp);
       const only = stamped.length === 1 ? stamped[0] : undefined;
-      if (!only?.stamp) continue;
-      const onVin = suppliesOnPort(runPlan, only.id, "VIN")[0] ?? null;
-      const onRail =
-        suppliesOnPort(runPlan, only.id, only.voltagePin)[0] ?? null;
-      const railSupply = runPlan.supplies.find((item) => item.id === onRail);
-      const vinSupply = runPlan.supplies.find((item) => item.id === onVin);
+      if (stamped.length === 0) continue;
+      if (!only?.stamp) {
+        const islandSupplies = island.supplyIds.flatMap((id) => {
+          const found = plan.supplies.find((item) => item.id === id);
+          return found ? [found] : [];
+        });
+        const boardsSorted = [...stamped].sort((a, b) =>
+          a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+        );
+        const suppliesSorted = [...islandSupplies].sort((a, b) =>
+          a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+        );
+        const primary = suppliesSorted[0];
+        if (!primary) continue;
+        const members = island.supplyIds.flatMap((id) => groups.get(id) ?? []);
+        const paired = (index: number) => {
+          const supply = suppliesSorted[index];
+          const board = boardsSorted[Math.min(index, boardsSorted.length - 1)];
+          return supply && board ? { supply, board } : null;
+        };
+        const nodeFor = (board: RunBoard, supplyId: string): string => {
+          const stamp = board.stamp;
+          if (!stamp) throw new Error(`${board.id} has no stamp`);
+          const supply = suppliesSorted.find((item) => item.id === supplyId);
+          if (supply?.connector === "usb" && stamp.vbusNode)
+            return stamp.vbusNode;
+          if (
+            stamp.portNodes.VIN &&
+            suppliesOnPort(plan, board.id, "VIN").includes(supplyId)
+          ) {
+            return stamp.portNodes.VIN;
+          }
+          return stamp.boardNode;
+        };
+        const primaryPair = paired(0);
+        if (!primaryPair?.board.stamp) continue;
+        const primaryBoard = primaryPair.board;
+        const circuit = createRailCircuit({
+          vNom: primary.voltage,
+          rSeries: primary.rSeries,
+          iLimit: primary.currentLimit,
+          motors: members.map((load) => {
+            const drive = load.drive;
+            if (!drive) throw new Error("rail motor has no drive");
+            return {
+              resistance: drive.law.resistance,
+              k: drive.law.k,
+              boardId: drive.board?.id,
+            };
+          }),
+          ...(primary.battery ? { battery: primary.battery } : {}),
+          ...(primary.ideal ? { ideal: true as const } : {}),
+          primaryId: primary.id,
+          primaryBoardId: primaryBoard.id,
+          boards: boardsSorted.map((board, index) => {
+            const supply = paired(index)?.supply ?? primary;
+            const one = railAttachment({
+              connector: supply.connector,
+              boardCircuit: board.boardCircuit,
+              hasNetlist: board.hasNetlist,
+              stamp: board.stamp,
+            });
+            const feed = board.vinFeed ? "vin" : one.feed;
+            if (!board.stamp || !feed) {
+              throw new Error(`${board.id} has no feed`);
+            }
+            return {
+              id: board.id,
+              stamp: board.stamp,
+              feed,
+              pin: board.pin,
+            };
+          }),
+          also: suppliesSorted.slice(1).map((item, index) => {
+            const board = paired(index + 1)?.board;
+            if (!board) throw new Error(`${item.id} has no board`);
+            return {
+              id: item.id,
+              vNom: item.voltage,
+              rSeries: item.rSeries,
+              iLimit: item.currentLimit,
+              node: nodeFor(board, item.id),
+              ...(item.battery ? { battery: item.battery } : {}),
+              ...(item.ideal ? { ideal: true as const } : {}),
+            };
+          }),
+        });
+        if (fuseStart === "tripped") circuit.tripFuse();
+        for (let i = 0; i < members.length; i++) {
+          const load = members[i];
+          if (load) load.railSlot = i;
+        }
+        const group = {
+          circuit,
+          loads: members,
+          path: null as BoardPathName | null,
+          boardMin: 0,
+        };
+        for (const id of island.supplyIds) rails.set(id, group);
+        rails.set(island.id, group);
+        builtIsland.add(island.id);
+        continue;
+      }
+      const onVin = suppliesOnPort(plan, only.id, "VIN")[0] ?? null;
+      const onRail = suppliesOnPort(plan, only.id, only.voltagePin)[0] ?? null;
+      const railSupply = plan.supplies.find((item) => item.id === onRail);
+      const vinSupply = plan.supplies.find((item) => item.id === onVin);
       const vbus = only.stamp.vbusNode;
       const vinNode = only.stamp.portNodes.VIN ?? null;
       if (
@@ -1675,7 +1779,7 @@ function createSession(host: SimHost) {
     if (!group) return { voltage: 0, current: 0, board: 0, boardMin: 0 };
     const { circuit, loads: members } = group;
     let pieces: ReturnType<typeof pinPieces> = null;
-    if (circuit.sharedRail) {
+    if (circuit.boardIds.length > 1) {
       const specs = boardsFed(supplyId);
       const quiescent = new Map<string, number>();
       for (const load of members) {

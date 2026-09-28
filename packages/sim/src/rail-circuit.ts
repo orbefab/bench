@@ -130,9 +130,13 @@ export type RailCircuitSpec = {
     node: string;
   }[];
   /**
-   * Every board on this rail. N = 1 is the single-board rail: the same
-   * element ids and node names. Two or more share one source, each
-   * netlist under its own path. Pin edges are split on every N.
+   * Board whose feed node carries `src` when several supplies and several
+   * boards share the island. Absent uses the first board.
+   */
+  primaryBoardId?: string;
+  /**
+   * Every board on this rail. One board uses the same element ids and
+   * node names as a stamp. A path prefix is added only when N > 1.
    */
   boards?: readonly SharedBoard[];
 };
@@ -224,7 +228,6 @@ export class RailCircuit {
   /** Plain-branch tables stamped with the board. The supply is `src`. */
   private readonly branchLaws: LawTable[];
   private ready = false;
-  private shared = false;
   /** Set when this rail's source is `battery@1`. The same instance the engine stamps. */
   private battery: BatteryElement | null = null;
   /** Supply id of `src` when `also` is set. Null on a one-supply rail. */
@@ -249,196 +252,42 @@ export class RailCircuit {
   >();
 
   constructor(spec: RailCircuitSpec) {
-    // One board is the shared rail with N = 1: same ids, same nodes.
-    const listed = spec.boards;
-    if ((listed?.length ?? 0) === 1) {
-      const only = listed?.[0];
-      if (!only) throw new Error("a rail board is missing");
-      spec = {
-        ...spec,
-        boards: undefined,
-        stamp: only.stamp,
-        feed: only.feed,
-        pin: only.pin ?? spec.pin,
-        ledAlias: spec.ledAlias ?? only.stamp.ledAlias ?? undefined,
-        resetFraction:
-          spec.resetFraction ?? only.stamp.resetFraction ?? undefined,
-      };
-    }
-    if ((spec.boards?.length ?? 0) > 1) {
-      const built = sharedRail(spec);
-      this.winding = built.winding;
-      this.path = built.path;
-      this.substeps = built.substeps;
-      this.ledPaths = built.ledPaths;
-      this.engine = built.engine;
-      this.load = built.load;
-      this.motors = built.motors;
-      this.termNode = built.termNode;
-      this.boardNode = built.boardNode;
-      this.fuse = built.fuse;
-      this.channels = built.channels;
-      this.comparators = built.comparators;
-      this.ldos = built.ldos;
-      this.drives = built.drives;
-      this.ledDiodes = built.ledDiodes;
-      this.ledAlias = built.ledAlias;
-      this.resetFraction = built.resetFraction;
-      this.resetNode = built.resetNode;
-      this.branchLaws = built.branchLaws;
-      this.battery = built.battery;
-      this.shared = true;
-      this.boardOrder.push(...built.boardOrder);
-      for (const [id, load] of built.boardLoads) this.boardLoads.set(id, load);
-      for (const [id, node] of built.boardNodes) this.boardNodes.set(id, node);
-      for (const [id, rows] of built.boardDrives)
-        this.boardDrives.set(id, rows);
-      for (const [id, reset] of built.boardResets)
-        this.boardResets.set(id, reset);
-      for (const [id, ports] of built.boardPorts)
-        this.boardPorts.set(id, ports);
-      this.portNodes = built.boardPorts.get(built.boardOrder[0] ?? "") ?? {};
-      return;
-    }
-    const braking = spec.braking ?? "clip";
-    const uno = spec.boardPath === "uno-usb";
-    const stamp = spec.stamp ?? null;
-    const feed = spec.feed;
-    if (stamp && feed !== "usb" && feed !== "header" && feed !== "vin") {
-      throw new Error("a board stamp needs feed usb, header, or vin");
-    }
-    const realized = stamp
-      ? realize(
-          stamp,
-          feed ?? "header",
-          spec.pin ?? AVR_PIN,
-          spec.keep && spec.keep.length > 0 ? { keep: spec.keep } : undefined
-        )
-      : null;
-    this.diodes = (realized?.elements ?? []).filter(
-      (el): el is Diode => el instanceof Diode
-    );
-    const nano = realized !== null && stamp?.netlist === true;
-    const board = uno || nano;
-    this.path = board;
-    this.termNode = realized
-      ? realized.feedNode
-      : board
-        ? UNO_TERM_NODE
-        : "rail";
-    this.boardNode = realized
-      ? realized.boardNode
-      : board
-        ? UNO_BOARD_NODE
-        : "rail";
-    this.drives = realized?.pins ?? [];
-    this.ledDiodes = realized?.leds ?? [];
-    this.ledPaths = this.ledDiodes.map((led) => led.path);
-    this.ledAlias = spec.ledAlias ?? stamp?.ledAlias ?? "";
-    this.resetNode = realized?.resetNode ?? null;
-    this.portNodes = stamp?.portNodes ?? {};
-    this.resetFraction = spec.resetFraction ?? stamp?.resetFraction ?? null;
-    let inductive = false;
-    const motors: BridgeMotor[] = [];
-    for (let i = 0; i < spec.motors.length; i++) {
-      const law = spec.motors[i]!;
-      const inductance = law.inductance ?? 0;
-      if (inductance > 0) inductive = true;
-      motors.push(
-        new BridgeMotor(
-          `m${i}`,
-          // The regulated node. A VIN feed's terminal is the input, not this.
-          this.boardNode,
-          law.resistance,
-          inductance,
-          law.k,
-          braking
-        )
-      );
-    }
-    this.motors = motors;
-    this.branchLaws = (realized?.elements ?? []).filter(
-      (el): el is LawTable => el instanceof LawTable
-    );
-    this.substeps = inductive || realized?.capacitive ? SUBSTEPS : 1;
-    // The board load keeps its knee: full current down to 1 V, then
-    // linear to 0 A at 0 V. The supply is the part on `src`.
-    this.load = new CurrentLoad(
-      "load",
-      this.boardNode,
-      "0",
-      board ? BOARD_LOAD_KNEE_V : 0
-    );
-    const battery = spec.battery
-      ? new BatteryElement("src", this.termNode, "0", spec.battery)
-      : null;
-    this.battery = battery;
-    const supply =
-      battery ??
-      (spec.ideal
-        ? new VSource("src", this.termNode, "0", {
-            kind: "dc",
-            value: spec.vNom,
-          })
-        : new TheveninLimit(
-            "src",
-            this.termNode,
-            "0",
-            spec.vNom,
-            spec.rSeries,
-            spec.iLimit
-          ));
-    const stamped = realized?.elements ?? [];
-    this.fuse = stamped.filter(
-      (el): el is PtcFuseElement => el instanceof PtcFuseElement
-    );
-    this.channels = stamped.filter(
-      (el): el is PmosChannel => el instanceof PmosChannel
-    );
-    this.comparators = stamped.filter(
-      (el): el is Comparator => el instanceof Comparator
-    );
-    this.ldos = stamped.filter(
-      (el): el is LdoRegulator => el instanceof LdoRegulator
-    );
-    this.winding = new Float64Array(motors.length);
-    const extras: Element[] = [];
-    for (const src of spec.also ?? []) {
-      this.extraNodes.set(src.id, src.node);
-      extras.push(
-        src.battery
-          ? new BatteryElement(src.id, src.node, "0", src.battery)
-          : src.ideal
-            ? new VSource(src.id, src.node, "0", {
-                kind: "dc",
-                value: src.vNom,
-              })
-            : new TheveninLimit(
-                src.id,
-                src.node,
-                "0",
-                src.vNom,
-                src.rSeries,
-                src.iLimit
-              )
-      );
-    }
-    if ((spec.also?.length ?? 0) > 0 && spec.primaryId) {
-      this.primarySupply = spec.primaryId;
-    }
-    this.engine = new Engine(
-      [supply, this.load, ...motors, ...stamped, ...extras],
-      {
-        method: "be",
-        h: MASTER_S / this.substeps,
-        atol: 1e-14,
-        rtol: 1e-12,
-      }
-    );
+    const built = assembleRail(spec);
+    this.winding = built.winding;
+    this.path = built.path;
+    this.substeps = built.substeps;
+    this.ledPaths = built.ledPaths;
+    this.engine = built.engine;
+    this.load = built.load;
+    this.motors = built.motors;
+    this.termNode = built.termNode;
+    this.boardNode = built.boardNode;
+    this.fuse = built.fuse;
+    this.channels = built.channels;
+    this.comparators = built.comparators;
+    this.ldos = built.ldos;
+    this.drives = built.drives;
+    this.ledDiodes = built.ledDiodes;
+    this.ledAlias = built.ledAlias;
+    this.resetFraction = built.resetFraction;
+    this.resetNode = built.resetNode;
+    this.branchLaws = built.branchLaws;
+    this.battery = built.battery;
+    this.diodes = built.diodes;
+    this.primarySupply = built.primarySupply;
+    this.portNodes = built.portNodes;
+    this.boardOrder.push(...built.boardOrder);
+    for (const [id, load] of built.boardLoads) this.boardLoads.set(id, load);
+    for (const [id, node] of built.boardNodes) this.boardNodes.set(id, node);
+    for (const [id, rows] of built.boardDrives) this.boardDrives.set(id, rows);
+    for (const [id, reset] of built.boardResets)
+      this.boardResets.set(id, reset);
+    for (const [id, ports] of built.boardPorts) this.boardPorts.set(id, ports);
+    for (const [id, node] of built.extraNodes) this.extraNodes.set(id, node);
   }
 
   setFixed(amps: number): void {
-    if (this.shared) {
+    if (this.boardOrder.length > 1) {
       const first = this.boardOrder[0];
       const load = first ? this.boardLoads.get(first) : undefined;
       if (load) load.amps = amps;
@@ -447,8 +296,9 @@ export class RailCircuit {
     this.load.amps = amps;
   }
 
-  get sharedRail(): boolean {
-    return this.shared;
+  /** Boards on this rail. Empty when one board keeps the unprefixed names. */
+  get boardIds(): readonly string[] {
+    return this.boardOrder;
   }
 
   /**
@@ -695,10 +545,6 @@ export class RailCircuit {
    * With no pieces the pin is held and the grid is the one used before.
    */
   solve(pieces?: readonly RailPiece[]): void {
-    if (this.shared) {
-      this.solveShared(pieces);
-      return;
-    }
     let drop = false;
     for (const fuse of this.fuse) if (fuse.pull()) drop = true;
     for (const cmp of this.comparators) if (cmp.apply()) drop = true;
@@ -706,57 +552,20 @@ export class RailCircuit {
     if (this.battery?.pull()) drop = true;
     if (drop) this.engine.dropFactor();
     const frozen = this.engine.frozenSteps;
+    const many = this.boardOrder.length > 1;
+    const mins = new Map<string, number>();
     let min = Number.POSITIVE_INFINITY;
+    if (many) {
+      for (const id of this.boardOrder) mins.set(id, Number.POSITIVE_INFINITY);
+    }
     this.resetMarginMin = Number.POSITIVE_INFINITY;
-    if (!this.ready) {
-      this.engine.operatingPoint();
-      this.ready = true;
-      min = this.engine.voltage(this.boardNode);
-      this.noteNano(0);
-    } else if (pieces && pieces.length > 0) {
-      min = this.runPieces(pieces);
-    } else {
-      const n = this.substeps;
-      const dt = this.engine.h;
-      for (let k = 0; k < n; k++) {
-        this.engine.stepFast();
+    const note = (dt: number) => {
+      if (!many) {
         const v = this.engine.voltage(this.boardNode);
         if (v < min) min = v;
         this.noteNano(dt);
+        return;
       }
-    }
-    this.lastFrozen = this.engine.frozenSteps - frozen;
-    this.voltage = this.engine.voltage(this.termNode);
-    this.boardVoltage = this.engine.voltage(this.boardNode);
-    this.boardMinVoltage = min;
-    this.current = -this.engine.branchCurrent("src");
-    const motors = this.motors;
-    const winding = this.winding;
-    for (let i = 0; i < motors.length; i++) {
-      const motor = motors[i]!;
-      winding[i] = motor.connected ? this.engine.branchCurrent(motor.id) : 0;
-    }
-    const voltage = (node: string) => this.engine.voltage(node);
-    for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
-    for (const channel of this.channels) channel.latch(voltage);
-    for (const cmp of this.comparators) cmp.latch(voltage);
-    this.battery?.advance(this.current, MASTER_S);
-    this.lastPieceCount = pieces?.length ?? 0;
-  }
-
-  /** Several boards, one source. Each board keeps its own node and load. */
-  private solveShared(pieces?: readonly RailPiece[]): void {
-    let drop = false;
-    for (const fuse of this.fuse) if (fuse.pull()) drop = true;
-    for (const cmp of this.comparators) if (cmp.apply()) drop = true;
-    for (const channel of this.channels) if (channel.apply()) drop = true;
-    if (this.battery?.pull()) drop = true;
-    if (drop) this.engine.dropFactor();
-    const frozen = this.engine.frozenSteps;
-    const mins = new Map<string, number>();
-    for (const id of this.boardOrder) mins.set(id, Number.POSITIVE_INFINITY);
-    this.resetMarginMin = Number.POSITIVE_INFINITY;
-    const note = (dt: number) => {
       for (const id of this.boardOrder) {
         const node = this.boardNodes.get(id);
         if (!node) continue;
@@ -771,27 +580,7 @@ export class RailCircuit {
       this.ready = true;
       note(0);
     } else if (pieces && pieces.length > 0) {
-      const h = this.engine.h;
-      for (const piece of pieces) {
-        for (const drive of piece.drive) {
-          if (drive.boardId) {
-            this.setBoardDrive(drive.boardId, drive.bit, drive.mode);
-          } else {
-            this.setDrive(drive.bit, drive.mode);
-          }
-        }
-        let left = piece.dt;
-        while (left > h * (1 + 1e-9)) {
-          this.engine.advance(h);
-          note(h);
-          left -= h;
-        }
-        if (left > 1e-15) {
-          this.engine.advance(left);
-          note(left);
-        }
-      }
-      this.engine.parkGrid(this.substeps);
+      this.runPieces(pieces, note);
     } else {
       const n = this.substeps;
       const dt = this.engine.h;
@@ -800,21 +589,26 @@ export class RailCircuit {
         note(dt);
       }
     }
-    this.lastPieceCount = pieces?.length ?? 0;
     this.lastFrozen = this.engine.frozenSteps - frozen;
+    this.lastPieceCount = pieces?.length ?? 0;
     this.voltage = this.engine.voltage(this.termNode);
     this.current = -this.engine.branchCurrent("src");
-    const first = this.boardOrder[0];
-    const firstNode = first ? this.boardNodes.get(first) : undefined;
-    this.boardVoltage = firstNode ? this.engine.voltage(firstNode) : 0;
-    this.boardMinVoltage = first ? (mins.get(first) ?? this.boardVoltage) : 0;
-    for (const id of this.boardOrder) {
-      const node = this.boardNodes.get(id);
-      if (!node) continue;
-      this.readings.set(id, {
-        voltage: this.engine.voltage(node),
-        min: mins.get(id) ?? this.engine.voltage(node),
-      });
+    if (many) {
+      const first = this.boardOrder[0];
+      const firstNode = first ? this.boardNodes.get(first) : undefined;
+      this.boardVoltage = firstNode ? this.engine.voltage(firstNode) : 0;
+      this.boardMinVoltage = first ? (mins.get(first) ?? this.boardVoltage) : 0;
+      for (const id of this.boardOrder) {
+        const node = this.boardNodes.get(id);
+        if (!node) continue;
+        this.readings.set(id, {
+          voltage: this.engine.voltage(node),
+          min: mins.get(id) ?? this.engine.voltage(node),
+        });
+      }
+    } else {
+      this.boardVoltage = this.engine.voltage(this.boardNode);
+      this.boardMinVoltage = min;
     }
     const motors = this.motors;
     const winding = this.winding;
@@ -844,32 +638,28 @@ export class RailCircuit {
 
   /** Pin edges inside one master step. Each chunk is at most one grid step. */
   private runPieces(
-    pieces: readonly {
-      dt: number;
-      drive: readonly { bit: number; mode: PinMode }[];
-    }[]
-  ): number {
-    let min = Number.POSITIVE_INFINITY;
+    pieces: readonly RailPiece[],
+    note: (dt: number) => void
+  ): void {
     const h = this.engine.h;
     for (const piece of pieces) {
-      for (const drive of piece.drive) this.setDrive(drive.bit, drive.mode);
+      for (const drive of piece.drive) {
+        if (drive.boardId)
+          this.setBoardDrive(drive.boardId, drive.bit, drive.mode);
+        else this.setDrive(drive.bit, drive.mode);
+      }
       let left = piece.dt;
       while (left > h * (1 + 1e-9)) {
         this.engine.advance(h);
-        const v = this.engine.voltage(this.boardNode);
-        if (v < min) min = v;
-        this.noteNano(h);
+        note(h);
         left -= h;
       }
       if (left > 1e-15) {
         this.engine.advance(left);
-        const v = this.engine.voltage(this.boardNode);
-        if (v < min) min = v;
-        this.noteNano(left);
+        note(left);
       }
     }
     this.engine.parkGrid(this.substeps);
-    return min;
   }
 }
 
@@ -898,12 +688,7 @@ function mapNodes(
   };
 }
 
-/**
- * One Thevenin for the supply. A usb feed ties every `VBUS` to that
- * terminal. A header feed ties every board node, because the supply
- * lands on each `5V` pin.
- */
-function sharedRail(spec: RailCircuitSpec): {
+type Assembled = {
   winding: Float64Array;
   path: boolean;
   substeps: number;
@@ -924,6 +709,9 @@ function sharedRail(spec: RailCircuitSpec): {
   resetNode: string | null;
   branchLaws: LawTable[];
   battery: BatteryElement | null;
+  diodes: Diode[];
+  primarySupply: string | null;
+  portNodes: Readonly<Record<string, string>>;
   boardOrder: string[];
   boardLoads: Map<string, CurrentLoad>;
   boardNodes: Map<string, string>;
@@ -933,41 +721,98 @@ function sharedRail(spec: RailCircuitSpec): {
   >;
   boardResets: Map<string, { node: string; fraction: number | null }>;
   boardPorts: Map<string, Readonly<Record<string, string>>>;
-} {
-  const boards = [...(spec.boards ?? [])].sort((a, b) =>
-    a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-  );
-  const feeds = new Set(boards.map((board) => board.feed));
-  if (feeds.size > 1) {
-    throw new Error("one supply mixes a usb feed and a header feed");
+  extraNodes: Map<string, string>;
+};
+
+function supplyElement(
+  id: string,
+  node: string,
+  row: {
+    vNom: number;
+    rSeries: number;
+    iLimit: number;
+    battery?: BatteryParams;
+    ideal?: boolean;
   }
-  const usb = boards[0]?.feed === "usb";
-  const vin = boards[0]?.feed === "vin";
-  const prepared = boards.map((board) => {
-    const stamp = usb
-      ? mapNodes(board.stamp, (node) =>
-          node === board.stamp.vbusNode ? TERM : node
-        )
-      : vin
-        ? mapNodes(board.stamp, (node) =>
-            node === board.stamp.portNodes.VIN ? TERM : node
-          )
-        : board.stamp;
-    return { ...board, stamp };
-  });
-  const headerNode = prepared[0]?.stamp.boardNode ?? "rail";
-  const tied =
-    usb || vin
-      ? prepared
-      : prepared.map((board) => ({
-          ...board,
-          stamp: mapNodes(board.stamp, (node) =>
-            node === board.stamp.boardNode ? headerNode : node
-          ),
-        }));
-  const termNode = usb || vin ? TERM : headerNode;
-  const boardNode = tied[0]?.stamp.boardNode ?? headerNode;
+): Element {
+  if (row.battery) return new BatteryElement(id, node, "0", row.battery);
+  if (row.ideal) {
+    return new VSource(id, node, "0", { kind: "dc", value: row.vNom });
+  }
+  return new TheveninLimit(id, node, "0", row.vNom, row.rSeries, row.iLimit);
+}
+
+/**
+ * One rail for N boards and M supplies. Pin and load ids gain the board
+ * path only when N > 1, so one board keeps the stamp's element ids and
+ * node names. Several boards on one supply tie the feed the way they
+ * always have. Several supplies keep each feed node, because the wires
+ * already share the nodes they connect.
+ */
+function assembleRail(spec: RailCircuitSpec): Assembled {
+  const fromBoards = spec.boards ?? [];
+  const listed: SharedBoard[] =
+    fromBoards.length > 0
+      ? [...fromBoards]
+      : spec.stamp &&
+          (spec.feed === "usb" || spec.feed === "header" || spec.feed === "vin")
+        ? [{ id: "", stamp: spec.stamp, feed: spec.feed, pin: spec.pin }]
+        : [];
+  if (
+    spec.stamp &&
+    listed.length === 0 &&
+    spec.feed !== "usb" &&
+    spec.feed !== "header" &&
+    spec.feed !== "vin"
+  ) {
+    throw new Error("a board stamp needs feed usb, header, or vin");
+  }
+  const many = listed.length > 1;
+  const multiSupply = (spec.also?.length ?? 0) > 0;
   const braking = spec.braking ?? "clip";
+  let prepared = listed;
+  let tiedTerm: string | null = null;
+  let tiedBoard: string | null = null;
+  if (many && !multiSupply) {
+    const feeds = new Set(listed.map((board) => board.feed));
+    if (feeds.size > 1) {
+      throw new Error("one supply mixes a usb feed and a header feed");
+    }
+    const sorted = [...listed].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    );
+    const usb = sorted[0]?.feed === "usb";
+    const vin = sorted[0]?.feed === "vin";
+    const mapped = sorted.map((board) => {
+      const stamp = usb
+        ? mapNodes(board.stamp, (node) =>
+            node === board.stamp.vbusNode ? TERM : node
+          )
+        : vin
+          ? mapNodes(board.stamp, (node) =>
+              node === board.stamp.portNodes.VIN ? TERM : node
+            )
+          : board.stamp;
+      return { ...board, stamp };
+    });
+    const headerNode = mapped[0]?.stamp.boardNode ?? "rail";
+    prepared =
+      usb || vin
+        ? mapped
+        : mapped.map((board) => ({
+            ...board,
+            stamp: mapNodes(board.stamp, (node) =>
+              node === board.stamp.boardNode ? headerNode : node
+            ),
+          }));
+    tiedTerm = usb || vin ? TERM : headerNode;
+    tiedBoard = prepared[0]?.stamp.boardNode ?? headerNode;
+  } else if (many) {
+    prepared = [...listed].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    );
+  }
+
   const boardLoads = new Map<string, CurrentLoad>();
   const boardNodes = new Map<string, string>();
   const boardDrives = new Map<
@@ -979,79 +824,136 @@ function sharedRail(spec: RailCircuitSpec): {
     { node: string; fraction: number | null }
   >();
   const boardPorts = new Map<string, Readonly<Record<string, string>>>();
+  const feedOf = new Map<string, string>();
   const ledDiodes: { path: string; diode: Diode }[] = [];
   const drives: { bit: number; pin: { setMode(mode: PinMode): void } }[] = [];
-  const stamped: Element[] = [];
+  const loads: CurrentLoad[] = [];
+  let stamped: Element[] = [];
   let capacitive = false;
-  for (const board of tied) {
-    const realized = realize(board.stamp, board.feed, board.pin ?? AVR_PIN, {
-      pinId: (port) => `pin.${board.id}.${port}`,
-    });
+  let single: ReturnType<typeof realize> | null = null;
+  for (const board of prepared) {
+    const realized = realize(
+      board.stamp,
+      board.feed,
+      board.pin ?? spec.pin ?? AVR_PIN,
+      {
+        ...(many ? { pinId: (port: string) => `pin.${board.id}.${port}` } : {}),
+        ...(!many && spec.keep && spec.keep.length > 0
+          ? { keep: spec.keep }
+          : {}),
+      }
+    );
+    if (!many) single = realized;
     if (realized.capacitive) capacitive = true;
+    feedOf.set(board.id, realized.feedNode);
     boardNodes.set(board.id, realized.boardNode);
+    const netlist = board.stamp.netlist === true;
+    const knee = (many ? netlist : spec.boardPath === "uno-usb" || netlist)
+      ? BOARD_LOAD_KNEE_V
+      : 0;
     const load = new CurrentLoad(
-      `load.${board.id}`,
+      many ? `load.${board.id}` : "load",
       realized.boardNode,
       "0",
-      board.stamp.netlist ? BOARD_LOAD_KNEE_V : 0
+      knee
     );
-    boardLoads.set(board.id, load);
-    boardDrives.set(board.id, realized.pins);
-    boardPorts.set(board.id, board.stamp.portNodes);
+    loads.push(load);
+    if (many) {
+      boardLoads.set(board.id, load);
+      boardDrives.set(board.id, realized.pins);
+      boardPorts.set(board.id, board.stamp.portNodes);
+      if (realized.resetNode) {
+        boardResets.set(board.id, {
+          node: realized.resetNode,
+          fraction: board.stamp.resetFraction,
+        });
+      }
+    }
     drives.push(...realized.pins);
     ledDiodes.push(...realized.leds);
-    if (realized.resetNode) {
-      boardResets.set(board.id, {
-        node: realized.resetNode,
-        fraction: board.stamp.resetFraction,
-      });
-    }
     stamped.push(...realized.elements);
   }
-  stamped.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (many) {
+    stamped = [...stamped].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    );
+  }
+
+  const uno = spec.boardPath === "uno-usb";
+  const first = prepared[0];
+  const boardNode =
+    listed.length === 0
+      ? uno
+        ? UNO_BOARD_NODE
+        : "rail"
+      : many
+        ? (tiedBoard ?? boardNodes.get(first?.id ?? "") ?? "rail")
+        : (single?.boardNode ?? "rail");
+  const termNode =
+    listed.length === 0
+      ? uno
+        ? UNO_TERM_NODE
+        : "rail"
+      : many
+        ? multiSupply
+          ? (feedOf.get(spec.primaryBoardId ?? first?.id ?? "") ?? boardNode)
+          : (tiedTerm ?? boardNode)
+        : (single?.feedNode ?? boardNode);
   let inductive = false;
   const motors: BridgeMotor[] = [];
   for (let i = 0; i < spec.motors.length; i++) {
     const law = spec.motors[i]!;
     const inductance = law.inductance ?? 0;
     if (inductance > 0) inductive = true;
-    const node =
-      (law.boardId ? boardNodes.get(law.boardId) : undefined) ?? boardNode;
+    const node = many
+      ? ((law.boardId ? boardNodes.get(law.boardId) : undefined) ?? boardNode)
+      : boardNode;
     motors.push(
       new BridgeMotor(`m${i}`, node, law.resistance, inductance, law.k, braking)
     );
   }
-  const loads = [...boardLoads.values()];
+  const substeps = inductive || capacitive ? SUBSTEPS : 1;
+  const load =
+    loads[0] ??
+    new CurrentLoad("load", boardNode, "0", uno ? BOARD_LOAD_KNEE_V : 0);
   const battery = spec.battery
     ? new BatteryElement("src", termNode, "0", spec.battery)
     : null;
   const supply =
     battery ??
-    (spec.ideal
-      ? new VSource("src", termNode, "0", { kind: "dc", value: spec.vNom })
-      : new TheveninLimit(
-          "src",
-          termNode,
-          "0",
-          spec.vNom,
-          spec.rSeries,
-          spec.iLimit
-        ));
-  const substeps = inductive || capacitive ? SUBSTEPS : 1;
-  const first = tied[0];
-  const engine = new Engine([supply, ...loads, ...motors, ...stamped], {
+    supplyElement("src", termNode, {
+      vNom: spec.vNom,
+      rSeries: spec.rSeries,
+      iLimit: spec.iLimit,
+      ...(spec.ideal ? { ideal: true } : {}),
+    });
+  const extraNodes = new Map<string, string>();
+  const extras: Element[] = [];
+  for (const src of spec.also ?? []) {
+    extraNodes.set(src.id, src.node);
+    extras.push(supplyElement(src.id, src.node, src));
+  }
+  const primarySupply =
+    (spec.also?.length ?? 0) > 0 && spec.primaryId ? spec.primaryId : null;
+  const elements = many
+    ? [supply, ...loads, ...motors, ...stamped, ...extras]
+    : [supply, load, ...motors, ...stamped, ...extras];
+  const engine = new Engine(elements, {
     method: "be",
     h: MASTER_S / substeps,
     atol: 1e-14,
     rtol: 1e-12,
   });
+  const path = many
+    ? first?.feed === "usb"
+    : uno || (single !== null && first?.stamp.netlist === true);
   return {
     winding: new Float64Array(motors.length),
-    path: usb,
+    path,
     substeps,
     ledPaths: ledDiodes.map((led) => led.path),
     engine,
-    load: loads[0] ?? new CurrentLoad("load", boardNode, "0", 0),
+    load,
     motors,
     termNode,
     boardNode,
@@ -1070,16 +972,26 @@ function sharedRail(spec: RailCircuitSpec): {
     drives,
     ledDiodes,
     ledAlias: spec.ledAlias ?? first?.stamp.ledAlias ?? "",
-    resetFraction: first?.stamp.resetFraction ?? null,
-    resetNode: first?.stamp.resetNode ?? null,
+    resetFraction: many
+      ? (first?.stamp.resetFraction ?? null)
+      : (spec.resetFraction ?? first?.stamp.resetFraction ?? null),
+    resetNode: many
+      ? (first?.stamp.resetNode ?? null)
+      : (single?.resetNode ?? null),
     branchLaws: stamped.filter((el): el is LawTable => el instanceof LawTable),
     battery,
-    boardOrder: tied.map((board) => board.id),
+    diodes: stamped.filter((el): el is Diode => el instanceof Diode),
+    primarySupply,
+    portNodes: many
+      ? (boardPorts.get(first?.id ?? "") ?? {})
+      : (first?.stamp.portNodes ?? {}),
+    boardOrder: many ? prepared.map((board) => board.id) : [],
     boardLoads,
-    boardNodes,
+    boardNodes: many ? boardNodes : new Map(),
     boardDrives,
     boardResets,
     boardPorts,
+    extraNodes,
   };
 }
 
