@@ -23,11 +23,42 @@ import {
   readEditOp,
 } from "@sfab-bench/parts";
 
-import { restartWorld } from "./host";
+import { publishWorldEvent, restartWorld } from "./host";
 import { absolutePath, nodeStore } from "./node-store";
 import { catalogRoot } from "./plan-host";
 
 const sessions = new Map<string, EditSession>();
+
+type SessionMeta = {
+  /** Absent when the session is the open document. */
+  part?: string;
+  worlds: Set<string>;
+};
+
+const sessionMeta = new Map<string, SessionMeta>();
+
+function worldKey(project: string, world: string): string {
+  return `${project}\0${world}`;
+}
+
+/** Undo flags for every part history this world has opened. */
+export function historiesFor(
+  project: string,
+  world: string
+): { part?: string; canUndo: boolean; canRedo: boolean }[] {
+  const id = worldKey(project, world);
+  const rows: { part?: string; canUndo: boolean; canRedo: boolean }[] = [];
+  for (const [file, session] of sessions) {
+    const meta = sessionMeta.get(file);
+    if (!meta?.worlds.has(id)) continue;
+    rows.push({
+      ...(meta.part ? { part: meta.part } : {}),
+      canUndo: session.canUndo,
+      canRedo: session.canRedo,
+    });
+  }
+  return rows;
+}
 
 export type DocumentEdit = {
   label: string;
@@ -70,10 +101,12 @@ export async function applyDocumentEdit(
   if ("error" in applied) return applied;
   const restarted = await restartWorld(project, world);
   if ("error" in restarted) return restarted;
-  return {
+  const result = {
     ...applied,
     sentence: editSentence(applied.label, applied.canUndo),
   };
+  announce(project, world, part, result);
+  return result;
 }
 
 export async function undoDocument(
@@ -88,10 +121,12 @@ export async function undoDocument(
   if ("error" in applied) return applied;
   const restarted = await restartWorld(project, world);
   if ("error" in restarted) return restarted;
-  return {
+  const result = {
     ...applied,
     sentence: `Undid ${applied.label}. ${redoSentence(applied.canRedo)}`,
   };
+  announce(project, world, part, result);
+  return result;
 }
 
 export async function redoDocument(
@@ -106,10 +141,12 @@ export async function redoDocument(
   if ("error" in applied) return applied;
   const restarted = await restartWorld(project, world);
   if ("error" in restarted) return restarted;
-  return {
+  const result = {
     ...applied,
     sentence: `Redid ${applied.label}. ${undoSentence(applied.canUndo)}`,
   };
+  announce(project, world, part, result);
+  return result;
 }
 
 export function editSentence(label: string, canUndo: boolean): string {
@@ -184,11 +221,39 @@ function editedMessage(
   }
   if ("error" in result)
     return { type: "error", errors: [], message: result.error };
+  return editedPayload(result);
+}
+
+function announce(
+  project: string,
+  world: string,
+  part: string | undefined,
+  result: DocumentEdit
+): void {
+  publishWorldEvent(
+    project,
+    world,
+    editedPayload(result, part, project, world)
+  );
+}
+
+function editedPayload(
+  result: DocumentEdit,
+  part?: string,
+  project?: string,
+  world?: string
+): WorldServerMessage {
+  const histories =
+    project !== undefined && world !== undefined
+      ? historiesFor(project, world)
+      : undefined;
   return {
     type: "edited",
     label: result.label,
     canUndo: result.canUndo,
     canRedo: result.canRedo,
+    ...(part ? { part } : {}),
+    ...(histories ? { histories } : {}),
     ...(result.warnings && result.warnings.length > 0
       ? { warnings: result.warnings }
       : {}),
@@ -204,6 +269,10 @@ function openSession(
   const located = locatePart(root, world, part);
   if ("error" in located) return located;
   const key = canonical(located.file);
+  const meta = sessionMeta.get(key) ?? { worlds: new Set<string>() };
+  meta.worlds.add(worldKey(project, world));
+  if (part) meta.part = part;
+  sessionMeta.set(key, meta);
   const found = sessions.get(key);
   if (found) return found;
   const opened = EditSession.open({

@@ -32,7 +32,11 @@ import {
   WORLD_TO_SCENE_X,
   worldQuatToThree,
 } from "@/lib/world-pose";
-import { warningsFromRun, warningText } from "@/lib/world-warnings";
+import {
+  instanceWarningMap,
+  warningsFromRun,
+  warningText,
+} from "@/lib/world-warnings";
 import { invalidateSceneNow } from "@/scene/invalidate";
 import { setWorldFitTarget } from "@/scene/world-fit";
 import {
@@ -255,7 +259,7 @@ function WarningCallouts() {
   const selected = useWorld((s) => s.selection?.path ?? null);
   const [hover, setHover] = useState<string | null>(null);
   const warnings = useMemo(
-    () => warningsFromRun(report, diagnostics),
+    () => instanceWarningMap(warningsFromRun(report, diagnostics)),
     [report, diagnostics]
   );
   const markers = useMemo(

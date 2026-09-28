@@ -7,7 +7,9 @@ import type {
 } from "@sfab-bench/contract";
 import { useEffect } from "react";
 
+import { showToast } from "@/components/ui/toast";
 import { getDeviceToken } from "@/lib/api";
+import { historyButtons } from "@/lib/world-history";
 import { decideHudSample } from "@/lib/world-hud";
 import { commandNotice, isOwnCommandNonce } from "@/lib/world-issues";
 import { worldLiveSocketUrl } from "@/lib/world-live-url";
@@ -100,22 +102,24 @@ export function sendWorldEdit(edit: {
 }
 
 export function sendWorldUndo() {
-  const step = worldStore.getState().edits.at(-1);
-  if (!step) return;
-  pendingEdit = { kind: "undo", part: step.part };
+  const buttons = historyButtons(worldStore.getState().history);
+  if (!buttons.canUndo) return;
+  pendingEdit = { kind: "undo", part: buttons.undoPart };
+  worldStore.getState().setEditError(null);
   sendSocket({
     type: "undo",
-    ...(step.part ? { part: step.part } : {}),
+    ...(buttons.undoPart ? { part: buttons.undoPart } : {}),
   });
 }
 
 export function sendWorldRedo() {
-  const step = worldStore.getState().redos.at(-1);
-  if (!step) return;
-  pendingEdit = { kind: "redo", part: step.part };
+  const buttons = historyButtons(worldStore.getState().history);
+  if (!buttons.canRedo) return;
+  pendingEdit = { kind: "redo", part: buttons.redoPart };
+  worldStore.getState().setEditError(null);
   sendSocket({
     type: "redo",
-    ...(step.part ? { part: step.part } : {}),
+    ...(buttons.redoPart ? { part: buttons.redoPart } : {}),
   });
 }
 
@@ -331,19 +335,45 @@ export function useWorldRun(project: string, world: string) {
       if (message.type === "edited") {
         const pending = pendingEdit;
         pendingEdit = null;
-        worldStore
-          .getState()
-          .noteEdited(pending?.kind ?? "edit", pending?.part, message.label);
+        worldStore.getState().applyHistory(
+          {
+            part: message.part ?? pending?.part,
+            canUndo: message.canUndo,
+            canRedo: message.canRedo,
+            ...(message.histories ? { histories: message.histories } : {}),
+          },
+          message.label
+        );
         showNotice(message.label);
         return;
       }
       if (message.type === "error") {
-        if (sawState && pendingEdit && (message.errors?.length ?? 0) === 0) {
+        const pending = pendingEdit;
+        const refusal = pending !== null && (message.errors?.length ?? 0) === 0;
+        const bare =
+          message.message === "nothing to undo" ||
+          message.message === "nothing to redo";
+        if (refusal || bare) {
           pendingEdit = null;
           worldStore.getState().setConfirm(null);
-          worldStore
-            .getState()
-            .setEditError(message.message ?? "The edit was refused.");
+          const kind =
+            pending?.kind === "redo" || message.message === "nothing to redo"
+              ? "redo"
+              : pending?.kind === "undo" ||
+                  message.message === "nothing to undo"
+                ? "undo"
+                : "edit";
+          if (kind === "undo" || kind === "redo") {
+            worldStore.getState().refuseHistory(kind, pending?.part);
+            showToast({
+              type: "info",
+              title: kind === "redo" ? "Nothing to redo." : "Nothing to undo.",
+            });
+          } else {
+            worldStore
+              .getState()
+              .setEditError(message.message ?? "The edit was refused.");
+          }
           return;
         }
         if (!sawState) resetTimeline();

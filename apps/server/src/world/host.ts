@@ -191,6 +191,19 @@ function docKey(
   return { key: `${root}\0${world}`, project: root, world };
 }
 
+/** Tell every subscriber. No-op when that world is not open. */
+export function publishWorldEvent(
+  project: string,
+  worldRel: string,
+  event: WorldServerMessage
+): void {
+  const found = docKey(project, worldRel);
+  if ("error" in found) return;
+  const doc = docs.get(found.key);
+  if (!doc) return;
+  broadcast(doc, event);
+}
+
 function broadcast(doc: Doc, event: WorldServerMessage) {
   for (const sub of doc.subs) {
     if (sub.detached) continue;

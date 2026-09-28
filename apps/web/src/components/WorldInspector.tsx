@@ -41,7 +41,12 @@ import {
   type WorldOutlineSupply,
 } from "@/lib/world-outline";
 import { findViewNode } from "@/lib/world-tree";
-import { type PathWarning, warningsFromRun } from "@/lib/world-warnings";
+import {
+  documentWarnings,
+  instanceWarnings,
+  type PathWarning,
+  warningsFromRun,
+} from "@/lib/world-warnings";
 import {
   type BoardConsoleEntry,
   clearBoardReject,
@@ -967,7 +972,7 @@ function InstanceBody({
               <option
                 key={`${option.class}:${option.variant}`}
                 value={`${option.class}:${option.variant}`}
-                disabled={!option.runnable}
+                disabled={option.gray}
                 title={option.reason}
               >
                 {option.class} {option.variant}
@@ -1040,7 +1045,7 @@ export function WorldInspector() {
             node={node}
             link={selection?.link}
             outline={outline}
-            warnings={warnings.get(node.id) ?? []}
+            warnings={instanceWarnings(warnings, node.id)}
           />
         ) : (
           <>
@@ -1051,7 +1056,7 @@ export function WorldInspector() {
                 Reading the world…
               </p>
             )}
-            <WarningList rows={warnings.get("") ?? []} />
+            <WarningList rows={documentWarnings(warnings)} />
           </>
         )}
       </div>

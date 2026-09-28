@@ -386,12 +386,24 @@ export type WorldServerMessage =
    * `nonce` is set for a failed seek so that client can retire it.
    */
   | { type: "timeline-error"; message: string; nonce?: string }
-  /** An edit, undo, or redo landed. The run reloads separately. */
+  /**
+   * An edit, undo, or redo landed. The run reloads separately.
+   * `canUndo` and `canRedo` are for `part`, or for the open document
+   * when `part` is absent. `histories` is every open part history.
+   */
   | {
       type: "edited";
       label: string;
       canUndo: boolean;
       canRedo: boolean;
+      /** The part this answer is about. Absent for the open document. */
+      part?: string;
+      /**
+       * Undo flags for every part history this world has open.
+       * Absent on an older server; the client then trusts `canUndo`
+       * for `part` alone.
+       */
+      histories?: { part?: string; canUndo: boolean; canRedo: boolean }[];
       /** Ports a break disconnected. Absent when the edit broke none. */
       warnings?: string[];
     }

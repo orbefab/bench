@@ -291,6 +291,7 @@ wss.on(
           parsed.type === "redo"
         ) {
           void handleLiveEdit(project, world, parsed).then((event) => {
+            if (event.type === "edited") return;
             send(ws, event);
           });
         } else if (principal.kind !== "loopback") {

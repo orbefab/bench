@@ -21,9 +21,16 @@ import {
 import { isEditableTarget } from "@/lib/shortcuts";
 import { confirmActions, confirmLines } from "@/lib/world-confirm";
 import { instanceEditTarget, wireEditTarget } from "@/lib/world-edit-target";
+import { historyButtons } from "@/lib/world-history";
 import { editorKeyAction } from "@/lib/world-keys";
-import { findViewNode, treeRows } from "@/lib/world-tree";
 import {
+  findViewNode,
+  initialCollapsed,
+  revealCollapsed,
+  treeRows,
+} from "@/lib/world-tree";
+import {
+  instanceWarningMap,
   warnedPaths,
   warningsFromRun,
   warningText,
@@ -33,8 +40,8 @@ import { useWorld, worldStore } from "@/state/world";
 export function WorldTopBar() {
   const path = useWorld((s) => s.path);
   const part = useWorld((s) => s.tree?.part ?? "");
-  const edits = useWorld((s) => s.edits.length);
-  const redos = useWorld((s) => s.redos.length);
+  const history = useWorld((s) => s.history);
+  const buttons = historyButtons(history);
   const label = useWorld((s) => s.editLabel);
   const name = fileLabel(path);
   return (
@@ -56,7 +63,7 @@ export function WorldTopBar() {
         variant="ghost"
         size="sm"
         className="h-7 px-2 text-xs"
-        disabled={edits === 0}
+        disabled={!buttons.canUndo}
         onClick={() => sendWorldUndo()}
       >
         Undo
@@ -66,7 +73,7 @@ export function WorldTopBar() {
         variant="ghost"
         size="sm"
         className="h-7 px-2 text-xs"
-        disabled={redos === 0}
+        disabled={!buttons.canRedo}
         onClick={() => sendWorldRedo()}
       >
         Redo
@@ -203,20 +210,31 @@ export function WorldTree() {
   const report = useWorld((s) => s.report);
   const diagnostics = useWorld((s) => s.diagnostics);
   const renameTick = useWorld((s) => s.renameTick);
+  const path = useWorld((s) => s.path);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [seededPath, setSeededPath] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const warnings = useMemo(
-    () => warnedPaths(warningsFromRun(report, diagnostics)),
+  if (tree && path && seededPath !== path) {
+    setSeededPath(path);
+    setCollapsed(initialCollapsed(tree.nodes));
+  }
+  const grouped = useMemo(
+    () => instanceWarningMap(warningsFromRun(report, diagnostics)),
     [report, diagnostics]
   );
-  const texts = useMemo(
-    () => warningsFromRun(report, diagnostics),
-    [report, diagnostics]
-  );
+  const warnings = useMemo(() => warnedPaths(grouped), [grouped]);
   const rows = useMemo(
     () => (tree ? treeRows(tree.nodes, warnings, collapsed) : []),
     [tree, warnings, collapsed]
   );
+  useEffect(() => {
+    if (!tree) return;
+    const target = wire ? wire.owner : selection?.path;
+    if (!target) return;
+    setCollapsed((current) =>
+      revealCollapsed(current, tree.nodes, target, wire ? "wire" : "instance")
+    );
+  }, [tree, selection?.path, wire]);
   useEffect(() => {
     if (renameTick === 0) return;
     const path = worldStore.getState().selection?.path;
@@ -243,7 +261,7 @@ export function WorldTree() {
                 : selection?.path === row.path && !wire;
             const warned = row.warning || row.collapsedWarning;
             const why = row.warning
-              ? warningText(texts.get(row.path) ?? [])
+              ? warningText(grouped.get(row.path) ?? [])
               : row.collapsedWarning
                 ? "A part inside has a warning"
                 : "";

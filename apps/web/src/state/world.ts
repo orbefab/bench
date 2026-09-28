@@ -15,6 +15,13 @@ import { createStore } from "zustand/vanilla";
 
 import { readOpenDocument } from "@/lib/document-query";
 import { projectUrl } from "@/lib/project-query";
+import {
+  applyHistory,
+  emptyHistory,
+  type HistoryAnswer,
+  type HistoryModel,
+  refuseHistory,
+} from "@/lib/world-history";
 import type { AssetIssue } from "@/lib/world-issues";
 import type { WorldOutline } from "@/lib/world-outline";
 import { findViewNode, viewPaths } from "@/lib/world-tree";
@@ -38,11 +45,6 @@ export type WorldSelection = {
 export type WorldWirePick = {
   owner: string;
   index: number;
-};
-
-export type EditStep = {
-  /** Owning part id. Absent when the edit was on the open document. */
-  part?: string;
 };
 
 export type WorldConfirm = {
@@ -124,9 +126,8 @@ export type WorldHudState = {
   diagnostics: { path: string; message: string; code: string }[];
   /** Wire row. Mutually exclusive with `selection`. */
   wire: WorldWirePick | null;
-  /** Local undo stack. Each step names the part the server edited. */
-  edits: EditStep[];
-  redos: EditStep[];
+  /** Server undo flags, and which part the next undo or redo names. */
+  history: HistoryModel;
   editLabel: string | null;
   /** The loader's refusal of the last edit. */
   editError: string | null;
@@ -147,11 +148,8 @@ export type WorldHudState = {
   setEditError: (message: string | null) => void;
   setConfirm: (confirm: WorldConfirm | null) => void;
   requestRename: () => void;
-  noteEdited: (
-    kind: "edit" | "undo" | "redo",
-    part: string | undefined,
-    label: string
-  ) => void;
+  applyHistory: (answer: HistoryAnswer, label: string) => void;
+  refuseHistory: (kind: "undo" | "redo", part?: string) => void;
   setSignals: (
     joints: Record<string, Record<string, number>>,
     pins: Record<string, WorldPinState>,
@@ -224,8 +222,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
   tree: null,
   diagnostics: [],
   wire: null,
-  edits: [],
-  redos: [],
+  history: emptyHistory(),
   editLabel: null,
   editError: null,
   confirm: null,
@@ -262,8 +259,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
       tree: sameDocument ? current.tree : null,
       diagnostics: [],
       wire: sameDocument ? current.wire : null,
-      edits: sameDocument ? current.edits : [],
-      redos: sameDocument ? current.redos : [],
+      history: sameDocument ? current.history : emptyHistory(),
       editLabel: sameDocument ? current.editLabel : null,
       editError: null,
       confirm: null,
@@ -295,8 +291,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
       tree: null,
       diagnostics: [],
       wire: null,
-      edits: [],
-      redos: [],
+      history: emptyHistory(),
       editLabel: null,
       editError: null,
       confirm: null,
@@ -350,37 +345,16 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
   requestRename: () => {
     set((state) => ({ renameTick: state.renameTick + 1 }));
   },
-  noteEdited: (kind, part, label) => {
-    const current = get();
-    if (kind === "undo") {
-      const step = current.edits[current.edits.length - 1];
-      set({
-        edits: current.edits.slice(0, -1),
-        redos: step ? [...current.redos, step] : current.redos,
-        editLabel: label,
-        editError: null,
-        confirm: null,
-      });
-      return;
-    }
-    if (kind === "redo") {
-      const step = current.redos[current.redos.length - 1];
-      set({
-        redos: current.redos.slice(0, -1),
-        edits: step ? [...current.edits, step] : current.edits,
-        editLabel: label,
-        editError: null,
-        confirm: null,
-      });
-      return;
-    }
+  applyHistory: (answer, label) => {
     set({
-      edits: [...current.edits, part ? { part } : {}],
-      redos: [],
+      history: applyHistory(get().history, answer),
       editLabel: label,
       editError: null,
       confirm: null,
     });
+  },
+  refuseHistory: (kind, part) => {
+    set({ history: refuseHistory(get().history, kind, part) });
   },
   setSignals: (joints, pins, parts) => {
     const current = get();
