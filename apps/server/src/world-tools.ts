@@ -3,7 +3,6 @@ import { basename, dirname, join } from "node:path";
 
 import {
   ARDUINO_PINS,
-  PART_FORMAT,
   ATMEGA328P_16MHZ_MIN_V,
   atmega328pSoaWarning,
   boardTrackId,
@@ -11,6 +10,7 @@ import {
   type JointLimitKind,
   jointLimitWarning,
   maskHasPin,
+  PART_FORMAT,
   partTrackId,
   pastLimitAmount,
   RECORD_FRAME_MS,
