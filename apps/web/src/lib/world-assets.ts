@@ -146,6 +146,14 @@ export function relFromWorldFile(
   if (!world || !file || file.startsWith("/") || file.includes(":")) {
     return undefined;
   }
+  const part = /^(.*)\/parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i.exec(world);
+  if (part) {
+    const anchor = part[1] ? `${part[1]}/_.world.json` : "_.world.json";
+    return resolveUrdfMesh(anchor, file);
+  }
+  if (/^parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i.test(world)) {
+    return resolveUrdfMesh("_.world.json", file);
+  }
   const slash = world.lastIndexOf("/");
   const anchor =
     slash === -1 ? "_.world.json" : `${world.slice(0, slash)}/_.world.json`;

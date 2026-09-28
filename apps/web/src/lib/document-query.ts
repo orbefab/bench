@@ -1,3 +1,5 @@
+import { isRunDocumentPath } from "@sfab-bench/contract";
+
 /** `?world=` beside `?file=`. Opening one clears the other. See ADR 0009 D-004. */
 
 export type OpenDocument =
@@ -5,8 +7,9 @@ export type OpenDocument =
   | { kind: "file"; path: string }
   | { kind: "world"; path: string };
 
+/** A legacy `.world.json`, or a root part under `parts/<pub>/`. */
 export function isWorldFilePath(path: string): boolean {
-  return path.replace(/\\/g, "/").toLowerCase().endsWith(".world.json");
+  return isRunDocumentPath(path);
 }
 
 /** `?world=` wins when a hand-edited URL names both. Opening either clears the other. */
