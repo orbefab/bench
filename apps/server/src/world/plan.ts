@@ -1087,20 +1087,43 @@ function build(
   const nets = liveNets(loaded.nets);
   const crowded = new Set<string>();
   const loose = new Map<string, CircuitInst[]>();
+  /** A part that touches several boards on one supply is stamped once. */
+  const homeOf = new Map<string, string>();
+  const ownersOf = (part: CircuitInst): RunBoard[] => {
+    const nested = boards.filter(
+      (board) => part.path === board.id || part.path.startsWith(`${board.id}.`)
+    );
+    if (nested.length > 0) return nested;
+    return boards.filter((board) => touches(part, board.id, nets));
+  };
   for (const part of circuits) {
-    const hit = boards.filter((board) => touches(part, board.id, nets));
+    const hit = ownersOf(part);
     if (hit.length >= 2) {
-      crowded.add(part.path);
-      const names = hit.map((board) => board.id).join(" and ");
-      diags.push({
-        severity: "error",
-        path: part.path,
-        port: "nets",
-        quantity: "Part",
-        left: names,
-        right: "one board",
-        message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
-      });
+      const supplyIds = new Set(
+        hit
+          .map((board) => boardSupplyId(board, supplies, nets))
+          .filter((id): id is string => id !== null)
+      );
+      const reached = suppliesReached(part, supplies, nets);
+      if (supplyIds.size >= 2 || reached.length >= 2) {
+        crowded.add(part.path);
+        const names =
+          supplyIds.size >= 2
+            ? hit.map((board) => board.id).join(" and ")
+            : reached.join(" and ");
+        diags.push({
+          severity: "error",
+          path: part.path,
+          port: "nets",
+          quantity: "Part",
+          left: names,
+          right: "one board",
+          message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
+        });
+        continue;
+      }
+      const home = [...hit].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+      if (home) homeOf.set(part.path, home.id);
       continue;
     }
     const reached = suppliesReached(part, supplies, nets);
@@ -1156,10 +1179,12 @@ function build(
       if (only) alsoByBoard.set(only.id, mine);
       continue;
     }
-    // No board, or several boards with neither a netlist nor a snapshot.
-    // The supply stamp is the rail. A heavy pair is rejected below, and
-    // those parts stay unstamped so the check names them.
+    // Several boards on this supply share one rail. Loose parts are
+    // stamped once, on the lex-first board. A pair with no netlist and
+    // no snapshot still stamps them on the supply, as a v1 draft does.
     if (group.some((board) => board.hasNetlist || board.powerSnapshot)) {
+      const home = [...group].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+      if (home) alsoByBoard.set(home.id, mine);
       continue;
     }
     const stamp = stampSupply(supply, mine, nets);
@@ -1181,7 +1206,15 @@ function build(
         behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null,
       usbPort: connectorPort(inst.type.ports, "usb"),
       resetFraction: facts?.resetFraction ?? null,
-      parts: stampParts,
+      parts: stampParts.filter((part) => {
+        const home = homeOf.get(part.path);
+        if (home) return home === board.id;
+        return !boards.some(
+          (other) =>
+            other.id !== board.id &&
+            (part.path === other.id || part.path.startsWith(`${other.id}.`))
+        );
+      }),
       also: alsoByBoard.get(board.id),
       nets,
     });
@@ -1189,13 +1222,22 @@ function build(
   }
   for (const [supplyId, group] of boardsOn) {
     if (group.length < 2) continue;
-    // A stamp or a snapshot is one law, so a second board would lose its
-    // circuit. A v1 draft has neither, and two of those still share.
-    if (!group.some((board) => board.stamp || board.powerSnapshot)) continue;
+    // A feed snapshot replaces the source. A second board would have no
+    // supply of its own. A branch snapshot does not, and shares.
+    const feeds = group.filter((board) => board.powerSnapshot?.law.supplyPort);
+    if (feeds.length === 0) continue;
     const names = group
       .map((board) => board.id)
       .sort()
       .join(" and ");
+    const feedNames = feeds
+      .map((board) => board.id)
+      .sort()
+      .join(" and ");
+    const why =
+      feeds.length === 1
+        ? `${feedNames} uses a feed snapshot, which replaces the supply`
+        : `${feedNames} use feed snapshots, which replace the supply`;
     diags.push({
       severity: "error",
       path: supplyId,
@@ -1203,7 +1245,7 @@ function build(
       quantity: "Part",
       left: names,
       right: "one board",
-      message: `${names} share ${supplyId}; two boards on one supply is not in this run when one has a stamp or a snapshot`,
+      message: `${names} share ${supplyId}; ${why}`,
     });
   }
   // realize prunes a dangling part later. It still counts as placed

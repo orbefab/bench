@@ -25,7 +25,7 @@ import {
 } from "./world/circuit/elements";
 import { Engine } from "./world/circuit/engine";
 import { AVR_PIN } from "./world/circuit/pin";
-import { boardStampOf, realize } from "./world/circuit-stamp";
+import { type boardStampOf, realize } from "./world/circuit-stamp";
 import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
@@ -63,12 +63,16 @@ function sceneWorld(
     string,
     { part: string; params?: Record<string, string | number> }
   >,
-  wires: [string, string][]
+  wires: [string, string][],
+  levels: {
+    default: number;
+    paths?: Record<string, { behaviour: number }>;
+  } = { default: 2 }
 ): unknown {
   return {
     version: 2,
     environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
-    run: { seed: 1, levels: { default: 2 } },
+    run: { seed: 1, levels },
     root: {
       id: "scene",
       part: {
@@ -765,16 +769,100 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       )
     );
     const planned = planWorld(dir, "pair.world.json");
-    expect(!planned.ok, "two class-2 boards planned");
-    const messages = planned.errors.map((item) => item.message);
-    const named = messages.find(
-      (item) =>
-        item.includes("left") &&
-        item.includes("right") &&
-        item.includes("bench")
-    );
-    expect(named, messages.join("; "));
+    expect(planned.ok, "two class-2 boards planned");
+    if (!planned.ok) throw new Error("unreachable");
+    const left = planned.plan.boards.find((board) => board.id === "left");
+    const right = planned.plan.boards.find((board) => board.id === "right");
+    expect(left?.stamp && right?.stamp, "both class-2 boards stamped");
     console.log("two class-2 boards: left and right share bench");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-nano-uno-"));
+  try {
+    copyVcc(dir);
+    writeJson(
+      join(dir, "pair.world.json"),
+      sceneWorld(
+        {
+          bench: { part: "sfab/bench-supply@1.0.0" },
+          nano: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+          uno: { part: "sfab/uno-r3@1.0.0", params: nanoParams },
+        },
+        [
+          ["bench.5V", "nano.5V"],
+          ["bench.GND", "nano.GND"],
+          ["bench.5V", "uno.5V"],
+          ["bench.GND", "uno.GND"],
+        ],
+        { default: 2, paths: { uno: { behaviour: 1 } } }
+      )
+    );
+    const planned = planWorld(dir, "pair.world.json");
+    expect(planned.ok, "nano and uno planned");
+    if (!planned.ok) throw new Error("unreachable");
+    const nano = planned.plan.boards.find((board) => board.id === "nano");
+    const uno = planned.plan.boards.find((board) => board.id === "uno");
+    const bench = planned.plan.supplies.find((item) => item.id === "bench");
+    expect(nano?.stamp && uno?.stamp && bench, "nano and uno stamps");
+    if (!nano?.stamp || !uno?.stamp || !bench) throw new Error("unreachable");
+    const rail = createRailCircuit({
+      vNom: bench.voltage,
+      rSeries: bench.rSeries,
+      iLimit: bench.currentLimit,
+      motors: [],
+      boards: [
+        { id: "nano", stamp: nano.stamp, feed: "header", pin: nano.pin },
+        { id: "uno", stamp: uno.stamp, feed: "header", pin: uno.pin },
+      ],
+    });
+    rail.setBoardLoad("nano", nano.current);
+    rail.setBoardLoad("uno", uno.current);
+    rail.solve();
+    const nanoV = rail.boardReading("nano").voltage;
+    const unoV = rail.boardReading("uno").voltage;
+    console.log(
+      `nano class 2 and uno: nano ${nanoV.toFixed(4)} V, uno ${unoV.toFixed(4)} V, supply ${rail.current.toFixed(4)} A`
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-feed-share-"));
+  try {
+    copyVcc(dir);
+    writeJson(
+      join(dir, "pair.world.json"),
+      sceneWorld(
+        {
+          usb: { part: "sfab/usb-port-500ma@1.0.0" },
+          left: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+          right: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+        },
+        [
+          ["usb.5V", "left.5V"],
+          ["usb.GND", "left.GND"],
+          ["usb.5V", "right.5V"],
+          ["usb.GND", "right.GND"],
+        ],
+        { default: 1 }
+      )
+    );
+    const planned = planWorld(dir, "pair.world.json");
+    expect(!planned.ok, "two feed snapshots planned");
+    if (planned.ok) throw new Error("unreachable");
+    const hit = planned.errors.find(
+      (item) =>
+        item.message.includes("feed snapshot") &&
+        item.message.includes("replace")
+    );
+    expect(hit, planned.errors.map((item) => item.message).join("; "));
+    console.log(`feed snapshot: ${hit?.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

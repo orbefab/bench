@@ -500,7 +500,7 @@ function sample(): WorldState | null {
     const pins = board.takePins();
     const power = boardPower.get(board.id);
     const unpowered = !power?.supplyId;
-    const node = power?.supplyId ? boardNodeOf(power.supplyId) : 0;
+    const node = power?.supplyId ? boardVolts(board.id) : 0;
     const chip = specs.find((item) => item.id === board.id)?.chip;
     const soa =
       chip === "atmega328p" &&
@@ -518,7 +518,7 @@ function sample(): WorldState | null {
       resets: power?.resets ?? 0,
       brownout: board.brownout,
       ...(power?.supplyId ? { voltage: node } : {}),
-      ...ledReading(power?.supplyId),
+      ...ledReading(board.id),
       ...(soa ? { warnings: [soa] } : {}),
     };
   }
@@ -532,7 +532,11 @@ function sample(): WorldState | null {
       commandDeg: load.drive?.track.commandDeg ?? null,
       state: load.state,
       current: load.current,
-      voltage: load.supplyId ? boardNodeOf(load.supplyId) : 0,
+      voltage: load.drive?.board
+        ? boardVolts(load.drive.board.id)
+        : load.supplyId
+          ? boardNodeOf(load.supplyId)
+          : 0,
     };
   }
   for (const ranger of rangers) {
@@ -628,7 +632,11 @@ function fillRecorder(full: boolean) {
     if (!load) continue;
     rec.state[i] = motionRank(load.state);
     rec.partCurrent[i] = load.current;
-    rec.partVoltage[i] = load.supplyId ? boardNodeOf(load.supplyId) : 0;
+    rec.partVoltage[i] = load.drive?.board
+      ? boardVolts(load.drive.board.id)
+      : load.supplyId
+        ? boardNodeOf(load.supplyId)
+        : 0;
   }
   for (let i = 0; i < lay.rangers.length; i++) {
     const ranger = lay.rangers[i];
@@ -647,12 +655,9 @@ function fillRecorder(full: boolean) {
   for (let i = 0; i < lay.boards.length; i++) {
     const id = lay.boards[i];
     const board = boards.find((item) => item.id === id);
-    const power = id ? boardPower.get(id) : undefined;
-    rec.boardVoltage[i] = power?.supplyId ? boardNodeOf(power.supplyId) : 0;
+    rec.boardVoltage[i] = id ? boardVolts(id) : 0;
     if (rec.ledOn[i]) {
-      rec.ledCurrent[i] = power?.supplyId
-        ? (ledCurrentOf(power.supplyId) ?? 0)
-        : 0;
+      rec.ledCurrent[i] = id ? (ledCurrentOf(id) ?? 0) : 0;
     }
     rec.brownout[i] = board?.brownout ? 1 : 0;
     rec.belowSoa[i] = board && boardInSoa(board) ? 1 : 0;
@@ -672,7 +677,7 @@ function boardInSoa(board: AvrBoard): boolean {
   if (spec?.chip !== "atmega328p") return false;
   const power = boardPower.get(board.id);
   if (!power?.supplyId) return false;
-  const voltage = boardNodeOf(power.supplyId);
+  const voltage = boardVolts(board.id);
   return voltage > power.brownoutVoltage && voltage < ATMEGA328P_16MHZ_MIN_V;
 }
 
@@ -1026,6 +1031,8 @@ function bindRails() {
   }
   for (const supply of supplySpecs) {
     const members = groups.get(supply.id) ?? [];
+    const fedBoards = boardsFed(supply.id);
+    const stamped = fedBoards.filter((board) => board.stamp);
     const fed = boardOn(supply.id);
     const supplyStamp = runPlan?.supplies.find(
       (item) => item.id === supply.id
@@ -1037,27 +1044,60 @@ function bindRails() {
       stamp: fed?.stamp ?? supplyStamp,
     });
     const path = attached.boardPath;
-    const circuit = createRailCircuit({
-      vNom: supply.voltage,
-      rSeries: supply.rSeries,
-      iLimit: supply.currentLimit,
-      motors: members.map((load) => {
-        const drive = load.drive;
-        if (!drive) throw new Error("rail motor has no drive");
-        return {
-          resistance: drive.law.resistance,
-          k: drive.law.k,
-        };
-      }),
-      ...(path ? { boardPath: path } : {}),
-      ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
-      ...(attached.stamp && attached.feed
-        ? { stamp: attached.stamp, feed: attached.feed }
-        : {}),
-      ...(path === "snapshot-feed" && fed?.powerSnapshot
-        ? { law: fed.powerSnapshot.law }
-        : {}),
-    });
+    const shared = stamped.length >= 2 && stamped.length === fedBoards.length;
+    const circuit = shared
+      ? createRailCircuit({
+          vNom: supply.voltage,
+          rSeries: supply.rSeries,
+          iLimit: supply.currentLimit,
+          motors: members.map((load) => {
+            const drive = load.drive;
+            if (!drive) throw new Error("rail motor has no drive");
+            return {
+              resistance: drive.law.resistance,
+              k: drive.law.k,
+              boardId: drive.board?.id,
+            };
+          }),
+          boards: stamped.map((board) => {
+            const one = railAttachment({
+              connector: supplyConnectorOf(supply.id),
+              boardCircuit: board.boardCircuit,
+              hasNetlist: board.hasNetlist,
+              stamp: board.stamp,
+            });
+            if (!board.stamp || !one.feed) {
+              throw new Error(`${board.id} has no feed`);
+            }
+            return {
+              id: board.id,
+              stamp: board.stamp,
+              feed: one.feed,
+              pin: board.pin,
+            };
+          }),
+        })
+      : createRailCircuit({
+          vNom: supply.voltage,
+          rSeries: supply.rSeries,
+          iLimit: supply.currentLimit,
+          motors: members.map((load) => {
+            const drive = load.drive;
+            if (!drive) throw new Error("rail motor has no drive");
+            return {
+              resistance: drive.law.resistance,
+              k: drive.law.k,
+            };
+          }),
+          ...(path ? { boardPath: path } : {}),
+          ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
+          ...(attached.stamp && attached.feed
+            ? { stamp: attached.stamp, feed: attached.feed }
+            : {}),
+          ...(path === "snapshot-feed" && fed?.powerSnapshot
+            ? { law: fed.powerSnapshot.law }
+            : {}),
+        });
     if (fuseStart === "tripped") circuit.tripFuse();
     for (let i = 0; i < members.length; i++) {
       const load = members[i];
@@ -1074,16 +1114,18 @@ function supplyConnectorOf(supplyId: string): string | null {
 }
 
 /**
- * The fed board, when this supply powers a firmware board.
- * Two boards on one supply reach this only when neither has a stamp
- * or a snapshot, so the first board is the same path as the rest.
+ * The first firmware board this supply powers. A shared rail still
+ * uses it for the supply-level snapshot warning.
  */
 function boardOn(supplyId: string): RunBoard | null {
-  if (!runPlan) return null;
-  for (const board of runPlan.boards) {
-    if (boardPower.get(board.id)?.supplyId === supplyId) return board;
-  }
-  return null;
+  return boardsFed(supplyId)[0] ?? null;
+}
+
+function boardsFed(supplyId: string): RunBoard[] {
+  if (!runPlan) return [];
+  return runPlan.boards.filter(
+    (board) => boardPower.get(board.id)?.supplyId === supplyId
+  );
 }
 
 /** The firmware board this supply feeds, when that rail stamps pins. */
@@ -1094,23 +1136,25 @@ function drivenBoard(supplyId: string): AvrBoard | null {
 }
 
 /** Onboard LED current. Present when this rail stamped `${board}.led`. */
-function ledCurrentOf(supplyId: string): number | undefined {
+function ledCurrentOf(boardId: string): number | undefined {
+  const supplyId = boardPower.get(boardId)?.supplyId;
+  if (!supplyId) return undefined;
   const group = rails.get(supplyId);
-  const board = boardOn(supplyId);
-  if (!group || !board) return undefined;
-  const key = `${board.id}.led`;
+  if (!group) return undefined;
+  const key = `${boardId}.led`;
   if (!group.circuit.ledPaths.includes(key)) return undefined;
-  return group.circuit.ledCurrent;
+  return group.circuit.leds[key] ?? 0;
 }
 
-function ledReading(supplyId: string | null | undefined): {
+function ledReading(boardId: string): {
   ledCurrent?: number;
   leds?: Record<string, number>;
 } {
+  const supplyId = boardPower.get(boardId)?.supplyId;
   if (!supplyId) return {};
   const group = rails.get(supplyId);
   if (!group || group.circuit.ledPaths.length === 0) return {};
-  const current = ledCurrentOf(supplyId);
+  const current = ledCurrentOf(boardId);
   return {
     leds: group.circuit.leds,
     ...(current === undefined ? {} : { ledCurrent: current }),
@@ -1135,7 +1179,7 @@ function noteSnapshotEnvelope(supplyId: string, amps: number): void {
   }
   const supply = runPlan?.supplies.find((item) => item.id === supplyId);
   const parts = [
-    ...(board?.stamp?.parts ?? []),
+    ...boardsFed(supplyId).flatMap((item) => item.stamp?.parts ?? []),
     ...(supply?.stamp?.parts ?? []),
   ];
   for (const part of parts) {
@@ -1215,15 +1259,46 @@ function solveOneRail(
   const group = rails.get(supplyId);
   if (!group) return { voltage: 0, current: 0, board: 0, boardMin: 0 };
   const { circuit, loads: members } = group;
-  circuit.setFixed(fixed);
-  const avr = drivenBoard(supplyId);
-  if (avr) {
-    // DDR set and PORT set is high, DDR set and PORT clear is low,
-    // PORT set alone is the pull-up, and neither is an input.
-    // High is the board node. peekPins mixes PIN into the level, so
-    // the mode is read from DDR and PORT.
-    for (const bit of circuit.driveBits) {
-      circuit.setDrive(bit, avr.driveMode(bit));
+  if (circuit.sharedRail) {
+    const specs = boardsFed(supplyId);
+    const quiescent = new Map<string, number>();
+    for (const load of members) {
+      const id = load.drive?.board?.id ?? specs[0]?.id;
+      if (!id) continue;
+      quiescent.set(id, (quiescent.get(id) ?? 0) + load.quiescent);
+    }
+    let accounted = 0;
+    for (const spec of specs) {
+      const amps =
+        (boardPower.get(spec.id)?.draw ?? 0) + (quiescent.get(spec.id) ?? 0);
+      circuit.setBoardLoad(spec.id, amps);
+      accounted += amps;
+    }
+    const ranger = fixed - accounted;
+    const first = specs[0];
+    if (first && ranger !== 0) {
+      const base =
+        (boardPower.get(first.id)?.draw ?? 0) + (quiescent.get(first.id) ?? 0);
+      circuit.setBoardLoad(first.id, base + ranger);
+    }
+    for (const spec of specs) {
+      const avr = boards.find((item) => item.id === spec.id);
+      if (!avr) continue;
+      for (const bit of circuit.driveBitsOf(spec.id)) {
+        circuit.setBoardDrive(spec.id, bit, avr.driveMode(bit));
+      }
+    }
+  } else {
+    circuit.setFixed(fixed);
+    const avr = drivenBoard(supplyId);
+    if (avr) {
+      // DDR set and PORT set is high, DDR set and PORT clear is low,
+      // PORT set alone is the pull-up, and neither is an input.
+      // High is the board node. peekPins mixes PIN into the level, so
+      // the mode is read from DDR and PORT.
+      for (const bit of circuit.driveBits) {
+        circuit.setDrive(bit, avr.driveMode(bit));
+      }
     }
   }
   for (let i = 0; i < members.length; i++) {
@@ -1413,7 +1488,7 @@ function reloadBoard(id: string) {
   solveSupplies();
   const power = boardPower.get(id);
   if (power?.supplyId && !next.fault) {
-    const voltage = brownoutOf(power.supplyId);
+    const voltage = brownoutOf(id);
     if (voltage < power.assertVoltage) {
       next.holdInReset();
       power.brownout = { phase: "held", releaseAtMs: null };
@@ -1485,6 +1560,12 @@ function boardNodeOf(supplyId: string): number {
   return rails.get(supplyId)?.circuit.boardVoltage ?? 0;
 }
 
+function boardVolts(boardId: string): number {
+  const supplyId = boardPower.get(boardId)?.supplyId;
+  if (!supplyId) return 0;
+  return rails.get(supplyId)?.circuit.boardReading(boardId).voltage ?? 0;
+}
+
 /** Node the CPU is allowed to see: the latch, not the solve in progress. */
 function latchedBoardNode(boardId: string): number {
   return latchedNode.get(boardId) ?? 0;
@@ -1499,7 +1580,7 @@ function latchSupplyNodes() {
   if (!runPlan) return;
   for (const board of runPlan.boards) {
     const supplyId = boardPower.get(board.id)?.supplyId;
-    latchedNode.set(board.id, supplyId ? boardNodeOf(supplyId) : 0);
+    latchedNode.set(board.id, supplyId ? boardVolts(board.id) : 0);
   }
   for (const supply of supplySpecs) {
     latchedTerminal.set(supply.id, rails.get(supply.id)?.circuit.voltage ?? 0);
@@ -1512,7 +1593,7 @@ function stampNodes(ms: number) {
   const boards: Record<string, number> = {};
   for (const spec of runPlan.boards) {
     const supplyId = boardPower.get(spec.id)?.supplyId;
-    boards[spec.id] = supplyId ? boardNodeOf(supplyId) : 0;
+    boards[spec.id] = supplyId ? boardVolts(spec.id) : 0;
   }
   const last = adcNodes[adcNodes.length - 1];
   if (last && last.ms === ms) last.boards = boards;
@@ -1576,8 +1657,10 @@ function attachAnalog(board: AvrBoard) {
  * What `stepBrownout` sees: the board node at its lowest sub-step.
  * With no Uno cable the board node is the supply terminal.
  */
-function brownoutOf(id: string): number {
-  return rails.get(id)?.boardMin ?? 0;
+function brownoutOf(boardId: string): number {
+  const supplyId = boardPower.get(boardId)?.supplyId;
+  if (!supplyId) return 0;
+  return rails.get(supplyId)?.circuit.boardReading(boardId).min ?? 0;
 }
 
 /** Fold this step's completed pulses into the latched command. */
@@ -1722,7 +1805,7 @@ function advanceOne() {
   for (const board of boards) {
     const power = boardPower.get(board.id);
     if (!power?.supplyId || board.fault) continue;
-    const voltage = brownoutOf(power.supplyId);
+    const voltage = brownoutOf(board.id);
     const stepped = stepBrownout(power.brownout, voltage, stepEndMs);
     power.brownout = {
       phase: stepped.phase,

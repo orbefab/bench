@@ -24,7 +24,13 @@ import type {
   SnapshotFile,
 } from "@sfab-bench/contract";
 import { closeRootWatches } from "./projects";
-import { ISource, thermalVoltage, VSource } from "./world/circuit/elements";
+import {
+  CurrentLoad,
+  ISource,
+  TheveninLimit,
+  thermalVoltage,
+  VSource,
+} from "./world/circuit/elements";
 import { Engine } from "./world/circuit/engine";
 import { AVR_PIN } from "./world/circuit/pin";
 import { PmosChannel } from "./world/circuit/pmos-switch";
@@ -48,7 +54,7 @@ import {
   loadTypeById,
 } from "./world/parts/library";
 import { catalogRoot, planWorld } from "./world/plan";
-import { railAttachment } from "./world/power-path";
+import { BOARD_LOAD_KNEE_V, railAttachment } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 import { branchDc } from "./world/snapshot-dc";
 import { tableLawOf } from "./world/snapshot-law";
@@ -813,12 +819,12 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
     const slot = part.axes?.behaviour?.["2"];
     const variant = slot?.variants.netlist;
     if (variant?.kind !== "composite") throw new Error("arm scene netlist");
-    const uno = variant.netlist.instances.uno;
-    if (!uno) throw new Error("arm scene has no uno");
+    const sceneUno = variant.netlist.instances.uno;
+    if (!sceneUno) throw new Error("arm scene has no uno");
     variant.netlist.instances.other = {
-      part: uno.part,
+      part: sceneUno.part,
       pose: { position: [0.2, 0, 0.006], rotation: [1, 0, 0, 0] },
-      params: uno.params,
+      params: sceneUno.params,
     };
     variant.netlist.wires.push(
       ["usb.5V", "other.5V"],
@@ -826,16 +832,103 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
     );
     writeFileSync(scene, `${JSON.stringify(part, null, 2)}\n`);
     const planned = planWorld(dir, "arm.world.json");
-    expect(!planned.ok, "two class-1 Unos planned");
-    if (planned.ok) throw new Error("unreachable");
-    const hit = planned.errors.find(
-      (item) =>
-        item.message.includes("uno") &&
-        item.message.includes("other") &&
-        item.message.includes("share")
+    if (!planned.ok) {
+      throw new Error(
+        `two class-1 Unos planned: ${planned.errors.map((item) => item.message).join("; ")}`
+      );
+    }
+    const uno = planned.plan.boards.find((board) => board.id === "uno");
+    const other = planned.plan.boards.find((board) => board.id === "other");
+    const usb = planned.plan.supplies.find((item) => item.id === "usb");
+    expect(uno?.stamp && other?.stamp && usb, "both Unos stamped on usb");
+    if (!uno?.stamp || !other?.stamp || !usb) throw new Error("unreachable");
+    const tie = (stamp: BoardStamp): BoardStamp => {
+      const vbus = stamp.vbusNode;
+      const node = (name: string) => (vbus && name === vbus ? "term" : name);
+      return {
+        ...stamp,
+        boardNode: node(stamp.boardNode),
+        vbusNode: stamp.vbusNode ? node(stamp.vbusNode) : null,
+        resetNode: stamp.resetNode ? node(stamp.resetNode) : null,
+        portNodes: Object.fromEntries(
+          Object.entries(stamp.portNodes).map(([key, value]) => [
+            key,
+            node(value),
+          ])
+        ),
+        parts: stamp.parts.map((row) => ({
+          ...row,
+          nodes: Object.fromEntries(
+            Object.entries(row.nodes).map(([key, value]) => [key, node(value)])
+          ),
+        })),
+        pins: stamp.pins.map((row) => ({ ...row, node: node(row.node) })),
+      };
+    };
+    const left = realize(tie(other.stamp), "usb", other.pin, {
+      pinId: (port) => `pin.other.${port}`,
+    });
+    const right = realize(tie(uno.stamp), "usb", uno.pin, {
+      pinId: (port) => `pin.uno.${port}`,
+    });
+    const loadOther = new CurrentLoad(
+      "load.other",
+      left.boardNode,
+      "0",
+      BOARD_LOAD_KNEE_V
     );
-    expect(hit, planned.errors.map((item) => item.message).join("; "));
-    console.log(`two class-1 Unos: ${hit?.message}`);
+    const loadUno = new CurrentLoad(
+      "load.uno",
+      right.boardNode,
+      "0",
+      BOARD_LOAD_KNEE_V
+    );
+    loadOther.amps = other.current;
+    loadUno.amps = uno.current;
+    const stamped = [...left.elements, ...right.elements].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    );
+    const reference = new Engine(
+      [
+        new TheveninLimit(
+          "src",
+          "term",
+          "0",
+          usb.voltage,
+          usb.rSeries,
+          usb.currentLimit
+        ),
+        loadOther,
+        loadUno,
+        ...stamped,
+      ],
+      { method: "be", h: 0.0001, atol: 1e-14, rtol: 1e-12 }
+    );
+    const rail = createRailCircuit({
+      vNom: usb.voltage,
+      rSeries: usb.rSeries,
+      iLimit: usb.currentLimit,
+      motors: [],
+      boards: [
+        { id: "other", stamp: other.stamp, feed: "usb", pin: other.pin },
+        { id: "uno", stamp: uno.stamp, feed: "usb", pin: uno.pin },
+      ],
+    });
+    rail.setBoardLoad("other", other.current);
+    rail.setBoardLoad("uno", uno.current);
+    reference.operatingPoint();
+    rail.solve();
+    const unoV = rail.boardReading("uno").voltage;
+    const otherV = rail.boardReading("other").voltage;
+    const delta = Math.max(
+      Math.abs(unoV - reference.voltage(right.boardNode)),
+      Math.abs(otherV - reference.voltage(left.boardNode)),
+      Math.abs(rail.current - -reference.branchCurrent("src"))
+    );
+    expect(delta <= 1e-12, `two Unos Δ ${delta}`);
+    console.log(
+      `two class-1 Unos: uno ${unoV.toFixed(6)} V, other ${otherV.toFixed(6)} V, supply ${rail.current.toFixed(6)} A, Δ ${delta.toExponential(2)} V`
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

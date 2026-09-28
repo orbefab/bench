@@ -359,7 +359,12 @@ export function realize(
   stamp: BoardStamp,
   feed: "usb" | "header",
   drive: AvrPinParams,
-  opts?: { pins?: boolean; keep?: readonly string[] }
+  opts?: {
+    pins?: boolean;
+    keep?: readonly string[];
+    /** Pin element id. Absent is `pin.${port}`, one board on the rail. */
+    pinId?: (port: string) => string;
+  }
 ): RealizedCircuit {
   const feedNode =
     feed === "usb" && stamp.vbusNode ? stamp.vbusNode : stamp.boardNode;
@@ -382,7 +387,7 @@ export function realize(
     ? stamp.pins.map((row) => ({
         bit: row.bit,
         pin: new Pin(
-          `pin.${row.port}`,
+          opts?.pinId?.(row.port) ?? `pin.${row.port}`,
           row.node,
           stamp.boardNode,
           drive.roh,

@@ -14,6 +14,7 @@
  */
 
 import { arduinoPinBit } from "@sfab-bench/contract";
+import type { Element } from "./circuit/element";
 import {
   type Braking,
   BridgeMotor,
@@ -43,6 +44,15 @@ export type RailMotorLaw = {
   k: number;
   /** Henries. Absent or 0 is the algebraic winding. */
   inductance?: number;
+  /** Board whose 5V node this winding sits on, when several boards share the rail. */
+  boardId?: string;
+};
+
+export type SharedBoard = {
+  id: string;
+  stamp: BoardStamp;
+  feed: "usb" | "header";
+  pin?: AvrPinParams;
 };
 
 export type RailCircuitSpec = {
@@ -77,6 +87,12 @@ export type RailCircuitSpec = {
   ledAlias?: string;
   /** V_RST / VCC. From the stamp when omitted. */
   resetFraction?: number;
+  /**
+   * Every board on this supply. Two or more are one circuit: one
+   * source, each board's netlist under its own path. One board keeps
+   * `stamp` and `feed`.
+   */
+  boards?: readonly SharedBoard[];
 };
 
 const MASTER_S = 0.001;
@@ -138,8 +154,53 @@ export class RailCircuit {
   /** Plain-branch tables stamped with the board. The feed table is `src`. */
   private readonly branchLaws: LawTable[];
   private ready = false;
+  private shared = false;
+  private readonly boardLoads = new Map<string, CurrentLoad>();
+  private readonly boardNodes = new Map<string, string>();
+  private readonly boardDrives = new Map<
+    string,
+    { bit: number; pin: { setMode(mode: PinMode): void } }[]
+  >();
+  private readonly readings = new Map<
+    string,
+    { voltage: number; min: number }
+  >();
+  private readonly boardOrder: string[] = [];
+  private readonly boardResets = new Map<
+    string,
+    { node: string; fraction: number | null }
+  >();
 
   constructor(spec: RailCircuitSpec) {
+    if ((spec.boards?.length ?? 0) > 1) {
+      const built = sharedRail(spec);
+      this.winding = built.winding;
+      this.path = built.path;
+      this.substeps = built.substeps;
+      this.ledPaths = built.ledPaths;
+      this.engine = built.engine;
+      this.load = built.load;
+      this.motors = built.motors;
+      this.termNode = built.termNode;
+      this.boardNode = built.boardNode;
+      this.fuse = built.fuse;
+      this.channels = built.channels;
+      this.drives = built.drives;
+      this.ledDiodes = built.ledDiodes;
+      this.ledAlias = built.ledAlias;
+      this.resetFraction = built.resetFraction;
+      this.resetNode = built.resetNode;
+      this.branchLaws = built.branchLaws;
+      this.shared = true;
+      this.boardOrder.push(...built.boardOrder);
+      for (const [id, load] of built.boardLoads) this.boardLoads.set(id, load);
+      for (const [id, node] of built.boardNodes) this.boardNodes.set(id, node);
+      for (const [id, rows] of built.boardDrives)
+        this.boardDrives.set(id, rows);
+      for (const [id, reset] of built.boardResets)
+        this.boardResets.set(id, reset);
+      return;
+    }
     const braking = spec.braking ?? "clip";
     const uno = spec.boardPath === "uno-usb";
     const snap = spec.boardPath === "snapshot-feed";
@@ -246,7 +307,46 @@ export class RailCircuit {
   }
 
   setFixed(amps: number): void {
+    if (this.shared) {
+      const first = this.boardOrder[0];
+      const load = first ? this.boardLoads.get(first) : undefined;
+      if (load) load.amps = amps;
+      return;
+    }
     this.load.amps = amps;
+  }
+
+  get sharedRail(): boolean {
+    return this.shared;
+  }
+
+  /** One board's knee load, when several boards share this rail. */
+  setBoardLoad(id: string, amps: number): void {
+    const load = this.boardLoads.get(id);
+    if (!load) throw new Error(`no board ${id}`);
+    load.amps = amps;
+  }
+
+  driveBitsOf(id: string): readonly number[] {
+    return (this.boardDrives.get(id) ?? []).map((row) => row.bit);
+  }
+
+  setBoardDrive(id: string, bit: number, mode: PinMode): void {
+    const found = this.boardDrives.get(id)?.find((row) => row.bit === bit);
+    found?.pin.setMode(mode);
+  }
+
+  /**
+   * This board's node. One board on the rail is `boardVoltage` /
+   * `boardMinVoltage`.
+   */
+  boardReading(id: string): { voltage: number; min: number } {
+    return (
+      this.readings.get(id) ?? {
+        voltage: this.boardVoltage,
+        min: this.boardMinVoltage,
+      }
+    );
   }
 
   /** Axis current and voltage of one plain-branch table, after a solve. */
@@ -310,6 +410,10 @@ export class RailCircuit {
    * The fuse, when there is one, takes one thermal step from this current.
    */
   solve(): void {
+    if (this.shared) {
+      this.solveShared();
+      return;
+    }
     let drop = false;
     for (const fuse of this.fuse) if (fuse.pull()) drop = true;
     for (const channel of this.channels) if (channel.apply()) drop = true;
@@ -346,6 +450,262 @@ export class RailCircuit {
     for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
     for (const channel of this.channels) channel.latch(voltage);
   }
+
+  /** Several boards, one source. Each board keeps its own node and load. */
+  private solveShared(): void {
+    let drop = false;
+    for (const fuse of this.fuse) if (fuse.pull()) drop = true;
+    for (const channel of this.channels) if (channel.apply()) drop = true;
+    if (drop) this.engine.dropFactor();
+    const frozen = this.engine.frozenSteps;
+    const mins = new Map<string, number>();
+    for (const id of this.boardOrder) mins.set(id, Number.POSITIVE_INFINITY);
+    this.resetMarginMin = Number.POSITIVE_INFINITY;
+    const note = () => {
+      for (const id of this.boardOrder) {
+        const node = this.boardNodes.get(id);
+        if (!node) continue;
+        const v = this.engine.voltage(node);
+        const soFar = mins.get(id) ?? v;
+        if (v < soFar) mins.set(id, v);
+      }
+      this.noteShared();
+    };
+    if (!this.ready) {
+      this.engine.operatingPoint();
+      this.ready = true;
+      note();
+    } else {
+      const n = this.substeps;
+      for (let k = 0; k < n; k++) {
+        this.engine.stepFast();
+        note();
+      }
+    }
+    this.lastFrozen = this.engine.frozenSteps - frozen;
+    this.voltage = this.engine.voltage(this.termNode);
+    this.current = -this.engine.branchCurrent("src");
+    const first = this.boardOrder[0];
+    const firstNode = first ? this.boardNodes.get(first) : undefined;
+    this.boardVoltage = firstNode ? this.engine.voltage(firstNode) : 0;
+    this.boardMinVoltage = first ? (mins.get(first) ?? this.boardVoltage) : 0;
+    for (const id of this.boardOrder) {
+      const node = this.boardNodes.get(id);
+      if (!node) continue;
+      this.readings.set(id, {
+        voltage: this.engine.voltage(node),
+        min: mins.get(id) ?? this.engine.voltage(node),
+      });
+    }
+    const motors = this.motors;
+    const winding = this.winding;
+    for (let i = 0; i < motors.length; i++) {
+      const motor = motors[i]!;
+      winding[i] = motor.connected ? this.engine.branchCurrent(motor.id) : 0;
+    }
+    const voltage = (node: string) => this.engine.voltage(node);
+    for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
+    for (const channel of this.channels) channel.latch(voltage);
+  }
+
+  private noteShared(): void {
+    const leds: Record<string, number> = {};
+    for (const led of this.ledDiodes) leds[led.path] = led.diode.amps;
+    this.leds = leds;
+    this.ledCurrent = this.ledAlias ? (leds[this.ledAlias] ?? 0) : 0;
+    for (const [id, reset] of this.boardResets) {
+      const boardNode = this.boardNodes.get(id);
+      if (!boardNode || reset.fraction === null) continue;
+      const board = this.engine.voltage(boardNode);
+      const volts = this.engine.voltage(reset.node);
+      this.resetVoltage = volts;
+      const margin = volts - reset.fraction * board;
+      if (margin < this.resetMarginMin) this.resetMarginMin = margin;
+    }
+  }
+}
+
+const TERM = "term";
+
+function mapNodes(
+  stamp: BoardStamp,
+  map: (node: string) => string
+): BoardStamp {
+  const node = (name: string) => (name === "0" ? "0" : map(name));
+  return {
+    ...stamp,
+    boardNode: node(stamp.boardNode),
+    vbusNode: stamp.vbusNode ? node(stamp.vbusNode) : null,
+    resetNode: stamp.resetNode ? node(stamp.resetNode) : null,
+    portNodes: Object.fromEntries(
+      Object.entries(stamp.portNodes).map(([key, value]) => [key, node(value)])
+    ),
+    parts: stamp.parts.map((part) => ({
+      ...part,
+      nodes: Object.fromEntries(
+        Object.entries(part.nodes).map(([key, value]) => [key, node(value)])
+      ),
+    })),
+    pins: stamp.pins.map((pin) => ({ ...pin, node: node(pin.node) })),
+  };
+}
+
+/**
+ * One Thevenin for the supply. A usb feed ties every `VBUS` to that
+ * terminal. A header feed ties every board node, because the supply
+ * lands on each `5V` pin.
+ */
+function sharedRail(spec: RailCircuitSpec): {
+  winding: Float64Array;
+  path: boolean;
+  substeps: number;
+  ledPaths: readonly string[];
+  engine: Engine;
+  load: CurrentLoad;
+  motors: BridgeMotor[];
+  termNode: string;
+  boardNode: string;
+  fuse: PtcFuseElement[];
+  channels: PmosChannel[];
+  drives: { bit: number; pin: { setMode(mode: PinMode): void } }[];
+  ledDiodes: { path: string; diode: Diode }[];
+  ledAlias: string;
+  resetFraction: number | null;
+  resetNode: string | null;
+  branchLaws: LawTable[];
+  boardOrder: string[];
+  boardLoads: Map<string, CurrentLoad>;
+  boardNodes: Map<string, string>;
+  boardDrives: Map<
+    string,
+    { bit: number; pin: { setMode(mode: PinMode): void } }[]
+  >;
+  boardResets: Map<string, { node: string; fraction: number | null }>;
+} {
+  const boards = [...(spec.boards ?? [])].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  );
+  const feeds = new Set(boards.map((board) => board.feed));
+  if (feeds.size > 1) {
+    throw new Error("one supply mixes a usb feed and a header feed");
+  }
+  const usb = boards[0]?.feed === "usb";
+  const prepared = boards.map((board) => {
+    const stamp = usb
+      ? mapNodes(board.stamp, (node) =>
+          node === board.stamp.vbusNode ? TERM : node
+        )
+      : board.stamp;
+    return { ...board, stamp };
+  });
+  const headerNode = prepared[0]?.stamp.boardNode ?? "rail";
+  const tied = usb
+    ? prepared
+    : prepared.map((board) => ({
+        ...board,
+        stamp: mapNodes(board.stamp, (node) =>
+          node === board.stamp.boardNode ? headerNode : node
+        ),
+      }));
+  const termNode = usb ? TERM : headerNode;
+  const boardNode = tied[0]?.stamp.boardNode ?? headerNode;
+  const braking = spec.braking ?? "clip";
+  const boardLoads = new Map<string, CurrentLoad>();
+  const boardNodes = new Map<string, string>();
+  const boardDrives = new Map<
+    string,
+    { bit: number; pin: { setMode(mode: PinMode): void } }[]
+  >();
+  const boardResets = new Map<
+    string,
+    { node: string; fraction: number | null }
+  >();
+  const ledDiodes: { path: string; diode: Diode }[] = [];
+  const drives: { bit: number; pin: { setMode(mode: PinMode): void } }[] = [];
+  const stamped: Element[] = [];
+  let capacitive = false;
+  for (const board of tied) {
+    const realized = realize(board.stamp, board.feed, board.pin ?? AVR_PIN, {
+      pinId: (port) => `pin.${board.id}.${port}`,
+    });
+    if (realized.capacitive || board.stamp.netlist) capacitive = true;
+    boardNodes.set(board.id, realized.boardNode);
+    const load = new CurrentLoad(
+      `load.${board.id}`,
+      realized.boardNode,
+      "0",
+      board.stamp.netlist ? BOARD_LOAD_KNEE_V : 0
+    );
+    boardLoads.set(board.id, load);
+    boardDrives.set(board.id, realized.pins);
+    drives.push(...realized.pins);
+    ledDiodes.push(...realized.leds);
+    if (realized.resetNode) {
+      boardResets.set(board.id, {
+        node: realized.resetNode,
+        fraction: board.stamp.resetFraction,
+      });
+    }
+    stamped.push(...realized.elements);
+  }
+  stamped.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  let inductive = false;
+  const motors: BridgeMotor[] = [];
+  for (let i = 0; i < spec.motors.length; i++) {
+    const law = spec.motors[i]!;
+    const inductance = law.inductance ?? 0;
+    if (inductance > 0) inductive = true;
+    const node =
+      (law.boardId ? boardNodes.get(law.boardId) : undefined) ?? boardNode;
+    motors.push(
+      new BridgeMotor(`m${i}`, node, law.resistance, inductance, law.k, braking)
+    );
+  }
+  const loads = [...boardLoads.values()];
+  const supply = new TheveninLimit(
+    "src",
+    termNode,
+    "0",
+    spec.vNom,
+    spec.rSeries,
+    spec.iLimit
+  );
+  const substeps = inductive || capacitive ? SUBSTEPS : 1;
+  const first = tied[0];
+  const engine = new Engine([supply, ...loads, ...motors, ...stamped], {
+    method: "be",
+    h: MASTER_S / substeps,
+    atol: 1e-14,
+    rtol: 1e-12,
+  });
+  return {
+    winding: new Float64Array(motors.length),
+    path: usb,
+    substeps,
+    ledPaths: ledDiodes.map((led) => led.path),
+    engine,
+    load: loads[0] ?? new CurrentLoad("load", boardNode, "0", 0),
+    motors,
+    termNode,
+    boardNode,
+    fuse: stamped.filter(
+      (el): el is PtcFuseElement => el instanceof PtcFuseElement
+    ),
+    channels: stamped.filter(
+      (el): el is PmosChannel => el instanceof PmosChannel
+    ),
+    drives,
+    ledDiodes,
+    ledAlias: first?.stamp.ledAlias ?? "",
+    resetFraction: first?.stamp.resetFraction ?? null,
+    resetNode: first?.stamp.resetNode ?? null,
+    branchLaws: stamped.filter((el): el is LawTable => el instanceof LawTable),
+    boardOrder: tied.map((board) => board.id),
+    boardLoads,
+    boardNodes,
+    boardDrives,
+    boardResets,
+  };
 }
 
 export function createRailCircuit(spec: RailCircuitSpec): RailCircuit {
