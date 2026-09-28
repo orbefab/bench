@@ -4,14 +4,14 @@
 
 ## 1. Quantities and units
 
-- Files store **SI coherent numbers only**: V, A, Ω, F, H, N·m, rad, rad/s, kg, m, s, K, W. Degrees, mA and kgf·cm are display units.
+- Files store **SI coherent numbers only**: V, A, C, Ω, F, H, N·m, rad, rad/s, kg, m, s, K, W. Degrees, mA and kgf·cm are display units.
 - Each quantity has a name and a dimension vector over `kg m s A K mol cd rad`. Ports connect when the **names** match, not only the dimensions: torque and energy share a vector but not a name.
 - A value may be **tagged** `{ v, q, d, unit? }`. The checker verifies the tag against the field, and a `unit` that is not the SI unit is an error.
 - Dimension vectors cannot see prefixes, so mA and A look alike. The linter therefore checks **plausible ranges per quantity per part type** (D-023.7).
 
 ```ts
 type Quantity =
-  | "Voltage" | "Current" | "Resistance" | "Capacitance" | "Inductance"
+  | "Voltage" | "Current" | "Charge" | "Resistance" | "Capacitance" | "Inductance"
   | "Angle" | "AngularVelocity" | "Torque"
   | "Position" | "Velocity" | "Force"
   | "Temperature" | "HeatFlow"
@@ -188,6 +188,7 @@ Omitted: ADC INL and DNL, ADC noise, the noise canceller, temperature drift, and
 - `slew@1`
 - `dc-motor@1` (K, R, L?, efficiency, eSat, quiescent)
 - `thevenin-limit@1`
+- `battery@1` (supply, ports `+` and `-`). `ocv` is a table of `[soc, volts]` knots, monotonic, with soc running from 0 to 1. `rInternal` is resistance in ohms. `capacity` is charge in coulombs. `soc0` is the initial state of charge. `vCutoff` is volts, and it is optional. Each 1 ms master step the terminal is a Thevenin source inside the rail, `V = ocv(soc)` and `R = rInternal`. After the step, `soc` moves by `−I·dt/capacity`, outside the solve. The state is per instance. At `soc = 0`, or when the terminal voltage is at or below `vCutoff`, the terminal voltage is `ocv(0)` and the run warns once. The run does not stop. The supply record's `voltage` is the terminal voltage, its `current` is the terminal current, and the record also has `soc`. Omitted: temperature, Peukert rate capacity, relaxation, and aging. `sfab/battery-3xaa-alkaline@1.0.0` and `sfab/battery-2s-lipo@1.0.0` fill this form.
 - `ideal-voltage@1`
 - `resistor@1` (`R`, resistance, ohms)
 - `capacitor@1` (`C`, capacitance, farads; `esr`, resistance, ohms, optional). `esr` of 0 is legal and adds no node. `esr` above 0 is a series resistor and an internal node.
@@ -201,6 +202,8 @@ Omitted: ADC INL and DNL, ADC noise, the noise canceller, temperature drift, and
 - `hinge@1` (body axis only: `armature` Inertia, `damping` TorquePerAngularVelocity, `frictionloss` Torque). On the behaviour axis it is a load error. A behaviour form on the body axis is a load error.
 - `mlp@1` (later)
 - `ranger@1` (c, rangeMin, rangeMax, beamHalf, trigMin, echoDelay, echoTimeout, working, quiescent, vMin, face)
+
+Catalog supplies on these forms: `sfab/usb2-host-port@1.0.0`, `sfab/usb3-host-port@1.0.0`, `sfab/usb-charger-1a@1.0.0`, and `sfab/bench-supply-2a@1.0.0` (`thevenin-limit@1`); `sfab/battery-3xaa-alkaline@1.0.0` and `sfab/battery-2s-lipo@1.0.0` (`battery@1`). `sfab/usb-port-500ma@1.0.0` and `sfab/bench-supply@1.0.0` are unchanged.
 
 Each form declares its params with quantities, its ports, its engine contributions (D-014) and, where one exists, its energy function.
 
@@ -435,6 +438,7 @@ Export rule (D-011): every part exports as an FMU, and every world as an SSP com
 These came out of the motor/rail and pin experiments. They are proposals, not yet part of v1.
 
 - **`thevenin-limit@1`** (supply): `V` (open-circuit setpoint, V), `Rs` (Ω), `Ilim` (A, one-sided). While the load current is under `Ilim`, `v = V − Rs·I`; above it the branch holds `I = Ilim` and the terminal voltage follows the load. `supply.voltage` is `V`, never the terminal voltage.
+- **`battery@1`** (supply, ports `+` and `-`): `ocv` is `[soc, volts]`, monotonic, soc from 0 to 1. `rInternal` is ohms. `capacity` is coulombs. `soc0` is the initial state of charge. `vCutoff` is volts, optional. Each 1 ms master step the terminal is `V = ocv(soc)`, `R = rInternal`. After the step, `soc` moves by `−I·dt/capacity`, outside the solve. At `soc = 0`, or when the terminal is at or below `vCutoff`, the terminal voltage is `ocv(0)` and the run warns once. The run does not stop. The supply record's `voltage` is the terminal voltage, `current` is the terminal current, and `soc` is on the record. Omitted: temperature, Peukert, relaxation, and aging.
 - **`dc-motor@1`** on the circuit is `R`, `L` (optional, 0 is legal) and `K`, with ω an input held for the master step. `efficiency`, `eSat`, `quiescent` and the torque limit stay in the behaviour law and do not enter the circuit.
 - **`averaged-hbridge@1`**: ports are the rail and the motor's electrical port. `V_motor = s·V_rail`, `I_rail = s·I_motor`, plus `quiescent` as a current source on the rail. `s` is the behaviour law's output, not a stored parameter. The engine may fuse the bridge and the winding into one branch.
 - **`run.coupling`** on the world, not the part: `scheme` ∈ `explicit | substep | implicit-damping`, `substeps` (default 10), `bemfDamping` ∈ `body | circuit`. Default for a hobby servo is `substep`. A joint with `dt·B/J > 2` selects `implicit-damping`, which puts the derived `B(s) = η·K²/(R + Rs·s²)` on the joint's damping. `B(s)` is derived, never a parameter.
