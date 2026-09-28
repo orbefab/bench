@@ -493,6 +493,8 @@ export type RecordedFrame = {
       minVoltage: number;
       current: number;
       maxCurrent: number;
+      /** Present when the supply is a battery. Follows the playhead. */
+      soc?: number;
     }
   >;
   boards: Record<

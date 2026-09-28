@@ -64,7 +64,7 @@ export function recordingFootprint(counts: {
     counts.joints * 8 +
     counts.bodies * 28 +
     counts.parts * 22 +
-    counts.supplies * 16 +
+    counts.supplies * 20 +
     counts.boards * 24;
   const framesPerMinute = 60_000 / RECORD_FRAME_MS;
   return {
@@ -108,6 +108,8 @@ type Chunk = {
   minVoltage: Float32Array;
   supplyCurrent: Float32Array;
   supplyMax: Float32Array;
+  /** NaN when that supply has no state of charge. */
+  supplySoc: Float32Array;
   boardVoltage: Float32Array;
   boardMinVoltage: Float32Array;
   /** Null when no board on this run records D13 LED current. */
@@ -167,6 +169,8 @@ export class RunRecorder {
   readonly partVoltage: Float64Array;
   readonly voltage: Float64Array;
   readonly supplyCurrent: Float64Array;
+  /** NaN when that supply has no state of charge. */
+  readonly supplySoc: Float64Array;
   /** Volts on each board's 5V node. */
   readonly boardVoltage: Float64Array;
   /** Amperes through each board's onboard LED. Read only where `ledOn` is set. */
@@ -255,6 +259,8 @@ export class RunRecorder {
     this.rangerDistance?.fill(Number.NaN);
     this.voltage = new Float64Array(nS);
     this.supplyCurrent = new Float64Array(nS);
+    this.supplySoc = new Float64Array(nS);
+    this.supplySoc.fill(Number.NaN);
     this.boardVoltage = new Float64Array(nD);
     this.ledCurrent = new Float64Array(nD);
     this.ledOn = spec.boardLed ?? this.boards.map(() => false);
@@ -473,6 +479,7 @@ export class RunRecorder {
       chunk.minVoltage[channel(i, slot)] = this.minV[i] ?? 0;
       chunk.supplyCurrent[channel(i, slot)] = this.supplyCurrent[i] ?? 0;
       chunk.supplyMax[channel(i, slot)] = this.maxSupply[i] ?? 0;
+      chunk.supplySoc[channel(i, slot)] = this.supplySoc[i] ?? Number.NaN;
     }
     for (let i = 0; i < this.boards.length; i++) {
       chunk.ddr[channel(i, slot)] = this.ddr[i] ?? 0;
@@ -794,11 +801,13 @@ export class RunRecorder {
     for (let i = 0; i < this.supplies.length; i++) {
       const spec = this.supplies[i];
       if (!spec || !want(spec.track)) continue;
+      const soc = slot.chunk.supplySoc[channel(i, slot.slot)];
       supplies[spec.id] = {
         voltage: slot.chunk.voltage[channel(i, slot.slot)] ?? 0,
         minVoltage: slot.chunk.minVoltage[channel(i, slot.slot)] ?? 0,
         current: slot.chunk.supplyCurrent[channel(i, slot.slot)] ?? 0,
         maxCurrent: slot.chunk.supplyMax[channel(i, slot.slot)] ?? 0,
+        ...(typeof soc === "number" && Number.isFinite(soc) ? { soc } : {}),
       };
     }
     for (let i = 0; i < this.boards.length; i++) {
@@ -992,6 +1001,7 @@ function createChunk(counts: {
     minVoltage: new Float32Array(counts.supplies * CHUNK),
     supplyCurrent: new Float32Array(counts.supplies * CHUNK),
     supplyMax: new Float32Array(counts.supplies * CHUNK),
+    supplySoc: new Float32Array(counts.supplies * CHUNK).fill(Number.NaN),
     boardVoltage: new Float32Array(counts.boards * CHUNK),
     boardMinVoltage: new Float32Array(counts.boards * CHUNK),
     boardLed: counts.boardLed ? new Float32Array(counts.boards * CHUNK) : null,

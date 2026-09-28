@@ -658,6 +658,7 @@ function fillRecorder(full: boolean) {
     const live = spec ? supplyLive[spec.id] : undefined;
     rec.voltage[i] = live?.voltage ?? 0;
     rec.supplyCurrent[i] = live?.current ?? 0;
+    rec.supplySoc[i] = live?.soc ?? Number.NaN;
   }
   const ledFrames = new Map<string, ReturnType<RailCircuit["takeLedFrame"]>>();
   const ledFrameOf = (supplyId: string) => {

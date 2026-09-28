@@ -22,6 +22,7 @@ import { boardStampOf } from "./world/circuit-stamp";
 import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit } from "./world/rail-circuit";
+import { RunRecorder } from "./world/record";
 
 const MASTER_S = 0.001;
 const LOAD_A = 0.2;
@@ -168,13 +169,18 @@ function cutoffLine(): string {
   const closed = closedCutoffSteps(cell);
   expect(k === closed, `cutoff step ${k} closed ${closed}`);
   expect(rail.batteryWarnings() === 1, "one warning at cutoff");
+  const crossed = rail.voltage;
+  expect(
+    cell.vCutoff !== undefined && crossed <= cell.vCutoff,
+    `crossing voltage ${crossed}`
+  );
   rail.solve();
-  const empty = ocvAt(cell.ocv, 0);
-  const dV = Math.abs(rail.voltage - empty);
+  const latched = ocvAt(cell.ocv, 0) - LOAD_A * cell.rInternal;
+  const dV = Math.abs(rail.voltage - latched);
   expect(dV <= 1e-12, `empty terminal Δ ${dV}`);
   expect(rail.batteryWarnings() === 1, "warning stays one");
   const t = k * MASTER_S;
-  return `battery@1 cutoff t ${num(t)} s closed ${num(closed * MASTER_S)} s; warnings ${rail.batteryWarnings()}`;
+  return `battery@1 cutoff t ${num(t)} s closed ${num(closed * MASTER_S)} s; warnings ${rail.batteryWarnings()}; crossed ${num(crossed)} V; next ${num(rail.voltage)} V`;
 }
 
 function nanoLine(): string {
@@ -209,6 +215,70 @@ function nanoLine(): string {
   return `battery-3xaa-alkaline nano 5V t=1 s board ${num(v1)} V D13 ${num(i1)} A; t=60 s board ${num(v60)} V D13 ${num(i60)} A`;
 }
 
+function scenePart(
+  id: string,
+  pack: Record<string, unknown>,
+  wires: string[][] = [
+    ["pack.+", "nano.5V"],
+    ["pack.-", "nano.GND"],
+  ]
+) {
+  return {
+    format: "sfab.part@1",
+    id,
+    type: "assembly",
+    foreign: false,
+    axes: {
+      behaviour: {
+        "2": {
+          default: "netlist",
+          variants: {
+            netlist: {
+              kind: "composite",
+              omits: ["no snapshot of this assembly"],
+              netlist: {
+                instances: {
+                  nano: {
+                    part: "sfab/nano-ch340@1.0.0",
+                    params: {
+                      firmware: "firmware/hold/hold.hex",
+                      source: "firmware/hold/hold.ino",
+                    },
+                  },
+                  pack,
+                },
+                wires,
+                expose: {},
+              },
+            },
+          },
+        },
+      },
+      body: {
+        "0": {
+          default: "none",
+          variants: {
+            none: { kind: "none", omits: ["assembly adds no body"] },
+          },
+        },
+      },
+      visual: {
+        "0": {
+          default: "none",
+          variants: {
+            none: { kind: "none", omits: ["assembly adds no visual"] },
+          },
+        },
+      },
+    },
+  };
+}
+
+function operatingWarnings(messages: readonly string[]): number {
+  return messages.filter((message) => message.includes("operating range"))
+    .length;
+}
+
 function planLine(): string {
   const dir = mkdtempSync(join(tmpdir(), "sfab-supply-"));
   try {
@@ -225,58 +295,27 @@ function planLine(): string {
     );
     writeFileSync(
       join(dir, "parts", "sfab", "aa-nano-scene@1.0.0.json"),
-      JSON.stringify({
-        format: "sfab.part@1",
-        id: "sfab/aa-nano-scene@1.0.0",
-        type: "assembly",
-        foreign: false,
-        axes: {
-          behaviour: {
-            "2": {
-              default: "netlist",
-              variants: {
-                netlist: {
-                  kind: "composite",
-                  omits: ["no snapshot of this assembly"],
-                  netlist: {
-                    instances: {
-                      nano: {
-                        part: "sfab/nano-ch340@1.0.0",
-                        params: {
-                          firmware: "firmware/hold/hold.hex",
-                          source: "firmware/hold/hold.ino",
-                        },
-                      },
-                      pack: { part: "sfab/battery-3xaa-alkaline@1.0.0" },
-                    },
-                    wires: [
-                      ["pack.+", "nano.5V"],
-                      ["pack.-", "nano.GND"],
-                    ],
-                    expose: {},
-                  },
-                },
-              },
-            },
+      JSON.stringify(
+        scenePart("sfab/aa-nano-scene@1.0.0", {
+          part: "sfab/battery-3xaa-alkaline@1.0.0",
+        })
+      )
+    );
+    writeFileSync(
+      join(dir, "parts", "sfab", "low-scene@1.0.0.json"),
+      JSON.stringify(
+        scenePart(
+          "sfab/low-scene@1.0.0",
+          {
+            part: "sfab/bench-supply@1.0.0",
+            params: { V: 3 },
           },
-          body: {
-            "0": {
-              default: "none",
-              variants: {
-                none: { kind: "none", omits: ["assembly adds no body"] },
-              },
-            },
-          },
-          visual: {
-            "0": {
-              default: "none",
-              variants: {
-                none: { kind: "none", omits: ["assembly adds no visual"] },
-              },
-            },
-          },
-        },
-      })
+          [
+            ["pack.5V", "nano.5V"],
+            ["pack.GND", "nano.GND"],
+          ]
+        )
+      )
     );
     writeFileSync(
       join(dir, "pack.world.json"),
@@ -299,14 +338,80 @@ function planLine(): string {
     expect(planned.plan.boards.length === 1, "plan board");
     const voc = supply?.voltage ?? Number.NaN;
     expect(Math.abs(voc - 4.8) <= 1e-12, `plan voc ${voc}`);
-    return `battery-3xaa-alkaline plan voc ${num(voc)} V on nano 5V`;
+    const fresh = operatingWarnings(
+      (planned.plan.report?.warnings ?? []).map((item) => item.message)
+    );
+    expect(fresh === 0, `fresh pack operating warnings ${fresh}`);
+    writeFileSync(
+      join(dir, "low.world.json"),
+      JSON.stringify({
+        version: 2,
+        environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+        run: {
+          seed: 1,
+          levels: { default: 1, types: { "arduino-nano": { behaviour: 2 } } },
+        },
+        root: { id: "scene", part: "sfab/low-scene@1.0.0" },
+      })
+    );
+    const low = planWorld(dir, "low.world.json");
+    if (!low.ok) {
+      throw new Error(low.errors.map((error) => error.message).join("; "));
+    }
+    const lowCount = operatingWarnings(
+      (low.plan.report?.warnings ?? []).map((item) => item.message)
+    );
+    expect(lowCount === 1, `low supply operating warnings ${lowCount}`);
+    expect(
+      (low.plan.report?.errors ?? []).length === 0,
+      "3 V stays inside abs-max"
+    );
+    return [
+      `battery-3xaa-alkaline plan voc ${num(voc)} V on nano 5V`,
+      `nano 5V rating: fresh battery-3xaa-alkaline operating warnings ${fresh}; 3 V supply operating warnings ${lowCount}`,
+    ].join("\n");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
+function socLine(): string {
+  const rec = new RunRecorder({
+    id: "soc",
+    manifest: {
+      mujoco: "3.14.0",
+      avr8js: "0.21.1",
+      timestep: 0.001,
+      integrator: "implicitfast",
+      frameMs: 10,
+      worldSha256: "0".repeat(64),
+      boards: [],
+      parts: {},
+    },
+    joints: [],
+    bodies: [],
+    parts: [],
+    supplies: ["pack", "usb"],
+    boards: [],
+  });
+  rec.voltage[0] = 4.8;
+  rec.supplyCurrent[0] = 0.01;
+  rec.supplySoc[0] = 0.5;
+  rec.voltage[1] = 5;
+  rec.supplyCurrent[1] = 0.02;
+  rec.commit(10);
+  const frame = rec.read({ from: 0, to: 0.01 }).frames[0];
+  const pack = frame?.supplies.pack;
+  const usb = frame?.supplies.usb;
+  expect(pack?.soc === 0.5, `recorded soc ${pack?.soc}`);
+  expect(usb !== undefined && !("soc" in usb), "a supply without soc omits it");
+  return `battery@1 recording soc ${num(pack?.soc ?? Number.NaN)}; supply without soc omits it`;
+}
+
 function batteryReport(): string {
-  return [sixtyLine(), cutoffLine(), nanoLine(), planLine()].join("\n");
+  return [sixtyLine(), cutoffLine(), nanoLine(), planLine(), socLine()].join(
+    "\n"
+  );
 }
 
 const presets = [

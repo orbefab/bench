@@ -388,6 +388,10 @@ function voltsText(voltage: number): string {
   return `${voltage.toFixed(2)} V`;
 }
 
+function socText(soc: number): string {
+  return `${(soc * 100).toFixed(1)}%`;
+}
+
 function motionText(state: string | undefined): string {
   if (state === "idle" || state === "moving" || state === "stall") return state;
   return "—";
@@ -645,6 +649,7 @@ function SupplyBody({
   const recorded =
     scrub.playhead !== null ? scrub.frame?.supplies[id] : undefined;
   const voltage = recorded ? recorded.minVoltage : live?.voltage;
+  const soc = scrub.playhead !== null ? recorded?.soc : live?.soc;
   if (pending) {
     return (
       <p className="text-[12px] text-muted-foreground">Reading the world…</p>
@@ -672,6 +677,9 @@ function SupplyBody({
               : "—"
         }
       />
+      {soc === undefined ? null : (
+        <Field label="State of charge" value={socText(soc)} />
+      )}
       <Field label="Limit" value={info ? ampsText(info.currentLimit) : "—"} />
       <Field label="Series" value={info ? `${info.rSeries} Ω` : "—"} />
       <Field label="Feeds" value={feedText(info)} />
