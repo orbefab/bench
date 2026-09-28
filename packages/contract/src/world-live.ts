@@ -7,6 +7,7 @@
  * first `[w, x, y, z]`. Joint values are radians.
  */
 
+import type { EditOp } from "./edit";
 import type { RunReport } from "./layered";
 import type { WorldError, WorldQuat, WorldVec3 } from "./world";
 
@@ -318,7 +319,11 @@ export type WorldClientMessage =
   /** Overview series for this client's strip. Does not move the run. */
   | { type: "timeline"; from: number; to: number; maxPoints: number }
   /** This client wants the recorded frame at `t`. Does not move the run. */
-  | { type: "seek"; t: number; nonce: string };
+  | { type: "seek"; t: number; nonce: string }
+  /** Change the open document. One undo step. */
+  | { type: "edit"; ops: EditOp[]; label?: string }
+  | { type: "undo" }
+  | { type: "redo" };
 
 export type WorldServerMessage =
   | { type: "state"; state: WorldState; report?: RunReport }
@@ -371,7 +376,9 @@ export type WorldServerMessage =
    * The seek or timeline read failed. The shared run is unchanged.
    * `nonce` is set for a failed seek so that client can retire it.
    */
-  | { type: "timeline-error"; message: string; nonce?: string };
+  | { type: "timeline-error"; message: string; nonce?: string }
+  /** An edit, undo, or redo landed. The run reloads separately. */
+  | { type: "edited"; label: string; canUndo: boolean; canRedo: boolean };
 
 /** One frame every 10 ms of sim time. The name is the unit. */
 export const RECORD_FRAME_MS = 10;

@@ -124,6 +124,23 @@ function resolvePath(root: string, p: string, extra: string[] = []) {
   throw new Error(`sandbox path escapes workspace: ${p}`);
 }
 
+/** Part and lock files are documents. The agent edits them with world_edit. */
+export function partWriteRefusal(filePath: string): string | null {
+  const norm = filePath.replace(/\\/g, "/");
+  if (norm.endsWith(".lock.json")) {
+    return "part and lock files are edited with world_edit";
+  }
+  if (/(^|\/)parts\/[^/]+\/[^/]+@[^/]+\.json$/i.test(norm)) {
+    return "part and lock files are edited with world_edit";
+  }
+  return null;
+}
+
+function refusePartWrite(filePath: string) {
+  const refused = partWriteRefusal(filePath);
+  if (refused) throw new Error(refused);
+}
+
 /**
  * Where adapters write `.harness-bootstrap/`: one directory for the machine,
  * not the CAD folder and not one per folder. A bridge install is the same three
@@ -260,7 +277,9 @@ function createLocalSession(
       }
     },
     writeFile: async ({ path, content }) => {
+      refusePartWrite(path);
       const dest = resolvePath(root, path, [stateDir]);
+      refusePartWrite(dest);
       await mkdir(dirname(dest), { recursive: true });
       const chunks: Uint8Array[] = [];
       const reader = content.getReader();
@@ -272,12 +291,16 @@ function createLocalSession(
       await writeFile(dest, Buffer.concat(chunks.map((c) => Buffer.from(c))));
     },
     writeBinaryFile: async ({ path, content }) => {
+      refusePartWrite(path);
       const dest = resolvePath(root, path, [stateDir]);
+      refusePartWrite(dest);
       await mkdir(dirname(dest), { recursive: true });
       await writeFile(dest, content);
     },
     writeTextFile: async ({ path, content, encoding }) => {
+      refusePartWrite(path);
       const dest = resolvePath(root, path, [stateDir]);
+      refusePartWrite(dest);
       await mkdir(dirname(dest), { recursive: true });
       await writeFile(dest, content, {
         encoding: (encoding as BufferEncoding) ?? "utf8",

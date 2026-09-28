@@ -1,5 +1,12 @@
 /** Node `Store` for `@sfab-bench/parts`. Creates parent directories on write. */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 
 import type { Store } from "@sfab-bench/parts";
@@ -19,6 +26,23 @@ export const nodeStore: Store = {
   writeText(file, text) {
     const abs = absolutePath(file);
     mkdirSync(path.dirname(abs), { recursive: true });
-    writeFileSync(abs, text);
+    // A crash mid-write leaves the previous file. The temp is not a
+    // part document, and it is removed if the rename does not land.
+    const tmp = `${abs}.edit-tmp`;
+    try {
+      writeFileSync(tmp, text);
+      renameSync(tmp, abs);
+    } catch (err) {
+      rmSync(tmp, { force: true });
+      throw err;
+    }
+  },
+  rename(from, to) {
+    const abs = absolutePath(to);
+    mkdirSync(path.dirname(abs), { recursive: true });
+    renameSync(absolutePath(from), abs);
+  },
+  remove(file) {
+    rmSync(absolutePath(file), { force: true });
   },
 };

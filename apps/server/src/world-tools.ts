@@ -1,16 +1,13 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-
 import {
   ARDUINO_PINS,
   ATMEGA328P_16MHZ_MIN_V,
   atmega328pSoaWarning,
   boardTrackId,
+  type EditOp,
   extractUrdfJointsAndMeshes,
   type JointLimitKind,
   jointLimitWarning,
   maskHasPin,
-  PART_FORMAT,
   partTrackId,
   pastLimitAmount,
   RECORD_FRAME_MS,
@@ -22,17 +19,11 @@ import {
   type WorldSender,
   type WorldState,
 } from "@sfab-bench/contract";
-import {
-  canonicalJson,
-  type LoadResult,
-  loadWorldV2,
-  lockPathFor,
-  readLock,
-  writeLock,
-} from "@sfab-bench/parts";
+import { readEditOp } from "@sfab-bench/parts";
 import { tool } from "ai";
 import { z } from "zod";
 import { viewerProjectRoot } from "./viewer-context";
+import { applyDocumentEdit, redoDocument, undoDocument } from "./world/edit";
 import { readerFor } from "./world/files";
 import {
   ensureWorldRun,
@@ -47,19 +38,7 @@ import {
   stepWorld,
   worldRunView,
 } from "./world/host";
-import {
-  applyLevelEdit,
-  type LevelTable,
-  lockAfterLevels,
-  replaceLevels,
-} from "./world/level-edit";
-import { absolutePath, nodeStore } from "./world/node-store";
-import {
-  catalogRoot,
-  planWorld,
-  type RunPlan,
-  WORLD_V1_MESSAGE,
-} from "./world/plan";
+import { planWorld, type RunPlan, WORLD_V1_MESSAGE } from "./world/plan";
 import { commandDegFromPulse } from "./world/servo";
 import { powerFeedsOf, servoSignalDrives } from "./world/wiring";
 
@@ -198,25 +177,6 @@ async function openRun(world: string): Promise<Loaded | { error: string }> {
   const started = await ensureWorldRun(found.root, found.world);
   if ("error" in started) return started;
   return found;
-}
-
-/** Load edited world text without writing the real file. Parts resolve beside it. */
-function loadWorldText(
-  worldFile: string,
-  assetRoot: string,
-  text: string
-): LoadResult {
-  const temp = join(dirname(worldFile), `.${basename(worldFile)}.level-edit`);
-  writeFileSync(temp, text);
-  try {
-    return loadWorldV2(absolutePath(temp), {
-      store: nodeStore,
-      catalogDir: absolutePath(catalogRoot()),
-      assetRoot: absolutePath(assetRoot),
-    });
-  } finally {
-    rmSync(temp, { force: true });
-  }
 }
 
 function jointLimits(root: string, world: string, doc: RunPlan) {
@@ -1140,6 +1100,61 @@ export const worldTools = {
       return { id, position: [position[0], position[1], position[2]] };
     },
   }),
+  world_edit: tool({
+    description:
+      "Change the open part through typed edit operations, as one undo step, then restart the run. world is the project-relative part path from get_viewer. ops is add-instance, remove-instance, set-pose, set-param, set-level, wire, unwire, rename-instance, set-play, or a batch of those. Each op's document is that path. A catalog part is read-only. Returns what changed and whether undo is available.",
+    inputSchema: z.object({
+      world: z.string(),
+      ops: z.array(z.record(z.string(), z.unknown())).min(1),
+      label: z.string().optional(),
+    }),
+    execute: async ({ world, ops, label }) => {
+      const found = await openRun(world);
+      if ("error" in found) return found;
+      const parsed: EditOp[] = [];
+      for (const item of ops) {
+        const read = readEditOp({
+          ...item,
+          document:
+            typeof item.document === "string" ? item.document : found.world,
+        });
+        if ("error" in read) return read;
+        parsed.push(read);
+      }
+      const applied = await applyDocumentEdit(
+        found.root,
+        found.world,
+        parsed,
+        label
+      );
+      if ("error" in applied) return applied;
+      return applied.sentence;
+    },
+  }),
+  world_undo: tool({
+    description:
+      "Undo the last edit of the open part, then restart the run. world is the project-relative part path from get_viewer. Refuses when the file changed outside this session.",
+    inputSchema: z.object({ world: z.string() }),
+    execute: async ({ world }) => {
+      const found = await openRun(world);
+      if ("error" in found) return found;
+      const applied = await undoDocument(found.root, found.world);
+      if ("error" in applied) return applied;
+      return applied.sentence;
+    },
+  }),
+  world_redo: tool({
+    description:
+      "Redo the last undone edit of the open part, then restart the run. world is the project-relative part path from get_viewer.",
+    inputSchema: z.object({ world: z.string() }),
+    execute: async ({ world }) => {
+      const found = await openRun(world);
+      if ("error" in found) return found;
+      const applied = await redoDocument(found.root, found.world);
+      if ("error" in applied) return applied;
+      return applied.sentence;
+    },
+  }),
   world_set_level: tool({
     description:
       "Set or remove one level rule in the open world file, then restart the run. world is the project-relative .world.json path from get_viewer. scope is default, type, or path. key is the part type or the instance path (nano, fleet.rig2.servo); default takes no key. axis is behaviour, body, or visual; omit it and the class applies to all three. class is 0, 1, 2, 3, or null. null removes that rule. The default cannot be removed. A type or path that is not in the loaded world is an error and the file is left unchanged. Returns the new level rows for the instances that rule covers, including a snapshot when one ran.",
@@ -1169,100 +1184,22 @@ export const worldTools = {
       if (scope === "type" && key && !knownTypes.has(key)) {
         return { error: `no type "${key}"` };
       }
-      const file = join(found.root, found.world);
-      const before = readFileSync(file, "utf8");
-      const live = loadWorldV2(absolutePath(file), {
-        store: nodeStore,
-        catalogDir: absolutePath(catalogRoot()),
-        assetRoot: absolutePath(found.root),
-      });
-      const lockErrors = live.diagnostics.filter(
-        (diag) => diag.severity === "error" && diag.message.includes("lockfile")
-      );
-      if (lockErrors.length > 0 || !live.lock) {
-        return {
-          error:
-            lockErrors.map((diag) => diag.message).join("; ") ||
-            "world file did not load",
-        };
-      }
-      let parsed: {
-        format?: string;
-        id?: string;
-        run?: { levels?: LevelTable };
-        play?: { levels?: LevelTable };
-      };
-      try {
-        parsed = JSON.parse(before) as {
-          format?: string;
-          id?: string;
-          run?: { levels?: LevelTable };
-          play?: { levels?: LevelTable };
-        };
-      } catch {
-        return { error: "world file is not JSON" };
-      }
-      const current = parsed.play?.levels ?? parsed.run?.levels;
-      if (!current) return { error: "world file has no run.levels" };
-      const edited = applyLevelEdit(current, {
-        scope,
-        ...(key !== undefined ? { key } : {}),
-        ...(axis !== undefined ? { axis } : {}),
-        class: level,
-      });
-      if ("error" in edited) return edited;
-      let next: string;
-      try {
-        next = replaceLevels(before, edited.levels);
-      } catch (err: unknown) {
-        return {
-          error: err instanceof Error ? err.message : "could not edit levels",
-        };
-      }
-      const loaded = loadWorldText(file, found.root, next);
-      const blocked = loaded.diagnostics.filter(
-        (diag) => diag.severity === "error"
-      );
-      if (
-        blocked.length > 0 ||
-        !loaded.world ||
-        !loaded.report ||
-        !loaded.lock
-      ) {
-        const message = blocked.map((diag) => diag.message).join("; ");
-        return { error: message || "world file did not load" };
-      }
-      const refresh =
-        parsed.format === PART_FORMAT && typeof parsed.id === "string"
-          ? [parsed.id]
-          : [];
-      const decided = lockAfterLevels(live.lock, loaded.lock, refresh);
-      if ("error" in decided) return decided;
-      const lockFile = lockPathFor(file);
-      const previousLock = existsSync(lockFile) ? readFileSync(lockFile) : null;
-      const lockChanged =
-        previousLock === null ||
-        canonicalJson(readLock(nodeStore, lockFile)) !==
-          canonicalJson(decided.lock);
-      try {
-        if (lockChanged) writeLock(nodeStore, lockFile, decided.lock);
-        writeFileSync(file, next);
-      } catch (err: unknown) {
-        if (previousLock) writeFileSync(lockFile, previousLock);
-        return {
-          error:
-            err instanceof Error ? err.message : "could not write the world",
-        };
-      }
-      // The project watcher reloads when the world or the lock changes, on a
-      // 250 ms debounce, and then skips if the dependency stamp already
-      // matches. restartWorld updates that stamp and reloads once before the
-      // debounce; the tool waits on it for sim time 0 and a new recording.
-      // The watcher then sees the same stamp and does not load again.
-      const restarted = await restartWorld(found.root, found.world);
-      if ("error" in restarted) return restarted;
+      const applied = await applyDocumentEdit(found.root, found.world, [
+        {
+          kind: "set-level",
+          document: found.world,
+          scope,
+          ...(key !== undefined ? { key } : {}),
+          ...(axis !== undefined ? { axis } : {}),
+          class: level,
+        },
+      ]);
+      if ("error" in applied) return applied;
       return {
-        rows: levelRows(loaded.report, coveredPaths(loaded.report, scope, key)),
+        rows: levelRows(
+          applied.report,
+          coveredPaths(applied.report, scope, key)
+        ),
       };
     },
   }),

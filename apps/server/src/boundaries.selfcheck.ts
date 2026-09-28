@@ -375,3 +375,42 @@ if (setters.length > 0) {
   throw new Error(`sim exports configure setter: ${setters.join(", ")}`);
 }
 process.stdout.write("boundary: sim exports no configure setter\n");
+
+const serverSrc = path.join(root, "apps/server/src");
+const webSrc = path.join(root, "apps/web/src");
+const scanned = [...walkTs(serverSrc), ...walkTs(webSrc)];
+const writeCall = /\b(?:writeFileSync|writeText)\s*\(/g;
+const documentArg =
+  /\.lock\.json|lockPathFor|\/parts\/|parts\/[^/"'\s]+\/[^/"'\s]+@/;
+const forbiddenCalls = ["writeLock(", "replaceLevels(", "lockAfterLevels("];
+const hits: string[] = [];
+for (const file of scanned) {
+  const rel = path.relative(root, file);
+  if (rel.includes("selfcheck")) continue;
+  if (rel.endsWith(path.join("world", "edit.ts"))) continue;
+  const text = readFileSync(file, "utf8");
+  for (const name of forbiddenCalls) {
+    if (text.includes(name)) hits.push(`${rel} ${name}`);
+  }
+  for (const match of text.matchAll(writeCall)) {
+    const at = match.index;
+    if (at === undefined) continue;
+    const args = text.slice(at, at + 240);
+    if (documentArg.test(args)) hits.push(`${rel} ${match[0]}`);
+  }
+}
+if (hits.length > 0) {
+  throw new Error(`document write outside world/edit.ts: ${hits.join("; ")}`);
+}
+process.stdout.write(
+  `boundary: scanned ${scanned.length} server and web files; document writes stay in world/edit.ts\n`
+);
+
+function walkTs(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const abs = path.join(dir, name);
+    if (statSync(abs).isDirectory()) walkTs(abs, out);
+    else if (name.endsWith(".ts")) out.push(abs);
+  }
+  return out;
+}

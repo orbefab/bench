@@ -1,18 +1,21 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import {
+  type EditOp,
   SERIAL_TEXT_MAX,
   WORLD_NONCE_MAX,
   type WorldClientMessage,
   type WorldSender,
   type WorldServerMessage,
 } from "@sfab-bench/contract";
+import { readEditOp } from "@sfab-bench/parts";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
 import type { ClientPrincipal } from "../principal";
 import { resolveUpgradePrincipal, runWithPrincipal } from "../principal";
 import { resolveRequestRoot } from "../projects";
+import { handleLiveEdit } from "./edit";
 import { attachWorld, type WorldHandle } from "./host";
 
 /**
@@ -158,6 +161,29 @@ export function parseWorldClient(raw: string): ParsedClient {
     }
     return { type: "seek", t, nonce };
   }
+  if (type === "undo") return { type: "undo" };
+  if (type === "redo") return { type: "redo" };
+  if (type === "edit") {
+    const ops = (value as { ops?: unknown }).ops;
+    const label = (value as { label?: unknown }).label;
+    if (!Array.isArray(ops) || ops.length === 0) {
+      return { error: "edit needs operations" };
+    }
+    if (label !== undefined && typeof label !== "string") {
+      return { error: "edit needs operations" };
+    }
+    const parsed: EditOp[] = [];
+    for (const item of ops) {
+      const read = readEditOp(item);
+      if ("error" in read) return { error: read.error };
+      parsed.push(read);
+    }
+    return {
+      type: "edit",
+      ops: parsed,
+      ...(typeof label === "string" ? { label } : {}),
+    };
+  }
   return { error: "unknown world message" };
 }
 
@@ -243,6 +269,14 @@ wss.on(
               return;
             }
             send(ws, result);
+          });
+        } else if (
+          parsed.type === "edit" ||
+          parsed.type === "undo" ||
+          parsed.type === "redo"
+        ) {
+          void handleLiveEdit(project, world, parsed).then((event) => {
+            send(ws, event);
           });
         } else if (principal.kind !== "loopback") {
           send(ws, {
