@@ -5,8 +5,8 @@
   "foreign": false,
   "sources": [
     {
-      "title": "Energizer Alkaline Application Manual, Fig. 12 and the fresh open-circuit example",
-      "ref": "Three E91 cells in series. Fig. 12 is an AA cell at 0.1 A down to 0.8 V: 1.2 V at 15 h and 0.8 V at 25 h, so the charge left at 15 h is 0.4 of the 25 h test. The manual's fresh open-circuit example is 1.6 V. Pack knots are three times those cell voltages: 2.4 V at soc 0, 3.6 V at soc 0.4, 4.8 V at soc 1. Fig. 12 is a loaded curve; the internal drop at 0.1 A is not added back, and that correction is assumed small. vCutoff is 2.4 V, three times the 0.8 V end of Fig. 12. Capacity is 9000 C, the Fig. 12 0.1 A times 25 h, and a series pack has one cell's charge."
+      "title": "Energizer Alkaline Handbook, Figure 12, plus the fresh open-circuit example",
+      "ref": "Three cells in series. Figure 12 (2018 handbook, page 11) is one AA cell at 0.1 A, ending at 0.8 V after 25 h. The text states 1.2 V at 15 h and 0.8 V at 25 h. The other knots were read off that figure. Reading tolerance is about 0.02 V on the cell, 0.06 V on the pack. Each loaded knot is three times the cell voltage plus 0.1 A times the pack rInternal (0.045 V), so the table is open circuit and the drop is not counted twice. The fresh point is the handbook's open-circuit example of 1.6 V, three cells, 4.8 V at soc 1, and it is not a point on the loaded curve. vCutoff stays 2.4 V, the terminal voltage where Figure 12 stops. Capacity is 9000 C, 0.1 A times 25 h, and a series pack has one cell's charge."
     },
     {
       "title": "Energizer E91 datasheet, nominal internal resistance",
@@ -37,7 +37,18 @@
             "kind": "form",
             "form": "battery@1",
             "params": {
-              "ocv": [[0, 2.4], [0.4, 3.6], [1, 4.8]],
+              "ocv": [
+                [0, 2.445],
+                [0.04, 2.51],
+                [0.12, 3.11],
+                [0.2, 3.36],
+                [0.4, 3.645],
+                [0.6, 3.8],
+                [0.8, 3.99],
+                [0.92, 4.27],
+                [0.96, 4.44],
+                [1, 4.8]
+              ],
               "rInternal": 0.45,
               "capacity": 9000,
               "soc0": 1,

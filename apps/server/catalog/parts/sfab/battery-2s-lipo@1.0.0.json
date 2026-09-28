@@ -5,12 +5,12 @@
   "foreign": false,
   "sources": [
     {
-      "title": "Generic Li-ion open-circuit curve, two cells in series",
-      "ref": "A graphite anode and a layered-oxide cathode: 3.0 V empty, 3.7 V nominal, 4.2 V full. Pack voltages are twice the cell, so 6.0 V empty, 7.4 V nominal, and 8.4 V full. The knots between those anchors follow that plateau and stay monotonic. They are not a trace from one cell's datasheet. vCutoff is 6.0 V. This pack is for VIN."
+      "title": "Analog Devices DS2786 open-circuit table, two cells in series",
+      "ref": "Interpreting the Open-Circuit-Voltage Fuel Gauge of the DS2786, Table 1, the example cell. Nine open-circuit knots, each cell voltage doubled. Full is 8.354 V. vCutoff is 6.426 V, that table's empty open-circuit voltage. This pack is for VIN."
     },
     {
       "title": "Capacity and resistance, assumed",
-      "ref": "Capacity 3600 C and rInternal 0.1 ohm are assumed for an example pack of that size."
+      "ref": "Capacity 3600 C and rInternal 0.1 ohm are assumed. The open-circuit table is the published example cell, not a measurement of this pack."
     }
   ],
   "axes": {
@@ -21,7 +21,7 @@
           "ideal": {
             "kind": "form",
             "form": "ideal-voltage@1",
-            "params": { "V": 8.4 },
+            "params": { "V": 8.354 },
             "omits": ["series resistance", "state of charge", "cutoff"]
           }
         }
@@ -34,23 +34,20 @@
             "form": "battery@1",
             "params": {
               "ocv": [
-                [0, 6],
-                [0.05, 7],
-                [0.1, 7.2],
-                [0.2, 7.36],
-                [0.3, 7.46],
-                [0.4, 7.54],
-                [0.5, 7.6],
-                [0.6, 7.7],
-                [0.7, 7.82],
-                [0.8, 7.96],
-                [0.9, 8.16],
-                [1, 8.4]
+                [0, 6.426],
+                [0.05, 7.186],
+                [0.1, 7.374],
+                [0.15, 7.386],
+                [0.25, 7.51],
+                [0.45, 7.598],
+                [0.55, 7.664],
+                [0.85, 8.08],
+                [1, 8.354]
               ],
               "rInternal": 0.1,
               "capacity": 3600,
               "soc0": 1,
-              "vCutoff": 6
+              "vCutoff": 6.426
             },
             "omits": ["temperature", "Peukert", "relaxation", "aging"]
           }
