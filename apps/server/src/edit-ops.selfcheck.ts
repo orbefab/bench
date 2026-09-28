@@ -7,11 +7,12 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
@@ -473,6 +474,7 @@ try {
     console.log(`edit undo refused: ${refused.error}`);
   }
   putPair(work, USB, externalBefore);
+  proveHeal(work, USB);
 
   const editedLevel = openSession(frames, USB).apply(
     docOp(USB, {
@@ -593,6 +595,28 @@ try {
 
 expect(worldWorkerCount() === 0, "a world worker was left behind");
 console.log("edit-ops.selfcheck ok");
+
+function proveHeal(project: string, world: string) {
+  const saved = pairOf(project, world);
+  const session = openSession(project, world);
+  const poked = session.apply(
+    docOp(world, { kind: "set-play", gravity: [0, 0, -9.7] })
+  );
+  if ("error" in poked) throw new Error(poked.error);
+  const healed = pairOf(project, world);
+  putPair(project, world, saved);
+  const file = absolutePath(join(project, world));
+  const lock = lockPathFor(file);
+  writeFileSync(`${file}.edit-tmp`, healed.part);
+  writeFileSync(`${lock}.edit-tmp`, healed.lock ?? "");
+  renameSync(`${file}.edit-tmp`, file);
+  openSession(project, world);
+  expect(samePair(pairOf(project, world), healed), "torn write was not healed");
+  expect(!existsSync(`${lock}.edit-tmp`), "lock marker remains");
+  expect(!existsSync(`${file}.edit-tmp`), "part marker remains");
+  console.log(`edit open: healed a torn write of ${basename(world)}`);
+  putPair(project, world, saved);
+}
 
 function call(
   tool: { execute?: (input: never, options: never) => unknown },

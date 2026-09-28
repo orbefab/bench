@@ -1,10 +1,10 @@
 /**
  * One open document. Apply, undo, and redo go through the pure edit,
  * then a load that reads the new text from an overlay instead of a
- * temp file in the project. The part is written first, then the lock.
- * If the lock write throws, the part is written back. A crash between
- * the two renames leaves a new part and the old lock; the loader
- * refuses that pair, and the next apply treats it as an external change.
+ * temp file in the project. Both the part and the lock are written to
+ * `*.edit-tmp` markers, the part is renamed, then the lock. The markers
+ * stay until both renames land. A crash between them leaves the lock
+ * marker, and the next open finishes it.
  */
 
 import type {
@@ -23,7 +23,7 @@ import { lockAfterEdit, replaceLevels } from "./level-edit";
 import { type LibraryOptions, loadPartById, loadTypeById } from "./library";
 import { loadWorldV2 } from "./load";
 import { lockPathFor } from "./lock";
-import { normalize } from "./path";
+import { basename, normalize } from "./path";
 import { sha256Hex } from "./sha256";
 import { canonicalJson } from "./si";
 import type { Store } from "./store";
@@ -80,6 +80,8 @@ export class EditSession {
   }
 
   static open(opts: EditSessionOptions): EditSession | { error: string } {
+    const healed = healTornWrite(opts.store, opts.file);
+    if (healed) return healed;
     let text: string;
     try {
       text = opts.store.readText(opts.file);
@@ -255,35 +257,41 @@ export class EditSession {
   }
 
   /**
-   * Part, then lock. Both writes are a temp file and a rename. If the
-   * lock write throws, the part text is put back so the pair still matches.
+   * Both markers are written before either rename. A throw before the
+   * part rename removes them. A throw after it leaves the lock marker
+   * so the next open can finish the pair.
    */
   private writePair(
     partText: string,
     lockText: string | null
   ): { error: string } | null {
+    if (partText === this.text && lockText === this.lockText) return null;
     const lockPath = lockPathFor(this.file);
+    const partTmp = markerPath(this.file);
+    const lockTmp = markerPath(lockPath);
+    let partRenamed = false;
     try {
-      if (partText !== this.text) this.store.writeText(this.file, partText);
-    } catch (err: unknown) {
-      return {
-        error: err instanceof Error ? err.message : "could not write the part",
-      };
-    }
-    try {
+      this.store.writeText(partTmp, partText);
+      this.store.writeText(lockTmp, lockText ?? "");
+      this.store.rename(partTmp, this.file);
+      partRenamed = true;
       if (lockText === null) {
         if (this.store.exists(lockPath)) this.store.remove(lockPath);
-      } else if (lockText !== this.lockText) {
-        this.store.writeText(lockPath, lockText);
+        this.store.remove(lockTmp);
+      } else {
+        this.store.rename(lockTmp, lockPath);
       }
     } catch (err: unknown) {
-      try {
-        this.store.writeText(this.file, this.text);
-      } catch {
-        /* the part restore failed; the lock write is the error we return */
+      if (!partRenamed) {
+        try {
+          this.store.remove(partTmp);
+          this.store.remove(lockTmp);
+        } catch {
+          /* the write error is the one we return */
+        }
       }
       return {
-        error: err instanceof Error ? err.message : "could not write the lock",
+        error: err instanceof Error ? err.message : "could not write the part",
       };
     }
     return null;
@@ -359,6 +367,45 @@ export class EditSession {
       ...(this.libraryDir ? { libraryDir: this.libraryDir } : {}),
     };
   }
+}
+
+const EDIT_MARKER = ".edit-tmp";
+
+function markerPath(file: string): string {
+  return `${file}${EDIT_MARKER}`;
+}
+
+/**
+ * A lock marker finishes the pair. An empty one deletes the lock.
+ * A part marker with no lock marker cannot be completed.
+ */
+function healTornWrite(store: Store, file: string): { error: string } | null {
+  const lockPath = lockPathFor(file);
+  const partTmp = markerPath(file);
+  const lockTmp = markerPath(lockPath);
+  const partMarker = store.exists(partTmp);
+  const lockMarker = store.exists(lockTmp);
+  if (!partMarker && !lockMarker) return null;
+  if (partMarker && !lockMarker) {
+    return {
+      error: `${basename(partTmp)}: the part was written without its lock`,
+    };
+  }
+  try {
+    if (partMarker) store.rename(partTmp, file);
+    const body = store.readText(lockTmp);
+    if (body.length === 0) {
+      if (store.exists(lockPath)) store.remove(lockPath);
+      store.remove(lockTmp);
+    } else {
+      store.rename(lockTmp, lockPath);
+    }
+  } catch (err: unknown) {
+    return {
+      error: err instanceof Error ? err.message : "could not finish the edit",
+    };
+  }
+  return null;
 }
 
 function formatLock(lock: LockFile, previous: string | null): string {

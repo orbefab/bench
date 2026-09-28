@@ -323,7 +323,7 @@ The inverse is an `EditOp` that restores the previous part. `remove-instance` in
 
 History is two stacks of `{ label, op, inverse, before, after }`. `before` and `after` are the SHA-256 of the part file text. A new edit clears redo. The stack keeps 200 steps. One open document has one history.
 
-An edit is applied in memory, serialized, and loaded through an overlay store that serves the new text for that path. No temp file is written into the project. The load builds the lock. The open part is re-pinned, new parts gain rows, and rows nothing resolves any more are dropped. Any other hash drift is refused. The part is written first, then the lock. Both writes are a temp file and a rename. If the lock write throws, the previous part text is put back.
+An edit is applied in memory, serialized, and loaded through an overlay store that serves the new text for that path. The validation writes no temp file. The load builds the lock. The open part is re-pinned, new parts gain rows, and rows nothing resolves any more are dropped. Any other hash drift is refused. Both the new part and the new lock are written to `*.edit-tmp` beside the document. The part marker is renamed onto the part, then the lock marker onto the lock. A crash between those renames leaves the lock marker, and the next open finishes it. An empty lock marker deletes the lock. A part marker without a lock marker is refused, and the message names that file.
 
 If the part file on disk no longer matches the history's `after` hash, undo and redo refuse: `the document changed outside this session`. The next open, or the next apply that can read the new file, clears that history. A catalog part is read-only.
 
