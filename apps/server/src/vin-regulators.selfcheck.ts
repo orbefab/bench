@@ -45,6 +45,7 @@ import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit } from "./world/rail-circuit";
+import { powerFeedsOf } from "./world/wiring";
 
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
@@ -389,7 +390,12 @@ async function runProject(
   world: string,
   ms: number,
   board: string
-): Promise<{ voltages: number[]; leds: number[]; resets: number }> {
+): Promise<{
+  voltages: number[];
+  leds: number[];
+  resets: number;
+  frames: RecordingRead["frames"];
+}> {
   const seen: { state: WorldState | null; failed: string | null } = {
     state: null,
     failed: null,
@@ -430,6 +436,7 @@ async function runProject(
         (frame) => frame.boards[board]?.leds?.[`${board}.led`] ?? Number.NaN
       ),
       resets: seen.state.boards[board]?.resets ?? 0,
+      frames: read.frames,
     };
   } finally {
     attached.detach();
@@ -515,12 +522,119 @@ try {
   );
   writeFileSync(sceneFile, `${JSON.stringify(armPart, null, 2)}\n`);
   rmSync(join(armDir, "arm-stall.world.lock.json"), { force: true });
+  const armPlan = planWorld(armDir, "arm-stall.world.json");
+  if (!armPlan.ok) {
+    throw new Error(armPlan.errors.map((item) => item.message).join("; "));
+  }
+  const armFeeds = powerFeedsOf(armPlan.plan);
   const stall = await runProject(armDir, "arm-stall.world.json", 2000, "uno");
   const stallMin = Math.min(...stall.voltages);
+  const servoPeak = stall.frames.reduce(
+    (max, frame) => Math.max(max, frame.parts.servo?.maxCurrent ?? 0),
+    0
+  );
+  const ncpPeak = stall.frames.reduce(
+    (max, frame) => Math.max(max, frame.boards.uno?.regulatorMax ?? 0),
+    0
+  );
+  const supplyPeak = stall.frames.reduce((max, frame) => {
+    for (const supply of Object.values(frame.supplies)) {
+      max = Math.max(max, supply.maxCurrent);
+    }
+    return max;
+  }, 0);
+  const start = stall.frames[0]?.joints.arm?.shoulder ?? 0;
+  let travel = 0;
+  for (const frame of stall.frames) {
+    const angle = frame.joints.arm?.shoulder ?? start;
+    travel = Math.max(travel, Math.abs(angle - start));
+  }
+  const travelDeg = (travel * 180) / Math.PI;
   const brown = stallMin < 2.675 || stall.resets > 0;
-  expect(!brown, `arm VIN brownout ${stallMin} resets ${stall.resets}`);
+  expect(
+    armFeeds.parts.servo === "bench",
+    `servo feed ${armFeeds.parts.servo}`
+  );
+  expect(servoPeak > 0.2, `servo peak ${servoPeak} A is the idle board`);
+  expect(ncpPeak > servoPeak && ncpPeak < 1.5, `NCP ${ncpPeak} A`);
+  expect(
+    !brown && stall.resets === 0,
+    `brownout ${stallMin} resets ${stall.resets}`
+  );
   console.log(
-    `uno arm on VIN 9 V: minimum 5V ${stallMin.toFixed(4)} V, ${brown ? "browns out" : "does not brown out"}, resets ${stall.resets}`
+    `uno arm on VIN 9 V: servo feed ${armFeeds.parts.servo}, supply peak ${supplyPeak.toFixed(4)} A, servo peak ${servoPeak.toFixed(4)} A, NCP1117 peak ${ncpPeak.toFixed(4)} A (iLimit 1.5 A), shoulder ${travelDeg.toFixed(3)}°, minimum 5V ${stallMin.toFixed(4)} V, ${brown ? "browns out" : "does not brown out"}, resets ${stall.resets}`
+  );
+
+  const nanoDir = join(root, "nano");
+  cpSync(nanoExample, nanoDir, { recursive: true });
+  const nanoScene = join(
+    nanoDir,
+    "parts",
+    "sfab",
+    "nano-servo-scene@1.0.0.json"
+  );
+  const nanoPart = JSON.parse(readFileSync(nanoScene, "utf8")) as {
+    axes: {
+      behaviour: {
+        "2": {
+          variants: {
+            netlist: {
+              netlist: {
+                instances: Record<string, Record<string, unknown>>;
+                wires: [string, string][];
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+  const nanoNet = nanoPart.axes.behaviour["2"].variants.netlist.netlist;
+  nanoNet.instances.bench = {
+    part: "sfab/bench-supply@1.0.0",
+    pose: {
+      position: [0.042, 0, 0.0025],
+      rotation: [1, 0, 0, 0],
+    },
+    params: { V: 9, Ilimit: 2 },
+  };
+  delete nanoNet.instances.usb;
+  nanoNet.wires = nanoNet.wires.map((pair) => {
+    const mapped = pair.map((end) =>
+      end === "usb.5V" ? "bench.5V" : end === "usb.GND" ? "bench.GND" : end
+    ) as [string, string];
+    return mapped[0] === "bench.5V" && mapped[1] === "nano.5V"
+      ? ["bench.5V", "nano.VIN"]
+      : mapped;
+  });
+  writeFileSync(nanoScene, `${JSON.stringify(nanoPart, null, 2)}\n`);
+  rmSync(join(nanoDir, "nano-servo-usb.world.lock.json"), { force: true });
+  const nanoPlan = planWorld(nanoDir, "nano-servo-usb.world.json");
+  if (!nanoPlan.ok) {
+    throw new Error(nanoPlan.errors.map((item) => item.message).join("; "));
+  }
+  const nanoFeeds = powerFeedsOf(nanoPlan.plan);
+  const nanoServo = await runProject(
+    nanoDir,
+    "nano-servo-usb.world.json",
+    500,
+    "nano"
+  );
+  const nanoServoPeak = nanoServo.frames.reduce(
+    (max, frame) => Math.max(max, frame.parts.servo?.maxCurrent ?? 0),
+    0
+  );
+  const amsPeak = nanoServo.frames.reduce(
+    (max, frame) => Math.max(max, frame.boards.nano?.regulatorMax ?? 0),
+    0
+  );
+  expect(
+    nanoFeeds.parts.servo === "bench",
+    `nano servo feed ${nanoFeeds.parts.servo}`
+  );
+  expect(amsPeak > nanoServoPeak && amsPeak < 1.5, `AMS ${amsPeak} A`);
+  console.log(
+    `nano servo on VIN 9 V: servo feed ${nanoFeeds.parts.servo}, servo peak ${nanoServoPeak.toFixed(4)} A, AMS1117 peak ${amsPeak.toFixed(4)} A (iLimit 1.5 A)`
   );
 } finally {
   rmSync(root, { recursive: true, force: true });
@@ -563,7 +677,3 @@ try {
     rmSync(dir, { recursive: true, force: true });
   }
 }
-
-console.log(
-  "existing printed lines unchanged: 506 compared, VIN open; 7 counting lines moved with the new parts"
-);
