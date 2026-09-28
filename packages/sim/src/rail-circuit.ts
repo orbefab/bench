@@ -34,11 +34,17 @@ import {
   type PinMode,
   PmosChannel,
   PtcFuseElement,
+  Resistor,
   TheveninLimit,
   VSource,
 } from "@sfab-bench/engine-circuit";
 
-import { type BoardStamp, realize } from "./circuit-stamp";
+import {
+  type AssignedPart,
+  type BoardStamp,
+  connectParts,
+  realize,
+} from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,
   type BoardPathName,
@@ -139,6 +145,11 @@ export type RailCircuitSpec = {
    * node names as a stamp. A path prefix is added only when N > 1.
    */
   boards?: readonly SharedBoard[];
+  /**
+   * Parts whose non-ground nets touch more than one of `boards`.
+   * Stamped once, on this rail's node names.
+   */
+  spans?: readonly AssignedPart[];
 };
 
 const MASTER_S = 0.001;
@@ -284,6 +295,33 @@ export class RailCircuit {
       this.boardResets.set(id, reset);
     for (const [id, ports] of built.boardPorts) this.boardPorts.set(id, ports);
     for (const [id, node] of built.extraNodes) this.extraNodes.set(id, node);
+    this.pruned = built.pruned;
+    for (const [id, nodes] of built.partNodes) this.partNodes.set(id, nodes);
+  }
+
+  /** Scene parts this rail dropped because a node was open. */
+  readonly pruned: readonly string[] = [];
+  private readonly partNodes = new Map<string, readonly string[]>();
+
+  elementCurrent(id: string): number | null {
+    const el = this.engine.elements.find((item) => item.id === id);
+    if (!el) return null;
+    if (el.branches().includes(id)) return this.engine.branchCurrent(id);
+    if (el instanceof Resistor) {
+      return (
+        (this.engine.voltage(el.aName) - this.engine.voltage(el.bName)) / el.R
+      );
+    }
+    return null;
+  }
+
+  nodeVoltage(name: string): number {
+    if (name === "0") return 0;
+    return this.engine.voltage(name);
+  }
+
+  elementNodes(id: string): readonly string[] | null {
+    return this.partNodes.get(id) ?? null;
   }
 
   setFixed(amps: number): void {
@@ -722,6 +760,8 @@ type Assembled = {
   boardResets: Map<string, { node: string; fraction: number | null }>;
   boardPorts: Map<string, Readonly<Record<string, string>>>;
   extraNodes: Map<string, string>;
+  pruned: string[];
+  partNodes: Map<string, readonly string[]>;
 };
 
 function supplyElement(
@@ -773,6 +813,13 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   let prepared = listed;
   let tiedTerm: string | null = null;
   let tiedBoard: string | null = null;
+  const rename = new Map<string, string>();
+  const remember = (
+    before: string | null | undefined,
+    after: string | null | undefined
+  ) => {
+    if (before && after && before !== after) rename.set(before, after);
+  };
   if (many && !multiSupply) {
     const feeds = new Set(listed.map((board) => board.feed));
     if (feeds.size > 1) {
@@ -793,18 +840,22 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
               node === board.stamp.portNodes.VIN ? TERM : node
             )
           : board.stamp;
+      remember(board.stamp.vbusNode, stamp.vbusNode);
+      remember(board.stamp.portNodes.VIN, stamp.portNodes.VIN);
+      remember(board.stamp.boardNode, stamp.boardNode);
       return { ...board, stamp };
     });
     const headerNode = mapped[0]?.stamp.boardNode ?? "rail";
     prepared =
       usb || vin
         ? mapped
-        : mapped.map((board) => ({
-            ...board,
-            stamp: mapNodes(board.stamp, (node) =>
+        : mapped.map((board) => {
+            const stamp = mapNodes(board.stamp, (node) =>
               node === board.stamp.boardNode ? headerNode : node
-            ),
-          }));
+            );
+            remember(board.stamp.boardNode, stamp.boardNode);
+            return { ...board, stamp };
+          });
     tiedTerm = usb || vin ? TERM : headerNode;
     tiedBoard = prepared[0]?.stamp.boardNode ?? headerNode;
   } else if (many) {
@@ -831,6 +882,8 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   let stamped: Element[] = [];
   let capacitive = false;
   let single: ReturnType<typeof realize> | null = null;
+  const pruned: string[] = [];
+  const partNodes = new Map<string, readonly string[]>();
   for (const board of prepared) {
     const realized = realize(
       board.stamp,
@@ -845,6 +898,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     );
     if (!many) single = realized;
     if (realized.capacitive) capacitive = true;
+    pruned.push(...realized.pruned);
     feedOf.set(board.id, realized.feedNode);
     boardNodes.set(board.id, realized.boardNode);
     const netlist = board.stamp.netlist === true;
@@ -873,6 +927,31 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     ledDiodes.push(...realized.leds);
     stamped.push(...realized.elements);
   }
+  const anchors = new Set<string>(["0"]);
+  for (const board of prepared) {
+    const feed = feedOf.get(board.id);
+    if (feed) anchors.add(feed);
+    const node = boardNodes.get(board.id);
+    if (node) anchors.add(node);
+    for (const pin of board.stamp.pins) anchors.add(pin.node);
+  }
+  for (const node of spec.keep ?? []) anchors.add(node);
+  const joined = connectParts(
+    (spec.spans ?? []).map((part) => ({
+      ...part,
+      nodes: Object.fromEntries(
+        Object.entries(part.nodes).map(([key, value]) => [
+          key,
+          rename.get(value) ?? value,
+        ])
+      ),
+    })),
+    anchors
+  );
+  pruned.push(...joined.pruned);
+  if (joined.capacitive) capacitive = true;
+  for (const [id, nodes] of joined.nodes) partNodes.set(id, nodes);
+  stamped.push(...joined.elements);
   if (many) {
     stamped = [...stamped].sort((a, b) =>
       a.id < b.id ? -1 : a.id > b.id ? 1 : 0
@@ -992,6 +1071,8 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     boardResets,
     boardPorts,
     extraNodes,
+    pruned,
+    partNodes,
   };
 }
 

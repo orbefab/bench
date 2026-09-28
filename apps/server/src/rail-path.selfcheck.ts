@@ -3,6 +3,8 @@
  * match the stamp constructor. Two boards split a pin edge. Two supplies
  * and two boards on one island are one circuit. A supply stamps on the
  * board its positive wire reaches, not on the board with the nearest id.
+ * A shared ground is not an owner. A part on one board's 5V stays there,
+ * a part between two boards is one branch, and an open node is a degraded row.
  */
 
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -28,6 +30,43 @@ import { powerIslands } from "./world/wiring";
 function expect(cond: unknown, label: string): asserts cond {
   if (!cond) throw new Error(label);
 }
+
+function benchSim(): Sim {
+  return new Sim({
+    post() {},
+    now: () => performance.now(),
+    schedule: (fn, delay) => setTimeout(fn, delay),
+    clear(handle) {
+      clearTimeout(handle as ReturnType<typeof setTimeout>);
+    },
+    ledTrace: false,
+    sha256: sha256Bytes,
+    versions: {
+      mujoco: packageVersion("@mujoco/mujoco", import.meta.url),
+      avr8js: packageVersion("avr8js", import.meta.url),
+    },
+    projectReal,
+    readInside,
+    readerFor,
+    plan: nodePlanEnv,
+    keepSerial: false,
+  });
+}
+
+const emptyAxes = {
+  body: {
+    "0": {
+      default: "none",
+      variants: { none: { kind: "none", omits: ["none"] } },
+    },
+  },
+  visual: {
+    "0": {
+      default: "none",
+      variants: { none: { kind: "none", omits: ["none"] } },
+    },
+  },
+};
 
 const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };
 const bit = arduinoPinBit("D13");
@@ -411,6 +450,307 @@ function read(circuit: RailCircuit): string {
       );
     } finally {
       cross.dispose();
+    }
+
+    cpSync(
+      join(nanoExample, "parts", "sfab", "flag@1.0.0.json"),
+      join(dir, "parts", "sfab", "flag@1.0.0.json")
+    );
+    cpSync(join(nanoExample, "types"), join(dir, "types"), { recursive: true });
+    cpSync(join(nanoExample, "robot"), join(dir, "robot"), { recursive: true });
+    const pose = (position: [number, number, number]) => ({
+      pose: { position, rotation: [1, 0, 0, 0] },
+    });
+    writeFileSync(
+      join(dir, "parts", "sfab", "servo-scene@1.0.0.json"),
+      JSON.stringify({
+        format: "sfab.part@1",
+        id: "sfab/servo-scene@1.0.0",
+        type: "assembly",
+        foreign: false,
+        axes: {
+          behaviour: {
+            "2": {
+              default: "netlist",
+              variants: {
+                netlist: {
+                  kind: "composite",
+                  omits: ["servo island"],
+                  netlist: {
+                    instances: {
+                      "a-usb": {
+                        part: "sfab/usb-port-500ma@1.0.0",
+                        ...pose([0.04, 0.08, 0]),
+                      },
+                      "z-usb": {
+                        part: "sfab/usb-port-500ma@1.0.0",
+                        ...pose([0.04, -0.08, 0]),
+                      },
+                      "a-board": {
+                        part: "sfab/nano-ch340@1.0.0",
+                        ...pose([0.08, 0.08, 0.004]),
+                        params: { firmware: hex, source: ino },
+                      },
+                      "z-board": {
+                        part: "sfab/nano-ch340@1.0.0",
+                        ...pose([0.08, -0.08, 0.004]),
+                        params: { firmware: hex, source: ino },
+                      },
+                      servo: {
+                        part: "sfab/sg90@1.0.0",
+                        ...pose([0, -0.04, 0.0145]),
+                      },
+                      flag: {
+                        part: "sfab/flag@1.0.0",
+                        ...pose([0, -0.04, 0.029]),
+                      },
+                    },
+                    wires: [
+                      ["a-usb.5V", "a-board.5V"],
+                      ["a-usb.GND", "a-board.GND"],
+                      ["z-usb.5V", "z-board.5V"],
+                      ["z-usb.GND", "z-board.GND"],
+                      ["a-board.GND", "z-board.GND"],
+                      ["servo.V+", "z-board.5V"],
+                      ["servo.GND", "z-board.GND"],
+                      ["servo.signal", "z-board.D9"],
+                      ["servo.shaft", "flag.hinge"],
+                      ["servo.mount", "flag.base"],
+                    ],
+                    expose: {},
+                  },
+                },
+              },
+            },
+          },
+          ...emptyAxes,
+        },
+      })
+    );
+    writeFileSync(
+      join(dir, "servo.world.json"),
+      JSON.stringify({
+        version: 2,
+        environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+        run: {
+          seed: 1,
+          levels: {
+            default: 2,
+            paths: {
+              servo: { behaviour: 1, body: 1 },
+              flag: { behaviour: 1, body: 1 },
+            },
+          },
+        },
+        root: { id: "scene", part: "sfab/servo-scene@1.0.0" },
+      })
+    );
+    const servoSim = benchSim();
+    try {
+      const loaded = await servoSim.load({
+        project: dir,
+        world: "servo.world.json",
+        generation: 1,
+      });
+      expect(loaded.ok, "z-board servo did not run");
+      await servoSim.step(40);
+      const settled = servoSim.state();
+      if (!settled) throw new Error("no state");
+      const body = servoSim.record({
+        op: "read",
+        from: 0,
+        to: settled.simTime,
+      });
+      if (body.op !== "read") throw new Error("no recording");
+      const frame = (body.read as RecordingRead).frames.at(-1);
+      if (!frame) throw new Error("no frame");
+      const a = frame.supplies["a-usb"];
+      const z = frame.supplies["z-usb"];
+      const motor = frame.parts.servo;
+      expect(a && z && motor, "servo frame is missing a rail");
+      if (!a || !z || !motor) throw new Error("unreachable");
+      expect(
+        z.current > a.current + 0.005,
+        `servo current landed on a-usb ${a.current} z-usb ${z.current}`
+      );
+      expect(
+        Math.abs(z.current - a.current - motor.current) < 1e-6,
+        `z-usb ${z.current} a-usb ${a.current} servo ${motor.current}`
+      );
+      console.log(
+        `servo on z-board: a-usb ${a.current.toFixed(6)} A, z-usb ${z.current.toFixed(6)} A, servo ${motor.current.toFixed(6)} A`
+      );
+    } finally {
+      servoSim.dispose();
+    }
+
+    mkdirSync(join(dir, "firmware", "d13-low"), { recursive: true });
+    writeFileSync(
+      join(dir, "firmware", "d13-low", "d13-low.hex"),
+      ":04000000259AFFCF6F\n:00000001FF\n"
+    );
+    writeFileSync(
+      join(dir, "firmware", "d13-low", "d13-low.ino"),
+      "void setup() { DDRB |= 1 << 5; }\nvoid loop() {}\n"
+    );
+    writeFileSync(
+      join(dir, "parts", "sfab", "link-scene@1.0.0.json"),
+      JSON.stringify({
+        format: "sfab.part@1",
+        id: "sfab/link-scene@1.0.0",
+        type: "assembly",
+        foreign: false,
+        axes: {
+          behaviour: {
+            "2": {
+              default: "netlist",
+              variants: {
+                netlist: {
+                  kind: "composite",
+                  omits: ["link"],
+                  netlist: {
+                    instances: {
+                      "a-usb": { part: "sfab/usb-port-500ma@1.0.0" },
+                      "z-usb": { part: "sfab/usb-port-500ma@1.0.0" },
+                      "a-board": {
+                        part: "sfab/nano-ch340@1.0.0",
+                        params: { firmware: hex, source: ino },
+                      },
+                      "z-board": {
+                        part: "sfab/nano-ch340@1.0.0",
+                        params: {
+                          firmware: "firmware/d13-low/d13-low.hex",
+                          source: "firmware/d13-low/d13-low.ino",
+                        },
+                      },
+                      link: {
+                        part: "sfab/resistor@1.0.0",
+                        params: { R: 1000 },
+                      },
+                    },
+                    wires: [
+                      ["a-usb.5V", "a-board.5V"],
+                      ["a-usb.GND", "a-board.GND"],
+                      ["z-usb.5V", "z-board.5V"],
+                      ["z-usb.GND", "z-board.GND"],
+                      ["a-board.GND", "z-board.GND"],
+                      ["link.A", "a-board.5V"],
+                      ["link.B", "z-board.D13"],
+                    ],
+                    expose: {},
+                  },
+                },
+              },
+            },
+          },
+          ...emptyAxes,
+        },
+      })
+    );
+    writeFileSync(
+      join(dir, "link.world.json"),
+      JSON.stringify({
+        version: 2,
+        environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+        run: { seed: 1, levels: { default: 2 } },
+        root: { id: "scene", part: "sfab/link-scene@1.0.0" },
+      })
+    );
+    const linkSim = benchSim();
+    try {
+      const loaded = await linkSim.load({
+        project: dir,
+        world: "link.world.json",
+        generation: 1,
+      });
+      expect(loaded.ok, "cross-board resistor did not run");
+      await linkSim.step(30);
+      const reading = linkSim.branchReading("link");
+      expect(reading, "link was pruned");
+      if (!reading) throw new Error("unreachable");
+      const [va, vb] = reading.voltages;
+      expect(va !== undefined && vb !== undefined, "link has two nodes");
+      const closed = Math.abs((va ?? 0) - (vb ?? 0)) / 1000;
+      expect(reading.current > 0.001, `D13 did not sink, ${reading.current} A`);
+      expect(
+        Math.abs(reading.current - closed) < 1e-9,
+        `link ${reading.current} closed ${closed}`
+      );
+      console.log(
+        `resistor across boards: ${reading.current.toFixed(9)} A from ${va?.toFixed(6)} V and ${vb?.toFixed(6)} V`
+      );
+    } finally {
+      linkSim.dispose();
+    }
+
+    writeFileSync(
+      join(dir, "parts", "sfab", "open-scene@1.0.0.json"),
+      JSON.stringify({
+        format: "sfab.part@1",
+        id: "sfab/open-scene@1.0.0",
+        type: "assembly",
+        foreign: false,
+        axes: {
+          behaviour: {
+            "2": {
+              default: "netlist",
+              variants: {
+                netlist: {
+                  kind: "composite",
+                  omits: ["open"],
+                  netlist: {
+                    instances: {
+                      usb: { part: "sfab/usb-port-500ma@1.0.0" },
+                      board: {
+                        part: "sfab/nano-ch340@1.0.0",
+                        params: { firmware: hex, source: ino },
+                      },
+                      open: {
+                        part: "sfab/resistor@1.0.0",
+                        params: { R: 1000 },
+                      },
+                    },
+                    wires: [
+                      ["usb.5V", "board.5V"],
+                      ["usb.GND", "board.GND"],
+                      ["open.A", "board.5V"],
+                    ],
+                    expose: {},
+                  },
+                },
+              },
+            },
+          },
+          ...emptyAxes,
+        },
+      })
+    );
+    writeFileSync(
+      join(dir, "open.world.json"),
+      JSON.stringify({
+        version: 2,
+        environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+        run: { seed: 1, levels: { default: 2 } },
+        root: { id: "scene", part: "sfab/open-scene@1.0.0" },
+      })
+    );
+    const openSim = benchSim();
+    try {
+      const loaded = await openSim.load({
+        project: dir,
+        world: "open.world.json",
+        generation: 1,
+      });
+      expect(loaded.ok, "dangling part did not run");
+      const settled = openSim.state();
+      const row = settled?.diagnostics?.find((item) => item.path === "open");
+      expect(
+        row?.message === "not connected in this circuit",
+        row?.message ?? "no degraded row for open"
+      );
+      console.log(`degraded open: ${row?.message}`);
+    } finally {
+      openSim.dispose();
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -35,6 +35,8 @@ import {
 } from "@sfab-bench/parts";
 
 import {
+  type AssignedPart,
+  assignNodes,
   type BoardStamp,
   type CircuitInst,
   circuitNumbers,
@@ -45,7 +47,6 @@ import {
   liveNets,
   railPowerPorts,
   stampBoard,
-  touches,
 } from "./circuit-stamp";
 import type { PlanEnv } from "./env";
 import { formAdapter } from "./forms";
@@ -248,6 +249,11 @@ export type RunPlan = {
   levels?: RunLevel[];
   /** Run report from the loader. The worker keeps it and amends envelope warnings. */
   report?: RunReport | null;
+  /**
+   * A part whose non-ground nets touch two boards. Stamped once on the
+   * island rail, with both boards' node names. Absent when there are none.
+   */
+  spans?: { part: AssignedPart; boards: string[] }[];
   /**
    * Parts that sit idle or fell back. The run still starts. Absent when
    * every part placed.
@@ -760,6 +766,33 @@ function runtimeGap(inst: LiveInstance): string {
   return `no runtime for ${behaviour.kind}`;
 }
 
+/** Ports on a ground net. A shared ground does not make a board an owner. */
+function groundFulls(
+  nets: { ports: { full: string; path: string; port: string }[] }[],
+  boards: RunBoard[],
+  supplies: RunSupply[]
+): Set<string> {
+  const isGround = (path: string, port: string) => {
+    for (const board of boards) {
+      if (
+        (path === board.id || path.startsWith(`${board.id}.`)) &&
+        port === board.groundPin
+      ) {
+        return true;
+      }
+    }
+    return supplies.some(
+      (supply) => supply.id === path && port === supply.groundPin
+    );
+  };
+  const full = new Set<string>();
+  for (const net of nets) {
+    if (!net.ports.some((port) => isGround(port.path, port.port))) continue;
+    for (const port of net.ports) full.add(port.full);
+  }
+  return full;
+}
+
 function suppliesReached(
   part: CircuitInst,
   supplies: RunSupply[],
@@ -1140,21 +1173,38 @@ function build(
   const nets = liveNets(loaded.nets);
   const crowded = new Set<string>();
   const loose = new Map<string, CircuitInst[]>();
-  /** A part that touches several boards on one supply is stamped once. */
-  const homeOf = new Map<string, string>();
+  const ground = groundFulls(nets, boards, supplies);
+  const spans: { part: AssignedPart; boards: string[] }[] = [];
   const ownersOf = (part: CircuitInst): RunBoard[] => {
     const nested = boards.filter(
       (board) => part.path === board.id || part.path.startsWith(`${board.id}.`)
     );
     if (nested.length > 0) return nested;
-    return boards.filter((board) => touches(part, board.id, nets));
+    const found = new Set<string>();
+    for (const full of Object.values(part.ports)) {
+      if (ground.has(full)) continue;
+      const net = nets.find((item) =>
+        item.ports.some((port) => port.full === full)
+      );
+      if (!net) continue;
+      for (const port of net.ports) {
+        const board = boards.find(
+          (item) => port.path === item.id || port.path.startsWith(`${item.id}.`)
+        );
+        if (board) found.add(board.id);
+      }
+    }
+    return boards.filter((board) => found.has(board.id));
   };
+  const owners = new Map<string, RunBoard[]>();
   for (const part of circuits) {
     const hit = ownersOf(part);
+    owners.set(part.path, hit);
     if (hit.length >= 2) {
-      // One island may hold several supplies. The part is stamped once.
-      const home = [...hit].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
-      if (home) homeOf.set(part.path, home.id);
+      spans.push({
+        part: assignNodes(part, nets, ground),
+        boards: hit.map((board) => board.id),
+      });
       continue;
     }
     const reached = suppliesReached(part, supplies, nets);
@@ -1213,9 +1263,10 @@ function build(
       if (only) alsoByBoard.set(only.id, mine);
       continue;
     }
-    // Several boards on this supply share one rail. Loose parts are
-    // stamped once, on the lex-first board. A pair with no netlist and
-    // no snapshot still stamps them on the supply, as a v1 draft does.
+    // A part that reaches no board still joins one stamp. Several boards
+    // on this supply share the rail, so the lex-first board holds it.
+    // A pair with no netlist and no snapshot still stamps them on the
+    // supply, as a v1 draft does.
     if (group.some((board) => board.hasNetlist)) {
       const home = [...group].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
       if (home) alsoByBoard.set(home.id, mine);
@@ -1241,8 +1292,9 @@ function build(
       usbPort: connectorPort(inst.type.ports, "usb"),
       resetFraction: facts?.resetFraction ?? null,
       parts: stampParts.filter((part) => {
-        const home = homeOf.get(part.path);
-        if (home) return home === board.id;
+        const hit = owners.get(part.path) ?? [];
+        if (hit.length >= 2) return false;
+        if (hit.length === 1) return hit[0]?.id === board.id;
         return !boards.some(
           (other) =>
             other.id !== board.id &&
@@ -1265,6 +1317,7 @@ function build(
   };
   for (const board of boards) note(board.stamp?.parts);
   for (const supply of supplies) note(supply.stamp?.parts);
+  for (const span of spans) note([span.part]);
   for (const part of stampParts) {
     const count = placed.get(part.path) ?? 0;
     if (count === 1) continue;
@@ -1330,6 +1383,7 @@ function build(
         }))
       ),
       report: loaded.report,
+      ...(spans.length > 0 ? { spans } : {}),
       ...(diags.length > 0 ? { degraded: diags } : {}),
     },
     diags,

@@ -370,6 +370,8 @@ function createSession(host: SimHost) {
     winding: number;
     /** Slot in the supply's rail circuit. −1 when this part is not on a rail. */
     railSlot: number;
+    /** Board whose voltage pin the power wires reach. The signal board is separate. */
+    powerBoard: string | null;
   };
 
   type BoardPower = {
@@ -1001,6 +1003,97 @@ function createSession(host: SimHost) {
     }));
   }
 
+  /** Board and supply netlist children are dropped on purpose. A scene part is not. */
+  function scenePrune(path: string): boolean {
+    if (!runPlan) return true;
+    const under = (id: string) => path === id || path.startsWith(`${id}.`);
+    if (runPlan.boards.some((board) => under(board.id))) return false;
+    if (runPlan.supplies.some((supply) => under(supply.id))) return false;
+    return true;
+  }
+
+  function noteOpen(circuit: RailCircuit): void {
+    for (const path of circuit.pruned) {
+      if (!scenePrune(path)) continue;
+      noteDegraded(path, "idle", "not connected in this circuit");
+    }
+  }
+
+  function spansOn(ids: readonly string[]) {
+    const rows = runPlan?.spans;
+    if (!rows) return undefined;
+    const have = new Set(ids);
+    const parts = rows
+      .filter((row) => row.boards.every((id) => have.has(id)))
+      .map((row) => row.part);
+    return parts.length > 0 ? parts : undefined;
+  }
+
+  /**
+   * The board whose 5V, VIN, or VBUS the part's power pins reach.
+   * Ground wires are not followed, so a shared ground is not a second board.
+   */
+  function powerBoardOf(plan: RunPlan, partId: string): string | null {
+    const part = plan.parts.find((item) => item.id === partId);
+    if (!part) return null;
+    const adjacent = new Map<string, string[]>();
+    const link = (from: string, to: string) => {
+      const list = adjacent.get(from);
+      if (list) list.push(to);
+      else adjacent.set(from, [to]);
+    };
+    for (const wire of plan.wires) {
+      link(wire[0], wire[1]);
+      link(wire[1], wire[0]);
+    }
+    const split = (full: string): { id: string; pin: string } | null => {
+      const dot = full.lastIndexOf(".");
+      if (dot <= 0 || dot >= full.length - 1) return null;
+      return { id: full.slice(0, dot), pin: full.slice(dot + 1) };
+    };
+    const isGround = (full: string): boolean => {
+      const end = split(full);
+      if (!end) return false;
+      const owner = plan.parts.find((item) => item.id === end.id);
+      if (owner?.pins[end.pin]?.kind === "ground") return true;
+      const board = plan.boards.find(
+        (item) => end.id === item.id || end.id.startsWith(`${item.id}.`)
+      );
+      if (board && end.pin === board.groundPin) return true;
+      const supply = plan.supplies.find((item) => item.id === end.id);
+      if (supply && end.pin === supply.groundPin) return true;
+      return false;
+    };
+    const found = new Set<string>();
+    const seen = new Set<string>();
+    const queue = Object.entries(part.pins)
+      .filter(([, pin]) => pin.kind === "power")
+      .map(([name]) => `${partId}.${name}`);
+    while (queue.length > 0) {
+      const full = queue.shift();
+      if (!full || seen.has(full) || isGround(full)) continue;
+      seen.add(full);
+      const end = split(full);
+      if (end) {
+        for (const board of plan.boards) {
+          const onBoard =
+            end.id === board.id || end.id.startsWith(`${board.id}.`);
+          if (
+            onBoard &&
+            (end.pin === board.voltagePin ||
+              end.pin === "VIN" ||
+              end.pin === "VBUS")
+          ) {
+            found.add(board.id);
+          }
+        }
+      }
+      for (const next of adjacent.get(full) ?? []) queue.push(next);
+    }
+    if (found.size !== 1) return null;
+    return [...found][0] ?? null;
+  }
+
   function noteDegraded(path: string, code: string, message: string): void {
     if (degradedLive.some((row) => row.path === path && row.code === code)) {
       return;
@@ -1159,6 +1252,7 @@ function createSession(host: SimHost) {
         stallMs: 0,
         winding: 0,
         railSlot: -1,
+        powerBoard: powerBoardOf(plan, part.id),
       };
       loads.push(load);
     }
@@ -1282,6 +1376,7 @@ function createSession(host: SimHost) {
           return stamp.boardNode;
         };
         const primaryNode = nodeFor(primary.id);
+        const islandSpans = spansOn(boardsSorted.map((board) => board.id));
         const circuit = createRailCircuit({
           vNom: primary.voltage,
           rSeries: primary.rSeries,
@@ -1292,9 +1387,10 @@ function createSession(host: SimHost) {
             return {
               resistance: drive.law.resistance,
               k: drive.law.k,
-              boardId: drive.board?.id,
+              boardId: load.powerBoard ?? drive.board?.id,
             };
           }),
+          ...(islandSpans ? { spans: islandSpans } : {}),
           ...(primary.battery ? { battery: primary.battery } : {}),
           ...(primary.ideal ? { ideal: true as const } : {}),
           primaryId: primary.id,
@@ -1332,6 +1428,7 @@ function createSession(host: SimHost) {
             ...(item.ideal ? { ideal: true as const } : {}),
           })),
         });
+        noteOpen(circuit);
         if (fuseStart === "tripped") circuit.tripFuse();
         for (let i = 0; i < members.length; i++) {
           const load = members[i];
@@ -1377,7 +1474,7 @@ function createSession(host: SimHost) {
           return {
             resistance: drive.law.resistance,
             k: drive.law.k,
-            boardId: drive.board?.id,
+            boardId: load.powerBoard ?? drive.board?.id,
           };
         }),
         pin: only.pin,
@@ -1400,6 +1497,7 @@ function createSession(host: SimHost) {
           },
         ],
       });
+      noteOpen(circuit);
       if (fuseStart === "tripped") circuit.tripFuse();
       for (let i = 0; i < members.length; i++) {
         const load = members[i];
@@ -1433,6 +1531,7 @@ function createSession(host: SimHost) {
       const path = attached.boardPath;
       // One stamped board is the shared rail with N = 1.
       const shared = stamped.length >= 1 && stamped.length === fedBoards.length;
+      const sharedSpans = spansOn(stamped.map((board) => board.id));
       const circuit = shared
         ? createRailCircuit({
             vNom: supply.voltage,
@@ -1444,7 +1543,7 @@ function createSession(host: SimHost) {
               return {
                 resistance: drive.law.resistance,
                 k: drive.law.k,
-                boardId: drive.board?.id,
+                boardId: load.powerBoard ?? drive.board?.id,
               };
             }),
             ...(stamped.length === 1 && path ? { boardPath: path } : {}),
@@ -1453,6 +1552,7 @@ function createSession(host: SimHost) {
               : {}),
             ...(supply.battery ? { battery: supply.battery } : {}),
             ...(supply.ideal ? { ideal: true as const } : {}),
+            ...(sharedSpans ? { spans: sharedSpans } : {}),
             boards: stamped.map((board) => {
               const one = railAttachment({
                 connector: supplyConnectorOf(supply.id),
@@ -1483,7 +1583,7 @@ function createSession(host: SimHost) {
                 resistance: drive.law.resistance,
                 k: drive.law.k,
                 // The terminal is VIN. The winding sits on this board's 5V node.
-                boardId: drive.board?.id,
+                boardId: load.powerBoard ?? drive.board?.id,
               };
             }),
             ...(path ? { boardPath: path } : {}),
@@ -1497,6 +1597,7 @@ function createSession(host: SimHost) {
             ...(supply.battery ? { battery: supply.battery } : {}),
             ...(supply.ideal ? { ideal: true as const } : {}),
           });
+      noteOpen(circuit);
       if (fuseStart === "tripped") circuit.tripFuse();
       for (let i = 0; i < members.length; i++) {
         const load = members[i];
@@ -1838,7 +1939,7 @@ function createSession(host: SimHost) {
       });
       const quiescent = new Map<string, number>();
       for (const load of members) {
-        const id = load.drive?.board?.id ?? specs[0]?.id;
+        const id = load.powerBoard ?? load.drive?.board?.id ?? specs[0]?.id;
         if (!id) continue;
         quiescent.set(id, (quiescent.get(id) ?? 0) + load.quiescent);
       }
@@ -2932,6 +3033,26 @@ function createSession(host: SimHost) {
     queue.push(message);
     return pump();
   }
+
+  function branchReading(path: string): {
+    current: number;
+    voltages: number[];
+  } | null {
+    const seen = new Set<RailCircuit>();
+    for (const group of rails.values()) {
+      if (seen.has(group.circuit)) continue;
+      seen.add(group.circuit);
+      const amps = group.circuit.elementCurrent(path);
+      if (amps === null) continue;
+      const nodes = group.circuit.elementNodes(path) ?? [];
+      return {
+        current: Math.abs(amps),
+        voltages: nodes.map((name) => group.circuit.nodeVoltage(name)),
+      };
+    }
+    return null;
+  }
+
   return {
     enqueue,
     load,
@@ -2945,6 +3066,7 @@ function createSession(host: SimHost) {
     play,
     pause,
     dispose: close,
+    branchReading,
   };
 }
 
@@ -2991,5 +3113,15 @@ export class Sim {
   }
   dispose(): void {
     this.session.dispose();
+  }
+  /**
+   * Branch current and node voltages for a part stamped on a rail.
+   * Null when the part was not kept. The live frame does not carry this.
+   */
+  branchReading(path: string): {
+    current: number;
+    voltages: number[];
+  } | null {
+    return this.session.branchReading(path);
   }
 }

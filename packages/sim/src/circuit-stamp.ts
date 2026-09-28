@@ -127,6 +127,8 @@ export type RealizedCircuit = {
   resetNode: string | null;
   /** A capacitor survived pruning, so the rail sub-steps. */
   capacitive: boolean;
+  /** Parts the plan placed that this feed did not keep. */
+  pruned: string[];
 };
 
 type NetPorts = {
@@ -447,6 +449,7 @@ export function realize(
         ),
       }))
     : [];
+  const aliveIds = new Set(alive.map((part) => part.path));
   return {
     elements: [...made, ...pins.flatMap((row) => row.pin.elements())],
     pins,
@@ -455,6 +458,69 @@ export function realize(
     boardNode: stamp.boardNode,
     resetNode: stamp.resetNode,
     capacitive,
+    pruned: stamp.parts
+      .filter((part) => !aliveIds.has(part.path))
+      .map((part) => part.path),
+  };
+}
+
+/**
+ * Node names for a part that sits on the island rail, not inside one
+ * board's stamp. The same lex-first port `stampBoard` uses, so a wire
+ * to `a-board.5V` and a wire to `z-board.D13` name those nodes.
+ */
+export function assignNodes(
+  part: CircuitInst,
+  nets: readonly NetPorts[],
+  ground: ReadonlySet<string>
+): AssignedPart {
+  const nodes: Record<string, string> = {};
+  for (const [name, full] of Object.entries(part.ports)) {
+    const net = netContaining(nets, full);
+    nodes[name] = net ? nodeName(net, ground) : full;
+  }
+  return {
+    path: part.path,
+    form: part.form,
+    typeId: part.typeId,
+    params: part.params,
+    nodes,
+    ...(part.table ? { table: part.table } : {}),
+    ...(part.ldo ? { ldo: part.ldo } : {}),
+  };
+}
+
+/**
+ * Stamp parts that already have island node names. A node nothing else
+ * drives drops the part. `pruned` is those paths.
+ */
+export function connectParts(
+  parts: readonly AssignedPart[],
+  anchors: ReadonlySet<string>
+): {
+  elements: Element[];
+  pruned: string[];
+  capacitive: boolean;
+  nodes: Map<string, readonly string[]>;
+} {
+  const alive = prune(parts, anchors);
+  const kept = new Set(alive.map((part) => part.path));
+  const nodes = new Map<string, readonly string[]>();
+  const made: Element[] = [];
+  let capacitive = false;
+  for (const part of alive) {
+    const built = elementOf(part, alive);
+    if (built.capacitive) capacitive = true;
+    made.push(...built.elements);
+    nodes.set(part.path, Object.values(part.nodes));
+  }
+  return {
+    elements: made,
+    pruned: parts
+      .filter((part) => !kept.has(part.path))
+      .map((part) => part.path),
+    capacitive,
+    nodes,
   };
 }
 
