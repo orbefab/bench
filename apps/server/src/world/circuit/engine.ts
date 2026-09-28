@@ -579,11 +579,6 @@ export class Engine {
     this.commitAll();
   }
 
-  /** Node voltages before the first operating point. Branch currents stay 0. */
-  seedNodes(volts: number): void {
-    for (let i = 0; i < this.nodeNames.length; i++) this.x[i] = volts;
-  }
-
   /** DC operating point at t = 0. Capacitors open, inductors shorted. */
   operatingPoint(): void {
     this.t = 0;

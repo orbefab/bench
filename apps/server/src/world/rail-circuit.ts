@@ -175,7 +175,6 @@ export class RailCircuit {
   private ready = false;
   private shared = false;
   /** Shared rails start the operating point here. One board leaves this at 0. */
-  private seedVolts = 0;
   private readonly boardLoads = new Map<string, CurrentLoad>();
   private readonly boardNodes = new Map<string, string>();
   private readonly boardDrives = new Map<
@@ -213,7 +212,6 @@ export class RailCircuit {
       this.resetNode = built.resetNode;
       this.branchLaws = built.branchLaws;
       this.shared = true;
-      this.seedVolts = spec.vNom;
       this.boardOrder.push(...built.boardOrder);
       for (const [id, load] of built.boardLoads) this.boardLoads.set(id, load);
       for (const [id, node] of built.boardNodes) this.boardNodes.set(id, node);
@@ -320,16 +318,6 @@ export class RailCircuit {
       atol: 1e-14,
       rtol: 1e-12,
     });
-  }
-
-  /**
-   * Set every node to `volts` before the first operating point. The
-   * polyfuse trip with a fixed load and no motor needs this: a knee
-   * linearized at 0 V asks for more than the supply limit, and the next
-   * stamp has no voltage unknown.
-   */
-  seedNodes(volts: number): void {
-    this.engine.seedNodes(volts);
   }
 
   setFixed(amps: number): void {
@@ -589,10 +577,6 @@ export class RailCircuit {
       this.noteShared(dt);
     };
     if (!this.ready) {
-      // Two capacitive boards on one rail do not converge from 0 V.
-      // The same circuit from the supply voltage does. One board does
-      // not take this path.
-      this.engine.seedNodes(this.seedVolts);
       this.engine.operatingPoint();
       this.ready = true;
       note(0);

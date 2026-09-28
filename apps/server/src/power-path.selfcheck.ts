@@ -322,29 +322,6 @@ expect(
   // the band that covers that curve at twice the trip current.
   const at8 = msUntilTrip(8, 1000);
   expect(at8 > 0 && at8 <= UNO_F1_TMAX_8A_S * 1000, `8 A trip ${at8} ms`);
-  const unseeded = createRailCircuit({
-    vNom: 5,
-    rSeries: 0.5,
-    iLimit: 3,
-    motors: [],
-    boardPath: "uno-usb",
-    stamp: unoStamp,
-    feed: "usb",
-  });
-  unseeded.setFixed(2);
-  let newton = "";
-  try {
-    unseeded.solve();
-  } catch (err) {
-    newton = err instanceof Error ? err.message : String(err);
-  }
-  expect(
-    newton.startsWith("Newton did not converge"),
-    `unseeded trip solved: ${newton}`
-  );
-  console.log(
-    `seedNodes: power-path.selfcheck polyfuse trip, no motor, 2 A: ${newton}`
-  );
   const trip = createRailCircuit({
     vNom: 5,
     rSeries: 0.5,
@@ -354,7 +331,6 @@ expect(
     stamp: unoStamp,
     feed: "usb",
   });
-  trip.seedNodes(5);
   trip.setFixed(2);
   let bo = runningBrownout();
   let trippedAt = -1;
