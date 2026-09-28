@@ -2442,11 +2442,11 @@ function createSession(host: SimHost): {
     if (queue.length > 0) void pump();
   }
 
-function enqueue(message: ToWorker): Promise<void> {
-  queue.push(message);
-  return pump();
-}
-return { enqueue };
+  function enqueue(message: ToWorker): Promise<void> {
+    queue.push(message);
+    return pump();
+  }
+  return { enqueue };
 }
 
 export class Sim {
