@@ -4,7 +4,8 @@ One Node process owns the STEP loader, the harness agents, and the
 sqlite store under `~/.sfab-bench/`. The folder a request is about is
 `?project=` ([ADR 0006](decisions/0006-folder-is-a-tab.md)). The Mac
 browser tab and Quest Browser are both HTTPS clients of that process.
-Product calls and ranked next: [`product.md`](product.md).
+Product calls and ranked next: [`product.md`](product.md). What the
+product does, screen by screen: [`manual.md`](manual.md).
 
 ## Model
 
@@ -89,3 +90,61 @@ section says. Bench still does not author the CAD or compile the firmware.
 rp2040js, `micro-emulator`, 3MF/GLB meshes, `package://`, RL export, and
 a lone STEP or URDF opening as a world are later. Sensors and ground
 contact are demo 2, later.
+
+The document is moving from the world file to the part: [ADR 0011](decisions/0011-one-document-kind.md)
+replaces `.world.json` with a part whose `play` block holds gravity, seed,
+and time step. That lands with the document model (A3 in
+[`product.md`](product.md)); until then this section describes what runs.
+
+## Simulation principles (ADR 0010)
+
+The simulation is **specialized engines on one clock**, not one solver:
+MuJoCo for bodies and contact, our MNA engine for circuits, avr8js for
+firmware, and part models where a domain does not need its own engine.
+
+- **One orchestrator owns time.** A 1 ms master step; engines exchange port
+  quantities at seams. Tight loops (servo current against rail voltage)
+  stay inside one engine; nothing is flattened into one global matrix.
+- **Ports are runtime law.** Typed ports with quantities; nets are built
+  from port declarations. Prefer effort/flow pairs so domains can meet.
+- **Energy residuals at seams** are the honesty signal when coupling is
+  imperfect. They are reported, not hidden (G2).
+- **Levels and snapshots are the fidelity dial.** The same exposed ports,
+  run live or from a snapshot. The snapshot container is universal (ports,
+  a typed form, an envelope, error, provenance); forms stay typed, never
+  one table for every domain.
+- **A snapshot never carries its fixture's supply.** Parents bring their
+  own power (G1).
+- **Inner edits dirty upward.** A stale capture warns rather than lies.
+- No magnetics or FEM on the realtime path.
+
+## Layers (ADR 0012)
+
+[ADR 0012](decisions/0012-layers-and-plugin-seams.md) splits the code so
+each layer imports only from the layers below it. A lint rule enforces it.
+
+| Layer | Package | Contents |
+| --- | --- | --- |
+| L0 | `packages/contract` | Types, formats, protocol messages |
+| L1 | `packages/parts` | Document model and typed edit operations with undo; loader, resolver, levels, nets, lint, lock; a `Store` interface instead of `node:fs` |
+| L2 | `packages/engine-*` | One engine each behind an `Engine` interface; no IO |
+| L3 | `packages/sim` | Plan, form adapters, orchestrator, recorder, capture runner |
+| L4 | hosts | Node worker host, `bench` CLI, later a browser-worker host |
+| L5 | `apps/server` | Projects and files, live socket, agent tools |
+| L6 | `apps/web` | Editor shell and tool framework; speaks the protocol only |
+
+Tools, the agent, and scripts all change a document through L1's edit
+operations, so one undo history covers them.
+
+**Plugin seams** are compile-time registries of in-repo packages:
+
+1. **Forms**: param schema, lint rules, run adapter, capture recipe, card renderer.
+2. **Tools**: a mode, a hotkey, a 3D interaction that emits edit operations.
+3. **Importers**: one per asset category, converting to its canonical form.
+4. **Engines**: behind the L2 interface.
+
+Third-party plugins loaded at run time wait for the part registry and
+signing.
+
+Today all of L1–L4 still lives in `apps/server/src/world/`; A1 and A2 move
+it, with no printed self-check line changing.

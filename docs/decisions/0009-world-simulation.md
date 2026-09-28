@@ -1,6 +1,6 @@
 # ADR-0009: The world is the document
 
-**Status:** Accepted. Amended by [0010](0010-layered-simulation.md) for analog circuits and part levels. World v1 was replaced by World v2.
+**Status:** Accepted. Amended by [0010](0010-layered-simulation.md) for analog circuits and part levels. World v1 was replaced by World v2. The world file is superseded by [0011](0011-one-document-kind.md) (the part is the only document) once A3 lands.
 **Date:** 2026-09-24
 **Deciders:** Alwurts
 
