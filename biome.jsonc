@@ -15,7 +15,7 @@
       // Recorded at full float precision; formatting would rewrite the baseline.
       "!**/apps/server/fixtures/arm-baseline.json",
       // Capture writes this as canonical JSON with 2-space indentation. Formatting it again would diverge from the tool.
-      "!**/apps/server/catalog/snapshots",
+      "!**/apps/server/catalog/snapshots/**",
       // cadgen writes this sidecar as one line. Formatting it would diverge from the generator.
       "!**/*.step.json",
       "!**/apps/docs/src/routeTree.gen.ts",
@@ -143,10 +143,26 @@
       "linter": {
         "rules": {
           "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "process": "L1 and L2 do not use the Node host",
+                  "Buffer": "L1 and L2 do not use the Node host",
+                  "require": "L1 and L2 do not use the Node host",
+                  "__dirname": "L1 and L2 do not use the Node host",
+                  "__filename": "L1 and L2 do not use the Node host"
+                }
+              }
+            },
             "noRestrictedImports": {
               "level": "error",
               "options": {
                 "patterns": [
+                  {
+                    "group": ["../..", "../../**"],
+                    "message": "a relative import stays inside this package"
+                  },
                   {
                     "group": ["node:*", "node:*/**"],
                     "message": "parts imports neither node nor an engine nor the server nor apps"
@@ -180,10 +196,26 @@
       "linter": {
         "rules": {
           "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "process": "L1 and L2 do not use the Node host",
+                  "Buffer": "L1 and L2 do not use the Node host",
+                  "require": "L1 and L2 do not use the Node host",
+                  "__dirname": "L1 and L2 do not use the Node host",
+                  "__filename": "L1 and L2 do not use the Node host"
+                }
+              }
+            },
             "noRestrictedImports": {
               "level": "error",
               "options": {
                 "patterns": [
+                  {
+                    "group": ["../..", "../../**"],
+                    "message": "a relative import stays inside this package"
+                  },
                   {
                     "group": ["node:*", "node:*/**"],
                     "message": "an engine imports neither node nor parts nor the server nor apps"
