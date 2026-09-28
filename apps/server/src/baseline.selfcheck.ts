@@ -179,10 +179,25 @@ for (const name of ["arm.world.json", "arm-stall.world.json"] as const) {
     live.length === saved.length,
     `${name} frames ${live.length} vs ${saved.length}`
   );
+  let board = 0;
+  let current = 0;
+  let first: string | null = null;
   for (let i = 0; i < saved.length; i++) {
     const mismatch = differ(live[i], saved[i], `${name}[${i}]`);
-    expect(!mismatch, mismatch ?? "");
+    if (mismatch && !first) first = mismatch;
+    const got = live[i]?.supplies ?? {};
+    const had = saved[i]?.supplies ?? {};
+    for (const id of Object.keys(had)) {
+      const dv = Math.abs((got[id]?.voltage ?? 0) - (had[id]?.voltage ?? 0));
+      const di = Math.abs((got[id]?.current ?? 0) - (had[id]?.current ?? 0));
+      if (dv > board) board = dv;
+      if (di > current) current = di;
+    }
   }
+  console.log(
+    `baseline ${name}: board Δ ${board.toExponential(2)} V, supply Δ ${current.toExponential(2)} A, ${first ? "mismatch" : "match"}`
+  );
+  expect(!first, first ?? "");
   console.log(`${name}: ${live.length} frames match the baseline`);
 }
 

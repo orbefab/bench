@@ -19,6 +19,7 @@ import type { RecordingRead, WorldState } from "@sfab-bench/contract";
 import { closeRootWatches } from "./projects";
 import { Engine, TRACE_CASES } from "./world/circuit";
 import { MF_MSMF050, PtcFuseElement } from "./world/circuit/ptc-fuse";
+import { boardStampOf } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,
   attachWorld,
@@ -211,12 +212,17 @@ const closedStall = solveRail({
   fixed: fixedStall,
   motors: [{ fraction: 1, omega: 0, k: law.k, resistance: law.resistance }],
 });
+const unoStamp = boardStampOf("sfab/uno-r3@1.0.0", "circuits", {
+  boardId: "uno",
+});
 const stall = createRailCircuit({
   vNom: usb.voltage,
   rSeries: usb.rSeries,
   iLimit: usb.currentLimit,
   motors: [{ resistance: law.resistance, k: law.k }],
   boardPath: "uno-usb",
+  stamp: unoStamp,
+  feed: "usb",
 });
 stall.setFixed(fixedStall);
 stall.setMotor(0, 1, 0, true);
@@ -287,6 +293,8 @@ expect(
     iLimit: 2,
     motors: [],
     boardPath: "uno-usb",
+    stamp: unoStamp,
+    feed: "usb",
   });
   onRail.setFixed(UNO_F1_IHOLD);
   const matched = new PtcFuseElement("f", "a", "b", MF_MSMF050);
@@ -314,13 +322,39 @@ expect(
   // the band that covers that curve at twice the trip current.
   const at8 = msUntilTrip(8, 1000);
   expect(at8 > 0 && at8 <= UNO_F1_TMAX_8A_S * 1000, `8 A trip ${at8} ms`);
+  const unseeded = createRailCircuit({
+    vNom: 5,
+    rSeries: 0.5,
+    iLimit: 3,
+    motors: [],
+    boardPath: "uno-usb",
+    stamp: unoStamp,
+    feed: "usb",
+  });
+  unseeded.setFixed(2);
+  let newton = "";
+  try {
+    unseeded.solve();
+  } catch (err) {
+    newton = err instanceof Error ? err.message : String(err);
+  }
+  expect(
+    newton.startsWith("Newton did not converge"),
+    `unseeded trip solved: ${newton}`
+  );
+  console.log(
+    `seedNodes: power-path.selfcheck polyfuse trip, no motor, 2 A: ${newton}`
+  );
   const trip = createRailCircuit({
     vNom: 5,
     rSeries: 0.5,
     iLimit: 3,
     motors: [],
     boardPath: "uno-usb",
+    stamp: unoStamp,
+    feed: "usb",
   });
+  trip.seedNodes(5);
   trip.setFixed(2);
   let bo = runningBrownout();
   let trippedAt = -1;
@@ -390,6 +424,8 @@ expect(
     iLimit: usb.currentLimit,
     motors,
     boardPath: "uno-usb",
+    stamp: unoStamp,
+    feed: "usb",
   });
   cost.setFixed(boardA + 12 * law.quiescent);
   for (let i = 0; i < motors.length; i++) cost.setMotor(i, 0.5, 1, true);

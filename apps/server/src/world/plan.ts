@@ -32,7 +32,7 @@ import {
   stampBoard,
   touches,
 } from "./circuit-stamp";
-import type { LiveInstance } from "./parts/levels";
+import { class2BoardNetlist, type LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
 import { siValue } from "./parts/si";
@@ -860,6 +860,13 @@ function build(
           runCircuit = null;
         }
       }
+      const alias = pathName === "uno-usb" && behaviour.board === undefined;
+      if (alias && !class2BoardNetlist(inst.part)) {
+        diags.push(
+          cannot(inst, `${inst.part.id} has no board netlist for path:uno-usb`)
+        );
+        continue;
+      }
       const params = behaviour.params ?? {};
       const image = behaviour.imageParam
         ? inst.params[behaviour.imageParam]
@@ -904,7 +911,7 @@ function build(
         groundPin: groundName,
         current: params.quiescent ?? 0,
         boardCircuit: runCircuit,
-        hasNetlist: behaviour.board !== undefined,
+        hasNetlist: behaviour.board !== undefined || alias,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
           params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,
@@ -1182,10 +1189,8 @@ function build(
   }
   for (const [supplyId, group] of boardsOn) {
     if (group.length < 2) continue;
-    // Two Unos on one USB or bench rail already run (pin.selfcheck,
-    // power.selfcheck, world-runtime). Neither has a stamp or a snapshot.
-    // A class-2 netlist or a class-1 snapshot is one law, so a second
-    // board would lose its circuit.
+    // A stamp or a snapshot is one law, so a second board would lose its
+    // circuit. A v1 draft has neither, and two of those still share.
     if (!group.some((board) => board.stamp || board.powerSnapshot)) continue;
     const names = group
       .map((board) => board.id)

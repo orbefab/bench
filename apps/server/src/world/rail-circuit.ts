@@ -26,7 +26,7 @@ import { LawTable } from "./circuit/law-table";
 import { AVR_PIN, type AvrPinParams, type PinMode } from "./circuit/pin";
 import { PmosChannel } from "./circuit/pmos-switch";
 import { PtcFuseElement } from "./circuit/ptc-fuse";
-import { type BoardStamp, boardStampOf, realize } from "./circuit-stamp";
+import { type BoardStamp, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,
   type BoardPathName,
@@ -64,7 +64,7 @@ export type RailCircuitSpec = {
   /** D13 `avr-pin@1` numbers. Absent uses the datasheet fits. */
   pin?: AvrPinParams;
   /**
-   * Circuit parts for this rail, from the plan or from `boardStampOf`.
+   * Circuit parts for this rail, from the plan.
    * `path:uno-usb` with no stamp loads the Uno board netlist.
    */
   stamp?: BoardStamp;
@@ -143,12 +143,8 @@ export class RailCircuit {
     const braking = spec.braking ?? "clip";
     const uno = spec.boardPath === "uno-usb";
     const snap = spec.boardPath === "snapshot-feed";
-    let stamp = spec.stamp ?? null;
-    let feed = spec.feed;
-    if (uno && !stamp) {
-      stamp = unoAliasStamp();
-      feed = "usb";
-    }
+    const stamp = spec.stamp ?? null;
+    const feed = spec.feed;
     if (stamp && feed !== "usb" && feed !== "header") {
       throw new Error("a board stamp needs feed usb or header");
     }
@@ -237,15 +233,16 @@ export class RailCircuit {
       atol: 1e-14,
       rtol: 1e-12,
     });
-    // A knee load linearized at 0 V can report more than the supply's
-    // limit when nothing else conducts. The next stamp is then two
-    // currents and no voltage. With no motor, start the nodes at the
-    // setpoint so that load is already in its full-current region.
-    // A motor on the rail already converges from 0 V, and that path
-    // stays on the frozen arm frames.
-    if (this.fuse.length > 0 && motors.length === 0) {
-      this.engine.seedNodes(spec.vNom);
-    }
+  }
+
+  /**
+   * Set every node to `volts` before the first operating point. The
+   * polyfuse trip with a fixed load and no motor needs this: a knee
+   * linearized at 0 V asks for more than the supply limit, and the next
+   * stamp has no voltage unknown.
+   */
+  seedNodes(volts: number): void {
+    this.engine.seedNodes(volts);
   }
 
   setFixed(amps: number): void {
@@ -349,15 +346,6 @@ export class RailCircuit {
     for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
     for (const channel of this.channels) channel.latch(voltage);
   }
-}
-
-/** Class-1 `path:uno-usb`. The same netlist class 2 stamps, cached. */
-let aliasStamp: BoardStamp | null = null;
-function unoAliasStamp(): BoardStamp {
-  aliasStamp ??= boardStampOf("sfab/uno-r3@1.0.0", "circuits", {
-    boardId: "uno",
-  });
-  return aliasStamp;
 }
 
 export function createRailCircuit(spec: RailCircuitSpec): RailCircuit {

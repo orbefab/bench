@@ -3,9 +3,10 @@
 // (031dc5e). `nanoRail` there stays the older test circuit, not this board.
 /**
  * A `usb-a-port` wired to an Uno's `5V` is the cable into the USB connector.
- * That is how the arm examples are drawn. `path:uno-usb` stamps the same
- * board netlist as class 2. A bench supply on `5V` is the header, and the
- * rail stays the supply terminal. Servos on `uno.5V` load the board node.
+ * That is how the arm examples are drawn. `path:uno-usb` is resolved in
+ * the plan to that part's class-2 board netlist. A bench supply on `5V`
+ * is the header: the supply attaches at `5V`, `VBUS` is unfed, and the
+ * capacitors on `5V` stay. Servos on `uno.5V` load the board node.
  * The power walk cannot tell a part on the header from a part on the board,
  * so every motor of that supply sits on the node when the path is on.
  *
@@ -124,10 +125,11 @@ export function pathRefOf(boardCircuit: string | null): string | null {
  * the supply terminal is the pin. The caller has already checked that
  * this supply feeds that board.
  *
- * `path:uno-usb` is an alias for the Uno's board netlist, and only from a
- * supply whose connector is `usb`. Any other supply on that board is the
- * header: the USB front end, capacitors included, stays off the rail.
- * A class-2 board (`hasNetlist`) takes `feed: "usb"` from that connector
+ * `path:uno-usb` names the board netlist the plan already stamped, and
+ * only a `usb` connector takes the cable. Any other supply is the header:
+ * `feed` is `header`, so `VBUS` is unfed and whatever the netlist puts
+ * on the supply port stays. A class-2 board (`hasNetlist`) takes
+ * `feed: "usb"` from that connector
  * (the cable lands on the board's `usb` port) and `feed: "header"` from
  * any other supply. A class-1 snapshot is `snapshot:<ref>`. The loader
  * keeps that circuit only when the feed is the Thevenin the snapshot
@@ -165,13 +167,11 @@ export function unoUsbPathFor(
 }
 
 /**
- * What the worker puts on one rail. `path:uno-usb` with no stamp is the
- * class-1 alias: the rail loads the board netlist. A class-2 Uno on the
- * header drops that stamp, so the pin stays the supply terminal. `tripFuse`
- * opens every `ptc-fuse@1` on an Uno USB rail. There is no path selector.
+ * What the worker puts on one rail. The plan has already stamped
+ * `path:uno-usb`. A usb connector attaches at `VBUS`. Any other feed
+ * attaches at the board supply port and leaves `VBUS` unfed.
  */
 export function railAttachment<T>(input: {
-  type: string | null;
   connector: string | null;
   boardCircuit: string | null;
   hasNetlist: boolean;
@@ -180,32 +180,25 @@ export function railAttachment<T>(input: {
   boardPath: BoardPathName | null;
   stamp?: T;
   feed?: "usb" | "header";
-  tripFuse: boolean;
 } {
-  const chosen = input.type
-    ? usbPathFor(input.connector, input.boardCircuit, input.hasNetlist)
-    : null;
+  const chosen = usbPathFor(
+    input.connector,
+    input.boardCircuit,
+    input.hasNetlist
+  );
   const boardPath = chosen?.kind === "path" ? chosen.path : null;
-  const unoHeader =
-    input.type === "arduino-uno-r3" &&
-    chosen?.kind === "netlist" &&
-    chosen.feed === "header";
-  const stamp = unoHeader ? undefined : input.stamp;
+  const stamp = input.stamp;
   const feed =
-    chosen?.kind === "netlist" && stamp
+    chosen?.kind === "netlist"
       ? chosen.feed
-      : stamp
-        ? "header"
-        : undefined;
-  const tripFuse =
-    boardPath === "uno-usb" ||
-    (input.type === "arduino-uno-r3" &&
-      chosen?.kind === "netlist" &&
-      chosen.feed === "usb");
+      : chosen?.kind === "path" && chosen.path === "uno-usb"
+        ? "usb"
+        : stamp
+          ? "header"
+          : undefined;
   return {
     boardPath,
     ...(stamp && feed ? { stamp, feed } : {}),
-    tripFuse,
   };
 }
 

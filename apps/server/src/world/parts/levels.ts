@@ -5,6 +5,7 @@ import {
   type AxisName,
   type BehaviourImpl,
   type LevelClass,
+  type Netlist,
   type Params,
   type PartFile,
   type PartTypeFile,
@@ -12,6 +13,7 @@ import {
   type WorldFileV2,
 } from "@sfab-bench/contract";
 
+import { pathRefOf } from "../power-path";
 import { type Library, typeOf } from "./library";
 import { type AxisRequest, classesOf, isLevelClass, specAxes } from "./si";
 
@@ -275,6 +277,35 @@ function resolveAxis(
   };
 }
 
+/**
+ * The netlist this behaviour expands. `path:uno-usb` uses the declaring
+ * part's class-2 board, so the wires and the children match class 2.
+ */
+export function behaviourNetlist(
+  part: PartFile,
+  behaviour: BehaviourImpl | null
+): Netlist | null {
+  if (!behaviour) return null;
+  if (behaviour.kind === "composite") return behaviour.netlist;
+  if (behaviour.kind === "firmware" && behaviour.board) return behaviour.board;
+  if (
+    behaviour.kind === "firmware" &&
+    pathRefOf(behaviour.boardCircuit ?? null) === "uno-usb"
+  ) {
+    return class2BoardNetlist(part);
+  }
+  return null;
+}
+
+/** The class-2 firmware board, when that variant carries a netlist. */
+export function class2BoardNetlist(part: PartFile): Netlist | null {
+  const slot = part.axes?.behaviour?.["2"];
+  if (!slot) return null;
+  const impl = slot.variants[slot.default];
+  if (impl?.kind === "firmware" && impl.board) return impl.board;
+  return null;
+}
+
 function childPath(parent: string, id: string): string {
   if (parent === "$root") return id;
   return `${parent}.${id}`;
@@ -322,20 +353,20 @@ export function resolveLevels(
       declaredOnly: part.declaredOnly === true,
     });
     const behaviour = axes.behaviour.impl as BehaviourImpl | null;
-    const netlist =
-      behaviour?.kind === "composite"
-        ? behaviour.netlist
-        : behaviour?.kind === "firmware"
-          ? (behaviour.board ?? null)
-          : null;
+    const netlist = behaviourNetlist(part, behaviour);
+    const aliasNetlist =
+      netlist !== null &&
+      behaviour?.kind === "firmware" &&
+      behaviour.board === undefined;
     if (netlist) {
       // The world root is the scene container. Its children use the world
       // default. A shell that only reached its class by fallback does not
       // pass that class down either: the default still applies underneath.
-      const nextParent =
-        instancePath !== "$root" &&
-        axes.behaviour.class !== null &&
-        axes.behaviour.source !== "fallback"
+      const nextParent = aliasNetlist
+        ? (2 as LevelClass)
+        : instancePath !== "$root" &&
+            axes.behaviour.class !== null &&
+            axes.behaviour.source !== "fallback"
           ? axes.behaviour.class
           : undefined;
       for (const [id, child] of Object.entries(netlist.instances)) {

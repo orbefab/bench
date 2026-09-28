@@ -7,7 +7,7 @@ import {
   type Ratings,
 } from "@sfab-bench/contract";
 
-import type { LiveInstance } from "./levels";
+import { behaviourNetlist, type LiveInstance } from "./levels";
 import { splitPortRef } from "./si";
 
 export type LivePort = {
@@ -105,13 +105,9 @@ function behaviourOf(inst: LiveInstance): BehaviourImpl | null {
   return impl as BehaviourImpl;
 }
 
-/** Composite children, or a firmware variant's board netlist. */
+/** Composite children, a firmware board, or the class-2 netlist `path:uno-usb` names. */
 export function netlistOf(inst: LiveInstance): Netlist | null {
-  const behaviour = behaviourOf(inst);
-  if (!behaviour) return null;
-  if (behaviour.kind === "composite") return behaviour.netlist;
-  if (behaviour.kind === "firmware" && behaviour.board) return behaviour.board;
-  return null;
+  return behaviourNetlist(inst.part, behaviourOf(inst));
 }
 
 export function buildNets(

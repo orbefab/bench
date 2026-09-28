@@ -420,12 +420,11 @@ function worldRails(world: string): {
   const make = (class2: boolean): RailCircuit => {
     const stamp = class2
       ? boardStampOf("sfab/uno-r3@1.0.0", "circuits", { boardId: board.id })
-      : undefined;
+      : board.stamp;
     const attached = railAttachment({
-      type: board.type,
       connector: supply.connector,
       boardCircuit: class2 ? null : board.boardCircuit,
-      hasNetlist: class2,
+      hasNetlist: class2 || board.hasNetlist,
       stamp,
     });
     return createRailCircuit({
@@ -711,6 +710,161 @@ function peakSupply(read: RecordingRead): number {
         `uno power snapshot arm-stall: supply ${stall.maxCurrent.toFixed(4)} A, under iHold ${fuseParams.iHold} A`
       );
     }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+type ArmLines = {
+  board: number[];
+  servo: string;
+  serial: string;
+};
+
+async function armLines(dir: string, world: string): Promise<ArmLines> {
+  const seen: { failed: string | null; sim: number } = {
+    failed: null,
+    sim: -1,
+  };
+  const attached = await attachWorld(dir, world, {
+    sender: { kind: "loopback", label: "Mac" },
+    onEvent(event) {
+      if (event.type === "error") {
+        seen.failed =
+          event.message ?? event.errors.map((item) => item.message).join("; ");
+      }
+      if (event.type === "state") seen.sim = event.state.simTime;
+    },
+  });
+  if ("error" in attached) throw new Error(attached.error);
+  try {
+    attached.step(3000);
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      if (seen.failed) throw new Error(seen.failed);
+      if (seen.sim >= 3 - 1e-3) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    if (seen.sim < 3 - 1e-3) throw new Error(`${world} timed out`);
+    const read = await readRecording(dir, world, { from: 0, to: 3 });
+    if ("error" in read) throw new Error(read.error);
+    const boardId = Object.keys(read.frames[0]?.boards ?? {})[0];
+    if (!boardId) throw new Error(`${world} has no board`);
+    const servo = read.frames.map((frame) => {
+      const part = frame.parts.servo;
+      return `${part?.pulseUs ?? "none"} ${part?.current ?? "none"}`;
+    });
+    const serial = read.events.flatMap((event) =>
+      event.kind === "serial" ? [event.text] : []
+    );
+    return {
+      board: read.frames.map(
+        (frame) => frame.boards[boardId]?.voltage ?? Number.NaN
+      ),
+      servo: servo.join("\n"),
+      serial: serial.join("\n"),
+    };
+  } finally {
+    attached.detach();
+    await stopWorld(dir, world);
+    closeRootWatches();
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-uno-mcu-"));
+  try {
+    cpSync(armDir, dir, { recursive: true });
+    rmSync(join(dir, "arm.world.lock.json"), { force: true });
+    const scene = join(dir, "parts", "sfab", "arm-scene@1.0.0.json");
+    const text = readFileSync(scene, "utf8")
+      .replaceAll('"uno"', '"mcu"')
+      .replaceAll("uno.", "mcu.");
+    writeFileSync(scene, text);
+    const original = await armLines(armDir, "arm.world.json");
+    const renamed = await armLines(dir, "arm.world.json");
+    let delta = 0;
+    const n = Math.min(original.board.length, renamed.board.length);
+    expect(n > 0 && n === original.board.length, "mcu frames");
+    for (let i = 0; i < n; i++) {
+      delta = Math.max(
+        delta,
+        Math.abs((original.board[i] ?? 0) - (renamed.board[i] ?? 0))
+      );
+    }
+    expect(delta === 0, `mcu board node Δ ${delta} V`);
+    expect(renamed.serial === original.serial, "mcu serial differs");
+    expect(renamed.servo === original.servo, "mcu servo differs");
+    console.log(
+      `mcu rename: board node Δ ${delta} V, serial identical, servo identical`
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-two-uno-"));
+  try {
+    cpSync(armDir, dir, { recursive: true });
+    rmSync(join(dir, "arm.world.lock.json"), { force: true });
+    const scene = join(dir, "parts", "sfab", "arm-scene@1.0.0.json");
+    const part = JSON.parse(readFileSync(scene, "utf8")) as PartFile;
+    const slot = part.axes?.behaviour?.["2"];
+    const variant = slot?.variants.netlist;
+    if (variant?.kind !== "composite") throw new Error("arm scene netlist");
+    const uno = variant.netlist.instances.uno;
+    if (!uno) throw new Error("arm scene has no uno");
+    variant.netlist.instances.other = {
+      part: uno.part,
+      pose: { position: [0.2, 0, 0.006], rotation: [1, 0, 0, 0] },
+      params: uno.params,
+    };
+    variant.netlist.wires.push(
+      ["usb.5V", "other.5V"],
+      ["usb.GND", "other.GND"]
+    );
+    writeFileSync(scene, `${JSON.stringify(part, null, 2)}\n`);
+    const planned = planWorld(dir, "arm.world.json");
+    expect(!planned.ok, "two class-1 Unos planned");
+    if (planned.ok) throw new Error("unreachable");
+    const hit = planned.errors.find(
+      (item) =>
+        item.message.includes("uno") &&
+        item.message.includes("other") &&
+        item.message.includes("share")
+    );
+    expect(hit, planned.errors.map((item) => item.message).join("; "));
+    console.log(`two class-1 Unos: ${hit?.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-uno-no-net-"));
+  try {
+    cpSync(armDir, dir, { recursive: true });
+    rmSync(join(dir, "arm.world.lock.json"), { force: true });
+    const part = readPart("uno-r3@1.0.0");
+    const behaviour = part.axes?.behaviour;
+    if (behaviour) delete behaviour["2"];
+    const folder = join(dir, "parts", "sfab");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, "uno-r3@1.0.0.json"),
+      `${JSON.stringify(part, null, 2)}\n`
+    );
+    const planned = planWorld(dir, "arm.world.json");
+    expect(!planned.ok, "a Uno with no netlist planned");
+    if (planned.ok) throw new Error("unreachable");
+    const hit = planned.errors.find((item) =>
+      item.message.includes(
+        "sfab/uno-r3@1.0.0 has no board netlist for path:uno-usb"
+      )
+    );
+    expect(hit, planned.errors.map((item) => item.message).join("; "));
+    console.log(`reject no netlist: ${hit?.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

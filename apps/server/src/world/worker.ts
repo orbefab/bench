@@ -1031,7 +1031,6 @@ function bindRails() {
       (item) => item.id === supply.id
     )?.stamp;
     const attached = railAttachment({
-      type: fed?.type ?? null,
       connector: supplyConnectorOf(supply.id),
       boardCircuit: fed?.boardCircuit ?? null,
       hasNetlist: fed?.hasNetlist ?? false,
@@ -1059,7 +1058,7 @@ function bindRails() {
         ? { law: fed.powerSnapshot.law }
         : {}),
     });
-    if (attached.tripFuse && fuseStart === "tripped") circuit.tripFuse();
+    if (fuseStart === "tripped") circuit.tripFuse();
     for (let i = 0; i < members.length; i++) {
       const load = members[i];
       if (load) load.railSlot = i;

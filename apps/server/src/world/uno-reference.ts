@@ -35,14 +35,21 @@ const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;
 const MASTER_S = 0.001;
 const SUBSTEPS = 10;
 
-/** T1, PC2 with its ESR, and the four +5V ceramics. */
+/** PC2 with its ESR, and the four +5V ceramics. The header keeps these. */
+function unoHeaderCaps(board: string): Element[] {
+  return [
+    resistor("pc2r", board, PC2_NODE, UNO_PC2_ESR),
+    capacitor("pc2", PC2_NODE, "0", UNO_PC2_C),
+    ...DECOUPLE.map((id) => capacitor(id, board, "0", UNO_DECOUPLE_C)),
+  ];
+}
+
+/** T1, and the capacitors on the board node. */
 function unoBoardElements(sw: string, board: string): Element[] {
   return [
     resistor("t1", sw, board, UNO_T1_RDS),
     diode("t1d", board, sw, UNO_T1_DIODE),
-    resistor("pc2r", board, PC2_NODE, UNO_PC2_ESR),
-    capacitor("pc2", PC2_NODE, "0", UNO_PC2_C),
-    ...DECOUPLE.map((id) => capacitor(id, board, "0", UNO_DECOUPLE_C)),
+    ...unoHeaderCaps(board),
   ];
 }
 
@@ -74,7 +81,7 @@ export type UnoReferenceSpec = {
   iLimit: number;
   motors: readonly { resistance: number; k: number }[];
   braking?: Braking;
-  /** Header: the supply terminal is the board node. No fuse and no capacitors. */
+  /** Header: the supply attaches at the board node. No fuse and no switch. */
   header?: boolean;
 };
 
@@ -98,8 +105,8 @@ export class UnoReferenceRail {
   constructor(spec: UnoReferenceSpec) {
     const header = spec.header === true;
     this.path = !header;
-    this.termNode = header ? "rail" : UNO_TERM_NODE;
-    this.boardNode = header ? "rail" : UNO_BOARD_NODE;
+    this.termNode = header ? UNO_BOARD_NODE : UNO_TERM_NODE;
+    this.boardNode = UNO_BOARD_NODE;
     const fuse = header
       ? null
       : new PtcFuseElement("f1", UNO_TERM_NODE, UNO_SW_NODE, MF_MSMF050);
@@ -120,12 +127,7 @@ export class UnoReferenceRail {
       );
     }
     this.motors = motors;
-    this.load = new CurrentLoad(
-      "load",
-      this.boardNode,
-      "0",
-      header ? 0 : BOARD_LOAD_KNEE_V
-    );
+    this.load = new CurrentLoad("load", this.boardNode, "0", BOARD_LOAD_KNEE_V);
     const supply = new TheveninLimit(
       "src",
       this.termNode,
@@ -141,11 +143,11 @@ export class UnoReferenceRail {
         ...motors,
         ...(fuse
           ? [fuse, ...unoBoardElements(UNO_SW_NODE, UNO_BOARD_NODE)]
-          : []),
+          : unoHeaderCaps(UNO_BOARD_NODE)),
       ],
       {
         method: "be",
-        h: MASTER_S / (header ? 1 : SUBSTEPS),
+        h: MASTER_S / SUBSTEPS,
         atol: 1e-14,
         rtol: 1e-12,
       }
@@ -180,7 +182,7 @@ export class UnoReferenceRail {
   solve(): void {
     const fuse = this.fuse;
     if (fuse?.pull()) this.engine.dropFactor();
-    const n = this.path ? SUBSTEPS : 1;
+    const n = SUBSTEPS;
     if (!this.ready) {
       this.engine.operatingPoint();
       this.ready = true;

@@ -103,7 +103,6 @@
               }
             },
             "omits": [
-              "USB front end, including the rail capacitors, when the header feeds the board",
               "temperature",
               "I/O pin impedance",
               "ADC INL and DNL",
