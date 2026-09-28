@@ -188,3 +188,144 @@ for (const file of simFiles) {
 process.stdout.write(
   `boundary: scanned ${simFiles.length} L3 files for globalThis\n`
 );
+
+/**
+ * `bench run` is its own module. Its static import closure must not reach
+ * the server, the live socket, or anything that opens a port.
+ */
+const forbiddenStem = new Set(["listen", "app", "http", "https", "live", "ws"]);
+
+function forbiddenOf(spec: string): string | null {
+  if (
+    spec === "node:http" ||
+    spec === "node:https" ||
+    spec === "http" ||
+    spec === "https"
+  ) {
+    return "http";
+  }
+  if (spec === "ws" || spec.startsWith("ws/")) return "ws";
+  const stem = (spec.split("/").pop() ?? spec).replace(
+    /\.(tsx?|jsx?|mjs|cjs)$/,
+    ""
+  );
+  if (!forbiddenStem.has(stem)) return null;
+  return stem === "https" ? "http" : stem;
+}
+
+function packageDirs(): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const base of ["packages", "apps"]) {
+    for (const entry of readdirSync(path.join(root, base))) {
+      const dir = path.join(root, base, entry);
+      try {
+        const pkg = JSON.parse(
+          readFileSync(path.join(dir, "package.json"), "utf8")
+        ) as {
+          name?: string;
+        };
+        if (pkg.name) found.set(pkg.name, dir);
+      } catch {
+        /* not a package */
+      }
+    }
+  }
+  return found;
+}
+
+function exportTarget(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.default === "string") return obj.default;
+  if (typeof obj.import === "string") return obj.import;
+  return null;
+}
+
+function findSource(abs: string): string | null {
+  for (const candidate of [
+    abs,
+    `${abs}.ts`,
+    `${abs}.tsx`,
+    path.join(abs, "index.ts"),
+  ]) {
+    try {
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      /* next */
+    }
+  }
+  return null;
+}
+
+function resolveSpec(
+  fromFile: string,
+  spec: string,
+  packages: Map<string, string>
+): string | null {
+  if (spec.startsWith("."))
+    return findSource(path.resolve(path.dirname(fromFile), spec));
+  if (!spec.startsWith("@sfab-bench/")) return null;
+  const slash = spec.indexOf("/", "@sfab-bench/".length);
+  const name = slash === -1 ? spec : spec.slice(0, slash);
+  const sub = slash === -1 ? "." : `.${spec.slice(slash)}`;
+  const dir = packages.get(name);
+  if (!dir) return null;
+  const pkg = JSON.parse(
+    readFileSync(path.join(dir, "package.json"), "utf8")
+  ) as {
+    exports?: Record<string, unknown>;
+  };
+  const target = exportTarget(pkg.exports?.[sub]);
+  if (!target) throw new Error(`${name} has no export ${sub}`);
+  const source = findSource(path.resolve(dir, target));
+  if (!source) throw new Error(`${spec} does not resolve to a source file`);
+  return source;
+}
+
+function staticSpecs(text: string): string[] {
+  const stripped = text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const specs: string[] = [];
+  for (const hit of stripped.matchAll(/\bfrom\s+["']([^"']+)["']/g)) {
+    if (hit[1]) specs.push(hit[1]);
+  }
+  for (const hit of stripped.matchAll(/^\s*import\s+["']([^"']+)["']/gm)) {
+    if (hit[1]) specs.push(hit[1]);
+  }
+  return specs;
+}
+
+const packages = packageDirs();
+const entry = path.join(root, "apps/server/src/run.ts");
+const seen = new Set<string>();
+const pending = [entry];
+while (pending.length > 0) {
+  const file = pending.pop();
+  if (!file || seen.has(file)) continue;
+  seen.add(file);
+  const text = readFileSync(file, "utf8");
+  for (const spec of staticSpecs(text)) {
+    const banned = forbiddenOf(spec);
+    if (banned) {
+      throw new Error(
+        `${path.relative(root, file)} statically imports ${spec} (${banned})`
+      );
+    }
+    const next = resolveSpec(file, spec, packages);
+    if (spec.startsWith(".") && !next) {
+      throw new Error(
+        `${path.relative(root, file)} import ${spec} did not resolve`
+      );
+    }
+    if (next) pending.push(next);
+  }
+}
+const simEntry = path.join(root, "packages/sim/src/sim.ts");
+if (!seen.has(simEntry)) throw new Error("bench run closure did not reach Sim");
+if (seen.size < 10)
+  throw new Error(`bench run closure is only ${seen.size} files`);
+process.stdout.write(
+  "boundary: bench run imports neither listen nor app nor http nor live nor ws\n"
+);

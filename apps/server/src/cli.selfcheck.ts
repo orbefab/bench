@@ -27,6 +27,30 @@ expect(
 const missing = parseCli(["open"]);
 expect(missing.kind === "help", "open without dir is help");
 
+const ran = parseCli([
+  "run",
+  "/tmp/gauge",
+  "gauge-usb.world.json",
+  "--ms",
+  "3000",
+]);
+expect(
+  ran.kind === "run" &&
+    ran.project === resolve("/tmp/gauge") &&
+    ran.world === "gauge-usb.world.json" &&
+    ran.ms === 3000,
+  "run --ms"
+);
+const ranDefault = parseCli(["run", "/tmp/gauge", "gauge-usb.world.json"]);
+expect(
+  ranDefault.kind === "run" && ranDefault.ms === undefined,
+  "run default span"
+);
+expect(
+  parseCli(["run", "/tmp/gauge"]).kind === "help",
+  "run without a world is help"
+);
+
 const bin = readFileSync(
   new URL("../bin/sfab-bench.mjs", import.meta.url),
   "utf8"
