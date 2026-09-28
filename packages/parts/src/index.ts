@@ -53,6 +53,7 @@ export {
 } from "./nets";
 export { pathRefOf } from "./path-ref";
 export { buildReport } from "./report";
+export { sha256Bytes, sha256Hex } from "./sha256";
 export {
   type AxisRequest,
   canonicalJson,

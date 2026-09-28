@@ -21,7 +21,8 @@
     "./analog-pin": "./src/analog-pin.ts",
     "./capture": "./src/capture.ts",
     "./hinge-capture": "./src/body/hinge-capture.ts",
-    "./env": "./src/env.ts"
+    "./env": "./src/env.ts",
+    "./sim": "./src/sim.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

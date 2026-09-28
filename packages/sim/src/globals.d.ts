@@ -6,3 +6,4 @@ declare class TextEncoder {
   encode(input?: string): Uint8Array;
 }
 declare function structuredClone<T>(value: T): T;
+declare const console: { log(...args: unknown[]): void };

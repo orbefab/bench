@@ -56,7 +56,11 @@ function utf8(text: string): Uint8Array {
 }
 
 export function sha256Hex(text: string): string {
-  const bytes = utf8(text);
+  return sha256Bytes(utf8(text));
+}
+
+/** SHA-256 of raw bytes, hex. Same bytes as `createHash("sha256").update(bytes)`. */
+export function sha256Bytes(bytes: Uint8Array): string {
   const bitLen = bytes.length * 8;
   const extra = (56 - ((bytes.length + 1) % 64) + 64) % 64;
   const total = bytes.length + 1 + extra + 8;
