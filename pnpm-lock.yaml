@@ -175,6 +175,9 @@ importers:
       '@sfab-bench/parts':
         specifier: workspace:*
         version: link:../../packages/parts
+      '@sfab-bench/sim':
+        specifier: workspace:*
+        version: link:../../packages/sim
       '@vitejs/plugin-basic-ssl':
         specifier: ^2.1.0
         version: 2.3.0(vite@7.3.6(@types/node@22.20.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -406,6 +409,31 @@ importers:
       '@sfab-bench/contract':
         specifier: workspace:*
         version: link:../contract
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
+  packages/sim:
+    dependencies:
+      '@mujoco/mujoco':
+        specifier: 3.14.0
+        version: 3.14.0
+      '@sfab-bench/contract':
+        specifier: workspace:*
+        version: link:../contract
+      '@sfab-bench/engine-body':
+        specifier: workspace:*
+        version: link:../engine-body
+      '@sfab-bench/engine-circuit':
+        specifier: workspace:*
+        version: link:../engine-circuit
+      '@sfab-bench/engine-mcu':
+        specifier: workspace:*
+        version: link:../engine-mcu
+      '@sfab-bench/parts':
+        specifier: workspace:*
+        version: link:../parts
     devDependencies:
       typescript:
         specifier: ^5.9.2

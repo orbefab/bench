@@ -1,0 +1,1441 @@
+/** The run's plan, built from loadWorldV2 (layered-sim E7, 318b899). */
+
+import {
+  arduinoPinBit,
+  type BehaviourImpl,
+  type BodyImpl,
+  type Diagnostic,
+  type PortDecl,
+  type Pose,
+  type RunReport,
+  SUPPLY_FORMS,
+  type VisualImpl,
+  type WorldError,
+  type WorldPrimitive,
+  type WorldStepProp,
+  type WorldTarget,
+} from "@sfab-bench/contract";
+import { collapse } from "@sfab-bench/engine-body";
+import { type AvrPinParams, avrPinParams } from "@sfab-bench/engine-circuit";
+import {
+  type BatteryParams,
+  batteryFrom,
+  class2BoardNetlist,
+  envelopeOf,
+  gearTrainErrors,
+  isScalarParam,
+  type LiveInstance,
+  type LiveNet,
+  type LoadResult,
+  loadWorldV2,
+  ocvAt,
+  pathRefOf,
+  siValue,
+  tableLawOf,
+  type Wire,
+  type WireEnd,
+} from "@sfab-bench/parts";
+
+import {
+  type BoardStamp,
+  type CircuitInst,
+  circuitNumbers,
+  connectorPort,
+  groundPorts,
+  isCircuitForm,
+  ldoLaw,
+  liveNets,
+  railPowerPorts,
+  stampBoard,
+  touches,
+} from "./circuit-stamp";
+import { requirePlanEnv } from "./env";
+import { chipFacts } from "./power-path";
+import type { RangerLaw, RunRanger } from "./ranger";
+import { readTargets } from "./targets";
+
+/** Shown where a world fails to load, in the UI and in the agent tools. */
+export const WORLD_V1_MESSAGE = "World v1 is no longer supported";
+
+const IDENTITY: Pose = {
+  position: [0, 0, 0],
+  rotation: [1, 0, 0, 0],
+};
+
+/**
+ * Pin the run's wiring already understands. Taken from the part type's
+ * ports, not from the old catalog tables.
+ */
+export type RunPin = {
+  kind: "gpio" | "power" | "ground" | "signal";
+  output: boolean;
+  digital: boolean;
+  pwm: boolean;
+};
+
+export type RunMotor = {
+  /** V·s/rad. */
+  k: number;
+  /** Ohms. */
+  resistance: number;
+  efficiency: number;
+  /** Radians of angle error that saturates the drive. */
+  eSat: number;
+  /** Amperes drawn by the electronics, added to the bridge draw. */
+  quiescent: number;
+  /** kg·m² on the driven joint. */
+  armature: number;
+  /** N·m Coulomb friction on the driven joint. */
+  frictionloss: number;
+  /** N·m·s/rad viscous damping on the driven joint. */
+  damping: number;
+};
+
+export type RunRobot = {
+  id: string;
+  /** Path relative to the world file. */
+  urdf: string;
+  pose: Pose;
+};
+
+export type RunBoard = {
+  id: string;
+  /** Part type id, for example `arduino-uno-r3`. */
+  type: string;
+  chip: string;
+  /** Path relative to the world file. */
+  firmware: string;
+  source?: string;
+  pose: Pose;
+  size: [number, number, number];
+  pins: Record<string, RunPin>;
+  /** Pins a supply may power. On the Uno that is `5V`, not `VIN`. */
+  powerInputs: readonly string[];
+  /**
+   * The supply that powers this board is on `VIN`, and not on the 5V
+   * rail. The worker attaches there so the onboard regulator runs.
+   */
+  vinFeed: boolean;
+  voltagePin: string;
+  groundPin: string;
+  /** Amperes drawn by the board, independent of voltage. */
+  current: number;
+  /**
+   * `path:uno-usb`, or null when this variant does not name that cable.
+   * A board netlist carries `stamp` either way.
+   */
+  boardCircuit: string | null;
+  /** The selected variant has a board netlist. */
+  hasNetlist: boolean;
+  /**
+   * Circuit parts on this board's nets, including its board netlist.
+   * Absent when there are none.
+   */
+  stamp?: BoardStamp;
+  brownoutVoltage: number;
+  brownoutAssertVoltage: number;
+  brownoutReleaseVoltage: number;
+  operatingVoltage: number;
+  supply: { min: number; max: number };
+  /** `avr-pin@1`. High is the board node. The ADC and the Nano D13 stamp use it. */
+  pin: AvrPinParams;
+};
+
+export type RunLevel = {
+  path: string;
+  axis: "behaviour" | "body" | "visual";
+  class: number | null;
+  variant: string | null;
+  reason: string;
+};
+
+export type RunSupply = {
+  id: string;
+  /** `usb-a-port` or `bench-supply-cv-cc`. */
+  type: string;
+  voltage: number;
+  currentLimit: number;
+  rSeries: number;
+  positivePin: string;
+  groundPin: string;
+  /** Cable family on the positive port. Null is the header. */
+  connector: string | null;
+  /** Set when this supply is `battery@1`. The rail stamps this, not `voltage`. */
+  battery?: BatteryParams;
+  /**
+   * Circuit parts on this supply when no firmware board feeds it.
+   * Absent when a board stamp already holds those parts, or there are none.
+   */
+  stamp?: BoardStamp;
+  pins: Record<string, RunPin>;
+};
+
+/**
+ * A part visual `{ kind: "box", size }` drawn at the instance pose.
+ * A URDF body is not here: those meshes are already the robot. A board
+ * is not here either: its box is `RunBoard.size`.
+ */
+export type RunBox = {
+  id: string;
+  pose: Pose;
+  size: [number, number, number];
+  pick: "part" | "supply";
+};
+
+export type RunPart = {
+  id: string;
+  /** Short name the cards and the recording already use, for example `sg90`. */
+  model: string;
+  /** Part type id, for example `hobby-servo-3wire`. */
+  type: string;
+  pins: Record<string, RunPin>;
+  drive: { kind: "servo"; pin: string };
+  supply?: { nominal: number; min: number; max: number };
+  torqueNm?: number;
+  motor?: RunMotor;
+  drives?: { robot: string; joint: string };
+  /**
+   * Set when the body is a `hinge@1` snapshot. The run checks joint
+   * speed and actuator torque against these bounds.
+   */
+  bodySnapshot?: {
+    ref: string;
+    bounds: Record<string, [number, number]>;
+  };
+};
+
+export type { RunRanger };
+
+/**
+ * What one run executes. Not a file format. Instance ids are the ones
+ * written in the scene (`arm`, `uno`, `servo`), so wires stay `uno.D9`.
+ */
+export type RunPlan = {
+  environment: {
+    ground: { plane: boolean };
+    /** Metres per second squared. Passed to the MuJoCo model. */
+    gravity: [number, number, number];
+    primitives?: WorldPrimitive[];
+    stepProps?: WorldStepProp[];
+    /** Mocap bodies. Empty when the world names none. */
+    targets: WorldTarget[];
+  };
+  robots: RunRobot[];
+  boards: RunBoard[];
+  supplies: RunSupply[];
+  parts: RunPart[];
+  /**
+   * Circuit and snapshot leaves that sit on the scene, listed with the
+   * servos and sensors. Nested board parts stay on the board card.
+   */
+  leaves?: { id: string; model: string }[];
+  /**
+   * Visual boxes for parts and supplies. Absent on a hand-built plan.
+   * A body that is a URDF is omitted so the robot meshes are not drawn twice.
+   */
+  boxes?: RunBox[];
+  /**
+   * Ultrasonic rangers. Absent on a plan built by hand for a pin test.
+   * `build` always sets this, possibly empty.
+   */
+  rangers?: RunRanger[];
+  /** Electrical pairs only. Mechanical links are `parts[].drives`. */
+  wires: [string, string][];
+  /** The scene's own electrical wires as authored, for the cards. */
+  shownWires: [string, string][];
+  /** Resolved level per instance per axis. Absent on a hand-built plan. */
+  levels?: RunLevel[];
+  /** Run report from the loader. The worker keeps it and amends envelope warnings. */
+  report?: RunReport | null;
+};
+
+export type PlanResult =
+  | { ok: true; plan: RunPlan }
+  | { ok: false; errors: WorldError[] };
+
+function catalogDir(): string {
+  return requirePlanEnv().catalogDir();
+}
+
+function schema(message: string, filePath = ""): WorldError {
+  return { code: "schema", path: filePath, message };
+}
+
+function fromDiag(diag: Diagnostic): WorldError {
+  const missing = diag.message.includes("does not exist");
+  return {
+    code: missing ? "missing-file" : "schema",
+    path: diag.path,
+    message: diag.message,
+  };
+}
+
+function opened(
+  project: string,
+  worldRel: string
+): { root: string; abs: string } | { error: string } {
+  let root: string;
+  try {
+    root = requirePlanEnv().realpath(requirePlanEnv().resolve(project));
+  } catch {
+    return {
+      error: "The project folder is gone. Hint: open the folder again.",
+    };
+  }
+  const rel = worldRel.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  if (
+    !rel ||
+    rel.split("/").includes("..") ||
+    requirePlanEnv().isAbsolute(rel)
+  ) {
+    return { error: "path escapes the project" };
+  }
+  const abs = requirePlanEnv().resolve(root, rel);
+  if (!requirePlanEnv().exists(abs)) {
+    return {
+      error: `World "${worldRel}" does not exist. Hint: the path is relative to the project.`,
+    };
+  }
+  let real: string;
+  try {
+    real = requirePlanEnv().realpath(abs);
+  } catch {
+    return {
+      error: `World "${worldRel}" does not exist. Hint: the path is relative to the project.`,
+    };
+  }
+  const back = requirePlanEnv().relative(root, real);
+  if (back.startsWith("..") || requirePlanEnv().isAbsolute(back)) {
+    return { error: "path escapes the project" };
+  }
+  return { root, abs: real };
+}
+
+function worldRelative(
+  assetRoot: string,
+  worldDir: string,
+  file: string
+): string {
+  const io = requirePlanEnv();
+  const abs = io.resolve(assetRoot, file);
+  const rel = io.relative(worldDir, abs).split(io.sep).join("/");
+  if (!rel || rel.startsWith("..") || io.isAbsolute(rel)) {
+    return file.split(io.sep).join("/");
+  }
+  return rel;
+}
+
+function shortName(partId: string): string {
+  const slash = partId.lastIndexOf("/");
+  const at = partId.indexOf("@");
+  const name = partId.slice(slash + 1, at === -1 ? undefined : at);
+  return name || partId;
+}
+
+function pinOf(decl: PortDecl): RunPin | null {
+  if (decl.domain !== "electrical") return null;
+  if (decl.role === "ground") {
+    return { kind: "ground", output: false, digital: false, pwm: false };
+  }
+  if (decl.role === "power") {
+    return {
+      kind: "power",
+      output: decl.direction === "out",
+      digital: false,
+      pwm: false,
+    };
+  }
+  if (decl.role === "logic" && decl.direction === "inout") {
+    return {
+      kind: "gpio",
+      output: true,
+      digital: true,
+      pwm: decl.pwm === true,
+    };
+  }
+  if (decl.role === "logic" && decl.direction === "in") {
+    return { kind: "signal", output: false, digital: false, pwm: false };
+  }
+  return { kind: "signal", output: false, digital: false, pwm: false };
+}
+
+function pinsOf(ports: Record<string, PortDecl>): Record<string, RunPin> {
+  const pins: Record<string, RunPin> = {};
+  for (const [name, decl] of Object.entries(ports)) {
+    if (decl.internal) continue;
+    const pin = pinOf(decl);
+    if (pin) pins[name] = pin;
+  }
+  return pins;
+}
+
+function formNumbers(inst: LiveInstance): Record<string, number> | null {
+  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+  if (!behaviour || behaviour.kind !== "form") return null;
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(behaviour.params)) {
+    if (isScalarParam(value)) out[key] = siValue(value);
+  }
+  for (const [key, value] of Object.entries(inst.params)) {
+    if (typeof value === "number" && Object.hasOwn(out, key)) out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * A lumped servo wired to another part's URDF still gets this box: the
+ * robot meshes belong to that other part. When this part's own body is
+ * a URDF, the meshes are already drawn, so the visual box is skipped.
+ * A placeholder mesh uses the nearest lower class whose visual is a box.
+ * A mesh file is left undrawn.
+ */
+function pushBox(boxes: RunBox[], inst: LiveInstance, pick: RunBox["pick"]) {
+  const drawn = drawnBox(inst);
+  if (!drawn) return;
+  boxes.push({
+    id: inst.path,
+    pose: poseOf(inst),
+    size: drawn.size,
+    pick,
+  });
+  if (drawn.fallbackClass !== null) {
+    inst.axes.visual.reason = `placeholder mesh; drawn as the class-${drawn.fallbackClass} box`;
+  }
+}
+
+function finiteSize(size: readonly number[]): boolean {
+  return (
+    size.length >= 3 &&
+    size.slice(0, 3).every((n) => typeof n === "number" && Number.isFinite(n))
+  );
+}
+
+/**
+ * The box this part draws. A resolved box is itself. A placeholder mesh
+ * is the nearest lower class that is a box. Anything else, including a
+ * mesh file and a URDF body, draws nothing.
+ */
+function drawnBox(inst: LiveInstance): {
+  size: [number, number, number];
+  fallbackClass: number | null;
+} | null {
+  const body = inst.axes.body.impl as BodyImpl | null;
+  if (body?.kind === "urdf") return null;
+  const visual = inst.axes.visual.impl as VisualImpl | null;
+  if (visual?.kind === "box") {
+    if (!finiteSize(visual.size)) return null;
+    return {
+      size: [visual.size[0], visual.size[1], visual.size[2]],
+      fallbackClass: null,
+    };
+  }
+  if (visual?.kind !== "mesh" || visual.placeholder !== true) return null;
+  const resolved = inst.axes.visual.class;
+  if (resolved === null) return null;
+  const map = inst.part.axes?.visual;
+  for (let cls = resolved - 1; cls >= 0; cls--) {
+    const slot = map?.[String(cls) as "0"];
+    if (!slot) continue;
+    const variant = slot.variants[slot.default];
+    if (variant?.kind !== "box" || !finiteSize(variant.size)) continue;
+    return {
+      size: [variant.size[0], variant.size[1], variant.size[2]],
+      fallbackClass: cls,
+    };
+  }
+  return null;
+}
+
+/** Copy a placeholder draw note onto the report. The plan reads the axis. */
+function notePlaceholderBoxes(loaded: LoadResult): void {
+  for (const inst of loaded.resolved) {
+    const reason = inst.axes.visual.reason;
+    if (!reason.startsWith("placeholder mesh;")) continue;
+    const row = loaded.report?.levels.find(
+      (item) => item.path === inst.path && item.axis === "visual"
+    );
+    if (row) row.reason = reason;
+  }
+}
+
+function poseOf(inst: LiveInstance): Pose {
+  if (!inst.pose) return IDENTITY;
+  return {
+    position: [...inst.pose.position] as Pose["position"],
+    rotation: [...inst.pose.rotation] as Pose["rotation"],
+  };
+}
+
+function cannot(inst: LiveInstance, detail: string): Diagnostic {
+  return {
+    severity: "error",
+    path: inst.path,
+    port: "behaviour",
+    quantity: "Level",
+    left: inst.axes.behaviour.label,
+    right: "runnable",
+    message: `${inst.path} port behaviour quantity Level: ${detail} (${inst.axes.behaviour.label} vs runnable)`,
+  };
+}
+
+function electricalWires(nets: LiveNet[]): [string, string][] {
+  const wires: [string, string][] = [];
+  for (const net of nets) {
+    if (net.domain !== "electrical" || net.ports.length < 2) continue;
+    const first = net.ports[0];
+    if (!first) continue;
+    for (let i = 1; i < net.ports.length; i++) {
+      const other = net.ports[i];
+      if (!other) continue;
+      wires.push([
+        `${first.path}.${first.port}`,
+        `${other.path}.${other.port}`,
+      ]);
+    }
+  }
+  return wires;
+}
+
+function authoredWires(nets: LiveNet[], wires: Wire[]): [string, string][] {
+  const electrical = new Set<string>();
+  for (const net of nets) {
+    if (net.domain !== "electrical") continue;
+    for (const port of net.ports) electrical.add(`${port.path}.${port.port}`);
+  }
+  const shown = (end: WireEnd) =>
+    !end.path.includes(".") && electrical.has(end.full);
+  return wires
+    .filter((wire) => shown(wire.a) && shown(wire.b))
+    .map((wire) => [wire.a.full, wire.b.full]);
+}
+
+function drivesFor(
+  inst: LiveInstance,
+  nets: LiveNet[],
+  instances: LiveInstance[]
+): { robot: string; joint: string } | undefined {
+  for (const net of nets) {
+    if (net.domain !== "rotational") continue;
+    const shaft = net.ports.find(
+      (port) => port.path === inst.path && port.port === "shaft"
+    );
+    if (!shaft) continue;
+    const joint = net.ports.find((port) => port.path !== inst.path);
+    if (!joint) continue;
+    const robot = instances.find((item) => item.path === joint.path);
+    if (!robot) continue;
+    const robotBody = robot.axes.body.impl as BodyImpl | null;
+    if (robotBody?.kind !== "urdf") continue;
+    return { robot: robot.path, joint: joint.port };
+  }
+  return undefined;
+}
+
+function rangePair(
+  range: readonly [unknown, unknown] | undefined
+): [number, number] | null {
+  if (!range) return null;
+  const low = range[0];
+  const high = range[1];
+  if (typeof low === "number" && typeof high === "number") return [low, high];
+  if (
+    low &&
+    high &&
+    typeof low === "object" &&
+    typeof high === "object" &&
+    "v" in low &&
+    "v" in high &&
+    typeof low.v === "number" &&
+    typeof high.v === "number"
+  ) {
+    return [low.v, high.v];
+  }
+  return null;
+}
+
+function digitalPeer(
+  inst: LiveInstance,
+  port: string,
+  loaded: LoadResult
+): { boardId: string; bit: number } | null {
+  for (const wire of loaded.wires) {
+    const other =
+      wire.a.path === inst.path && wire.a.port === port
+        ? wire.b
+        : wire.b.path === inst.path && wire.b.port === port
+          ? wire.a
+          : null;
+    if (!other) continue;
+    const board = loaded.resolved.find((item) => item.path === other.path);
+    const boardBehaviour = board?.axes.behaviour.impl as BehaviourImpl | null;
+    if (!board || boardBehaviour?.kind !== "firmware") continue;
+    const bit = arduinoPinBit(other.port);
+    if (bit === undefined) continue;
+    return { boardId: board.path, bit };
+  }
+  return null;
+}
+
+function circuitInstOf(inst: LiveInstance): CircuitInst | null {
+  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+  if (
+    !behaviour ||
+    behaviour.kind !== "form" ||
+    !isCircuitForm(behaviour.form)
+  ) {
+    return null;
+  }
+  const params = circuitNumbers(behaviour, inst.params);
+  if (!params) return null;
+  const ports: Record<string, string> = {};
+  for (const [name, decl] of Object.entries(inst.type.ports)) {
+    if (decl.internal) continue;
+    ports[name] = `${inst.path}.${name}`;
+  }
+  const ldo = ldoLaw(behaviour, inst.params);
+  if (ldo === null) return null;
+  return {
+    path: inst.path,
+    form: behaviour.form,
+    typeId: inst.type.id,
+    params,
+    ports,
+    ...(ldo ? { ldo } : {}),
+  };
+}
+
+function supplyGround(
+  board: RunBoard,
+  supplies: RunSupply[],
+  nets: LiveNet[]
+): string {
+  const net = nets.find((item) =>
+    item.ports.some(
+      (port) => port.path === board.id && port.port === board.voltagePin
+    )
+  );
+  if (net) {
+    for (const supply of supplies) {
+      const hit = net.ports.some(
+        (port) => port.path === supply.id && port.port === supply.positivePin
+      );
+      if (!hit) continue;
+      return `${supply.id}.${supply.groundPin}`;
+    }
+  }
+  return `${board.id}.${board.groundPin}`;
+}
+
+/**
+ * The power input the supply is wired to, when that port's rating holds
+ * the chip rail. `VIN` is 7–12 V, so it is not a 5 V rail. With nothing
+ * wired, the matching port is still the input (today, `5V`).
+ */
+function chosenPowerPort(
+  inst: LiveInstance,
+  loaded: LoadResult,
+  railVoltage: number
+): string | null {
+  const candidates = railPowerPorts(inst.type.ports, railVoltage);
+  for (const name of candidates) {
+    const net = loaded.nets.find((item) =>
+      item.ports.some((port) => port.path === inst.path && port.port === name)
+    );
+    if (!net) continue;
+    const fed = net.ports.some((port) => {
+      if (port.path === inst.path) return false;
+      const other = loaded.resolved.find((item) => item.path === port.path);
+      const behaviour = other ? selectedBehaviour(other) : null;
+      return (
+        behaviour?.kind === "form" &&
+        (SUPPLY_FORMS as readonly string[]).includes(behaviour.form)
+      );
+    });
+    if (fed) return name;
+  }
+  return candidates[0] ?? null;
+}
+
+type JointTerms = {
+  armature: number;
+  damping: number;
+  frictionloss: number;
+  bodySnapshot?: RunPart["bodySnapshot"];
+};
+
+/** Lumped joint, hinge@1 snapshot, or the rigid collapse of a gear train. */
+function jointOf(inst: LiveInstance, loaded: LoadResult): JointTerms | null {
+  const body = inst.axes.body.impl as BodyImpl | null;
+  if (!body) return null;
+  if (body.kind === "lumped" && body.joint) {
+    return {
+      armature: body.joint.armature ?? 0,
+      damping: body.joint.damping ?? 0,
+      frictionloss: body.joint.frictionloss ?? 0,
+    };
+  }
+  if (body.kind === "gear-train") {
+    if (gearTrainErrors(inst.part.id, body).length > 0) return null;
+    const lumped = collapse(body);
+    return {
+      armature: lumped.armature,
+      damping: lumped.damping,
+      frictionloss: lumped.frictionloss,
+    };
+  }
+  if (body.kind !== "snapshot") return null;
+  const found = loaded.snapshots.find((row) => row.id === body.ref);
+  const ran = loaded.snapshotRuns.some(
+    (row) =>
+      row.path === inst.path && row.axis === "body" && row.ref === body.ref
+  );
+  if (!found || !ran || found.file.form !== "hinge@1") return null;
+  const armature = numberParam(found.file.params.armature);
+  const damping = numberParam(found.file.params.damping);
+  const frictionloss = numberParam(found.file.params.frictionloss);
+  if (armature === null || damping === null || frictionloss === null) {
+    return null;
+  }
+  return {
+    armature,
+    damping,
+    frictionloss,
+    bodySnapshot: {
+      ref: body.ref,
+      bounds: boundPairs(found.file.envelope.bounds),
+    },
+  };
+}
+
+function numberParam(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function boundPairs(
+  bounds: Record<string, unknown>
+): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  for (const [key, range] of Object.entries(bounds)) {
+    if (!Array.isArray(range) || range.length < 2) continue;
+    const lo = range[0];
+    const hi = range[1];
+    if (typeof lo !== "number" || typeof hi !== "number") continue;
+    out[key] = [siValue(lo), siValue(hi)];
+  }
+  return out;
+}
+
+function selectedBehaviour(inst: LiveInstance): BehaviourImpl | null {
+  const behaviour = inst.axes.behaviour.impl;
+  if (!behaviour || typeof behaviour !== "object") return null;
+  return behaviour as BehaviourImpl;
+}
+
+/** Why a leaf cannot run. The path is already on the diagnostic. */
+function runtimeGap(inst: LiveInstance): string {
+  if (inst.declaredOnly) return "no runtime for a declared-only part";
+  const behaviour = selectedBehaviour(inst);
+  if (!behaviour) return "no runtime";
+  if (behaviour.kind === "form") return `no runtime for form ${behaviour.form}`;
+  return `no runtime for ${behaviour.kind}`;
+}
+
+function suppliesReached(
+  part: CircuitInst,
+  supplies: RunSupply[],
+  nets: { ports: { full: string; path: string; port: string }[] }[]
+): string[] {
+  const fulls = new Set(Object.values(part.ports));
+  const ids = new Set<string>();
+  for (const net of nets) {
+    if (!net.ports.some((port) => fulls.has(port.full))) continue;
+    for (const supply of supplies) {
+      const hit = net.ports.some(
+        (port) =>
+          port.path === supply.id &&
+          (port.port === supply.positivePin || port.port === supply.groundPin)
+      );
+      if (hit) ids.add(supply.id);
+    }
+  }
+  return [...ids].sort();
+}
+
+function supplyOnPort(
+  boardId: string,
+  port: string,
+  supplies: RunSupply[],
+  nets: { ports: { path: string; port: string }[] }[]
+): string | null {
+  for (const net of nets) {
+    const onBoard = net.ports.some(
+      (item) => item.path === boardId && item.port === port
+    );
+    if (!onBoard) continue;
+    for (const supply of supplies) {
+      const hit = net.ports.some(
+        (item) => item.path === supply.id && item.port === supply.positivePin
+      );
+      if (hit) return supply.id;
+    }
+  }
+  return null;
+}
+
+function boardSupplyId(
+  board: RunBoard,
+  supplies: RunSupply[],
+  nets: { ports: { path: string; port: string }[] }[]
+): string | null {
+  return (
+    supplyOnPort(board.id, board.voltagePin, supplies, nets) ??
+    supplyOnPort(board.id, "VIN", supplies, nets)
+  );
+}
+
+/** A supply with circuit parts and no firmware board. Ground is `"0"`. */
+function stampSupply(
+  supply: RunSupply,
+  parts: readonly CircuitInst[],
+  nets: Parameters<typeof stampBoard>[0]["nets"]
+): BoardStamp | null {
+  const ports: Record<string, PortDecl> = {
+    [supply.positivePin]: {
+      domain: "electrical",
+      role: "power",
+      direction: "out",
+    },
+    [supply.groundPin]: {
+      domain: "electrical",
+      role: "ground",
+      direction: "passive",
+    },
+  };
+  return stampBoard({
+    boardId: supply.id,
+    netlist: false,
+    ports,
+    supplyGround: `${supply.id}.${supply.groundPin}`,
+    powerPort: supply.positivePin,
+    resetPort: null,
+    usbPort: null,
+    resetFraction: null,
+    parts,
+    nets,
+  });
+}
+
+function rangerLaw(numbers: Record<string, number>): RangerLaw {
+  return {
+    c: numbers.c ?? 0,
+    rangeMin: numbers.rangeMin ?? 0,
+    rangeMax: numbers.rangeMax ?? 0,
+    beamHalf: numbers.beamHalf ?? 0,
+    trigMin: numbers.trigMin ?? 0,
+    echoDelay: numbers.echoDelay ?? 0,
+    echoTimeout: numbers.echoTimeout ?? 0,
+    working: numbers.working ?? 0,
+    quiescent: numbers.quiescent ?? 0,
+    vMin: numbers.vMin ?? 0,
+    face: numbers.face ?? 0,
+  };
+}
+
+function build(
+  loaded: LoadResult,
+  assetRoot: string,
+  worldDir: string
+): { plan: RunPlan | null; diags: Diagnostic[] } {
+  const world = loaded.world;
+  if (!world) return { plan: null, diags: loaded.diagnostics };
+  const diags: Diagnostic[] = [];
+  const robots: RunRobot[] = [];
+  const boards: RunBoard[] = [];
+  const supplies: RunSupply[] = [];
+  const parts: RunPart[] = [];
+  const leaves: { id: string; model: string }[] = [];
+  const rangers: RunRanger[] = [];
+  const boxes: RunBox[] = [];
+  const circuits: CircuitInst[] = [];
+
+  // An if-chain on the selected behaviour. A composite is a shell and
+  // is skipped. What runs: firmware; form resistor@1, capacitor@1 and
+  // diode@1; form multibody@1 with a urdf body; form thevenin-limit@1;
+  // form dc-motor@1 with a lumped joint, a hinge@1 snapshot, or the
+  // collapse of a gear train; form ranger@1. Anything else is a plan
+  // error that names the path.
+  for (const inst of loaded.resolved) {
+    if (inst.path === "$root") continue;
+    const behaviour = selectedBehaviour(inst);
+    if (behaviour?.kind === "composite") continue;
+    const circuit = circuitInstOf(inst);
+    if (circuit) {
+      circuits.push(circuit);
+      if (!inst.path.includes(".")) {
+        leaves.push({ id: inst.path, model: shortName(inst.part.id) });
+      }
+      if (inst.pose) pushBox(boxes, inst, "part");
+      continue;
+    }
+    const typeId = inst.type.id;
+    const bodyImpl = inst.axes.body.impl as BodyImpl | null;
+    if (behaviour?.kind === "form" && behaviour.form === "multibody@1") {
+      if (bodyImpl?.kind !== "urdf") {
+        diags.push(cannot(inst, "the run needs a URDF body"));
+        continue;
+      }
+      const override = inst.params.urdf;
+      const file = typeof override === "string" ? override : bodyImpl.file;
+      if (!file) {
+        diags.push(cannot(inst, "the run needs a URDF body"));
+        continue;
+      }
+      robots.push({
+        id: inst.path,
+        urdf: worldRelative(assetRoot, worldDir, file),
+        pose: poseOf(inst),
+      });
+      continue;
+    }
+    if (behaviour?.kind === "firmware") {
+      const boardCircuit = behaviour.boardCircuit ?? null;
+      const pathName = pathRefOf(boardCircuit);
+      if (boardCircuit !== null && pathName !== "uno-usb") {
+        diags.push(cannot(inst, `unknown board circuit ${boardCircuit}`));
+        continue;
+      }
+      const facts = chipFacts(behaviour.chip);
+      if (!facts) {
+        diags.push(cannot(inst, `unknown chip "${behaviour.chip}"`));
+        continue;
+      }
+      const alias = pathName === "uno-usb" && behaviour.board === undefined;
+      if (alias && !class2BoardNetlist(inst.part)) {
+        diags.push(
+          cannot(inst, `${inst.part.id} has no board netlist for path:uno-usb`)
+        );
+        continue;
+      }
+      const params = behaviour.params ?? {};
+      const image = behaviour.imageParam
+        ? inst.params[behaviour.imageParam]
+        : undefined;
+      if (typeof image !== "string") {
+        diags.push(cannot(inst, "the board has no firmware image"));
+        continue;
+      }
+      const visual = inst.axes.visual.impl as VisualImpl | null;
+      const size =
+        visual?.kind === "box"
+          ? ([...visual.size] as [number, number, number])
+          : ([0, 0, 0] as [number, number, number]);
+      const powerName = chosenPowerPort(inst, loaded, facts.railVoltage);
+      if (!powerName) {
+        diags.push(cannot(inst, "the board has no power input"));
+        continue;
+      }
+      const groundName = groundPorts(inst.type.ports)[0];
+      if (!groundName) {
+        diags.push(cannot(inst, "the board has no ground port"));
+        continue;
+      }
+      const rail = rangePair(inst.type.ports[powerName]?.ratings?.voltage) ?? [
+        facts.railVoltage,
+        facts.railVoltage,
+      ];
+      const source = inst.params.source;
+      boards.push({
+        id: inst.path,
+        type: typeId,
+        chip: behaviour.chip,
+        firmware: worldRelative(assetRoot, worldDir, image),
+        ...(typeof source === "string"
+          ? { source: worldRelative(assetRoot, worldDir, source) }
+          : {}),
+        pose: poseOf(inst),
+        size,
+        pins: pinsOf(inst.type.ports),
+        powerInputs: [powerName],
+        vinFeed: false,
+        voltagePin: powerName,
+        groundPin: groundName,
+        current: params.quiescent ?? 0,
+        boardCircuit,
+        hasNetlist: behaviour.board !== undefined || alias,
+        brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
+        brownoutAssertVoltage:
+          params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,
+        brownoutReleaseVoltage:
+          params.brownoutReleaseVoltage ?? Number.POSITIVE_INFINITY,
+        operatingVoltage: rail[0],
+        supply: { min: rail[0], max: rail[1] },
+        pin: avrPinParams(params),
+      });
+      continue;
+    }
+    if (behaviour?.kind === "form" && behaviour.form === "thevenin-limit@1") {
+      const numbers = formNumbers(inst);
+      if (!numbers) {
+        diags.push(cannot(inst, "the run needs thevenin-limit@1"));
+        continue;
+      }
+      const pins = pinsOf(inst.type.ports);
+      const positive = Object.entries(pins).find(
+        ([, pin]) => pin.kind === "power" && pin.output
+      )?.[0];
+      const ground = Object.entries(pins).find(
+        ([, pin]) => pin.kind === "ground"
+      )?.[0];
+      if (!positive) {
+        diags.push(cannot(inst, `${inst.part.id} has no power port`));
+        continue;
+      }
+      if (!ground) {
+        diags.push(cannot(inst, `${inst.part.id} has no ground port`));
+        continue;
+      }
+      supplies.push({
+        id: inst.path,
+        type: typeId,
+        voltage: numbers.V ?? 0,
+        currentLimit: numbers.Ilimit ?? 0,
+        rSeries: numbers.Rs ?? 0,
+        positivePin: positive,
+        groundPin: ground,
+        connector: inst.type.ports[positive]?.connector ?? null,
+        pins,
+      });
+      pushBox(boxes, inst, "supply");
+      continue;
+    }
+    if (behaviour?.kind === "form" && behaviour.form === "battery@1") {
+      const built = batteryFrom(behaviour.params, inst.params);
+      if (!built.ok) {
+        diags.push(cannot(inst, built.error));
+        continue;
+      }
+      const cell = built.params;
+      const pins = pinsOf(inst.type.ports);
+      const positive = Object.entries(pins).find(
+        ([, pin]) => pin.kind === "power" && pin.output
+      )?.[0];
+      const ground = Object.entries(pins).find(
+        ([, pin]) => pin.kind === "ground"
+      )?.[0];
+      if (!positive) {
+        diags.push(cannot(inst, `${inst.part.id} has no power port`));
+        continue;
+      }
+      if (!ground) {
+        diags.push(cannot(inst, `${inst.part.id} has no ground port`));
+        continue;
+      }
+      const voc = ocvAt(cell.ocv, cell.soc0);
+      supplies.push({
+        id: inst.path,
+        type: typeId,
+        voltage: voc,
+        currentLimit: cell.rInternal > 0 ? voc / cell.rInternal : 1,
+        rSeries: cell.rInternal,
+        positivePin: positive,
+        groundPin: ground,
+        connector: inst.type.ports[positive]?.connector ?? null,
+        pins,
+        battery: cell,
+      });
+      pushBox(boxes, inst, "supply");
+      continue;
+    }
+    if (behaviour?.kind === "form" && behaviour.form === "dc-motor@1") {
+      const numbers = formNumbers(inst);
+      const hinge = jointOf(inst, loaded);
+      if (
+        !numbers ||
+        inst.axes.behaviour.label !== "form dc-motor@1" ||
+        !hinge
+      ) {
+        diags.push(
+          cannot(inst, "the run needs dc-motor@1 and a lumped joint or a hinge")
+        );
+        continue;
+      }
+      const torque = rangePair(inst.part.ratings?.shaft?.torque);
+      const supply = rangePair(inst.part.ratings?.["V+"]?.voltage);
+      const drives = drivesFor(inst, loaded.nets, loaded.resolved);
+      parts.push({
+        id: inst.path,
+        model: shortName(inst.part.id),
+        type: typeId,
+        pins: pinsOf(inst.type.ports),
+        drive: { kind: "servo", pin: "signal" },
+        ...(supply
+          ? {
+              supply: {
+                nominal: supply[0],
+                min: supply[0],
+                max: supply[1],
+              },
+            }
+          : {}),
+        ...(torque ? { torqueNm: torque[1] } : {}),
+        motor: {
+          k: numbers.K ?? 0,
+          resistance: numbers.R ?? 0,
+          efficiency: numbers.efficiency ?? 0,
+          eSat: numbers.eSat ?? 0,
+          quiescent: numbers.quiescent ?? 0,
+          armature: hinge.armature,
+          frictionloss: hinge.frictionloss,
+          damping: hinge.damping,
+        },
+        ...(hinge.bodySnapshot ? { bodySnapshot: hinge.bodySnapshot } : {}),
+        ...(drives ? { drives } : {}),
+      });
+      pushBox(boxes, inst, "part");
+      continue;
+    }
+    if (behaviour?.kind === "form" && behaviour.form === "ranger@1") {
+      const numbers = formNumbers(inst);
+      if (!numbers) {
+        diags.push(cannot(inst, "the run needs ranger@1"));
+        continue;
+      }
+      // The ray uses this scene pose for the whole run. A sensor on a
+      // moving link is not supported yet.
+      rangers.push({
+        id: inst.path,
+        model: shortName(inst.part.id),
+        pose: poseOf(inst),
+        law: rangerLaw(numbers),
+        trig: digitalPeer(inst, "Trig", loaded),
+        echo: digitalPeer(inst, "Echo", loaded),
+      });
+      pushBox(boxes, inst, "part");
+      continue;
+    }
+    if (behaviour?.kind === "snapshot") {
+      const found = loaded.snapshots.find((row) => row.id === behaviour.ref);
+      const law = found ? tableLawOf(found.file) : null;
+      const envelope = found ? envelopeOf(found.file) : null;
+      const ran = loaded.snapshotRuns.some(
+        (row) => row.path === inst.path && row.ref === behaviour.ref
+      );
+      if (
+        !found ||
+        !law ||
+        !envelope ||
+        !ran ||
+        found.file.form !== "table@1"
+      ) {
+        diags.push(
+          cannot(inst, `snapshot ${behaviour.ref} did not load as table@1`)
+        );
+        continue;
+      }
+      for (const name of law.across) {
+        if (!inst.type.ports[name]) {
+          diags.push(
+            cannot(
+              inst,
+              `snapshot ${behaviour.ref} across port ${name} is not on ${inst.type.id}`
+            )
+          );
+        }
+      }
+      if (diags.some((diag) => diag.path === inst.path)) continue;
+      const ports: Record<string, string> = {};
+      for (const name of law.across) ports[name] = `${inst.path}.${name}`;
+      circuits.push({
+        path: inst.path,
+        form: "table@1",
+        typeId: inst.type.id,
+        params: {},
+        ports,
+        table: { ref: behaviour.ref, law, envelope },
+      });
+      if (!inst.path.includes(".")) {
+        leaves.push({ id: inst.path, model: shortName(inst.part.id) });
+      }
+      if (inst.pose) pushBox(boxes, inst, "part");
+      continue;
+    }
+    diags.push(cannot(inst, runtimeGap(inst)));
+  }
+
+  const nets = liveNets(loaded.nets);
+  const crowded = new Set<string>();
+  const loose = new Map<string, CircuitInst[]>();
+  /** A part that touches several boards on one supply is stamped once. */
+  const homeOf = new Map<string, string>();
+  const ownersOf = (part: CircuitInst): RunBoard[] => {
+    const nested = boards.filter(
+      (board) => part.path === board.id || part.path.startsWith(`${board.id}.`)
+    );
+    if (nested.length > 0) return nested;
+    return boards.filter((board) => touches(part, board.id, nets));
+  };
+  for (const part of circuits) {
+    const hit = ownersOf(part);
+    if (hit.length >= 2) {
+      const supplyIds = new Set(
+        hit
+          .map((board) => boardSupplyId(board, supplies, nets))
+          .filter((id): id is string => id !== null)
+      );
+      const reached = suppliesReached(part, supplies, nets);
+      if (supplyIds.size >= 2 || reached.length >= 2) {
+        crowded.add(part.path);
+        const names =
+          supplyIds.size >= 2
+            ? hit.map((board) => board.id).join(" and ")
+            : reached.join(" and ");
+        diags.push({
+          severity: "error",
+          path: part.path,
+          port: "nets",
+          quantity: "Part",
+          left: names,
+          right: "one board",
+          message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
+        });
+        continue;
+      }
+      const home = [...hit].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+      if (home) homeOf.set(part.path, home.id);
+      continue;
+    }
+    const reached = suppliesReached(part, supplies, nets);
+    if (reached.length >= 2) {
+      crowded.add(part.path);
+      const names = reached.join(" and ");
+      diags.push({
+        severity: "error",
+        path: part.path,
+        port: "nets",
+        quantity: "Part",
+        left: names,
+        right: "one supply",
+        message: `${part.path} sits between ${names}; a circuit part on two supplies is not in this run`,
+      });
+      continue;
+    }
+    if (reached.length === 0 && hit.length === 0) {
+      crowded.add(part.path);
+      diags.push({
+        severity: "error",
+        path: part.path,
+        port: "nets",
+        quantity: "Part",
+        left: part.path,
+        right: "a supply",
+        message: `${part.path} reaches no supply`,
+      });
+      continue;
+    }
+    if (hit.length === 0 && reached[0]) {
+      const list = loose.get(reached[0]) ?? [];
+      list.push(part);
+      loose.set(reached[0], list);
+    }
+  }
+  for (const board of boards) {
+    const onRail = supplyOnPort(board.id, board.voltagePin, supplies, nets);
+    const onVin = supplyOnPort(board.id, "VIN", supplies, nets);
+    // VIN feeds the regulator. Parts on the regulated port take this
+    // supply in the feed walk; their load sits on the 5V node.
+    board.vinFeed = onRail === null && onVin !== null;
+  }
+  const boardsOn = new Map<string, RunBoard[]>();
+  for (const board of boards) {
+    const supplyId = boardSupplyId(board, supplies, nets);
+    if (!supplyId) continue;
+    const list = boardsOn.get(supplyId) ?? [];
+    list.push(board);
+    boardsOn.set(supplyId, list);
+  }
+  const stampParts = circuits.filter((part) => !crowded.has(part.path));
+  const alsoByBoard = new Map<string, CircuitInst[]>();
+  for (const supply of supplies) {
+    const group = boardsOn.get(supply.id) ?? [];
+    const mine = loose.get(supply.id) ?? [];
+    if (mine.length === 0) continue;
+    if (group.length === 1) {
+      const only = group[0];
+      if (only) alsoByBoard.set(only.id, mine);
+      continue;
+    }
+    // Several boards on this supply share one rail. Loose parts are
+    // stamped once, on the lex-first board. A pair with no netlist and
+    // no snapshot still stamps them on the supply, as a v1 draft does.
+    if (group.some((board) => board.hasNetlist)) {
+      const home = [...group].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+      if (home) alsoByBoard.set(home.id, mine);
+      continue;
+    }
+    const stamp = stampSupply(supply, mine, nets);
+    if (stamp) supply.stamp = stamp;
+  }
+  for (const board of boards) {
+    const inst = loaded.resolved.find((item) => item.path === board.id);
+    if (!inst) continue;
+    const behaviour = inst ? selectedBehaviour(inst) : null;
+    const facts =
+      behaviour?.kind === "firmware" ? chipFacts(behaviour.chip) : null;
+    const stamp = stampBoard({
+      boardId: board.id,
+      netlist: board.hasNetlist,
+      ports: inst.type.ports,
+      supplyGround: supplyGround(board, supplies, loaded.nets),
+      powerPort: board.voltagePin,
+      resetPort:
+        behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null,
+      usbPort: connectorPort(inst.type.ports, "usb"),
+      resetFraction: facts?.resetFraction ?? null,
+      parts: stampParts.filter((part) => {
+        const home = homeOf.get(part.path);
+        if (home) return home === board.id;
+        return !boards.some(
+          (other) =>
+            other.id !== board.id &&
+            (part.path === other.id || part.path.startsWith(`${other.id}.`))
+        );
+      }),
+      also: alsoByBoard.get(board.id),
+      nets,
+    });
+    if (stamp) board.stamp = stamp;
+  }
+  // realize prunes a dangling part later. It still counts as placed
+  // while its path is in exactly one stamp.
+  const placed = new Map<string, number>();
+  const note = (parts: { path: string }[] | undefined) => {
+    if (!parts) return;
+    for (const part of parts) {
+      placed.set(part.path, (placed.get(part.path) ?? 0) + 1);
+    }
+  };
+  for (const board of boards) note(board.stamp?.parts);
+  for (const supply of supplies) note(supply.stamp?.parts);
+  for (const part of stampParts) {
+    const count = placed.get(part.path) ?? 0;
+    if (count === 1) continue;
+    diags.push({
+      severity: "error",
+      path: part.path,
+      port: "nets",
+      quantity: "Part",
+      left: part.path,
+      right: "one stamp",
+      message:
+        count === 0
+          ? `${part.path} is not in a stamp`
+          : `${part.path} is in ${count} stamps`,
+    });
+  }
+
+  if (diags.length > 0) return { plan: null, diags };
+  const environment = world.environment;
+  const targets = readTargets(environment.targets);
+  if (!targets.ok) {
+    return {
+      plan: null,
+      diags: [
+        {
+          severity: "error",
+          path: "environment.targets",
+          port: "targets",
+          quantity: "Position",
+          left: "targets",
+          right: "box, sphere, or cylinder",
+          message: targets.error.message,
+        },
+      ],
+    };
+  }
+  notePlaceholderBoxes(loaded);
+  return {
+    plan: {
+      environment: {
+        ground: { plane: environment.ground.plane },
+        gravity: [...environment.gravity],
+        ...(Array.isArray(environment.primitives)
+          ? { primitives: environment.primitives as WorldPrimitive[] }
+          : {}),
+        ...(Array.isArray(environment.stepProps)
+          ? { stepProps: environment.stepProps as WorldStepProp[] }
+          : {}),
+        targets: targets.targets,
+      },
+      robots,
+      boards,
+      supplies,
+      parts,
+      leaves,
+      rangers,
+      boxes,
+      wires: electricalWires(loaded.nets),
+      shownWires: authoredWires(loaded.nets, loaded.wires),
+      levels: loaded.resolved.flatMap((inst) =>
+        (["behaviour", "body", "visual"] as const).map((axis) => ({
+          path: inst.path,
+          axis,
+          class: inst.axes[axis].class,
+          variant: inst.axes[axis].variant,
+          reason: inst.axes[axis].reason,
+        }))
+      ),
+      report: loaded.report,
+    },
+    diags,
+  };
+}
+
+/** Load one world file into the plan the run executes. */
+export function planWorld(project: string, worldRel: string): PlanResult {
+  const found = opened(project, worldRel);
+  if ("error" in found) return { ok: false, errors: [schema(found.error)] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(requirePlanEnv().readText(found.abs)) as unknown;
+  } catch {
+    return {
+      ok: false,
+      errors: [
+        schema("World file is not JSON. Hint: a world is <name>.world.json."),
+      ],
+    };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, errors: [schema("World file is not a document.")] };
+  }
+  const version = (parsed as { version?: unknown }).version;
+  if (version === 1) {
+    return {
+      ok: false,
+      errors: [schema(`${WORLD_V1_MESSAGE}. Hint: write a version 2 world.`)],
+    };
+  }
+  const io = requirePlanEnv();
+  const loaded = loadWorldV2(io.absolutePath(found.abs), {
+    store: io.store,
+    catalogDir: io.absolutePath(catalogDir()),
+    assetRoot: io.absolutePath(found.root),
+  });
+  const errors = loaded.diagnostics.filter((diag) => diag.severity === "error");
+  if (errors.length > 0 || !loaded.world) {
+    const shown = errors.length > 0 ? errors : loaded.diagnostics;
+    return {
+      ok: false,
+      errors:
+        shown.length > 0
+          ? shown.map(fromDiag)
+          : [schema("World file did not load.")],
+    };
+  }
+  const built = build(loaded, found.root, requirePlanEnv().dirname(found.abs));
+  const blocked = built.diags.filter((diag) => diag.severity === "error");
+  if (!built.plan || blocked.length > 0) {
+    return { ok: false, errors: blocked.map(fromDiag) };
+  }
+  return { ok: true, plan: built.plan };
+}

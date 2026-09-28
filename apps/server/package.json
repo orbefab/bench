@@ -41,6 +41,7 @@
     "@sfab-bench/engine-circuit": "workspace:*",
     "@sfab-bench/engine-mcu": "workspace:*",
     "@sfab-bench/parts": "workspace:*",
+    "@sfab-bench/sim": "workspace:*",
     "@vitejs/plugin-basic-ssl": "^2.1.0",
     "ai": "^7.0.101",
     "avr8js": "0.21.1",

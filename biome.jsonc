@@ -252,6 +252,51 @@
       }
     },
     {
+      "includes": ["packages/sim/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "process": "L3 does not use the Node host",
+                  "Buffer": "L3 does not use the Node host",
+                  "require": "L3 does not use the Node host",
+                  "__dirname": "L3 does not use the Node host",
+                  "__filename": "L3 does not use the Node host"
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../..", "../../**"],
+                    "message": "a relative import stays inside this package"
+                  },
+                  {
+                    "group": ["node:*", "node:*/**"],
+                    "message": "sim imports neither node nor the server nor apps"
+                  },
+                  {
+                    "group": [
+                      "@sfab-bench/server",
+                      "@sfab-bench/server/**",
+                      "**/apps/**",
+                      "apps/**"
+                    ],
+                    "message": "sim imports neither node nor the server nor apps"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["apps/web/**"],
       "linter": {
         "rules": {

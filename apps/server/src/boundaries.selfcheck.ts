@@ -136,3 +136,55 @@ for (const file of files) {
 process.stdout.write(
   `boundary: scanned ${files.length} L1/L2 files for globalThis\n`
 );
+
+const simProbe = "packages/sim/src/_boundary_probe.ts";
+refuse(
+  simProbe,
+  'import "node:fs";\n',
+  "lint/style/noRestrictedImports",
+  "sim imports neither node nor the server nor apps",
+  `boundary: refused import "node:fs" in ${simProbe} (sim imports neither node nor the server nor apps)`
+);
+refuse(
+  simProbe,
+  'import "@sfab-bench/server";\n',
+  "lint/style/noRestrictedImports",
+  "sim imports neither node nor the server nor apps",
+  `boundary: refused import "@sfab-bench/server" in ${simProbe} (sim imports neither node nor the server nor apps)`
+);
+refuse(
+  simProbe,
+  "export const host = process.cwd();\n",
+  "lint/style/noRestrictedGlobals",
+  "L3 does not use the Node host",
+  `boundary: refused global process in ${simProbe} (L3 does not use the Node host)`
+);
+
+const simFiles: string[] = [];
+walk(path.join(packagesDir, "sim", "src"), simFiles);
+for (const file of simFiles) {
+  const text = readFileSync(file, "utf8");
+  if (text.includes("globalThis")) {
+    throw new Error(`${path.relative(root, file)} contains globalThis`);
+  }
+  const pkg = path.join(root, "packages", "sim");
+  specifier.lastIndex = 0;
+  for (const hit of text.matchAll(specifier)) {
+    const spec = hit[1];
+    if (!spec?.startsWith(".")) continue;
+    const resolved = path.resolve(path.dirname(file), spec);
+    const out = path.relative(pkg, resolved);
+    if (
+      out === ".." ||
+      out.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(out)
+    ) {
+      throw new Error(
+        `${path.relative(root, file)} import ${spec} leaves the package`
+      );
+    }
+  }
+}
+process.stdout.write(
+  `boundary: scanned ${simFiles.length} L3 files for globalThis\n`
+);

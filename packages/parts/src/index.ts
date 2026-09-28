@@ -4,6 +4,13 @@ export { expandPartType } from "./expand";
 export { type GearWalk, gearTrainErrors, walkGearTrain } from "./gear-train";
 export { type DropoutKnot, type LdoParams, ldoFrom } from "./ldo";
 export {
+  applyLevelEdit,
+  type LevelEdit,
+  type LevelTable,
+  lockAfterLevels,
+  replaceLevels,
+} from "./level-edit";
+export {
   behaviourNetlist,
   class2BoardNetlist,
   compileRules,
