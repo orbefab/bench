@@ -6,13 +6,6 @@ import type {
   PortTemplate,
 } from "@sfab-bench/contract";
 
-function clone<T>(value: T): T {
-  const fn = (globalThis as { structuredClone?: <U>(value: U) => U })
-    .structuredClone;
-  if (!fn) throw new Error("structuredClone is required");
-  return fn(value);
-}
-
 function flagFor(
   spec: boolean | number[] | undefined,
   n: number
@@ -31,7 +24,7 @@ function portFromTemplate(template: PortTemplate, n: number): PortDecl {
   const adc = flagFor(template.adc, n);
   if (pwm !== undefined) port.pwm = pwm;
   if (adc !== undefined) port.adc = adc;
-  if (template.ratings) port.ratings = clone(template.ratings);
+  if (template.ratings) port.ratings = structuredClone(template.ratings);
   return port;
 }
 

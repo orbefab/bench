@@ -53,7 +53,7 @@ import {
   stampBoard,
   touches,
 } from "./circuit-stamp";
-import { nodeStore } from "./node-store";
+import { absolutePath, nodeStore } from "./node-store";
 import { chipFacts } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
 import { readTargets } from "./targets";
@@ -280,7 +280,7 @@ function opened(
 ): { root: string; abs: string } | { error: string } {
   let root: string;
   try {
-    root = realpathSync(project);
+    root = realpathSync(path.resolve(project));
   } catch {
     return {
       error: "The project folder is gone. Hint: open the folder again.",
@@ -1414,10 +1414,10 @@ export function planWorld(project: string, worldRel: string): PlanResult {
       errors: [schema(`${WORLD_V1_MESSAGE}. Hint: write a version 2 world.`)],
     };
   }
-  const loaded = loadWorldV2(found.abs, {
+  const loaded = loadWorldV2(absolutePath(found.abs), {
     store: nodeStore,
-    catalogDir: catalogRoot(),
-    assetRoot: found.root,
+    catalogDir: absolutePath(catalogRoot()),
+    assetRoot: absolutePath(found.root),
   });
   const errors = loaded.diagnostics.filter((diag) => diag.severity === "error");
   if (errors.length > 0 || !loaded.world) {

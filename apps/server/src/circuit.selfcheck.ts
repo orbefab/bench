@@ -46,6 +46,20 @@ import {
 } from "./world/nano-reference";
 import { unoUsbTrace } from "./world/uno-reference";
 
+function benchUs(engine: Engine, warmup: number, samples: number): number {
+  engine.operatingPoint();
+  for (let i = 0; i < warmup; i++) engine.stepFast();
+  const times = new Float64Array(samples);
+  for (let i = 0; i < samples; i++) {
+    const t0 = process.hrtime.bigint();
+    engine.stepFast();
+    const t1 = process.hrtime.bigint();
+    times[i] = Number(t1 - t0) / 1000;
+  }
+  const sorted = Array.from(times).sort((a, b) => a - b);
+  return sorted[sorted.length >> 1] ?? 0;
+}
+
 const LINE = 0.005;
 const POWER_W = 1e-9;
 const fixtureDir = fileURLToPath(
@@ -569,12 +583,14 @@ for (const rail of POT_RAILS) {
 }
 
 {
-  const linearUs = new Engine(ladder(50, false), {
-    method: "be",
-    h: 1e-6,
-  }).bench(40, 15);
+  const linearUs = benchUs(
+    new Engine(ladder(50, false), { method: "be", h: 1e-6 }),
+    40,
+    15
+  );
   console.log(`INFO linear 50 nodes: ${linearUs.toFixed(2)} µs/step`);
-  const diodeUs = new Engine(ladder(50, true), { method: "be", h: 1e-6 }).bench(
+  const diodeUs = benchUs(
+    new Engine(ladder(50, true), { method: "be", h: 1e-6 }),
     40,
     15
   );

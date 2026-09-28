@@ -783,28 +783,4 @@ export class Engine {
     const power = this.lastPower ?? this.power();
     return { t: this.t, v, i, power };
   }
-
-  /**
-   * Median microseconds per transient step. The operating point sits in
-   * the warmup. Wall-clock only; not part of any electrical result.
-   */
-  bench(warmup: number, samples: number): number {
-    this.operatingPoint();
-    for (let i = 0; i < warmup; i++) this.stepFast();
-    const times = new Float64Array(samples);
-    const hrtime = (
-      globalThis as {
-        process?: { hrtime: { bigint: () => bigint } };
-      }
-    ).process?.hrtime;
-    if (!hrtime) throw new Error("hrtime is required");
-    for (let i = 0; i < samples; i++) {
-      const t0 = hrtime.bigint();
-      this.stepFast();
-      const t1 = hrtime.bigint();
-      times[i] = Number(t1 - t0) / 1000;
-    }
-    const sorted = Array.from(times).sort((a, b) => a - b);
-    return sorted[sorted.length >> 1] ?? 0;
-  }
 }

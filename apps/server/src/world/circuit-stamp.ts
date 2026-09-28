@@ -55,7 +55,7 @@ import {
   tableLawOf,
 } from "@sfab-bench/parts";
 
-import { nodeStore } from "./node-store";
+import { absolutePath, nodeStore } from "./node-store";
 import { chipFacts, type RailFeed } from "./power-path";
 
 export const CIRCUIT_FORMS = [
@@ -763,8 +763,12 @@ function snapshotInstOf(
   const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
   if (behaviour?.kind !== "snapshot") return null;
   const found = loadSnapshot(
-    worldDir,
-    { store: nodeStore, catalogDir, assetRoot: catalogDir },
+    absolutePath(worldDir),
+    {
+      store: nodeStore,
+      catalogDir: absolutePath(catalogDir),
+      assetRoot: absolutePath(catalogDir),
+    },
     behaviour.ref,
     inst.type
   );
@@ -872,15 +876,17 @@ function stampOf(
   opts: BoardStampOptions,
   firmwareOnly: boolean
 ): BoardStamp {
-  const catalogDir = opts.catalogDir ?? defaultCatalog();
-  const worldDir = opts.worldDir ?? join(catalogDir, ".board-stamp-world");
-  const assetRoot = opts.assetRoot ?? catalogDir;
+  const catalogDir = absolutePath(opts.catalogDir ?? defaultCatalog());
+  const worldDir = absolutePath(
+    opts.worldDir ?? join(catalogDir, ".board-stamp-world")
+  );
+  const assetRoot = absolutePath(opts.assetRoot ?? catalogDir);
   const boardId = opts.boardId ?? "board";
   const libOpts: LibraryOptions = {
     store: nodeStore,
     catalogDir,
     assetRoot,
-    ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),
+    ...(opts.libraryDir ? { libraryDir: absolutePath(opts.libraryDir) } : {}),
   };
   const parts = new Map<string, LoadedPart>();
   const types = new Map<string, LoadedType>();

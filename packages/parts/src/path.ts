@@ -1,17 +1,11 @@
 /**
- * POSIX paths, the same results as `node:path` on macOS and Linux.
- * The loader joins, takes a parent, a base name, a relative path, and
- * resolves a file against an asset root. No `node:*` import.
+ * POSIX paths. Joins, a parent, a base name, and a relative path.
+ * `resolve` needs an absolute base from the caller. The package does
+ * not read the process.
  */
 
 const SLASH = 47;
 const DOT = 46;
-
-function cwd(): string {
-  const proc = (globalThis as { process?: { cwd?: () => string } }).process;
-  const dir = proc?.cwd?.();
-  return dir && dir.length > 0 ? dir : "/";
-}
 
 function normalizeString(path: string, allowAboveRoot: boolean): string {
   let res = "";
@@ -134,19 +128,19 @@ export function basename(path: string): string {
   return path.slice(start, end);
 }
 
+/** POSIX resolve against an absolute segment. A relative-only call is refused. */
 export function resolve(...parts: string[]): string {
   let resolvedPath = "";
   let resolvedAbsolute = false;
-  for (let i = parts.length - 1; i >= -1 && !resolvedAbsolute; i--) {
-    const path = i >= 0 ? parts[i] : cwd();
+  for (let i = parts.length - 1; i >= 0 && !resolvedAbsolute; i--) {
+    const path = parts[i];
     if (!path || path.length === 0) continue;
     resolvedPath = `${path}/${resolvedPath}`;
     resolvedAbsolute = path.charCodeAt(0) === SLASH;
   }
-  resolvedPath = normalizeString(resolvedPath, !resolvedAbsolute);
-  if (resolvedAbsolute)
-    return resolvedPath.length > 0 ? `/${resolvedPath}` : "/";
-  return resolvedPath.length > 0 ? resolvedPath : ".";
+  if (!resolvedAbsolute) throw new Error("resolve needs an absolute path");
+  resolvedPath = normalizeString(resolvedPath, false);
+  return resolvedPath.length > 0 ? `/${resolvedPath}` : "/";
 }
 
 export function relative(from: string, to: string): string {

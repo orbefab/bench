@@ -52,7 +52,7 @@ import {
   lockAfterLevels,
   replaceLevels,
 } from "./world/level-edit";
-import { nodeStore } from "./world/node-store";
+import { absolutePath, nodeStore } from "./world/node-store";
 import {
   catalogRoot,
   planWorld,
@@ -208,10 +208,10 @@ function loadWorldText(
   const temp = join(dirname(worldFile), `.${basename(worldFile)}.level-edit`);
   writeFileSync(temp, text);
   try {
-    return loadWorldV2(temp, {
+    return loadWorldV2(absolutePath(temp), {
       store: nodeStore,
-      catalogDir: catalogRoot(),
-      assetRoot,
+      catalogDir: absolutePath(catalogRoot()),
+      assetRoot: absolutePath(assetRoot),
     });
   } finally {
     rmSync(temp, { force: true });
@@ -1170,10 +1170,10 @@ export const worldTools = {
       }
       const file = join(found.root, found.world);
       const before = readFileSync(file, "utf8");
-      const live = loadWorldV2(file, {
+      const live = loadWorldV2(absolutePath(file), {
         store: nodeStore,
-        catalogDir: catalogRoot(),
-        assetRoot: found.root,
+        catalogDir: absolutePath(catalogRoot()),
+        assetRoot: absolutePath(found.root),
       });
       const lockErrors = live.diagnostics.filter(
         (diag) => diag.severity === "error" && diag.message.includes("lockfile")
