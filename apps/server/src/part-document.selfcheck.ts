@@ -7,8 +7,10 @@ import {
   cpSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,7 +18,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
-import type { RunReport } from "@sfab-bench/contract";
+import type { RunReport, WorldView, WorldViewNode } from "@sfab-bench/contract";
 import { compileWorld } from "@sfab-bench/engine-body";
 import { convertWorldFile, loadWorldV2, sha256Bytes } from "@sfab-bench/parts";
 import type { SerialChunk } from "@sfab-bench/sim/sim";
@@ -26,6 +28,7 @@ import { nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
 import { catalogRoot, planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
+import { viewIdsAreNodes, viewOf } from "./world/view";
 
 const repo = fileURLToPath(new URL("../../..", import.meta.url));
 const SPAN_MS = 3000;
@@ -635,4 +638,143 @@ function writeJson(file: string, value: unknown) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+const ROLE_ORDER = [
+  "robot",
+  "board",
+  "supply",
+  "part",
+  "leaf",
+  "ground",
+  "target",
+  "assembly",
+] as const;
+
+function findNode(
+  nodes: readonly WorldViewNode[],
+  id: string
+): WorldViewNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const child = findNode(node.children, id);
+    if (child) return child;
+  }
+  return null;
+}
+
+function nodeIds(nodes: readonly WorldViewNode[], into = new Set<string>()) {
+  for (const node of nodes) {
+    into.add(node.id);
+    nodeIds(node.children, into);
+  }
+  return into;
+}
+
+function treeSummary(view: WorldView): string {
+  const counts = new Map<string, number>();
+  let total = 0;
+  let depth = 0;
+  const walk = (nodes: readonly WorldViewNode[], level: number) => {
+    for (const node of nodes) {
+      total += 1;
+      depth = Math.max(depth, level);
+      counts.set(node.role, (counts.get(node.role) ?? 0) + 1);
+      walk(node.children, level + 1);
+    }
+  };
+  walk(view.tree.nodes, 1);
+  const roles = ROLE_ORDER.filter((role) => counts.has(role))
+    .map((role) => `${role} ${counts.get(role)}`)
+    .join(" ");
+  return `${total} nodes, depth ${depth}, roles ${roles}`;
+}
+
+function openPart(dir: string, part: string) {
+  const planned = planWorld(join(repo, dir), part);
+  if (!planned.ok) {
+    throw new Error(planned.errors.map((error) => error.message).join("; "));
+  }
+  return planned.plan;
+}
+
+for (const example of examples) {
+  const stem = (example.part.split("/").pop() ?? example.part).replace(
+    /@[^@]+\.json$/,
+    ""
+  );
+  const plan = openPart(example.dir, example.part);
+  const view = viewOf(plan);
+  const again = viewOf(openPart(example.dir, example.part));
+  expect(viewIdsAreNodes(view), `${stem} view id is not a node`);
+  expect(
+    JSON.stringify(view.tree) === JSON.stringify(again.tree),
+    `${stem} tree is not stable`
+  );
+  const ids = nodeIds(view.tree.nodes);
+  for (const row of plan.report?.levels ?? []) {
+    expect(ids.has(row.path), `${stem} report path ${row.path} is not a node`);
+  }
+  if (stem === "nano-servo-usb") {
+    const board = view.boards.find((row) => row.id === "nano");
+    const node = findNode(view.tree.nodes, "nano");
+    expect(
+      board && node && JSON.stringify(board.pose) === JSON.stringify(node.pose),
+      "nano pose is not the flat instance pose"
+    );
+  }
+  console.log(`tree ${stem}: ${treeSummary(view)}, every view id is a node`);
+}
+
+{
+  const plan = openPart(".", "apps/server/fixtures/layered/fleet/world.json");
+  const view = viewOf(plan);
+  const rig = findNode(view.tree.nodes, "fleet.rig2");
+  const servo = rig?.children.find((node) => node.id === "fleet.rig2.servo");
+  expect(servo, "fleet.rig2.servo is not nested under fleet.rig2");
+  const ids = nodeIds(view.tree.nodes);
+  const paths = new Set((plan.report?.levels ?? []).map((row) => row.path));
+  for (const path of paths) {
+    expect(ids.has(path), `fleet report path ${path} is not a node`);
+  }
+  expect(servo?.id === "fleet.rig2.servo", "fleet servo id moved");
+  console.log(
+    `tree fleet: fleet.rig2.servo nested, ${paths.size} report paths are nodes`
+  );
+}
+
+{
+  const roots = ["packages/parts/src", "packages/sim/src", "apps/server/src"];
+  const allow = new Set([
+    "packages/parts/src/document.ts",
+    "packages/parts/src/convert.ts",
+    "packages/parts/src/level-edit.ts",
+    "packages/sim/src/capture.ts",
+  ]);
+  const files: string[] = [];
+  const visit = (dir: string) => {
+    for (const name of readdirSync(join(repo, dir))) {
+      if (name === "node_modules" || name === "dist") continue;
+      const rel = `${dir}/${name}`;
+      if (statSync(join(repo, rel)).isDirectory()) visit(rel);
+      else if (name.endsWith(".ts")) files.push(rel);
+    }
+  };
+  for (const root of roots) visit(root);
+  const runtime = files.filter(
+    (rel) => !allow.has(rel) && !rel.includes("selfcheck")
+  );
+  const hits = runtime.filter((rel) => {
+    const text = readFileSync(join(repo, rel), "utf8");
+    return (
+      text.includes("WorldFileV2") ||
+      /version:\s*2\b/.test(text) ||
+      text.includes('"version": 2') ||
+      text.includes('"version":2')
+    );
+  });
+  expect(hits.length === 0, `WorldFileV2 at runtime: ${hits.join(", ")}`);
+  console.log(
+    `runtime WorldFileV2: ${hits.length} files, scanned ${runtime.length}`
+  );
 }
