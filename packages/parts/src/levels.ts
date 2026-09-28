@@ -1,0 +1,451 @@
+/** Ported from layered-sim E7 (318b899). */
+
+import {
+  AXES,
+  type AxisName,
+  type BehaviourImpl,
+  type LevelClass,
+  type Netlist,
+  type Params,
+  type PartFile,
+  type PartTypeFile,
+  type Pose,
+  type WorldFileV2,
+} from "@sfab-bench/contract";
+
+import { type Library, typeOf } from "./library";
+import { pathRefOf } from "./path-ref";
+import { type AxisRequest, classesOf, isLevelClass, specAxes } from "./si";
+
+export type ReasonKind =
+  | { kind: "default" }
+  | { kind: "type"; type: string }
+  | { kind: "path"; path: string }
+  | { kind: "instance" }
+  | { kind: "parent"; class: LevelClass };
+
+export type ResolvedSource =
+  | "default"
+  | "type"
+  | "path"
+  | "instance"
+  | "fallback"
+  | "parent";
+
+export type ResolvedAxis = {
+  axis: AxisName;
+  requested: LevelClass;
+  requestedBy: ReasonKind;
+  class: LevelClass | null;
+  variant: string | null;
+  reason: string;
+  source: ResolvedSource;
+  impl: unknown;
+  label: string;
+  omits: string[];
+  /**
+   * Set when a variant rule names a variant this class does not have.
+   * The axis does not fall back.
+   */
+  variantMiss?: string;
+};
+
+export type LiveInstance = {
+  path: string;
+  part: PartFile;
+  type: PartTypeFile;
+  params: Params;
+  /** Placement from the netlist instance. Absent when the instance sets none. */
+  pose?: Pose;
+  axes: Record<AxisName, ResolvedAxis>;
+  foreign: boolean;
+  declaredOnly: boolean;
+};
+
+export type LevelRules = {
+  default: Record<AxisName, AxisRequest>;
+  types: Record<string, Partial<Record<AxisName, AxisRequest>>>;
+  paths: Record<string, Partial<Record<AxisName, AxisRequest>>>;
+};
+
+export function compileRules(world: WorldFileV2): LevelRules {
+  const def = specAxes(world.run.levels.default);
+  for (const axis of AXES) {
+    if (!isLevelClass(def[axis]?.class)) {
+      throw new Error(`world default must set ${axis}`);
+    }
+  }
+  const types: LevelRules["types"] = {};
+  for (const [id, spec] of Object.entries(world.run.levels.types ?? {})) {
+    types[id] = specAxes(spec);
+  }
+  const paths: LevelRules["paths"] = {};
+  for (const [id, spec] of Object.entries(world.run.levels.paths ?? {})) {
+    paths[id] = specAxes(spec);
+  }
+  return {
+    default: def as Record<AxisName, AxisRequest>,
+    types,
+    paths,
+  };
+}
+
+function reasonOf(by: ReasonKind): string {
+  if (by.kind === "default") return "default";
+  if (by.kind === "type") return `type rule ${by.type}`;
+  if (by.kind === "instance") return "instance level";
+  if (by.kind === "parent") return `parent class ${by.class}`;
+  return `path rule ${by.path}`;
+}
+
+function sourceOf(by: ReasonKind): ResolvedSource {
+  if (by.kind === "default") return "default";
+  if (by.kind === "type") return "type";
+  if (by.kind === "instance") return "instance";
+  if (by.kind === "parent") return "parent";
+  return "path";
+}
+
+function request(
+  rules: LevelRules,
+  axis: AxisName,
+  instancePath: string,
+  typeId: string,
+  instanceLevel?: Partial<Record<AxisName, AxisRequest>>
+): { class: LevelClass; variant?: string; by: ReasonKind } {
+  let asked = rules.default[axis];
+  let by: ReasonKind = { kind: "default" };
+  const typeRule = rules.types[typeId];
+  if (typeRule?.[axis] !== undefined) {
+    asked = typeRule[axis] as AxisRequest;
+    by = { kind: "type", type: typeId };
+  }
+  // The netlist names this child. A world path rule is the run's override.
+  const placed = instanceLevel?.[axis];
+  if (placed !== undefined) {
+    asked = placed;
+    by = { kind: "instance" };
+  }
+  const pathRule = rules.paths[instancePath];
+  if (pathRule?.[axis] !== undefined) {
+    asked = pathRule[axis] as AxisRequest;
+    by = { kind: "path", path: instancePath };
+  }
+  return {
+    class: asked.class,
+    ...(asked.variant !== undefined ? { variant: asked.variant } : {}),
+    by,
+  };
+}
+
+function omitsOf(impl: unknown): string[] {
+  if (impl && typeof impl === "object" && "omits" in impl) {
+    return [...(impl.omits as string[])];
+  }
+  return ["no level authored"];
+}
+
+function implLabel(impl: unknown): string {
+  if (!impl || typeof impl !== "object") return "none";
+  const kind = (impl as { kind?: string }).kind;
+  if (kind === "form") return `form ${(impl as { form: string }).form}`;
+  if (kind === "snapshot") return `snapshot ${(impl as { ref: string }).ref}`;
+  if (kind === "firmware") return `firmware ${(impl as { chip: string }).chip}`;
+  if (kind === "script") return `script ${(impl as { script: string }).script}`;
+  if (typeof kind === "string") return kind;
+  return "none";
+}
+
+function resolveAxis(
+  part: PartFile,
+  axis: AxisName,
+  instancePath: string,
+  typeId: string,
+  rules: LevelRules,
+  parentClass?: LevelClass,
+  instanceLevel?: Partial<Record<AxisName, AxisRequest>>,
+  vinFallback?: ReadonlySet<string>
+): ResolvedAxis {
+  const asked = request(rules, axis, instancePath, typeId, instanceLevel);
+  let requested = asked.class;
+  let by = asked.by;
+  const variantName = asked.variant;
+  const map = part.axes?.[axis];
+  const available = classesOf(map);
+  if (
+    axis === "behaviour" &&
+    parentClass !== undefined &&
+    by.kind === "default" &&
+    variantName === undefined &&
+    available.length > 0
+  ) {
+    requested = parentClass;
+    by = { kind: "parent", class: parentClass };
+  }
+  if (variantName !== undefined) {
+    const slot = map?.[String(requested) as "0"];
+    const impl = slot?.variants[variantName] ?? null;
+    const reason = `${reasonOf(by)} chose variant ${variantName}`;
+    const source = sourceOf(by);
+    if (!impl) {
+      return {
+        axis,
+        requested,
+        requestedBy: by,
+        class: null,
+        variant: null,
+        reason,
+        source,
+        impl: null,
+        label: "none",
+        omits: ["no level authored"],
+        variantMiss: variantName,
+      };
+    }
+    return {
+      axis,
+      requested,
+      requestedBy: by,
+      class: requested,
+      variant: variantName,
+      reason,
+      source,
+      impl,
+      label: implLabel(impl),
+      omits: omitsOf(impl),
+    };
+  }
+  let chosen: LevelClass | null = null;
+  let reason = reasonOf(by);
+  let source = sourceOf(by);
+  if (available.includes(requested)) {
+    chosen = requested;
+  } else {
+    const cheaper = available.filter((c) => c < requested);
+    if (cheaper.length) {
+      chosen = Math.max(...cheaper) as LevelClass;
+      reason = `fallback from ${requested} to ${chosen} (cheaper)`;
+      source = "fallback";
+    } else {
+      const deeper = available.filter((c) => c > requested);
+      if (deeper.length) {
+        chosen = Math.min(...deeper) as LevelClass;
+        reason = `fallback from ${requested} to ${chosen} (only deeper; capture suggested)`;
+        source = "fallback";
+      } else {
+        chosen = null;
+        reason = part.declaredOnly
+          ? `no level (requested ${requested} by ${reasonOf(by)}; declared-only)`
+          : `no level (requested ${requested} by ${reasonOf(by)})`;
+      }
+    }
+  }
+  // A branch table cannot be a regulator. VIN driven, class 1 asked:
+  // run the netlist. The reason is the card's warning. Children do not
+  // inherit it; a fallback parent does not pass its class down.
+  if (
+    vinFallback?.has(instancePath) &&
+    axis === "behaviour" &&
+    typeId === "power-input" &&
+    chosen === 1 &&
+    available.includes(2)
+  ) {
+    chosen = 2;
+    source = "fallback";
+    reason = "nearest runnable level";
+  }
+  if (chosen === null || !map) {
+    return {
+      axis,
+      requested,
+      requestedBy: by,
+      class: null,
+      variant: null,
+      reason,
+      source,
+      impl: null,
+      label: "none",
+      omits: part.declaredOnly
+        ? ["declared-only: no working behaviour"]
+        : ["no level authored"],
+    };
+  }
+  const slot = map[String(chosen) as "0"];
+  if (!slot) {
+    return {
+      axis,
+      requested,
+      requestedBy: by,
+      class: null,
+      variant: null,
+      reason,
+      source,
+      impl: null,
+      label: "none",
+      omits: ["no level authored"],
+    };
+  }
+  const impl = slot.variants[slot.default] ?? null;
+  const omits =
+    impl && typeof impl === "object" && "omits" in impl
+      ? [...(impl.omits as string[])]
+      : ["no level authored"];
+  return {
+    axis,
+    requested,
+    requestedBy: by,
+    class: chosen,
+    variant: impl ? slot.default : null,
+    reason,
+    source,
+    impl,
+    label: implLabel(impl),
+    omits,
+  };
+}
+
+/**
+ * The netlist this behaviour expands. `path:uno-usb` uses the declaring
+ * part's class-2 board, so the wires and the children match class 2.
+ */
+export function behaviourNetlist(
+  part: PartFile,
+  behaviour: BehaviourImpl | null
+): Netlist | null {
+  if (!behaviour) return null;
+  if (behaviour.kind === "composite") return behaviour.netlist;
+  if (behaviour.kind === "firmware" && behaviour.board) return behaviour.board;
+  if (
+    behaviour.kind === "firmware" &&
+    pathRefOf(behaviour.boardCircuit ?? null) === "uno-usb"
+  ) {
+    return class2BoardNetlist(part);
+  }
+  return null;
+}
+
+/** The class-2 firmware board, when that variant carries a netlist. */
+export function class2BoardNetlist(part: PartFile): Netlist | null {
+  const slot = part.axes?.behaviour?.["2"];
+  if (!slot) return null;
+  const impl = slot.variants[slot.default];
+  if (impl?.kind === "firmware" && impl.board) return impl.board;
+  return null;
+}
+
+function childPath(parent: string, id: string): string {
+  if (parent === "$root") return id;
+  return `${parent}.${id}`;
+}
+
+export function resolveLevels(
+  lib: Library,
+  rules: LevelRules,
+  vinFallback?: ReadonlySet<string>
+): { instances: LiveInstance[]; appliedPaths: Set<string> } {
+  const instances: LiveInstance[] = [];
+  const appliedPaths = new Set<string>();
+
+  const visit = (
+    part: PartFile,
+    instancePath: string,
+    params: Params,
+    pose?: Pose,
+    parentClass?: LevelClass,
+    instanceLevel?: Partial<Record<AxisName, AxisRequest>>
+  ) => {
+    const type = typeOf(lib, part);
+    const axes = {
+      behaviour: resolveAxis(
+        part,
+        "behaviour",
+        instancePath,
+        type.id,
+        rules,
+        parentClass,
+        instanceLevel,
+        vinFallback
+      ),
+      body: resolveAxis(
+        part,
+        "body",
+        instancePath,
+        type.id,
+        rules,
+        undefined,
+        instanceLevel
+      ),
+      visual: resolveAxis(
+        part,
+        "visual",
+        instancePath,
+        type.id,
+        rules,
+        undefined,
+        instanceLevel
+      ),
+    };
+    for (const axis of AXES) {
+      const by = axes[axis].requestedBy;
+      if (by.kind === "path") appliedPaths.add(by.path);
+    }
+    instances.push({
+      path: instancePath,
+      part,
+      type,
+      params,
+      ...(pose ? { pose } : {}),
+      axes,
+      foreign: part.foreign === true,
+      declaredOnly: part.declaredOnly === true,
+    });
+    const behaviour = axes.behaviour.impl as BehaviourImpl | null;
+    const netlist = behaviourNetlist(part, behaviour);
+    const aliasNetlist =
+      netlist !== null &&
+      behaviour?.kind === "firmware" &&
+      behaviour.board === undefined;
+    if (netlist) {
+      // The world root is the scene container. Its children use the world
+      // default. A shell that only reached its class by fallback does not
+      // pass that class down either: the default still applies underneath.
+      const nextParent = aliasNetlist
+        ? (2 as LevelClass)
+        : instancePath !== "$root" &&
+            axes.behaviour.class !== null &&
+            axes.behaviour.source !== "fallback"
+          ? axes.behaviour.class
+          : undefined;
+      for (const [id, child] of Object.entries(netlist.instances)) {
+        const childPart = lib.parts.get(child.part);
+        if (!childPart) {
+          throw new Error(
+            `missing child part ${child.part} under ${instancePath}`
+          );
+        }
+        visit(
+          childPart.part,
+          childPath(instancePath, id),
+          { ...(child.params ?? {}) },
+          child.pose,
+          nextParent,
+          child.level === undefined ? undefined : specAxes(child.level)
+        );
+      }
+    }
+  };
+
+  const rootPart =
+    typeof lib.world.root.part === "string"
+      ? lib.parts.get(lib.world.root.part)?.part
+      : lib.world.root.part;
+  if (!rootPart) throw new Error("root part did not resolve");
+  visit(
+    rootPart,
+    "$root",
+    { ...(lib.world.root.params ?? {}) },
+    lib.world.root.pose
+  );
+  instances.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return { instances, appliedPaths };
+}

@@ -1,4 +1,5 @@
 export * from "./harness";
+export * from "./laws";
 export * from "./layered";
 export * from "./principal";
 export * from "./session";
