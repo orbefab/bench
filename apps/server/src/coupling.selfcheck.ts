@@ -482,7 +482,10 @@ async function runWorld(world: string): Promise<RecordingRead> {
   }
 }
 
-const worlds = ["parts/sfab/arm-bench@1.0.0.json", "parts/sfab/arm-stall@1.0.0.json"] as const;
+const worlds = [
+  "parts/sfab/arm-bench@1.0.0.json",
+  "parts/sfab/arm-stall@1.0.0.json",
+] as const;
 for (const world of worlds) {
   const circuit = await runWorld(world);
   const again = await runWorld(world);

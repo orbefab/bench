@@ -23,7 +23,10 @@ worldStore.setState({
 setWorldLiveState(live);
 
 const open = viewerSnapshot();
-expect(open.file === "examples/arm/parts/sfab/arm-bench@1.0.0.json", "world path is the file");
+expect(
+  open.file === "examples/arm/parts/sfab/arm-bench@1.0.0.json",
+  "world path is the file"
+);
 expect(open.empty === false, "an open world is not an empty CAD view");
 expect(open.playing === true, "playing comes from the live run");
 expect(open.simTime === 12.345, "simTime comes from the live run");

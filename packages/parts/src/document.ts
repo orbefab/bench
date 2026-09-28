@@ -169,7 +169,9 @@ export function worldToPart(world: WorldFileV2, id: string): PartFile {
   for (const raw of world.environment.targets ?? []) {
     const built = targetInstance(raw);
     const targetId =
-      raw && typeof raw === "object" && typeof (raw as { id?: unknown }).id === "string"
+      raw &&
+      typeof raw === "object" &&
+      typeof (raw as { id?: unknown }).id === "string"
         ? (raw as { id: string }).id
         : "";
     if (!built || !targetId || instances[targetId]) continue;

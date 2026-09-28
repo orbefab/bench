@@ -1,5 +1,16 @@
 export { type BatteryParams, batteryFrom, ocvAt } from "./battery";
 export { comparatorFrom } from "./comparator";
+export { type ConvertedDocument, convertWorldFile } from "./convert";
+export {
+  assetDir,
+  chooseRootPartId,
+  environmentKind,
+  IMPORT_PART_ID,
+  isPartFile,
+  partFilePath,
+  partToWorld,
+  worldToPart,
+} from "./document";
 export { expandPartType } from "./expand";
 export { type GearWalk, gearTrainErrors, walkGearTrain } from "./gear-train";
 export { type DropoutKnot, type LdoParams, ldoFrom } from "./ldo";
@@ -34,17 +45,6 @@ export {
   typeFileExists,
   typeOf,
 } from "./library";
-export { convertWorldFile, type ConvertedDocument } from "./convert";
-export {
-  assetDir,
-  chooseRootPartId,
-  environmentKind,
-  IMPORT_PART_ID,
-  isPartFile,
-  partFilePath,
-  partToWorld,
-  worldToPart,
-} from "./document";
 export { type LoadOptions, type LoadResult, loadWorldV2 } from "./load";
 export {
   buildLock,

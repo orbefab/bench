@@ -294,8 +294,16 @@ async function assertTraceOff(project: string, world: string): Promise<void> {
 {
   await assertTraceOff(nanoDir, "parts/sfab/nano-vcc-usb@1.0.0.json");
 
-  const first = await runWorld(nanoDir, "parts/sfab/nano-vcc-usb@1.0.0.json", 3000);
-  const second = await runWorld(nanoDir, "parts/sfab/nano-vcc-usb@1.0.0.json", 3000);
+  const first = await runWorld(
+    nanoDir,
+    "parts/sfab/nano-vcc-usb@1.0.0.json",
+    3000
+  );
+  const second = await runWorld(
+    nanoDir,
+    "parts/sfab/nano-vcc-usb@1.0.0.json",
+    3000
+  );
   expect(
     JSON.stringify(first.read) === JSON.stringify(second.read),
     "supply-line recordings are not byte-identical"
@@ -417,7 +425,11 @@ async function assertTraceOff(project: string, world: string): Promise<void> {
     `channels: A0 0, A1 1023, 1.1 V ref 1023, bandgap ${bgCount}, MUX 15 0, OUTPUT HIGH 1023, INPUT_PULLUP 1023`
   );
 
-  const divider = await runWorld(nanoDir, "parts/sfab/nano-divider@1.0.0.json", 400);
+  const divider = await runWorld(
+    nanoDir,
+    "parts/sfab/nano-divider@1.0.0.json",
+    400
+  );
   assertDivider(divider, 1);
   const class2Dir = mkdtempSync(join(tmpdir(), "sfab-divider-"));
   try {
@@ -450,7 +462,11 @@ async function assertTraceOff(project: string, world: string): Promise<void> {
       lockErrors.map((diag) => diag.message).join("; ") || "no class 2 lock"
     );
     if (loaded.lock) writeLock(nodeStore, lockPathFor(worldFile), loaded.lock);
-    const high = await runWorld(class2Dir, "parts/sfab/nano-divider@1.0.0.json", 400);
+    const high = await runWorld(
+      class2Dir,
+      "parts/sfab/nano-divider@1.0.0.json",
+      400
+    );
     assertDivider(high, 2);
   } finally {
     rmSync(class2Dir, { recursive: true, force: true });

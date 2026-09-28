@@ -4,11 +4,7 @@
   "type": "assembly",
   "foreign": false,
   "play": {
-    "gravity": [
-      0,
-      0,
-      -9.81
-    ],
+    "gravity": [0, 0, -9.81],
     "seed": 1,
     "timestep": 0.001,
     "levels": {
@@ -27,9 +23,7 @@
         "variants": {
           "netlist": {
             "kind": "composite",
-            "omits": [
-              "play settings are not a behaviour"
-            ],
+            "omits": ["play settings are not a behaviour"],
             "netlist": {
               "instances": {
                 "scene": {
@@ -41,97 +35,48 @@
                 "card": {
                   "part": "sfab/target@1.0.0",
                   "pose": {
-                    "position": [
-                      0,
-                      0.5601,
-                      0.15
-                    ],
-                    "rotation": [
-                      1,
-                      0,
-                      0,
-                      0
-                    ]
+                    "position": [0, 0.5601, 0.15],
+                    "rotation": [1, 0, 0, 0]
                   },
                   "target": {
                     "shape": "box",
-                    "size": [
-                      0.3,
-                      0.005,
-                      0.3
-                    ],
+                    "size": [0.3, 0.005, 0.3],
                     "path": [
                       {
                         "t": 0,
-                        "position": [
-                          0,
-                          0.5601,
-                          0.15
-                        ]
+                        "position": [0, 0.5601, 0.15]
                       },
                       {
                         "t": 0.999,
-                        "position": [
-                          0,
-                          0.5601,
-                          0.15
-                        ]
+                        "position": [0, 0.5601, 0.15]
                       },
                       {
                         "t": 1,
-                        "position": [
-                          0,
-                          0.1601,
-                          0.15
-                        ]
+                        "position": [0, 0.1601, 0.15]
                       },
                       {
                         "t": 2.499,
-                        "position": [
-                          0,
-                          0.1601,
-                          0.15
-                        ]
+                        "position": [0, 0.1601, 0.15]
                       },
                       {
                         "t": 2.5,
-                        "position": [
-                          0,
-                          0.9601,
-                          0.15
-                        ]
+                        "position": [0, 0.9601, 0.15]
                       },
                       {
                         "t": 3.999,
-                        "position": [
-                          0,
-                          0.9601,
-                          0.15
-                        ]
+                        "position": [0, 0.9601, 0.15]
                       },
                       {
                         "t": 4,
-                        "position": [
-                          0,
-                          0.3601,
-                          0.15
-                        ]
+                        "position": [0, 0.3601, 0.15]
                       },
                       {
                         "t": 5.499,
-                        "position": [
-                          0,
-                          0.3601,
-                          0.15
-                        ]
+                        "position": [0, 0.3601, 0.15]
                       },
                       {
                         "t": 5.5,
-                        "position": [
-                          0.4,
-                          0.3601,
-                          0.15
-                        ]
+                        "position": [0.4, 0.3601, 0.15]
                       }
                     ]
                   }
@@ -150,9 +95,7 @@
         "variants": {
           "none": {
             "kind": "none",
-            "omits": [
-              "assembly adds no body"
-            ]
+            "omits": ["assembly adds no body"]
           }
         }
       }
@@ -163,9 +106,7 @@
         "variants": {
           "none": {
             "kind": "none",
-            "omits": [
-              "assembly adds no visual"
-            ]
+            "omits": ["assembly adds no visual"]
           }
         }
       }

@@ -10,8 +10,8 @@ import {
   partFilePath,
   worldToPart,
 } from "./document";
-import { loadWorldV2 } from "./load";
 import type { LibraryOptions } from "./library";
+import { loadWorldV2 } from "./load";
 import { lockPathFor, writeLock } from "./lock";
 import { basename } from "./path";
 
@@ -22,7 +22,9 @@ export type ConvertedDocument = {
 };
 
 function worldStem(worldFile: string): string {
-  return basename(worldFile).replace(/\.world\.json$/i, "").replace(/\.json$/i, "");
+  return basename(worldFile)
+    .replace(/\.world\.json$/i, "")
+    .replace(/\.json$/i, "");
 }
 
 /**

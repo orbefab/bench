@@ -233,7 +233,11 @@ function seriesDelta(a: number[], b: number[]): { max: number; rms: number } {
       join(dir, "parts/sfab/nano-vcc-usb@1.0.0.json"),
       join(dir, "nano-vcc-mixed.world.json")
     );
-    const full = await runProject(dir, "parts/sfab/nano-vcc-usb@1.0.0.json", 1200);
+    const full = await runProject(
+      dir,
+      "parts/sfab/nano-vcc-usb@1.0.0.json",
+      1200
+    );
     const mixed = await runProject(dir, "nano-vcc-mixed.world.json", 1200);
     const again = await runProject(dir, "nano-vcc-mixed.world.json", 1200);
     const rail = seriesDelta(full.voltages, mixed.voltages);

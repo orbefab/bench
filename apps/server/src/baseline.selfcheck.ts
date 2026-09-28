@@ -170,7 +170,10 @@ async function runWorld(name: string): Promise<FrozenFrame[]> {
 const frozen = JSON.parse(readFileSync(fixturePath, "utf8")) as Frozen;
 expect(frozen.durationS === 3, "fixture duration");
 
-for (const name of ["parts/sfab/arm-bench@1.0.0.json", "parts/sfab/arm-stall@1.0.0.json"] as const) {
+for (const name of [
+  "parts/sfab/arm-bench@1.0.0.json",
+  "parts/sfab/arm-stall@1.0.0.json",
+] as const) {
   const live = await runWorld(name);
   const saved = frozen.runs[name]?.frames;
   expect(saved, `fixture run ${name}`);

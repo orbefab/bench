@@ -685,8 +685,16 @@ try {
   expect(on >= 5 && off >= 5, `D13 samples on ${on}, off ${off}`);
   console.log(`D13 on current ${(onCurrent * 1000).toFixed(2)} mA`);
 
-  const first = await runWorld(root, "parts/sfab/nano-servo-usb@1.0.0.json", 3000);
-  const second = await runWorld(root, "parts/sfab/nano-servo-usb@1.0.0.json", 3000);
+  const first = await runWorld(
+    root,
+    "parts/sfab/nano-servo-usb@1.0.0.json",
+    3000
+  );
+  const second = await runWorld(
+    root,
+    "parts/sfab/nano-servo-usb@1.0.0.json",
+    3000
+  );
   expect(
     JSON.stringify(first.read) === JSON.stringify(second.read),
     "class 2 Nano runs are not byte-identical"

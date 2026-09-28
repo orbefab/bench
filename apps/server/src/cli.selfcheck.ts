@@ -43,7 +43,11 @@ expect(
     ran.ms === 3000,
   "run --ms"
 );
-const ranDefault = parseCli(["run", "/tmp/gauge", "parts/sfab/gauge-usb@1.0.0.json"]);
+const ranDefault = parseCli([
+  "run",
+  "/tmp/gauge",
+  "parts/sfab/gauge-usb@1.0.0.json",
+]);
 expect(
   ranDefault.kind === "run" && ranDefault.ms === undefined,
   "run default span"

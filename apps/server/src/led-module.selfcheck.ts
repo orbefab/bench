@@ -140,17 +140,22 @@ function pinHigh(state: WorldState, bit: number): boolean {
       failed: null,
       state: null,
     };
-    const attached = await attachWorld(dir, "parts/sfab/nano-led-module@1.0.0.json", {
-      sender: { kind: "loopback", label: "Mac" },
-      onEvent(event) {
-        if (event.type === "error") {
-          seen.failed =
-            event.message ??
-            event.errors.map((item) => item.message).join("; ");
-        }
-        if (event.type === "state" && event.report) seen.report = event.report;
-      },
-    });
+    const attached = await attachWorld(
+      dir,
+      "parts/sfab/nano-led-module@1.0.0.json",
+      {
+        sender: { kind: "loopback", label: "Mac" },
+        onEvent(event) {
+          if (event.type === "error") {
+            seen.failed =
+              event.message ??
+              event.errors.map((item) => item.message).join("; ");
+          }
+          if (event.type === "state" && event.report)
+            seen.report = event.report;
+        },
+      }
+    );
     if ("error" in attached) throw new Error(attached.error);
     try {
       attached.step(50);

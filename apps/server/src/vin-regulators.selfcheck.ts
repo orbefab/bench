@@ -525,7 +525,12 @@ try {
     throw new Error(armPlan.errors.map((item) => item.message).join("; "));
   }
   const armFeeds = powerFeedsOf(armPlan.plan);
-  const stall = await runProject(armDir, "parts/sfab/arm-stall@1.0.0.json", 2000, "uno");
+  const stall = await runProject(
+    armDir,
+    "parts/sfab/arm-stall@1.0.0.json",
+    2000,
+    "uno"
+  );
   const stallMin = Math.min(...stall.voltages);
   const servoPeak = stall.frames.reduce(
     (max, frame) => Math.max(max, frame.parts.servo?.maxCurrent ?? 0),
@@ -606,7 +611,9 @@ try {
       : mapped;
   });
   writeFileSync(nanoScene, `${JSON.stringify(nanoPart, null, 2)}\n`);
-  rmSync(join(nanoDir, "parts/sfab/nano-servo-usb@1.0.0.lock.json"), { force: true });
+  rmSync(join(nanoDir, "parts/sfab/nano-servo-usb@1.0.0.lock.json"), {
+    force: true,
+  });
   const nanoPlan = planWorld(nanoDir, "parts/sfab/nano-servo-usb@1.0.0.json");
   if (!nanoPlan.ok) {
     throw new Error(nanoPlan.errors.map((item) => item.message).join("; "));

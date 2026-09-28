@@ -426,7 +426,13 @@ function stateAfter(
   });
 }
 
-const holdRows = await sample(armDir, "parts/sfab/arm-bench@1.0.0.json", 3500, 1, ["uno"]);
+const holdRows = await sample(
+  armDir,
+  "parts/sfab/arm-bench@1.0.0.json",
+  3500,
+  1,
+  ["uno"]
+);
 let holdMin = Infinity;
 for (const row of holdRows) {
   const voltage = row.state.boards.uno?.voltage ?? Number.NaN;
@@ -450,7 +456,11 @@ const stallRows = await sample(
   1,
   ["uno"],
   () => {
-    const snap = brownoutBootSnapshot(armDir, "parts/sfab/arm-stall@1.0.0.json", "uno");
+    const snap = brownoutBootSnapshot(
+      armDir,
+      "parts/sfab/arm-stall@1.0.0.json",
+      "uno"
+    );
     expect(snap, "brownout reboot did not snapshot registers");
     if (!snap) return;
     expect(

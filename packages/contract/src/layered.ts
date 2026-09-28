@@ -227,8 +227,7 @@ export const PART_TYPE_FORMAT = "sfab.part-type@1" as const;
 export const PART_FORMAT = "sfab.part@1" as const;
 
 /** A root part on disk: `parts/<publisher>/<name>@<version>.json`. */
-const PART_DOCUMENT_RE =
-  /(?:^|\/)parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i;
+const PART_DOCUMENT_RE = /(?:^|\/)parts\/[^/]+\/[^/]+@\d+\.\d+\.\d+\.json$/i;
 
 /** A legacy world import. */
 const WORLD_DOCUMENT_RE = /\.world\.json$/i;

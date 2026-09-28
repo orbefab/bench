@@ -18,6 +18,7 @@ import {
 import { collapse } from "@sfab-bench/engine-body";
 import { type AvrPinParams, avrPinParams } from "@sfab-bench/engine-circuit";
 import {
+  assetDir,
   type BatteryParams,
   class2BoardNetlist,
   envelopeOf,
@@ -26,7 +27,6 @@ import {
   type LiveInstance,
   type LiveNet,
   type LoadResult,
-  assetDir,
   loadWorldV2,
   pathRefOf,
   siValue,

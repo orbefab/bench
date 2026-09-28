@@ -181,7 +181,10 @@ try {
   rmSync(nestedDir, { recursive: true, force: true });
 }
 
-const moduleWorld = openReport(nanoDir, "parts/sfab/nano-led-module@1.0.0.json");
+const moduleWorld = openReport(
+  nanoDir,
+  "parts/sfab/nano-led-module@1.0.0.json"
+);
 const moduleView = viewOf(moduleWorld.plan);
 const modulePart = moduleView.parts.find((part) => part.id === "module");
 const moduleBox = moduleView.boxes.find((box) => box.id === "module");
@@ -348,12 +351,16 @@ try {
       );
       writeFileSync(partFile, partBefore);
 
-      const handle = await attachWorld(root, "parts/sfab/nano-vcc-usb@1.0.0.json", {
-        sender: { kind: "loopback", label: "Mac" },
-        onEvent(event) {
-          events.push(event);
-        },
-      });
+      const handle = await attachWorld(
+        root,
+        "parts/sfab/nano-vcc-usb@1.0.0.json",
+        {
+          sender: { kind: "loopback", label: "Mac" },
+          onEvent(event) {
+            events.push(event);
+          },
+        }
+      );
       if ("error" in handle) throw new Error(handle.error);
       held.push(handle);
 

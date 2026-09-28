@@ -10,17 +10,14 @@ import {
   GROUND_PART_ID,
   PART_FORMAT,
   PART_TYPE_FORMAT,
-  TARGET_PART_ID,
   type PartFile,
   type PartTypeFile,
+  TARGET_PART_ID,
   type WorldFileV2,
 } from "@sfab-bench/contract";
 
 import { batteryFrom } from "./battery";
 import { comparatorFrom } from "./comparator";
-import { expandPartType } from "./expand";
-import { gearTrainErrors } from "./gear-train";
-import { ldoFrom } from "./ldo";
 import {
   assetDir,
   environmentKind,
@@ -29,6 +26,9 @@ import {
   partToWorld,
   worldToPart,
 } from "./document";
+import { expandPartType } from "./expand";
+import { gearTrainErrors } from "./gear-train";
+import { ldoFrom } from "./ldo";
 import { basename, join, relative, sep } from "./path";
 import {
   classesOf,

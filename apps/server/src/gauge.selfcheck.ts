@@ -667,8 +667,14 @@ try {
     `bench supply: sketch ${benchUs} us, ${bench.voltage.toFixed(3)} V, current ${bench.current} A`
   );
 
-  const gaugeWorldPath = path.join(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.json");
-  const gaugeLockPath = path.join(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.lock.json");
+  const gaugeWorldPath = path.join(
+    gaugeRoot,
+    "parts/sfab/gauge-usb@1.0.0.json"
+  );
+  const gaugeLockPath = path.join(
+    gaugeRoot,
+    "parts/sfab/gauge-usb@1.0.0.lock.json"
+  );
   const gaugeWorldText = readFileSync(gaugeWorldPath, "utf8");
   const gaugeLockText = readFileSync(gaugeLockPath, "utf8");
   const gaugeLock = JSON.parse(gaugeLockText) as LockFile;
@@ -724,19 +730,23 @@ try {
     const events: { type: string; message?: string }[] = [];
     let report: RunReport | null = null;
     const hostEnvelope: string[] = [];
-    const attached = await attachWorld(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.json", {
-      sender,
-      onEvent(event) {
-        if (event.type === "error") {
-          events.push({ type: event.type, message: event.message });
-        }
-        if (event.type === "state" && event.report) {
-          report = event.report;
-          hostEnvelope.length = 0;
-          hostEnvelope.push(...envelopeMessages(event.report));
-        }
-      },
-    });
+    const attached = await attachWorld(
+      gaugeRoot,
+      "parts/sfab/gauge-usb@1.0.0.json",
+      {
+        sender,
+        onEvent(event) {
+          if (event.type === "error") {
+            events.push({ type: event.type, message: event.message });
+          }
+          if (event.type === "state" && event.report) {
+            report = event.report;
+            hostEnvelope.length = 0;
+            hostEnvelope.push(...envelopeMessages(event.report));
+          }
+        },
+      }
+    );
     if ("error" in attached) throw new Error(attached.error);
     try {
       const stepped = await stepWorld(
@@ -746,10 +756,14 @@ try {
         sender
       );
       if ("error" in stepped) throw new Error(stepped.error);
-      const read = await readRecording(gaugeRoot, "parts/sfab/gauge-usb@1.0.0.json", {
-        from: 0,
-        to: 7,
-      });
+      const read = await readRecording(
+        gaugeRoot,
+        "parts/sfab/gauge-usb@1.0.0.json",
+        {
+          from: 0,
+          to: 7,
+        }
+      );
       if ("error" in read) throw new Error(read.error);
       const failed = events.find((event) => event.type === "error");
       expect(!failed, failed?.message ?? "gauge world error");
@@ -971,10 +985,14 @@ try {
   );
 
   async function nanoOnce(): Promise<string> {
-    const attached = await attachWorld(nanoRoot, "parts/sfab/nano-servo-usb@1.0.0.json", {
-      sender,
-      onEvent() {},
-    });
+    const attached = await attachWorld(
+      nanoRoot,
+      "parts/sfab/nano-servo-usb@1.0.0.json",
+      {
+        sender,
+        onEvent() {},
+      }
+    );
     if ("error" in attached) throw new Error(attached.error);
     try {
       const stepped = await stepWorld(
@@ -984,10 +1002,14 @@ try {
         sender
       );
       if ("error" in stepped) throw new Error(stepped.error);
-      const read = await readRecording(nanoRoot, "parts/sfab/nano-servo-usb@1.0.0.json", {
-        from: 0,
-        to: 0.2,
-      });
+      const read = await readRecording(
+        nanoRoot,
+        "parts/sfab/nano-servo-usb@1.0.0.json",
+        {
+          from: 0,
+          to: 0.2,
+        }
+      );
       if ("error" in read) throw new Error(read.error);
       return JSON.stringify({ frames: read.frames, events: read.events });
     } finally {

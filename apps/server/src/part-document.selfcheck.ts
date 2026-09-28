@@ -3,7 +3,7 @@
  * Frames and serial stay byte-identical. The report names the document.
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -13,28 +13,67 @@ import type { RunReport } from "@sfab-bench/contract";
 import { convertWorldFile, loadWorldV2, sha256Bytes } from "@sfab-bench/parts";
 import type { SerialChunk } from "@sfab-bench/sim/sim";
 import { Sim } from "@sfab-bench/sim/sim";
-
+import { projectReal, readerFor, readInside } from "./world/files";
 import { nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
 import { catalogRoot, planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
-import { projectReal, readerFor, readInside } from "./world/files";
 
 const repo = fileURLToPath(new URL("../../..", import.meta.url));
 const BASE = "b6fa416";
 const SPAN_MS = 3000;
 
 const examples: { dir: string; world: string; part: string }[] = [
-  { dir: "examples/arm", world: "arm.world.json", part: "parts/sfab/arm-bench@1.0.0.json" },
-  { dir: "examples/arm", world: "arm-stall.world.json", part: "parts/sfab/arm-stall@1.0.0.json" },
-  { dir: "examples/gauge", world: "gauge-usb.world.json", part: "parts/sfab/gauge-usb@1.0.0.json" },
-  { dir: "examples/nano", world: "nano-divider.world.json", part: "parts/sfab/nano-divider@1.0.0.json" },
-  { dir: "examples/nano", world: "nano-led.world.json", part: "parts/sfab/nano-led@1.0.0.json" },
-  { dir: "examples/nano", world: "nano-led-module.world.json", part: "parts/sfab/nano-led-module@1.0.0.json" },
-  { dir: "examples/nano", world: "nano-servo-collapsed.world.json", part: "parts/sfab/nano-servo-collapsed@1.0.0.json" },
-  { dir: "examples/nano", world: "nano-servo-usb.world.json", part: "parts/sfab/nano-servo-usb@1.0.0.json" },
-  { dir: "examples/nano", world: "nano-vcc-class1.world.json", part: "parts/sfab/nano-vcc-class1@1.0.0.json" },
-  { dir: "examples/nano", world: "nano-vcc-usb.world.json", part: "parts/sfab/nano-vcc-usb@1.0.0.json" },
+  {
+    dir: "examples/arm",
+    world: "arm.world.json",
+    part: "parts/sfab/arm-bench@1.0.0.json",
+  },
+  {
+    dir: "examples/arm",
+    world: "arm-stall.world.json",
+    part: "parts/sfab/arm-stall@1.0.0.json",
+  },
+  {
+    dir: "examples/gauge",
+    world: "gauge-usb.world.json",
+    part: "parts/sfab/gauge-usb@1.0.0.json",
+  },
+  {
+    dir: "examples/nano",
+    world: "nano-divider.world.json",
+    part: "parts/sfab/nano-divider@1.0.0.json",
+  },
+  {
+    dir: "examples/nano",
+    world: "nano-led.world.json",
+    part: "parts/sfab/nano-led@1.0.0.json",
+  },
+  {
+    dir: "examples/nano",
+    world: "nano-led-module.world.json",
+    part: "parts/sfab/nano-led-module@1.0.0.json",
+  },
+  {
+    dir: "examples/nano",
+    world: "nano-servo-collapsed.world.json",
+    part: "parts/sfab/nano-servo-collapsed@1.0.0.json",
+  },
+  {
+    dir: "examples/nano",
+    world: "nano-servo-usb.world.json",
+    part: "parts/sfab/nano-servo-usb@1.0.0.json",
+  },
+  {
+    dir: "examples/nano",
+    world: "nano-vcc-class1.world.json",
+    part: "parts/sfab/nano-vcc-class1@1.0.0.json",
+  },
+  {
+    dir: "examples/nano",
+    world: "nano-vcc-usb.world.json",
+    part: "parts/sfab/nano-vcc-usb@1.0.0.json",
+  },
 ];
 
 function expect(cond: unknown, label: string) {
@@ -67,7 +106,10 @@ function takeLines(chunks: SerialChunk[]): string[] {
   return lines;
 }
 
-async function recorded(project: string, world: string): Promise<{
+async function recorded(
+  project: string,
+  world: string
+): Promise<{
   frames: string;
   serial: string[];
   count: number;
@@ -124,10 +166,9 @@ function reportOf(project: string, world: string): RunReport {
 }
 
 function differing(left: RunReport, right: RunReport): string[] {
-  const keys = new Set([
-    ...Object.keys(left),
-    ...Object.keys(right),
-  ]) as Set<keyof RunReport>;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]) as Set<
+    keyof RunReport
+  >;
   const fields: string[] = [];
   for (const key of keys) {
     if (JSON.stringify(left[key]) !== JSON.stringify(right[key])) {
@@ -272,7 +313,9 @@ function writeJson(file: string, value: unknown) {
         body: {
           "0": {
             default: "none",
-            variants: { none: { kind: "none", omits: ["assembly adds no body"] } },
+            variants: {
+              none: { kind: "none", omits: ["assembly adds no body"] },
+            },
           },
         },
         visual: {
@@ -295,7 +338,10 @@ function writeJson(file: string, value: unknown) {
         JSON.stringify([0, 0, -9.81]),
       `nested gravity ${JSON.stringify(loaded.world?.environment.gravity)}`
     );
-    expect(loaded.world?.run.seed === 1, `nested seed ${loaded.world?.run.seed}`);
+    expect(
+      loaded.world?.run.seed === 1,
+      `nested seed ${loaded.world?.run.seed}`
+    );
     expect(
       loaded.world?.run.timestep === 0.001,
       `nested timestep ${loaded.world?.run.timestep}`
@@ -422,7 +468,9 @@ function writeJson(file: string, value: unknown) {
         body: {
           "0": {
             default: "none",
-            variants: { none: { kind: "none", omits: ["assembly adds no body"] } },
+            variants: {
+              none: { kind: "none", omits: ["assembly adds no body"] },
+            },
           },
         },
         visual: {
@@ -460,7 +508,9 @@ function writeJson(file: string, value: unknown) {
         body: {
           "0": {
             default: "none",
-            variants: { none: { kind: "none", omits: ["assembly adds no body"] } },
+            variants: {
+              none: { kind: "none", omits: ["assembly adds no body"] },
+            },
           },
         },
         visual: {
@@ -503,10 +553,16 @@ function writeJson(file: string, value: unknown) {
 
 const moved = [
   ["baseline arm.world.json:", "baseline parts/sfab/arm-bench@1.0.0.json:"],
-  ["baseline arm-stall.world.json:", "baseline parts/sfab/arm-stall@1.0.0.json:"],
+  [
+    "baseline arm-stall.world.json:",
+    "baseline parts/sfab/arm-stall@1.0.0.json:",
+  ],
   ["usb nano-led.world.json:", "usb parts/sfab/nano-led@1.0.0.json:"],
   ["usb nano-divider.world.json:", "usb parts/sfab/nano-divider@1.0.0.json:"],
-  ["usb nano-servo-usb.world.json:", "usb parts/sfab/nano-servo-usb@1.0.0.json:"],
+  [
+    "usb nano-servo-usb.world.json:",
+    "usb parts/sfab/nano-servo-usb@1.0.0.json:",
+  ],
   ["usb nano-vcc-usb.world.json:", "usb parts/sfab/nano-vcc-usb@1.0.0.json:"],
 ];
 for (const [before, after] of moved) {

@@ -106,7 +106,11 @@ function ratioOf(row: SeamEnergy): number {
 }
 
 {
-  const report = await runWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", 2000);
+  const report = await runWorld(
+    armDir,
+    "parts/sfab/arm-bench@1.0.0.json",
+    2000
+  );
   const row = motorOf(report, "servo");
   const ratio = ratioOf(row);
   expect(!row.flagged, `healthy servo flagged\n${seamLine(row)}`);

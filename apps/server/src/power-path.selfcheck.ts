@@ -486,9 +486,14 @@ async function runWorld(
 }
 
 {
-  const opened = await runWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", 200, {
-    fuseStart: "tripped",
-  });
+  const opened = await runWorld(
+    armDir,
+    "parts/sfab/arm-bench@1.0.0.json",
+    200,
+    {
+      fuseStart: "tripped",
+    }
+  );
   expect(opened.state.supplies, "circuit supplies");
   const boardV = opened.state.boards.uno?.voltage ?? Number.NaN;
   const amps = opened.state.supplies?.usb?.current ?? Number.NaN;

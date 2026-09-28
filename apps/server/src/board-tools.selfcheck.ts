@@ -87,12 +87,16 @@ try {
         `bad board: ${JSON.stringify(missing)}`
       );
 
-      const attached = await attachWorld(root, "parts/sfab/arm-bench@1.0.0.json", {
-        sender: { kind: "loopback", label: "Mac" },
-        onEvent(event) {
-          events.push(event);
-        },
-      });
+      const attached = await attachWorld(
+        root,
+        "parts/sfab/arm-bench@1.0.0.json",
+        {
+          sender: { kind: "loopback", label: "Mac" },
+          onEvent(event) {
+            events.push(event);
+          },
+        }
+      );
       if ("error" in attached) throw new Error(attached.error);
       held.handle = attached;
       const booted = events.find((event) => event.type === "state");
@@ -164,7 +168,11 @@ try {
       );
 
       const sent = await boardTools.send_serial.execute!(
-        { world: "parts/sfab/arm-bench@1.0.0.json", board: "uno", text: "ping" },
+        {
+          world: "parts/sfab/arm-bench@1.0.0.json",
+          board: "uno",
+          text: "ping",
+        },
         {} as never
       );
       expect(sent && "ok" in sent && sent.ok === true, "send_serial writes");
@@ -179,7 +187,11 @@ try {
         "agent send is echoed"
       );
       const long = await boardTools.send_serial.execute!(
-        { world: "parts/sfab/arm-bench@1.0.0.json", board: "uno", text: "x".repeat(8001) },
+        {
+          world: "parts/sfab/arm-bench@1.0.0.json",
+          board: "uno",
+          text: "x".repeat(8001),
+        },
         {} as never
       );
       expect(

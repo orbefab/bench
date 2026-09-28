@@ -30,7 +30,10 @@ const both = readOpenDocument(
 );
 expect(both.kind === "world", "a URL that names both opens the world");
 if (both.kind === "world") {
-  expect(both.path === "examples/arm/parts/sfab/arm-bench@1.0.0.json", "world path is read");
+  expect(
+    both.path === "examples/arm/parts/sfab/arm-bench@1.0.0.json",
+    "world path is read"
+  );
 }
 
 const file = readOpenDocument("?file=cad/a.step");

@@ -4,11 +4,7 @@
   "type": "assembly",
   "foreign": false,
   "play": {
-    "gravity": [
-      0,
-      0,
-      -9.81
-    ],
+    "gravity": [0, 0, -9.81],
     "seed": 1,
     "timestep": 0.001,
     "levels": {
@@ -27,9 +23,7 @@
         "variants": {
           "netlist": {
             "kind": "composite",
-            "omits": [
-              "play settings are not a behaviour"
-            ],
+            "omits": ["play settings are not a behaviour"],
             "netlist": {
               "instances": {
                 "scene": {
@@ -52,9 +46,7 @@
         "variants": {
           "none": {
             "kind": "none",
-            "omits": [
-              "assembly adds no body"
-            ]
+            "omits": ["assembly adds no body"]
           }
         }
       }
@@ -65,9 +57,7 @@
         "variants": {
           "none": {
             "kind": "none",
-            "omits": [
-              "assembly adds no visual"
-            ]
+            "omits": ["assembly adds no visual"]
           }
         }
       }

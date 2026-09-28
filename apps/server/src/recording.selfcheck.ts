@@ -358,7 +358,11 @@ function holdWindows(
   return holds;
 }
 
-const demo1 = await recordedRun(armDir, "parts/sfab/arm-bench@1.0.0.json", 3500);
+const demo1 = await recordedRun(
+  armDir,
+  "parts/sfab/arm-bench@1.0.0.json",
+  3500
+);
 try {
   const foot = await recordingInfo(armDir, "parts/sfab/arm-bench@1.0.0.json");
   if ("error" in foot) throw new Error(foot.error);
@@ -432,7 +436,11 @@ try {
   await stopWorld(armDir, "parts/sfab/arm-bench@1.0.0.json");
 }
 
-const demo2 = await recordedRun(armDir, "parts/sfab/arm-stall@1.0.0.json", 2000);
+const demo2 = await recordedRun(
+  armDir,
+  "parts/sfab/arm-stall@1.0.0.json",
+  2000
+);
 try {
   const resets = demo2.read.events.filter((event) => event.kind === "reset");
   const reboots = demo2.read.events.filter((event) => event.kind === "reboot");
@@ -528,15 +536,22 @@ try {
       if (Date.now() - started > 10000) throw new Error("hex reload timed out");
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    const afterHex = await readRecording(reloadRoot, "parts/sfab/arm-bench@1.0.0.json", {
-      from: 0,
-      to: 1,
-    });
+    const afterHex = await readRecording(
+      reloadRoot,
+      "parts/sfab/arm-bench@1.0.0.json",
+      {
+        from: 0,
+        to: 1,
+      }
+    );
     if ("error" in afterHex) throw new Error(afterHex.error);
     const reloads = afterHex.events.filter((event) => event.kind === "reload");
     expect(reloads.length === 1, `reload events ${reloads.length}`);
     expect(msOf(reloads[0]?.t ?? -1) === 200, `reload at ${reloads[0]?.t}`);
-    const still = await recordingInfo(reloadRoot, "parts/sfab/arm-bench@1.0.0.json");
+    const still = await recordingInfo(
+      reloadRoot,
+      "parts/sfab/arm-bench@1.0.0.json"
+    );
     if ("error" in still) throw new Error(still.error);
     expect(still.id === id, `hex restart changed recording ${still.id}`);
     const worldPath = join(reloadRoot, "parts/sfab/arm-bench@1.0.0.json");
@@ -771,7 +786,11 @@ async function factor(enabled: boolean): Promise<number> {
   if ("error" in attached) throw new Error(attached.error);
   try {
     if (!enabled) {
-      const off = await setRecordingEnabled(armDir, "parts/sfab/arm-bench@1.0.0.json", false);
+      const off = await setRecordingEnabled(
+        armDir,
+        "parts/sfab/arm-bench@1.0.0.json",
+        false
+      );
       if ("error" in off) throw new Error(off.error);
     }
     attached.step(200);
@@ -802,11 +821,18 @@ const boundTrace = openTrace(armDir, "parts/sfab/arm-bench@1.0.0.json");
 const boundHandle = await boundTrace.attached;
 if ("error" in boundHandle) throw new Error(boundHandle.error);
 try {
-  const set = await setRecordingBound(armDir, "parts/sfab/arm-bench@1.0.0.json", 40);
+  const set = await setRecordingBound(
+    armDir,
+    "parts/sfab/arm-bench@1.0.0.json",
+    40
+  );
   if ("error" in set) throw new Error(set.error);
   boundHandle.step(200);
   await boundTrace.at(0.2);
-  const boundedInfo = await recordingInfo(armDir, "parts/sfab/arm-bench@1.0.0.json");
+  const boundedInfo = await recordingInfo(
+    armDir,
+    "parts/sfab/arm-bench@1.0.0.json"
+  );
   if ("error" in boundedInfo) throw new Error(boundedInfo.error);
   expect(
     boundedInfo.from > 0,

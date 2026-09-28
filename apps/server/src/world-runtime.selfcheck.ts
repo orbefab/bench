@@ -856,13 +856,15 @@ try {
 const catalog = listProjectFiles(armDir);
 expect(
   catalog.some(
-    (file) => file.path === "parts/sfab/arm-bench@1.0.0.json" && file.kind === "world"
+    (file) =>
+      file.path === "parts/sfab/arm-bench@1.0.0.json" && file.kind === "world"
   ),
   "catalog lists the world"
 );
 expect(
   catalog.some(
-    (file) => file.path === "parts/sfab/arm-stall@1.0.0.json" && file.kind === "world"
+    (file) =>
+      file.path === "parts/sfab/arm-stall@1.0.0.json" && file.kind === "world"
   ),
   "catalog lists the stall world"
 );
@@ -956,7 +958,12 @@ try {
   serialHandle.step(3500);
   await withTimeout(
     waitUntil(() => {
-      const page = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
+      const page = readSerial(
+        armDir,
+        "parts/sfab/arm-bench@1.0.0.json",
+        "uno",
+        0
+      );
       return !("error" in page) && page.text.includes("120\r\n");
     }, "hold printed 120"),
     30000,
@@ -973,11 +980,21 @@ try {
     `board lockstep rtf ${(3.5 / wallS).toFixed(3)} (3.500 sim s / ${wallS.toFixed(3)} wall s)`
   );
   const mid = page.text.indexOf("90\r\n");
-  const newer = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", mid);
+  const newer = readSerial(
+    armDir,
+    "parts/sfab/arm-bench@1.0.0.json",
+    "uno",
+    mid
+  );
   if ("error" in newer) throw new Error(newer.error);
   expect(newer.text === page.text.slice(mid), "from returns only newer text");
   expect(newer.next === page.next, "next is the ring end");
-  const done = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", page.next);
+  const done = readSerial(
+    armDir,
+    "parts/sfab/arm-bench@1.0.0.json",
+    "uno",
+    page.next
+  );
   if ("error" in done) throw new Error(done.error);
   expect(done.text === "", "from next is empty");
   expect(
@@ -991,7 +1008,12 @@ try {
   );
 
   serialHandle.pause();
-  const frozen = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
+  const frozen = readSerial(
+    armDir,
+    "parts/sfab/arm-bench@1.0.0.json",
+    "uno",
+    0
+  );
   if ("error" in frozen) throw new Error(frozen.error);
   await sleep(300);
   const still = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
@@ -1001,14 +1023,24 @@ try {
   serialHandle.play();
   await withTimeout(
     waitUntil(() => {
-      const live = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
+      const live = readSerial(
+        armDir,
+        "parts/sfab/arm-bench@1.0.0.json",
+        "uno",
+        0
+      );
       return !("error" in live) && live.next > frozen.next;
     }, "serial while playing"),
     8000,
     "serial while playing"
   );
   serialHandle.pause();
-  const paused = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);
+  const paused = readSerial(
+    armDir,
+    "parts/sfab/arm-bench@1.0.0.json",
+    "uno",
+    0
+  );
   if ("error" in paused) throw new Error(paused.error);
   await sleep(350);
   const held = readSerial(armDir, "parts/sfab/arm-bench@1.0.0.json", "uno", 0);

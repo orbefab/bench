@@ -485,7 +485,10 @@ function sci(n: number): string {
   return n.toExponential(2);
 }
 
-for (const world of ["parts/sfab/arm-bench@1.0.0.json", "parts/sfab/arm-stall@1.0.0.json"]) {
+for (const world of [
+  "parts/sfab/arm-bench@1.0.0.json",
+  "parts/sfab/arm-stall@1.0.0.json",
+]) {
   const delta = boardDelta(world);
   expect(delta.class2 <= 1e-12, `${world} class 2 Δ ${delta.class2} V`);
   expect(delta.alias <= 1e-12, `${world} class 1 Δ ${delta.alias} V`);

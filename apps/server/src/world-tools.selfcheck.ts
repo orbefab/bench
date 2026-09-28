@@ -257,12 +257,16 @@ try {
         "a missing world was opened"
       );
 
-      const attached = await attachWorld(root, "parts/sfab/arm-bench@1.0.0.json", {
-        sender: { kind: "loopback", label: "Mac" },
-        onEvent(event) {
-          events.push(event);
-        },
-      });
+      const attached = await attachWorld(
+        root,
+        "parts/sfab/arm-bench@1.0.0.json",
+        {
+          sender: { kind: "loopback", label: "Mac" },
+          onEvent(event) {
+            events.push(event);
+          },
+        }
+      );
       if ("error" in attached) throw new Error(attached.error);
       held.push(attached);
 
@@ -456,12 +460,16 @@ try {
       );
 
       const late: WorldServerMessage[] = [];
-      const second = await attachWorld(root, "parts/sfab/arm-bench@1.0.0.json", {
-        sender: { kind: "paired", label: "Quest" },
-        onEvent(event) {
-          late.push(event);
-        },
-      });
+      const second = await attachWorld(
+        root,
+        "parts/sfab/arm-bench@1.0.0.json",
+        {
+          sender: { kind: "paired", label: "Quest" },
+          onEvent(event) {
+            late.push(event);
+          },
+        }
+      );
       if ("error" in second) throw new Error(second.error);
       held.push(second);
       expect(
@@ -496,7 +504,9 @@ try {
       );
 
       const beforeStep = events.length;
-      await call(worldTools.world_play, { world: "parts/sfab/arm-bench@1.0.0.json" });
+      await call(worldTools.world_play, {
+        world: "parts/sfab/arm-bench@1.0.0.json",
+      });
       const steppedLive = await call(worldTools.world_step, {
         world: "parts/sfab/arm-bench@1.0.0.json",
         ms: 50,

@@ -2,8 +2,8 @@ import {
   type Dirent,
   existsSync,
   type FSWatcher,
-  readFileSync,
   readdirSync,
+  readFileSync,
   statSync,
   watch,
 } from "node:fs";
@@ -17,7 +17,7 @@ import {
   resolve,
   sep,
 } from "node:path";
-import { PART_FORMAT, type CatalogEntry } from "@sfab-bench/contract";
+import { type CatalogEntry, PART_FORMAT } from "@sfab-bench/contract";
 import { db } from "./db";
 
 const STEP_RE = /\.(step|stp)$/i;
