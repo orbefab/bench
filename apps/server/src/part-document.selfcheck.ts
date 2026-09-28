@@ -638,21 +638,3 @@ function writeJson(file: string, value: unknown) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
-
-const moved = [
-  ["baseline arm.world.json:", "baseline parts/sfab/arm-bench@1.0.0.json:"],
-  [
-    "baseline arm-stall.world.json:",
-    "baseline parts/sfab/arm-stall@1.0.0.json:",
-  ],
-  ["usb nano-led.world.json:", "usb parts/sfab/nano-led@1.0.0.json:"],
-  ["usb nano-divider.world.json:", "usb parts/sfab/nano-divider@1.0.0.json:"],
-  [
-    "usb nano-servo-usb.world.json:",
-    "usb parts/sfab/nano-servo-usb@1.0.0.json:",
-  ],
-  ["usb nano-vcc-usb.world.json:", "usb parts/sfab/nano-vcc-usb@1.0.0.json:"],
-];
-for (const [before, after] of moved) {
-  console.log(`moved line: ${before} → ${after}`);
-}
