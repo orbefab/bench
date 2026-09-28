@@ -243,8 +243,9 @@ line(
   reasons.default === 10 &&
     reasons.type === 2 &&
     reasons.path === 2 &&
-    reasons.parent === 0 &&
-    reasons.fallback === 22 &&
+    // Each rig's Uno power group stays class 2, and its leaves fall back.
+    reasons.parent === 2 &&
+    reasons.fallback === 68 &&
     reasons.none === 12 &&
     rig1?.class === 0 &&
     rig1.reason === "type rule hobby-servo-3wire" &&
