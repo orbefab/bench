@@ -148,6 +148,8 @@ export class RailCircuit {
     null;
   private readonly resetFraction: number | null;
   private readonly resetNode: string | null;
+  /** Board port → circuit node. Empty when this rail has no stamp. */
+  private readonly portNodes: Readonly<Record<string, string>>;
   /** Plain-branch tables stamped with the board. The feed table is `src`. */
   private readonly branchLaws: LawTable[];
   private ready = false;
@@ -183,6 +185,7 @@ export class RailCircuit {
     this.ledPaths = this.ledDiodes.map((led) => led.path);
     this.ledAlias = spec.ledAlias ?? stamp?.ledAlias ?? "";
     this.resetNode = realized?.resetNode ?? null;
+    this.portNodes = stamp?.portNodes ?? {};
     this.resetFraction = spec.resetFraction ?? stamp?.resetFraction ?? null;
     let inductive = false;
     const motors: BridgeMotor[] = [];
@@ -288,6 +291,21 @@ export class RailCircuit {
   setDrive(bit: number, mode: PinMode): void {
     const found = this.drives.find((row) => row.bit === bit);
     found?.pin.setMode(mode);
+  }
+
+  /**
+   * Solved voltage of a board port that is a node of this rail.
+   * Null when the port is not in the stamp or the node was pruned.
+   * `rSource` is that node's Thevenin resistance from the factored
+   * Jacobian. It is 0 when the factor is gone.
+   */
+  probePort(port: string): { voltage: number; rSource: number } | null {
+    const node = this.portNodes[port];
+    if (!node) return null;
+    if (node !== "0" && !this.engine.nodeNames.includes(node)) return null;
+    const voltage = node === "0" ? 0 : this.engine.voltage(node);
+    const r = this.engine.thevenin(node);
+    return { voltage, rSource: r ?? 0 };
   }
 
   /** D13. Same as `setDrive` for that bit. */

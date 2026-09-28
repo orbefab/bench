@@ -569,6 +569,25 @@ for (const rail of POT_RAILS) {
   console.log(`INFO diodes 50 nodes (10%): ${diodeUs.toFixed(2)} µs/step`);
 }
 
+{
+  const eng = new Engine(
+    [
+      vSource("v", "top", "0", { kind: "dc", value: 5 }),
+      resistor("rt", "top", "mid", 10_000),
+      resistor("rb", "mid", "0", 10_000),
+    ],
+    { method: "be", h: 1e-3 }
+  );
+  eng.operatingPoint();
+  const r = eng.thevenin("mid");
+  expect(r !== null && Math.abs(r - 5000) < 1e-6, `divider rSource ${r}`);
+  expect(
+    Math.abs(eng.voltage("mid") - 2.5) < 1e-9,
+    `mid ${eng.voltage("mid")}`
+  );
+  console.log(`circuit divider thevenin: ${r} ohm`);
+}
+
 expect(
   gminFallbackCalls === 0,
   `gmin fallback ran ${gminFallbackCalls} times on the existing checks`

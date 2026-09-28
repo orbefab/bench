@@ -178,7 +178,7 @@ AVCC (REFS = 01) is the board node at the end of the previous 1 ms step, latched
 | 14 | Bandgap, 1.1 V. DS40002061 ADC Characteristics, internal reference 1.0 V min, 1.1 V typical, 1.2 V max. |
 | 15 | 0 V |
 
-A0–A5 follow the table above. A6 and A7 are analog only. A net with this board's `5V` reads the board node. `GND` reads 0 V. A power or ground port wins over the pin's own mode. Anything else on the net, including another pin or a part, reads 0 V through `rLeak`.
+A0–A5 follow the table above. A6 and A7 are analog only. A net with this board's `5V` reads the board node. `GND` reads 0 V. A power or ground port wins over the pin's own mode. Any other net that is a node of a stamped circuit reads that node's solved voltage at the conversion's master step. The source resistance is the node's Thevenin resistance from the same factor: one extra backsolve with a 1 A injection, and only when a conversion happens. A net that is not in a stamp, including another pin or a part the circuit did not take, reads 0 V through `rLeak`.
 
 Omitted: ADC INL and DNL, ADC noise, the noise canceller, temperature drift, and the AREF pin circuit.
 
@@ -434,7 +434,7 @@ These came out of the motor/rail and pin experiments. They are proposals, not ye
 - **`run.coupling`** on the world, not the part: `scheme` ∈ `explicit | substep | implicit-damping`, `substeps` (default 10), `bemfDamping` ∈ `body | circuit`. Default for a hobby servo is `substep`. A joint with `dt·B/J > 2` selects `implicit-damping`, which puts the derived `B(s) = η·K²/(R + Rs·s²)` on the joint's damping. `B(s)` is derived, never a parameter.
 - **Braking current** returns to the rail (`I_rail = s·I` may be negative). The rail clips it at 0; the measured bench (E10) decides which the SG90 part keeps.
 - **Pin element `avr-pin@1`** (landed, §3): `roh`, `rol`, `rpu` and `rLeak` on the firmware variant. High is the board node. DDR and PORT select the mode at the master step.
-- **ADC** (landed, §3): AVCC is the board node from the end of the previous 1 ms step. The count is `floor(V/Vref·1024)`, clamped to 1023. The sample-and-hold is a closed form, not a live 14 pF node. INL, DNL, noise, the noise canceller and temperature drift are omitted.
+- **ADC** (landed, §3): AVCC is the board node from the end of the previous 1 ms step. The count is `floor(V/Vref·1024)`, clamped to 1023. The sample-and-hold is a closed form, not a live 14 pF node. A channel whose net is a stamped circuit node reads that node's solved voltage, and `rSource` is the node's Thevenin resistance from the same factor. A net outside a stamp keeps the wire rules in §3. INL, DNL, noise, the noise canceller and temperature drift are omitted.
 - **Current-limit floor**: a `thevenin-limit@1` rail feeding regenerating motors needs a clamp (the bridge's body diodes) so the terminal voltage cannot go negative.
 - **Run report** adds the **passivity sum** at each circuit/body cut (joules injected by the coupling) and flags it when it grows.
 - **`ptc-fuse@1`** (Uno F1, Bourns MF-MSMF050-2): cold resistance is Rmin 0.15 Ω. R1max 1.00 Ω is the post-trip ceiling, not the cold value. `Ihold` 0.50 A, `Itrip` 1.00 A. Thermal state `u` integrates `I²R` once per 1 ms master step, outside the circuit solve. At `u = 1` the branch goes to a high resistance and returns to the cold value once `u` falls.

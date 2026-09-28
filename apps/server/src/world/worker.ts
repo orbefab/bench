@@ -164,6 +164,7 @@ export type AdcSampleStamp = {
   vRef: number;
   voltage: number;
   count: number;
+  rSource: number;
 };
 
 export type AdcTrace = {
@@ -1645,6 +1646,7 @@ function noteAdc(boardId: string, sample: AdcConversion) {
     vRef: sample.vRef,
     voltage: sample.voltage,
     count: sample.count,
+    rSource: sample.rSource,
   });
 }
 
@@ -1671,6 +1673,11 @@ function attachAnalog(board: AvrBoard) {
         pin: spec.pin,
         boardVolts: latchedBoardNode,
         supplyVolts: (supplyId) => supplyLive[supplyId]?.voltage ?? 0,
+        stamped: (ch) => {
+          const supplyId = boardPower.get(board.id)?.supplyId;
+          const circuit = supplyId ? rails.get(supplyId)?.circuit : undefined;
+          return circuit?.probePort(`A${ch}`) ?? null;
+        },
       });
     },
     ...(adcTrace

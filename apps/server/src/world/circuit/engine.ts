@@ -704,6 +704,23 @@ export class Engine {
     return this.x[i] as number;
   }
 
+  /**
+   * Small-signal resistance at a node, ohms. One backsolve of the factor
+   * already built for this step, with a 1 A injection and sources shorted.
+   * Null when this step has no factor, or the name is not a node.
+   */
+  thevenin(name: string): number | null {
+    if (name === "0") return 0;
+    if (!this.haveLU) return null;
+    const i = this.nodeNames.indexOf(name);
+    if (i < 0) return null;
+    const b = new Float64Array(this.n);
+    const y = new Float64Array(this.n);
+    b[i] = 1;
+    luSolve(this.A, this.n, this.perm, b, y);
+    return y[i] as number;
+  }
+
   branchCurrent(name: string): number {
     const i = this.branchNames.indexOf(name);
     if (i < 0) throw new Error(`no branch ${name}`);

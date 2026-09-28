@@ -1,0 +1,120 @@
+{
+  "format": "sfab.lock@1",
+  "parts": [
+    {
+      "id": "sfab/capacitor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/capacitor@1.0.0.json",
+      "sha256": "4cd09ef3beba925f97d238c6078aec4b927cc94621011cb534bb313140b60e8e",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/diode-ss14@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/diode-ss14@1.0.0.json",
+      "sha256": "fce139f01a88f129dc3bb08187ec91a7bc5c6b84c3b3a8ec2e08a785837cc059",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/led-red@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/led-red@1.0.0.json",
+      "sha256": "009dffe0e8b10c328b94459ec7eb1396ddb330fef5c95f92d7f74cf50981d9c2",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/nano-ch340@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
+      "sha256": "7015e11a23ed79613472f3bd08f92d94f1c8e2ad74158ab6fa32944026a3a756",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/nano-divider-scene@1.0.0",
+      "path": "parts/sfab/nano-divider-scene@1.0.0.json",
+      "sha256": "97ed13362a7694758aef50732016dccf6e730accff3724dbc350a7a124c0bb7e",
+      "source": "world",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/nano-power-input@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/nano-power-input@1.0.0.json",
+      "sha256": "13321e061f98832b931fc1b05c44b94c11d718185a3f3d3b7e467aa9f907b371",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/resistor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/resistor@1.0.0.json",
+      "sha256": "4b38e5fa1fd847a3e8d52bfa23d65699a13bc9a9d2c62b20cf901ee222d6361a",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/usb-port-500ma@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/usb-port-500ma@1.0.0.json",
+      "sha256": "4eb1ed6007fd6046ee8d025f2ff70852d9b27bfd460278ab23689ed48f277521",
+      "source": "catalog",
+      "version": "1.0.0"
+    }
+  ],
+  "snapshots": [
+    {
+      "id": "sfab/nano-usb-5v@1.0.0",
+      "path": "../../apps/server/catalog/snapshots/sfab/nano-usb-5v@1.0.0.json",
+      "sha256": "1cda3a7c2650f8034990492dbb2e57a29417f7f760dc7525f6c7342bde647c7b",
+      "source": "catalog"
+    }
+  ],
+  "types": [
+    {
+      "id": "arduino-nano",
+      "path": "../../apps/server/catalog/types/arduino-nano.json",
+      "sha256": "a04be684c2ffb7b974c96b1cfe4861f1f4ca1b1408eb5d80b3cc33691f10d306",
+      "source": "catalog"
+    },
+    {
+      "id": "assembly",
+      "path": "../../apps/server/catalog/types/assembly.json",
+      "sha256": "d3d12a01bb5564827caab4bf45b624199124264c89dc582d46f4775b83a34c41",
+      "source": "catalog"
+    },
+    {
+      "id": "capacitor",
+      "path": "../../apps/server/catalog/types/capacitor.json",
+      "sha256": "cb8a7070edcaad83051a688cc5fefdca8a5800e597892d549cbfbccfdbb3ef13",
+      "source": "catalog"
+    },
+    {
+      "id": "diode",
+      "path": "../../apps/server/catalog/types/diode.json",
+      "sha256": "2acc095e3190263e167b598d47f2917d373f1275d1adc18f8be244738794dce4",
+      "source": "catalog"
+    },
+    {
+      "id": "led",
+      "path": "../../apps/server/catalog/types/led.json",
+      "sha256": "9a85dfd184a8511510d43d79cede9e2f01d69f3113e02b250c4c790cb47e385f",
+      "source": "catalog"
+    },
+    {
+      "id": "power-input",
+      "path": "../../apps/server/catalog/types/power-input.json",
+      "sha256": "3eed99108a8d259fddddd12284b837d7127eaf33bc04718f56740553d1573e6e",
+      "source": "catalog"
+    },
+    {
+      "id": "resistor",
+      "path": "../../apps/server/catalog/types/resistor.json",
+      "sha256": "bd300d9ec35ce882fb73a75fd9afb9739844b5567ec263ed41d8d7416eee04e6",
+      "source": "catalog"
+    },
+    {
+      "id": "usb-a-port",
+      "path": "../../apps/server/catalog/types/usb-a-port.json",
+      "sha256": "6168a3742bb9784135d8cb737bfe8b431571531e8a36d8baec0b9eb597ea2f5c",
+      "source": "catalog"
+    }
+  ],
+  "world": "nano-divider.world"
+}

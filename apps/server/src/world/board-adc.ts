@@ -41,6 +41,8 @@ export type AdcConversion = {
   vRef: number;
   voltage: number;
   count: number;
+  /** Thevenin ohms of a stamped node. 0 on the wire-walk path. */
+  rSource: number;
 };
 
 export type BoardAdcHooks = {
@@ -86,6 +88,7 @@ export function attachBoardAdc(cpu: CPU, hooks: BoardAdcHooks): AVRADC {
         vRef: ref.voltage,
         voltage,
         count,
+        rSource: source.rSource,
       });
     }
     cpu.addClockEvent(() => adc.completeADCRead(count), adc.sampleCycles);

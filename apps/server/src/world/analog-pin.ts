@@ -16,8 +16,11 @@ export type AnalogRead = {
  * terminal. This pin alone, as an output, is its `avr-pin@1` level unloaded:
  * high is the board node and low is 0. An input with nothing on it is 0 V.
  * A pull-up with nothing on it is the board node. A6 and A7 have no DDR, so
- * they only follow the net. Anything else on the net, including another
- * part, reads 0 V.
+ * they only follow the net.
+ *
+ * Any other net that is a node of a stamped circuit reads that node's
+ * solved voltage, and `rSource` is its Thevenin resistance. A net that is
+ * not in a stamp, including another part the circuit did not take, reads 0 V.
  */
 export function analogRead(opts: {
   plan: RunPlan;
@@ -27,6 +30,8 @@ export function analogRead(opts: {
   pin: AvrPinParams;
   boardVolts: (boardId: string) => number;
   supplyVolts: (supplyId: string) => number;
+  /** Solved node for this channel, when a stamped circuit has it. */
+  stamped?: (channel: number) => AnalogRead | null;
 }): AnalogRead {
   const start = `${opts.boardId}.A${opts.channel}`;
   const seen = new Set<string>();
@@ -64,7 +69,11 @@ export function analogRead(opts: {
       hit.kind === "board" ? opts.boardVolts(hit.id) : opts.supplyVolts(hit.id);
     return { voltage, rSource: 0 };
   }
-  if (foreign) return { voltage: 0, rSource: opts.pin.rLeak };
+  if (foreign) {
+    const solved = opts.stamped?.(opts.channel) ?? null;
+    if (solved) return solved;
+    return { voltage: 0, rSource: opts.pin.rLeak };
+  }
   if (opts.mode === "high") {
     return { voltage: opts.boardVolts(opts.boardId), rSource: opts.pin.roh };
   }
