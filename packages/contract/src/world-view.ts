@@ -3,7 +3,7 @@
  * plan. Not a file format.
  */
 
-import type { Pose } from "./layered";
+import type { AxisName, LevelClass, Params, Pose } from "./layered";
 import type { WorldPrimitive, WorldStepProp, WorldTarget } from "./world";
 
 export type WorldViewRobot = {
@@ -76,6 +76,34 @@ export type WorldViewPort = {
   fixed: boolean;
 };
 
+/** One authored wire in an assembly's netlist, in file order. */
+export type WorldViewWire = {
+  a: string;
+  b: string;
+};
+
+/**
+ * One class and variant on an axis. `runnable` is the loader's static
+ * check (known kind and form). It does not re-plan the scene.
+ */
+export type WorldViewLevelOption = {
+  class: LevelClass;
+  variant: string;
+  /** Short name of the implementation, for the picker. */
+  label: string;
+  runnable: boolean;
+  /** Why a grayed option cannot run. Absent when it can. */
+  reason?: string;
+};
+
+/** One axis the part authors. Missing axes are omitted. */
+export type WorldViewLevelAxis = {
+  axis: AxisName;
+  options: WorldViewLevelOption[];
+  /** The level this run resolved. Null when the axis did not resolve. */
+  chosen: { class: LevelClass; variant: string } | null;
+};
+
 /**
  * One resolved instance. `id` is the run path (`nano`, `fleet.rig2.servo`,
  * `$root`). Ground and targets use their instance id; they are not level rows.
@@ -90,7 +118,25 @@ export type WorldViewNode = {
   /** The instance pose. Flat, the same pose the old fields draw. */
   pose: Pose;
   ports: WorldViewPort[];
+  /** Instance params, SI. Empty when the instance sets none. */
+  params: Params;
+  /**
+   * Authored wires of this assembly, in netlist order. Absent on a
+   * leaf, a ground, and a target.
+   */
+  wires?: WorldViewWire[];
+  /** One picker per axis the part has. Empty when it has none. */
+  levels: WorldViewLevelAxis[];
   children: WorldViewNode[];
+};
+
+/** Gravity, seed, and time step of the open document. */
+export type WorldViewPlay = {
+  /** Metres per second squared. */
+  gravity: [number, number, number];
+  seed: number;
+  /** Seconds. Absent when an imported world did not name a step. */
+  timestep?: number;
 };
 
 /** The open document and its stage, then the instance tree. */
@@ -99,6 +145,7 @@ export type WorldViewTree = {
   part: string;
   /** Stage part id. The unwrapped scene, or the document when it is the stage. */
   stage: string;
+  play: WorldViewPlay;
   nodes: WorldViewNode[];
 };
 

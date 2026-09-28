@@ -5,7 +5,12 @@ import type { WorldView, WorldViewNode } from "@sfab-bench/contract";
 import type { RunPlan } from "./plan";
 import { powerFeedsOf } from "./wiring";
 
-const EMPTY_TREE: WorldView["tree"] = { part: "", stage: "", nodes: [] };
+const EMPTY_TREE: WorldView["tree"] = {
+  part: "",
+  stage: "",
+  play: { gravity: [0, 0, -9.81], seed: 0 },
+  nodes: [],
+};
 
 export function viewOf(plan: RunPlan): WorldView {
   const view: WorldView = {

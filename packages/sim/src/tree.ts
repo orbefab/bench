@@ -1,17 +1,27 @@
 /** Part tree for the world view. Node ids are the run paths. */
 
-import type {
-  BehaviourImpl,
-  Pose,
-  WorldViewNode,
-  WorldViewRole,
-  WorldViewTree,
+import {
+  AXES,
+  type AxisName,
+  type BehaviourImpl,
+  type BodyImpl,
+  type LevelClass,
+  type PartFile,
+  type Pose,
+  type VisualImpl,
+  type WorldViewLevelAxis,
+  type WorldViewLevelOption,
+  type WorldViewNode,
+  type WorldViewPlay,
+  type WorldViewRole,
+  type WorldViewTree,
 } from "@sfab-bench/contract";
 import {
   behaviourNetlist,
   bindDependents,
   collectPartPorts,
   type LiveInstance,
+  loadPartById,
   type PortDependent,
   type PortWorld,
   portDependents,
@@ -19,6 +29,9 @@ import {
   type RunSlot,
   type Store,
 } from "@sfab-bench/parts";
+
+import { formAdapter } from "./forms";
+import { chipFacts } from "./power-path";
 
 const IDENTITY: Pose = {
   position: [0, 0, 0],
@@ -37,10 +50,15 @@ export function runTree(input: {
   store: Store;
   projectDir: string;
   catalogDir: string;
+  assetRoot: string;
 }): WorldViewTree {
   const stagePart = input.run.stage.part;
   const stage = typeof stagePart === "string" ? stagePart : stagePart.id;
-  const header = { part: input.run.document, stage };
+  const header = {
+    part: input.run.document,
+    stage,
+    play: playOf(input.run),
+  };
   const rootInst = input.resolved.find((inst) => inst.path === "$root");
   if (!rootInst) return { ...header, nodes: [] };
 
@@ -68,8 +86,30 @@ export function runTree(input: {
     return next;
   };
 
+  const partsById = new Map(
+    input.resolved.map((inst) => [inst.part.id, inst.part])
+  );
+  const partFile = (id: string): PartFile | null => {
+    const hit = partsById.get(id);
+    if (hit) return hit;
+    const loaded = loadPartById(
+      input.projectDir,
+      {
+        store: input.store,
+        catalogDir: input.catalogDir,
+        assetRoot: input.assetRoot,
+      },
+      id
+    );
+    if (!("part" in loaded)) return null;
+    partsById.set(id, loaded.part);
+    return loaded.part;
+  };
+
   const nodes = new Map<string, WorldViewNode>();
   for (const inst of input.resolved) {
+    const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+    const netlist = behaviourNetlist(inst.part, behaviour);
     nodes.set(inst.path, {
       id: inst.path,
       name:
@@ -81,6 +121,9 @@ export function runTree(input: {
       role: roleFor(inst, sets),
       pose: poseOf(inst.pose),
       ports: portsOf(inst, world, dependents(inst.part.id)),
+      params: { ...inst.params },
+      ...(netlist ? { wires: netlist.wires.map(([a, b]) => ({ a, b })) } : {}),
+      levels: levelAxes(inst.part, chosenOf(inst), inst.declaredOnly),
       children: [],
     });
   }
@@ -100,7 +143,7 @@ export function runTree(input: {
       if (inst.path !== "$root" || input.run.unwrapped) continue;
       const slot = input.run.slots.find((row) => row.id === id);
       if (!slot || (slot.kind !== "ground" && slot.kind !== "target")) continue;
-      parent.children.push(envNode(slot, path));
+      parent.children.push(envNode(slot, path, partFile));
     }
   }
 
@@ -111,7 +154,7 @@ export function runTree(input: {
   for (const slot of input.run.slots) {
     if (slot.kind === "scene") top.push(root);
     else if (slot.kind === "ground" || slot.kind === "target") {
-      top.push(envNode(slot, slot.id));
+      top.push(envNode(slot, slot.id, partFile));
     }
   }
   if (!top.includes(root)) top.unshift(root);
@@ -176,7 +219,12 @@ function portWorld(resolved: readonly LiveInstance[]): PortWorld {
   };
 }
 
-function envNode(slot: RunSlot, id: string): WorldViewNode {
+function envNode(
+  slot: RunSlot,
+  id: string,
+  partFile: (partId: string) => PartFile | null
+): WorldViewNode {
+  const part = partFile(slot.part);
   return {
     id,
     name: slot.id,
@@ -185,8 +233,215 @@ function envNode(slot: RunSlot, id: string): WorldViewNode {
     role: slot.kind === "ground" ? "ground" : "target",
     pose: poseOf(slot.pose),
     ports: [],
+    params: {},
+    levels: part
+      ? levelAxes(part, defaultsOf(part), part.declaredOnly === true)
+      : [],
     children: [],
   };
+}
+
+function playOf(run: RunRoot): WorldViewPlay {
+  const play: WorldViewPlay = {
+    gravity: [run.play.gravity[0], run.play.gravity[1], run.play.gravity[2]],
+    seed: run.play.seed,
+  };
+  if (run.play.timestep !== undefined) play.timestep = run.play.timestep;
+  return play;
+}
+
+function chosenOf(
+  inst: LiveInstance
+): Partial<Record<AxisName, { class: LevelClass; variant: string } | null>> {
+  const chosen: Partial<
+    Record<AxisName, { class: LevelClass; variant: string } | null>
+  > = {};
+  for (const axis of AXES) {
+    const resolved = inst.axes[axis];
+    chosen[axis] =
+      resolved.class !== null && resolved.variant
+        ? { class: resolved.class, variant: resolved.variant }
+        : null;
+  }
+  return chosen;
+}
+
+/** The default variant of each authored class. Ground and targets have no resolve. */
+function defaultsOf(
+  part: PartFile
+): Partial<Record<AxisName, { class: LevelClass; variant: string } | null>> {
+  const chosen: Partial<
+    Record<AxisName, { class: LevelClass; variant: string } | null>
+  > = {};
+  for (const axis of AXES) {
+    const map = part.axes?.[axis];
+    if (!map) continue;
+    const classes = classKeys(map);
+    const only = classes.length === 1 ? classes[0] : undefined;
+    const slot = only === undefined ? undefined : map[String(only) as "0"];
+    chosen[axis] =
+      only !== undefined && slot
+        ? { class: only, variant: slot.default }
+        : null;
+  }
+  return chosen;
+}
+
+function classKeys(map: NonNullable<PartFile["axes"]>[AxisName]): LevelClass[] {
+  if (!map) return [];
+  const out: LevelClass[] = [];
+  for (const cls of [0, 1, 2, 3] as const) {
+    if (map[String(cls) as "0"]) out.push(cls);
+  }
+  return out;
+}
+
+/**
+ * Options the card can offer. `runnable` uses the same static facts the
+ * plan uses before it looks at this scene: a known behaviour kind, a
+ * form the adapters run, a chip the loader knows. It misses a snapshot
+ * that fails to load, a port the level cannot express, a missing
+ * firmware image, an unpowered part, and a motor with no joint.
+ */
+function levelAxes(
+  part: PartFile,
+  chosen: Partial<
+    Record<AxisName, { class: LevelClass; variant: string } | null>
+  >,
+  declaredOnly: boolean
+): WorldViewLevelAxis[] {
+  const axes: WorldViewLevelAxis[] = [];
+  for (const axis of AXES) {
+    const map = part.axes?.[axis];
+    if (!map) continue;
+    const options: WorldViewLevelOption[] = [];
+    for (const cls of classKeys(map)) {
+      const slot = map[String(cls) as "0"];
+      if (!slot) continue;
+      for (const variant of Object.keys(slot.variants)) {
+        const impl = slot.variants[variant];
+        const check = runnableOf(axis, impl, declaredOnly);
+        options.push({
+          class: cls,
+          variant,
+          label: variantLabel(impl),
+          runnable: check.runnable,
+          ...(check.reason ? { reason: check.reason } : {}),
+        });
+      }
+    }
+    if (options.length === 0) continue;
+    const pick = chosen[axis];
+    axes.push({
+      axis,
+      options,
+      chosen:
+        pick &&
+        options.some(
+          (opt) => opt.class === pick.class && opt.variant === pick.variant
+        )
+          ? pick
+          : null,
+    });
+  }
+  return axes;
+}
+
+const SCENE_FORMS = new Set([
+  "dc-motor@1",
+  "ranger@1",
+  "multibody@1",
+  "ground-plane@1",
+  "target@1",
+]);
+
+function runnableOf(
+  axis: AxisName,
+  impl: unknown,
+  declaredOnly: boolean
+): { runnable: boolean; reason?: string } {
+  if (axis === "behaviour" && declaredOnly) {
+    return { runnable: false, reason: "declared-only" };
+  }
+  if (!impl || typeof impl !== "object") {
+    return { runnable: false, reason: "no level authored" };
+  }
+  if (axis === "behaviour") return behaviourRunnable(impl as BehaviourImpl);
+  if (axis === "visual") return visualRunnable(impl as VisualImpl);
+  return bodyRunnable(impl as BodyImpl);
+}
+
+function behaviourRunnable(impl: BehaviourImpl): {
+  runnable: boolean;
+  reason?: string;
+} {
+  if (impl.kind === "composite" || impl.kind === "snapshot") {
+    return { runnable: true };
+  }
+  if (impl.kind === "firmware") {
+    if (!chipFacts(impl.chip)) {
+      return { runnable: false, reason: `unknown chip ${impl.chip}` };
+    }
+    return { runnable: true };
+  }
+  if (impl.kind === "script") {
+    return { runnable: false, reason: "no runtime for script" };
+  }
+  if (impl.kind === "form") {
+    if (SCENE_FORMS.has(impl.form) || formAdapter(impl.form)) {
+      return { runnable: true };
+    }
+    return { runnable: false, reason: `no runtime for form ${impl.form}` };
+  }
+  return { runnable: false, reason: "no behaviour" };
+}
+
+function bodyRunnable(impl: BodyImpl): { runnable: boolean; reason?: string } {
+  if (impl.kind === "none") return { runnable: true };
+  if (
+    impl.kind === "lumped" ||
+    impl.kind === "gear-train" ||
+    impl.kind === "snapshot" ||
+    impl.kind === "urdf" ||
+    impl.kind === "mjcf" ||
+    impl.kind === "children"
+  ) {
+    return { runnable: true };
+  }
+  return { runnable: false, reason: "no body" };
+}
+
+function visualRunnable(impl: VisualImpl): {
+  runnable: boolean;
+  reason?: string;
+} {
+  if (impl.kind === "mesh" && impl.placeholder === true) {
+    return { runnable: false, reason: "placeholder mesh" };
+  }
+  if (
+    impl.kind === "mesh" ||
+    impl.kind === "box" ||
+    impl.kind === "children" ||
+    impl.kind === "none"
+  ) {
+    return { runnable: true };
+  }
+  return { runnable: false, reason: "no visual" };
+}
+
+function variantLabel(impl: unknown): string {
+  if (!impl || typeof impl !== "object") return "none";
+  const row = impl as {
+    kind?: string;
+    form?: string;
+    ref?: string;
+    chip?: string;
+  };
+  if (row.kind === "form" && row.form) return row.form;
+  if (row.kind === "snapshot" && row.ref) return row.ref;
+  if (row.kind === "firmware" && row.chip) return row.chip;
+  if (typeof row.kind === "string") return row.kind;
+  return "none";
 }
 
 function poseOf(pose: Pose | undefined): Pose {

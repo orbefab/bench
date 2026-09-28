@@ -1415,6 +1415,7 @@ function build(
         store: env.store,
         projectDir: worldDir,
         catalogDir: env.absolutePath(env.catalogDir()),
+        assetRoot,
       }),
     },
     diags,

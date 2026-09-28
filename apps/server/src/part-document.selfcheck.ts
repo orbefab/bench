@@ -671,6 +671,20 @@ function nodeIds(nodes: readonly WorldViewNode[], into = new Set<string>()) {
   return into;
 }
 
+function editorSummary(view: WorldView): string {
+  let wires = 0;
+  let options = 0;
+  const walk = (nodes: readonly WorldViewNode[]) => {
+    for (const node of nodes) {
+      wires += node.wires?.length ?? 0;
+      for (const axis of node.levels) options += axis.options.length;
+      walk(node.children);
+    }
+  };
+  walk(view.tree.nodes);
+  return `wires ${wires}, level options ${options}`;
+}
+
 function treeSummary(view: WorldView): string {
   const counts = new Map<string, number>();
   let total = 0;
@@ -724,6 +738,7 @@ for (const example of examples) {
     );
   }
   console.log(`tree ${stem}: ${treeSummary(view)}, every view id is a node`);
+  console.log(`tree ${stem} editor: ${editorSummary(view)}`);
 }
 
 {
@@ -741,6 +756,7 @@ for (const example of examples) {
   console.log(
     `tree fleet: fleet.rig2.servo nested, ${paths.size} report paths are nodes`
   );
+  console.log(`tree fleet editor: ${editorSummary(view)}`);
 }
 
 {

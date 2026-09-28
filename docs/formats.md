@@ -314,12 +314,13 @@ type RunRoot = {
 
 ### World view
 
-`GET /api/world/view` adds `tree` beside `robots`, `boards`, `supplies`, `parts`, `boxes`, `wires`, and `feeds`. Those fields stay. The editor shell will read `tree` and then delete them.
+`GET /api/world/view` adds `tree` beside `robots`, `boards`, `supplies`, `parts`, `boxes`, `wires`, and `feeds`. Those fields stay: the stage still draws the robots' URDF, the boards, the boxes, and the environment from them.
 
 ```ts
 type WorldViewTree = {
   part: string;                                        // document part id
   stage: string;                                       // stage part id
+  play: { gravity: Vec3; seed: number; timestep?: number };
   nodes: WorldViewNode[];
 };
 type WorldViewNode = {
@@ -330,11 +331,21 @@ type WorldViewNode = {
   role: "robot" | "board" | "supply" | "part" | "leaf" | "ground" | "target" | "assembly";
   pose: Pose;                                          // flat instance pose
   ports: { name: string; source: "type" | "expose" | "auto"; fixed: boolean }[];
+  params: Params;                                      // instance params, SI
+  wires?: { a: string; b: string }[];                  // assembly netlist, file order
+  levels: { axis: AxisName; options: WorldViewLevelOption[]; chosen: { class: LevelClass; variant: string } | null }[];
   children: WorldViewNode[];
+};
+type WorldViewLevelOption = {
+  class: LevelClass;
+  variant: string;
+  label: string;
+  runnable: boolean;                                   // loader static check
+  reason?: string;
 };
 ```
 
-Children follow the resolved instances, in netlist order, so `fleet.rig2.servo` is a child of `fleet.rig2`. Every id in the old fields is a node id with that role. A box whose id is not in `parts` or `supplies` is a `leaf`. Ground and targets are nodes from the document netlist. Their ids are instance ids; they are not rows in `report.levels`.
+Children follow the resolved instances, in netlist order, so `fleet.rig2.servo` is a child of `fleet.rig2`. `wires` is that assembly's authored wires, in the same order, and is absent on a leaf. `levels` is one entry per axis the part authors. `runnable` is the loader's static check (a known kind, form, or chip). It does not re-plan this scene. `play` is the open document's block. Every id in the old fields is a node id with that role. A box whose id is not in `parts` or `supplies` is a `leaf`. Ground and targets are nodes from the document netlist. Their ids are instance ids; they are not rows in `report.levels`.
 
 **Level resolution** (D-005, amended by D-023.3):
 1. Per axis, a path rule beats a type rule, which beats the default.
