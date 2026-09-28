@@ -68,18 +68,6 @@ function ledDeck(board: number): number {
   return diode.amps;
 }
 
-function nanoLaw() {
-  const file = join(
-    catalogRoot(),
-    "snapshots",
-    "sfab",
-    "nano-usb-5v@1.0.0.json"
-  );
-  const law = tableLawOf(JSON.parse(readFileSync(file, "utf8")));
-  if (!law) throw new Error("nano usb snapshot has no table");
-  return law;
-}
-
 {
   const stamp = NANO_STAMP;
   const ids = stamp.parts.map((part) => part.path).join(",");
@@ -292,10 +280,8 @@ async function runLed(
       throw new Error(planned1.errors.map((item) => item.message).join("; "));
     }
     const board1 = planned1.plan.boards.find((item) => item.id === "nano");
-    expect(
-      board1?.stamp && board1.boardCircuit?.startsWith("snapshot:"),
-      "class 1 lost the snapshot"
-    );
+    expect(board1?.stamp?.netlist === true, "class 1 lost the board netlist");
+    if (!board1?.stamp) throw new Error("class 1 lost the board netlist");
     const bit = arduinoPinBit("D9");
     expect(bit !== undefined, "D9 has no bit");
     const snap = createRailCircuit({
@@ -303,10 +289,8 @@ async function runLed(
       rSeries: 0.5,
       iLimit: 0.9,
       motors: [],
-      boardPath: "snapshot-feed",
-      law: nanoLaw(),
       stamp: board1.stamp,
-      feed: "header",
+      feed: "usb",
       pin: board1.pin,
       ledAlias: "nano.led",
     });
@@ -517,9 +501,12 @@ function servoPulseUs(angle: number): number {
     const config = JSON.parse(
       readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
     ) as CaptureFile;
-    const entry = config.entries[0];
-    if (!entry) throw new Error("capture config has no entries");
-    entry.part = id;
+    const entry = config.entries.find(
+      (row) => row.id === "sfab/nano-power-input@1.0.0"
+    );
+    if (!entry) throw new Error("nano-power-input capture entry missing");
+    entry.part = powerId;
+    entry.id = powerId;
     entry.cases = {};
     config.entries = [entry];
     const out = join(root, "snap.json");
@@ -532,7 +519,7 @@ function servoPulseUs(angle: number): number {
     const snap = JSON.parse(readFileSync(out, "utf8")) as SnapshotFile;
     const nano = JSON.parse(
       readFileSync(
-        join(catalog, "snapshots", "sfab", "nano-usb-5v@1.0.0.json"),
+        join(catalog, "snapshots", "sfab", "nano-power-input@1.0.0.json"),
         "utf8"
       )
     ) as SnapshotFile;
@@ -540,16 +527,16 @@ function servoPulseUs(angle: number): number {
     const nanoLaw = tableLawOf(nano);
     expect(testLaw && nanoLaw, "capture table");
     if (!testLaw || !nanoLaw) throw new Error("capture table");
-    const testV = tableVoltage(testLaw, 5, 0.1);
-    const nanoV = tableVoltage(nanoLaw, 5, 0.1);
+    const testV = tableVoltage(testLaw, 0, 0.1);
+    const nanoV = tableVoltage(nanoLaw, 0, 0.1);
     expect(
-      testV < nanoV - 0.05,
-      `1N4148 board ${testV} V is not below the SS14 board ${nanoV} V`
+      testV > nanoV + 0.05,
+      `1N4148 drop ${testV} V is not above the SS14 drop ${nanoV} V`
     );
     expect(snap.quality === "Q1", `lint granted ${snap.quality}`);
     console.log(
-      `capture 1n4148 board: lint ${snap.quality}, ` +
-        `0.1 A ${testV.toFixed(3)} V vs nano ${nanoV.toFixed(3)} V (s4 is 1N4148)`
+      `capture 1n4148 branch: lint ${snap.quality}, ` +
+        `0.1 A drop ${testV.toFixed(3)} V vs nano ${nanoV.toFixed(3)} V (s4 is 1N4148)`
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -97,25 +97,24 @@ expect(
 
 const class1 = openReport(nanoDir, "nano-vcc-class1.world.json");
 const class1Nano = levelCard(class1.report, "nano");
-expect(class1Nano?.snapshot !== null, "class 1 nano has a snapshot");
+expect(class1Nano?.snapshot === null, "class 1 nano carries its own snapshot");
+const class1Power = class1Nano?.nested.find((row) => row.path === "nano.power");
 expect(
-  class1Nano?.snapshot?.ref === "sfab/nano-usb-5v@1.0.0" &&
-    class1Nano.snapshot.quality === "Q2a",
-  `snapshot ${class1Nano?.snapshot?.ref} ${class1Nano?.snapshot?.quality}`
+  class1Power?.ref === "sfab/nano-power-input@1.0.0" &&
+    class1Power.quality === "Q1",
+  `snapshot ${class1Power?.ref} ${class1Power?.quality}`
 );
 expect(
-  class1Nano?.snapshot?.errors.some(
+  class1Power?.errors.some(
     (line) =>
-      line.startsWith("+5V free-run max ") &&
-      line.includes("rms ") &&
-      line.includes(" vs class 2")
+      line.startsWith("VBUS static max ") && line.includes(" vs class 2")
   ) === true,
-  `error ${class1Nano?.snapshot?.errors.join(" | ")}`
+  `error ${class1Power?.errors.join(" | ")}`
 );
 expect(
-  class1Nano?.snapshot?.provenance ===
-    "captured, from sfab/nano-ch340@1.0.0 class 2, fixture sfab/nano-usb-5v, tool sfab-bench-capture 1",
-  `provenance ${class1Nano?.snapshot?.provenance}`
+  class1Power?.provenance ===
+    "captured, from sfab/nano-power-input@1.0.0 class 2, fixture sfab/nano-power-input, tool sfab-bench-capture 1",
+  `provenance ${class1Power?.provenance}`
 );
 expect(
   class1Nano?.omits.some((line) =>
@@ -401,9 +400,17 @@ try {
         `set row ${JSON.stringify(behaviour)}`
       );
       const snap = isRecord(behaviour) ? behaviour.snapshot : null;
+      expect(!isRecord(snap), `set snapshot ${JSON.stringify(snap)}`);
+      const planned = planWorld(root, "nano-vcc-usb.world.json");
+      if (!planned.ok) {
+        throw new Error(planned.errors.map((item) => item.message).join("; "));
+      }
+      const setCard = levelCard(planned.plan.report ?? null, "nano");
+      const setPower = setCard?.nested.find((row) => row.path === "nano.power");
       expect(
-        isRecord(snap) && snap.ref === "sfab/nano-usb-5v@1.0.0",
-        `set snapshot ${JSON.stringify(snap)}`
+        setPower?.ref === "sfab/nano-power-input@1.0.0" &&
+          setPower.quality === "Q1",
+        `set power snapshot ${setPower?.ref} ${setPower?.quality}`
       );
       const after = readFileSync(worldFile, "utf8");
       const originalLevels = (JSON.parse(before) as { run: { levels: never } })
