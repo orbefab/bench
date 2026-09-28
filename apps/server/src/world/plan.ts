@@ -380,21 +380,76 @@ function formNumbers(inst: LiveInstance): Record<string, number> | null {
  * A lumped servo wired to another part's URDF still gets this box: the
  * robot meshes belong to that other part. When this part's own body is
  * a URDF, the meshes are already drawn, so the visual box is skipped.
+ * A placeholder mesh uses the nearest lower class whose visual is a box.
+ * A mesh file is left undrawn.
  */
 function pushBox(boxes: RunBox[], inst: LiveInstance, pick: RunBox["pick"]) {
-  const body = inst.axes.body.impl as BodyImpl | null;
-  if (body?.kind === "urdf") return;
-  const visual = inst.axes.visual.impl as VisualImpl | null;
-  if (visual?.kind !== "box") return;
-  if (!visual.size.every((n) => typeof n === "number" && Number.isFinite(n))) {
-    return;
-  }
+  const drawn = drawnBox(inst);
+  if (!drawn) return;
   boxes.push({
     id: inst.path,
     pose: poseOf(inst),
-    size: [visual.size[0], visual.size[1], visual.size[2]],
+    size: drawn.size,
     pick,
   });
+  if (drawn.fallbackClass !== null) {
+    inst.axes.visual.reason = `placeholder mesh; drawn as the class-${drawn.fallbackClass} box`;
+  }
+}
+
+function finiteSize(size: readonly number[]): boolean {
+  return (
+    size.length >= 3 &&
+    size.slice(0, 3).every((n) => typeof n === "number" && Number.isFinite(n))
+  );
+}
+
+/**
+ * The box this part draws. A resolved box is itself. A placeholder mesh
+ * is the nearest lower class that is a box. Anything else, including a
+ * mesh file and a URDF body, draws nothing.
+ */
+function drawnBox(inst: LiveInstance): {
+  size: [number, number, number];
+  fallbackClass: number | null;
+} | null {
+  const body = inst.axes.body.impl as BodyImpl | null;
+  if (body?.kind === "urdf") return null;
+  const visual = inst.axes.visual.impl as VisualImpl | null;
+  if (visual?.kind === "box") {
+    if (!finiteSize(visual.size)) return null;
+    return {
+      size: [visual.size[0], visual.size[1], visual.size[2]],
+      fallbackClass: null,
+    };
+  }
+  if (visual?.kind !== "mesh" || visual.placeholder !== true) return null;
+  const resolved = inst.axes.visual.class;
+  if (resolved === null) return null;
+  const map = inst.part.axes?.visual;
+  for (let cls = resolved - 1; cls >= 0; cls--) {
+    const slot = map?.[String(cls) as "0"];
+    if (!slot) continue;
+    const variant = slot.variants[slot.default];
+    if (variant?.kind !== "box" || !finiteSize(variant.size)) continue;
+    return {
+      size: [variant.size[0], variant.size[1], variant.size[2]],
+      fallbackClass: cls,
+    };
+  }
+  return null;
+}
+
+/** Copy a placeholder draw note onto the report. The plan reads the axis. */
+function notePlaceholderBoxes(loaded: LoadResult): void {
+  for (const inst of loaded.resolved) {
+    const reason = inst.axes.visual.reason;
+    if (!reason.startsWith("placeholder mesh;")) continue;
+    const row = loaded.report?.levels.find(
+      (item) => item.path === inst.path && item.axis === "visual"
+    );
+    if (row) row.reason = reason;
+  }
 }
 
 function poseOf(inst: LiveInstance): Pose {
@@ -1248,6 +1303,7 @@ function build(
       ],
     };
   }
+  notePlaceholderBoxes(loaded);
   return {
     plan: {
       environment: {

@@ -241,14 +241,42 @@ expect(
   !vccView.boxes.some((box) => box.id === "flag"),
   "a URDF body with a visual box is not drawn twice"
 );
+const vccServo = vccView.boxes.find((box) => box.id === "servo");
+const vccServoVisual = levelCard(vcc.report, "servo")?.axes.find(
+  (row) => row.axis === "visual"
+);
 expect(
-  !vccView.boxes.some((box) => box.id === "servo"),
-  "an sg90 whose visual resolved to a mesh is not a box"
+  vccServo?.size[0] === 0.023 &&
+    vccServo.size[1] === 0.0122 &&
+    vccServo.size[2] === 0.029 &&
+    vccServoVisual?.reason === "placeholder mesh; drawn as the class-0 box",
+  "an sg90 placeholder mesh is drawn as the class-0 box"
 );
 const robotIds = new Set(vccView.robots.map((robot) => robot.id));
 expect(
   vccView.boxes.every((box) => !robotIds.has(box.id)),
   "no box shares an id with a URDF body"
+);
+const servoUsb = openReport(nanoDir, "nano-servo-usb.world.json");
+const servoUsbBox = viewOf(servoUsb.plan).boxes.find(
+  (box) => box.id === "servo"
+);
+expect(
+  servoUsbBox?.size[0] === 0.023 &&
+    servoUsbBox.size[1] === 0.0122 &&
+    servoUsbBox.size[2] === 0.029 &&
+    servoUsbBox.pose.position.every((n) => n === 0) &&
+    servoUsbBox.pose.rotation[0] === 1 &&
+    servoUsbBox.pose.rotation[1] === 0 &&
+    servoUsbBox.pose.rotation[2] === 0 &&
+    servoUsbBox.pose.rotation[3] === 0,
+  `nano-servo-usb servo box ${JSON.stringify(servoUsbBox)}`
+);
+console.log(
+  `servo box nano-servo-usb: size [${servoUsbBox?.size.join(", ")}] pose [${servoUsbBox?.pose.position.join(", ")}] rot [${servoUsbBox?.pose.rotation.join(", ")}]`
+);
+console.log(
+  `gauge boxes unchanged: sensor [${sensorBox?.size.join(", ")}] at [${sensorBox?.pose.position.join(", ")}], MG90S [${servoBox?.size.join(", ")}] at z ${servoBox?.pose.position[2]}`
 );
 console.log("boxes: HC-SR04, MG90S, no URDF duplicate");
 

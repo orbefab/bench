@@ -134,6 +134,8 @@ type VisualImpl = { omits: string[] } & (
   | { kind: "mesh"; files: string[]; placeholder?: boolean }
   | { kind: "box"; size: Vec3 } | { kind: "children" } | { kind: "none" });
 
+A mesh with `placeholder: true` is drawn as the nearest lower class whose visual is a `box`. The visual level row says which class, for example "placeholder mesh; drawn as the class-0 box". A mesh file is not drawn. A URDF body is not also drawn as a box.
+
 type Netlist = {
   instances: Record<string, { part: string; pose?: Pose; params?: Params }>;
   wires: [PortRef, PortRef][];
