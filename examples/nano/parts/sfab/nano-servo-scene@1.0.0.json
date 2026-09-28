@@ -35,7 +35,11 @@
                   "part": "sfab/usb-port-500ma@1.0.0"
                 },
                 "servo": {
-                  "part": "sfab/sg90@1.0.0"
+                  "part": "sfab/sg90@1.0.0",
+                  "pose": {
+                    "position": [0, 0, 0.0145],
+                    "rotation": [1, 0, 0, 0]
+                  }
                 }
               },
               "wires": [

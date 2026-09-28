@@ -265,7 +265,9 @@ expect(
   servoUsbBox?.size[0] === 0.023 &&
     servoUsbBox.size[1] === 0.0122 &&
     servoUsbBox.size[2] === 0.029 &&
-    servoUsbBox.pose.position.every((n) => n === 0) &&
+    servoUsbBox.pose.position[0] === 0 &&
+    servoUsbBox.pose.position[1] === 0 &&
+    servoUsbBox.pose.position[2] === 0.0145 &&
     servoUsbBox.pose.rotation[0] === 1 &&
     servoUsbBox.pose.rotation[1] === 0 &&
     servoUsbBox.pose.rotation[2] === 0 &&
