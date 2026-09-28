@@ -324,7 +324,7 @@ A `table@1` snapshot is one port pair and the current through the first port.
 - `vAxis` is volts: `V(p) − V(m)` at each knot. The current axis is monotone.
 - `ports.inputs` and `ports.outputs` name the same quantities by port (`p.current` in, `p.voltage` out). The linter takes the quantity from the part type's port declarations.
 
-One use. The table is a branch between two of the part's own ports. The supply is always a part in the scene. A snapshot must not carry its fixture's supply: the linter rejects an envelope bound on `supply.*`, or on a port that is not one of the snapshot's own ports.
+One use. The table is a branch between two of the part's own ports. The supply is always a part in the scene. A snapshot must not carry its fixture's supply: the linter rejects an envelope bound on `supply.*`, a port that is not one of the snapshot's own ports, or a `supplyPort`, `supplyRef`, or `supplyAffine` param.
 
 - **Branch.** The table is a two-terminal branch between the two live nodes, with no current limit and no floor. Outside the knots it extrapolates the end segments, and the envelope warns once. A behaviour variant `{kind: "snapshot", ref}` whose law is `table@1` is this use. It is stamped on its `across` ports, on the rail of the supply those nets reach, the same way as any circuit part.
 
@@ -354,7 +354,7 @@ Foreign parts are capped (D-009).
 
 The linter is per form. It rejects, and a snapshot that fails cannot run:
 - missing provenance (a captured snapshot also needs `from`, `fixture`, and `tool`);
-- for `table@1`: an axis that is not monotone; an `across` port that is not on the type; a table that does not cover its envelope (the current knots span the current bound); an envelope that bounds a supply quantity or a port the part does not declare (a snapshot must not carry its fixture's supply); a listed port quantity the declarations do not match;
+- for `table@1`: an axis that is not monotone; an `across` port that is not on the type; a table that does not cover its envelope (the current knots span the current bound); an envelope that bounds a supply quantity or a port the part does not declare, or a `supplyPort`, `supplyRef`, or `supplyAffine` param (a snapshot must not carry its fixture's supply); a listed port quantity the declarations do not match;
 - for `hinge@1`: an axis other than body; a body snapshot that is not `hinge@1`; a param that is missing, non-finite or negative; `armature` that is not greater than 0; a port quantity that is not angle, speed or torque on a declared rotational port; an envelope key that is not on that port;
 - a missing output that the part type lists in `requiredOutputs` (no such list means no extra output is required);
 - values outside the part type's plausible ranges (a current of 10 A or more is also shown in mA);
