@@ -42,13 +42,20 @@ const node: WorldViewNode = {
       ],
     },
     {
-      axis: "body",
-      chosen: { class: 2, variant: "train" },
+      axis: "visual",
+      chosen: { class: 1, variant: "mesh" },
       options: [
         {
-          class: 2,
-          variant: "train",
-          label: "gear-train",
+          class: 1,
+          variant: "mesh",
+          label: "mesh",
+          runnable: false,
+          reason: "placeholder mesh",
+        },
+        {
+          class: 0,
+          variant: "box",
+          label: "box",
           runnable: true,
         },
       ],
@@ -71,7 +78,7 @@ expect(
   "params are the instance params"
 );
 expect(
-  card.axes.map((axis) => axis.axis).join(",") === "behaviour,body",
+  card.axes.map((axis) => axis.axis).join(",") === "behaviour,visual",
   "one picker per authored axis"
 );
 const behaviour = card.axes[0]?.options ?? [];
@@ -82,9 +89,20 @@ expect(
   "the resolved option is chosen"
 );
 expect(
-  gray?.variant === "idle" && gray.reason === "no runtime for script",
+  gray?.variant === "idle" &&
+    gray.gray === true &&
+    gray.reason === "no runtime for script",
   "an option that cannot run is grayed with its reason"
 );
-expect(card.axes[1]?.options[0]?.chosen === true, "the body option is chosen");
+const visual = card.axes[1]?.options ?? [];
+const currentMesh = visual.find((option) => option.chosen);
+expect(
+  currentMesh?.variant === "mesh" && currentMesh.gray === false,
+  "the running level is not grayed"
+);
+expect(
+  currentMesh?.reason === "placeholder mesh",
+  "a placeholder mesh is still the resolved level"
+);
 
 console.log("world-card.selfcheck ok");

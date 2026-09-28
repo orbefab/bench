@@ -415,6 +415,10 @@ function visualRunnable(impl: VisualImpl): {
   runnable: boolean;
   reason?: string;
 } {
+  // A placeholder mesh is not what this run draws. The plan uses the
+  // nearest lower class whose visual is a box, and records that on the
+  // axis. The variant stays the resolved level, so the card marks it
+  // current and does not gray it.
   if (impl.kind === "mesh" && impl.placeholder === true) {
     return { runnable: false, reason: "placeholder mesh" };
   }

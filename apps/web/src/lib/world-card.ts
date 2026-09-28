@@ -1,6 +1,8 @@
 /**
  * What the card shows for one instance: ports, params, and one picker
- * per axis. A grayed option is not runnable. The resolved one is chosen.
+ * per axis. A grayed option is not runnable. The resolved option is
+ * never grayed: a placeholder mesh still resolves, and the plan draws
+ * the lower box instead.
  */
 
 import type {
@@ -10,7 +12,11 @@ import type {
   WorldViewPort,
 } from "@sfab-bench/contract";
 
-export type CardOption = WorldViewLevelOption & { chosen: boolean };
+export type CardOption = WorldViewLevelOption & {
+  chosen: boolean;
+  /** Grayed. The resolved option stays available even when it is not runnable. */
+  gray: boolean;
+};
 
 export type CardAxis = {
   axis: AxisName;
@@ -35,13 +41,17 @@ export function instanceCard(node: WorldViewNode): InstanceCard {
     params,
     axes: node.levels.map((axis) => ({
       axis: axis.axis,
-      options: axis.options.map((option) => ({
-        ...option,
-        chosen:
+      options: axis.options.map((option) => {
+        const chosen =
           axis.chosen !== null &&
           axis.chosen.class === option.class &&
-          axis.chosen.variant === option.variant,
-      })),
+          axis.chosen.variant === option.variant;
+        return {
+          ...option,
+          chosen,
+          gray: !option.runnable && !chosen,
+        };
+      }),
     })),
   };
 }
