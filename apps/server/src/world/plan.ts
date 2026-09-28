@@ -38,15 +38,9 @@ import { class2BoardNetlist, type LiveInstance } from "./parts/levels";
 import { type LoadResult, loadWorldV2 } from "./parts/load";
 import type { LiveNet, Wire, WireEnd } from "./parts/nets";
 import { isScalarParam, siValue } from "./parts/si";
-import { chipFacts, pathRefOf, snapshotRefOf } from "./power-path";
+import { chipFacts, pathRefOf } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
-import {
-  envelopeOf,
-  type SnapshotEnvelope,
-  type TableLaw,
-  tableLawOf,
-  tableUseOf,
-} from "./snapshot-law";
+import { envelopeOf, tableLawOf } from "./snapshot-law";
 import { readTargets } from "./targets";
 
 /** Shown where a world fails to load, in the UI and in the agent tools. */
@@ -111,8 +105,8 @@ export type RunBoard = {
   /** Amperes drawn by the board, independent of voltage. */
   current: number;
   /**
-   * Class-1 source law, `snapshot:<ref>`, or null when the 5V pin is
-   * the supply terminal. A class-2 board carries `stamp` instead.
+   * `path:uno-usb`, or null when this variant does not name that cable.
+   * A board netlist carries `stamp` either way.
    */
   boardCircuit: string | null;
   /** The selected variant has a board netlist. */
@@ -129,19 +123,6 @@ export type RunBoard = {
   supply: { min: number; max: number };
   /** `avr-pin@1`. High is the board node. The ADC and the Nano D13 stamp use it. */
   pin: AvrPinParams;
-  /**
-   * Class-1 USB law. Null when this variant does not name a snapshot.
-   * A bench supply still leaves the pin as the ideal terminal.
-   */
-  powerSnapshot?: PowerSnapshot | null;
-};
-
-export type PowerSnapshot = {
-  ref: string;
-  law: TableLaw;
-  envelope: SnapshotEnvelope;
-  quality: string;
-  error: RunReport["snapshots"][number]["error"];
 };
 
 export type RunLevel = {
@@ -882,9 +863,8 @@ function build(
     }
     if (behaviour?.kind === "firmware") {
       const boardCircuit = behaviour.boardCircuit ?? null;
-      const snapRef = snapshotRefOf(boardCircuit);
       const pathName = pathRefOf(boardCircuit);
-      if (boardCircuit !== null && !snapRef && pathName !== "uno-usb") {
+      if (boardCircuit !== null && pathName !== "uno-usb") {
         diags.push(cannot(inst, `unknown board circuit ${boardCircuit}`));
         continue;
       }
@@ -892,31 +872,6 @@ function build(
       if (!facts) {
         diags.push(cannot(inst, `unknown chip "${behaviour.chip}"`));
         continue;
-      }
-      let runCircuit = boardCircuit;
-      let powerSnapshot: PowerSnapshot | null = null;
-      if (snapRef) {
-        const runs = loaded.snapshotRuns.some(
-          (row) => row.path === inst.path && row.ref === snapRef
-        );
-        if (runs) {
-          const found = loaded.snapshots.find((row) => row.id === snapRef);
-          const law = found ? tableLawOf(found.file) : null;
-          const envelope = found ? envelopeOf(found.file) : null;
-          if (!found || !law || !envelope) {
-            diags.push(cannot(inst, `snapshot ${snapRef} did not load`));
-            continue;
-          }
-          powerSnapshot = {
-            ref: snapRef,
-            law,
-            envelope,
-            quality: found.quality,
-            error: found.file.error,
-          };
-        } else {
-          runCircuit = null;
-        }
       }
       const alias = pathName === "uno-usb" && behaviour.board === undefined;
       if (alias && !class2BoardNetlist(inst.part)) {
@@ -968,7 +923,7 @@ function build(
         voltagePin: powerName,
         groundPin: groundName,
         current: params.quiescent ?? 0,
-        boardCircuit: runCircuit,
+        boardCircuit,
         hasNetlist: behaviour.board !== undefined || alias,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
@@ -978,7 +933,6 @@ function build(
         operatingVoltage: rail[0],
         supply: { min: rail[0], max: rail[1] },
         pin: avrPinParams(params),
-        ...(powerSnapshot ? { powerSnapshot } : {}),
       });
       continue;
     }
@@ -1141,15 +1095,6 @@ function build(
         );
         continue;
       }
-      if (tableUseOf(found.file) === "feed") {
-        diags.push(
-          cannot(
-            inst,
-            `snapshot ${behaviour.ref} is a feed table; a part snapshot is a branch`
-          )
-        );
-        continue;
-      }
       for (const name of law.across) {
         if (!inst.type.ports[name]) {
           diags.push(
@@ -1278,7 +1223,7 @@ function build(
     // Several boards on this supply share one rail. Loose parts are
     // stamped once, on the lex-first board. A pair with no netlist and
     // no snapshot still stamps them on the supply, as a v1 draft does.
-    if (group.some((board) => board.hasNetlist || board.powerSnapshot)) {
+    if (group.some((board) => board.hasNetlist)) {
       const home = [...group].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
       if (home) alsoByBoard.set(home.id, mine);
       continue;
@@ -1315,34 +1260,6 @@ function build(
       nets,
     });
     if (stamp) board.stamp = stamp;
-  }
-  for (const [supplyId, group] of boardsOn) {
-    if (group.length < 2) continue;
-    // A feed snapshot replaces the source. A second board would have no
-    // supply of its own. A branch snapshot does not, and shares.
-    const feeds = group.filter((board) => board.powerSnapshot?.law.supplyPort);
-    if (feeds.length === 0) continue;
-    const names = group
-      .map((board) => board.id)
-      .sort()
-      .join(" and ");
-    const feedNames = feeds
-      .map((board) => board.id)
-      .sort()
-      .join(" and ");
-    const why =
-      feeds.length === 1
-        ? `${feedNames} uses a feed snapshot, which replaces the supply`
-        : `${feedNames} use feed snapshots, which replace the supply`;
-    diags.push({
-      severity: "error",
-      path: supplyId,
-      port: "nets",
-      quantity: "Part",
-      left: names,
-      right: "one board",
-      message: `${names} share ${supplyId}; ${why}`,
-    });
   }
   // realize prunes a dangling part later. It still counts as placed
   // while its path is in exactly one stamp.

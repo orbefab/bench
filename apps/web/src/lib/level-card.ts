@@ -15,7 +15,7 @@ export type LevelSnapshot = {
   path: string;
   ref: string;
   quality: string;
-  /** `+5V free-run max 1.65 mV, rms 1.24 mV vs class 2` */
+  /** `VBUS static max 1.5 mV vs class 2`, or a free-run `max` / `rms` pair. */
   errors: string[];
   /** `captured, from sfab/nano-ch340@1.0.0 class 2, fixture …, tool …` */
   provenance: string | null;

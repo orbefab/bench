@@ -32,20 +32,16 @@ import {
   type HingeCaptureEntry,
   writeHingeSnapshot,
 } from "./world/body/hinge-capture";
-import {
-  assemblyStampOf,
-  boardStampOf,
-  describeNetlist,
-} from "./world/circuit-stamp";
+import { assemblyStampOf, describeNetlist } from "./world/circuit-stamp";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { loadPartById } from "./world/parts/library";
 import { contentHash, sortValue } from "./world/parts/si";
 import { catalogRoot } from "./world/plan";
-import { branchDc, feedKind, supplyDc } from "./world/snapshot-dc";
+import { branchDc } from "./world/snapshot-dc";
 import { type TableLaw, tableVoltage } from "./world/snapshot-law";
 import { lintSnapshot } from "./world/snapshot-lint";
 
-type FreeCase = {
+export type FreeCase = {
   firmware: string;
   source: string;
   flag: string;
@@ -83,27 +79,18 @@ export type CaptureEntry = {
   across?: [string, string];
   through: string;
   iSense: 1 | -1;
-  supply?: { port: string; ref: number; affine: number };
   fitV: number;
   baseline: { level: string; value: number };
   heldOut: "fixture" | "use-like" | "both";
-  /** Write a static-max-abs row. A feed entry can omit it. */
+  /** Write a static-max-abs row. */
   staticError?: boolean;
   sweep: {
     fixture?: string;
-    supplyPort?: string;
-    supplyQuantity?: string;
     currentPort?: string;
     currentQuantity?: string;
     current?: number[];
   };
-  envelope: { supplyVoltage?: [number, number]; marginA?: number };
-  feed?: {
-    part: string;
-    port: string;
-    rSeries: number;
-    citationTitle: string;
-  };
+  envelope: { marginA?: number };
   freeRun?: FreeRunSpec;
   cases?: Record<string, FreeCase>;
 };
@@ -124,16 +111,14 @@ export type CaptureStats = {
   /** Rejected straight-line fit, in millivolts. Printed so the table's reason is visible. */
   lineMaxAbsMv: number;
   knots: number;
-  /** Feed current limit, amperes. The sweep end when there is no feed. */
+  /** Sweep-end current, amperes. */
   tripA: number;
-  /** Envelope current upper bound, amperes. One margin below `tripA`. */
+  /** Envelope current upper bound, amperes. The sweep end. */
   envelopeMaxA: number;
   cases: CaptureCase[];
   moveUsPerMs: { class1: number; class2: number };
   json: string;
 };
-
-type Sweep = { supply: number[]; current: number[] };
 
 export type CaptureRun = {
   /** Overrides the fixture path in the config. The committed Nano capture uses this. */
@@ -220,32 +205,16 @@ async function captureEntry(
     boardId: config.instance,
     ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),
   };
-  const stamp = config.feed
-    ? boardStampOf(config.part, config.variant, stampOpts)
-    : assemblyStampOf(config.part, config.variant, {
-        ...stampOpts,
-        across,
-      });
-  const feedPort = config.feed?.port;
-  const onConnector = Boolean(
-    feedPort &&
-      stamp.vbusNode !== null &&
-      stamp.portNodes[feedPort] === stamp.vbusNode
-  );
-  const feed = feedKind(onConnector);
-  if (feedPort && !stamp.portNodes[feedPort]) {
-    throw new Error(`${config.part} has no ${feedPort} node`);
-  }
+  const stamp = assemblyStampOf(config.part, config.variant, {
+    ...stampOpts,
+    across,
+  });
   for (const name of [across[0], across[1], config.through]) {
     if (!stamp.portNodes[name]) {
       throw new Error(`${config.part} has no ${name} node`);
     }
   }
-  const rSeries = config.feed?.rSeries ?? 0;
-  const dc = (supply: number, amps: number) =>
-    config.feed
-      ? supplyDc(stamp, supply, amps, rSeries, onConnector, config.through)
-      : branchDc(stamp, across[0], across[1], amps);
+  const dc = (amps: number) => branchDc(stamp, across[0], across[1], amps);
   const fixture = config.sweep.fixture
     ? readFixture(
         opts.fixtureFile ??
@@ -254,51 +223,31 @@ async function captureEntry(
     : null;
   const sweep = fixture
     ? sweepsOf(fixture, config)
-    : {
-        supply: config.supply ? [config.supply.ref] : [0],
-        current: config.sweep.current ?? [],
-      };
-  const tripA = config.feed
-    ? limitOf(catalog, config.feed.part)
-    : (sweep.current[sweep.current.length - 1] ?? 0);
-  const margin = config.envelope.marginA ?? 0;
-  const envelopeMaxA = config.feed
-    ? sweep.current.find((amps) => Math.abs(amps - (tripA - margin)) < 1e-6)
-    : sweep.current[sweep.current.length - 1];
+    : { current: config.sweep.current ?? [] };
+  const tripA = sweep.current[sweep.current.length - 1] ?? 0;
+  const envelopeMaxA = sweep.current[sweep.current.length - 1];
   if (envelopeMaxA === undefined) {
     throw new Error(
       `${config.part} current sweep does not include the envelope end`
     );
   }
-  const supplyRef = config.supply?.ref ?? 0;
-  const atTyp = sweep.current.map((amps) => dc(supplyRef, amps));
+  const atTyp = sweep.current.map((amps) => dc(amps));
   const lineMaxAbsMv = lineError(sweep.current, atTyp) * 1000;
-  const knots = fitKnots(sweep.current, atTyp, config.fitV, supplyRef);
+  const knots = fitKnots(sweep.current, atTyp, config.fitV);
   const law: TableLaw = {
     across,
     iSense: config.iSense,
     iAxis: knots,
-    vAxis: knots.map((amps) => round9(dc(supplyRef, amps))),
-    ...(config.supply
-      ? {
-          supplyPort: config.supply.port,
-          supplyRef: config.supply.ref,
-          supplyAffine: config.supply.affine,
-        }
-      : {}),
+    vAxis: knots.map((amps) => round9(dc(amps))),
   };
   let staticMax = 0;
-  for (const supply of sweep.supply) {
-    for (const amps of sweep.current) {
-      const err = Math.abs(dc(supply, amps) - tableVoltage(law, supply, amps));
-      if (err > staticMax) staticMax = err;
-    }
+  for (const amps of sweep.current) {
+    const err = Math.abs(dc(amps) - tableVoltage(law, amps));
+    if (err > staticMax) staticMax = err;
   }
 
   const partType = partTypeOf(config.part, catalog, opts.libraryDir);
-  const hash = contentHash(
-    describeNetlist(stamp, config.feed?.rSeries ?? 0, feed)
-  );
+  const hash = contentHash(describeNetlist(stamp, 0, "header"));
   const bench = benchVersions();
   const scenes = Object.entries(config.cases ?? {}).map(([name, row]) => ({
     name,
@@ -317,7 +266,6 @@ async function captureEntry(
     hash,
     bench,
     envelopeMaxA,
-    tripA,
   };
   if (!runFree) {
     const quantity = `${across[0]}.voltage`;
@@ -359,7 +307,8 @@ async function captureEntry(
     outPath,
     snapshotOf({ ...shared, error: "none-available", quality: "Q1" })
   );
-  const free = await runScenes(scenes, config);
+  if (!config.freeRun) throw new Error(`${config.id} has no free-run scene`);
+  const free = await runScenes(scenes, config.freeRun);
   const worstAbs = Math.max(...free.cases.map((row) => row.maxAbsMv)) / 1000;
   const worstRms = Math.max(...free.cases.map((row) => row.rmsMv)) / 1000;
   const quantity = `${config.through}.voltage`;
@@ -460,29 +409,17 @@ function snapshotOf(input: {
   hash: string;
   bench: { version: string; mujoco: string; avr8js: string };
   envelopeMaxA: number;
-  tripA: number;
   error: SnapshotFile["error"];
   quality: SnapshotFile["quality"];
 }): SnapshotFile {
   const port = input.law.across[0];
-  const supply = input.config.supply;
-  const feed = input.config.feed;
   const inputs = [`${port}.current`];
-  if (supply) inputs.push(`${supply.port}.voltage`);
   const bounds: Record<string, [number, number]> = {
     [`${input.config.through}.current`]: [
       input.law.iAxis[0] ?? 0,
       input.envelopeMaxA,
     ],
   };
-  if (supply && input.config.envelope.supplyVoltage) {
-    bounds[`${supply.port}.voltage`] = input.config.envelope.supplyVoltage;
-  }
-  if (feed && supply) {
-    bounds[`${supply.port}.resistance`] = [feed.rSeries, feed.rSeries];
-    bounds[`${supply.port}.currentLimit`] = [input.tripA, input.tripA];
-  }
-  const margin = input.config.envelope.marginA ?? 0;
   return {
     format: SNAPSHOT_FORMAT,
     partType: input.partType,
@@ -495,13 +432,6 @@ function snapshotOf(input: {
       iSense: input.law.iSense,
       iAxis: [...input.law.iAxis],
       vAxis: [...input.law.vAxis],
-      ...(input.law.supplyPort ? { supplyPort: input.law.supplyPort } : {}),
-      ...(input.law.supplyRef !== undefined
-        ? { supplyRef: input.law.supplyRef }
-        : {}),
-      ...(input.law.supplyAffine !== undefined
-        ? { supplyAffine: input.law.supplyAffine }
-        : {}),
     },
     envelope: { bounds },
     error: input.error,
@@ -519,16 +449,6 @@ function snapshotOf(input: {
         seed: input.fixture.seed,
       },
       tool: input.file.tool,
-      ...(feed
-        ? {
-            citations: [
-              {
-                title: feed.citationTitle,
-                ref: `${feed.part} thevenin Ilimit ${input.tripA} A; the envelope stops ${margin} A below that trip`,
-              },
-            ],
-          }
-        : {}),
       bench: input.bench,
       created: input.file.created,
     },
@@ -550,14 +470,10 @@ function readFixture(file: string): FixtureFile {
   return fixture;
 }
 
-function sweepsOf(fixture: FixtureFile, entry: CaptureEntry): Sweep {
-  const supply = entry.sweep.supplyPort
-    ? fixture.sweeps.find(
-        (row) =>
-          row.port === entry.sweep.supplyPort &&
-          row.quantity === entry.sweep.supplyQuantity
-      )
-    : undefined;
+function sweepsOf(
+  fixture: FixtureFile,
+  entry: CaptureEntry
+): { current: number[] } {
   const current = fixture.sweeps.find(
     (row) =>
       row.port === (entry.sweep.currentPort ?? entry.through) &&
@@ -566,42 +482,7 @@ function sweepsOf(fixture: FixtureFile, entry: CaptureEntry): Sweep {
   if (!current) {
     throw new Error(`${entry.part} fixture has no current sweep`);
   }
-  return {
-    supply: supply?.values ?? (entry.supply ? [entry.supply.ref] : [0]),
-    current: current.values,
-  };
-}
-
-function limitOf(catalog: string, partId: string): number {
-  const slash = partId.indexOf("/");
-  const at = partId.lastIndexOf("@");
-  const file = join(
-    catalog,
-    "parts",
-    partId.slice(0, slash),
-    `${partId.slice(slash + 1, at)}@${partId.slice(at + 1)}.json`
-  );
-  const part = JSON.parse(readFileSync(file, "utf8")) as {
-    axes?: {
-      behaviour?: Record<
-        string,
-        {
-          variants: Record<
-            string,
-            { form?: string; params?: { Ilimit?: number } }
-          >;
-        }
-      >;
-    };
-  };
-  for (const slot of Object.values(part.axes?.behaviour ?? {})) {
-    for (const variant of Object.values(slot.variants)) {
-      if (variant.form === "thevenin-limit@1" && variant.params?.Ilimit) {
-        return variant.params.Ilimit;
-      }
-    }
-  }
-  throw new Error(`${partId} has no current limit`);
+  return { current: current.values };
 }
 
 function acrossOf(
@@ -660,23 +541,16 @@ function lineError(current: number[], volts: number[]): number {
   return max;
 }
 
-function fitKnots(
-  current: number[],
-  volts: number[],
-  fitV: number,
-  supplyRef: number
-): number[] {
+function fitKnots(current: number[], volts: number[], fitV: number): number[] {
   const knots = [current[0] ?? 0, current[current.length - 1] ?? 0];
   while (knots.length < 40) {
     let worst = -1;
     let worstErr = 0;
-    const law = lawFrom(knots, current, volts, supplyRef);
+    const law = lawFrom(knots, current, volts);
     for (let k = 0; k < current.length; k++) {
       const amps = current[k] ?? 0;
       if (knots.some((knot) => knot === amps)) continue;
-      const err = Math.abs(
-        (volts[k] ?? 0) - tableVoltage(law, supplyRef, amps)
-      );
+      const err = Math.abs((volts[k] ?? 0) - tableVoltage(law, amps));
       if (err > worstErr) {
         worstErr = err;
         worst = k;
@@ -692,8 +566,7 @@ function fitKnots(
 function lawFrom(
   knots: number[],
   current: number[],
-  volts: number[],
-  supplyRef: number
+  volts: number[]
 ): TableLaw {
   return {
     across: ["p", "m"],
@@ -703,9 +576,6 @@ function lawFrom(
       const at = current.indexOf(amps);
       return volts[at] ?? 0;
     }),
-    supplyPort: "supply",
-    supplyRef,
-    supplyAffine: 1,
   };
 }
 
@@ -714,25 +584,6 @@ function round9(n: number): number {
 }
 
 type FreeScene = FreeCase & { name: string };
-
-function readCaptureConfig(catalog: string): CaptureFile {
-  return JSON.parse(
-    readFileSync(join(catalog, "fixtures", "capture.config.json"), "utf8")
-  ) as CaptureFile;
-}
-
-function scenesOf(entry: CaptureEntry): FreeScene[] {
-  return Object.entries(entry.cases ?? {}).map(([name, row]) => ({
-    name,
-    ...row,
-  }));
-}
-
-function freeRunEntry(file: CaptureFile): CaptureEntry {
-  const entry = file.entries.find((row) => row.freeRun && row.cases);
-  if (!entry?.freeRun) throw new Error("capture config has no free-run entry");
-  return entry;
-}
 
 export type CaptureFreeRun = CaptureCase & {
   /** Last-frame board voltage, volts. */
@@ -743,29 +594,24 @@ export type CaptureFreeRun = CaptureCase & {
   current2: number;
 };
 
-/** Class 1 against class 2 for the config scenes, with the compare part. Does not write the snapshot. */
-export async function compareLoadFreeRun(): Promise<CaptureFreeRun[]> {
-  const file = readCaptureConfig(catalogRoot());
-  const entry = freeRunEntry(file);
-  const skip = new Set(entry.freeRun?.compareSkip ?? []);
-  const part = entry.freeRun?.comparePart;
-  if (!part) throw new Error(`${entry.id} has no compare part`);
-  const scenes = scenesOf(entry)
-    .filter((spec) => !skip.has(spec.name))
-    .map((spec) => ({ ...spec, load: part }));
-  const ran = await runScenes(scenes, entry);
-  return ran.cases;
-}
-
-async function runScenes(
-  specs: readonly FreeScene[],
-  entry: CaptureEntry
+/** Class 1 against class 2 for these scenes. Does not write a snapshot. */
+export function runClassScenes(
+  scene: FreeRunSpec,
+  specs: readonly FreeScene[]
 ): Promise<{
   cases: CaptureFreeRun[];
   moveUsPerMs: { class1: number; class2: number };
 }> {
-  const scene = entry.freeRun;
-  if (!scene) throw new Error(`${entry.id} has no free-run scene`);
+  return runScenes(specs, scene);
+}
+
+async function runScenes(
+  specs: readonly FreeScene[],
+  scene: FreeRunSpec
+): Promise<{
+  cases: CaptureFreeRun[];
+  moveUsPerMs: { class1: number; class2: number };
+}> {
   const examples = fileURLToPath(
     new URL("../../../examples/", import.meta.url)
   );

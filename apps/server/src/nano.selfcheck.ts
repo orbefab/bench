@@ -33,11 +33,10 @@ import {
   stopWorld,
 } from "./world/host";
 import { maxBoardDelta } from "./world/nano-reference";
-import { catalogRoot, planWorld } from "./world/plan";
+import { planWorld } from "./world/plan";
 import { BOD_ASSERT_V, BOD_RELEASE_V, RESET_HOLD_MS } from "./world/power";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
-import { tableLawOf } from "./world/snapshot-law";
 
 /** Frozen with the SG90 catalog fit the arm self-checks use. */
 const law = {
@@ -105,34 +104,25 @@ function ss14Drop(amps: number): number {
 const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
   boardId: "nano",
 });
+const NANO_CLASS1 = boardStampOf("sfab/nano-ch340@1.0.0", "avr8js", {
+  boardId: "nano",
+});
 
 function rail(
-  path: "none" | "usb" | "header" | "snapshot-feed",
-  rSeries: number
+  path: "none" | "usb" | "header" | "class1" | "class1-header",
+  rSeries: number,
+  iLimit = usb.currentLimit
 ): RailCircuit {
+  const stamp =
+    path === "class1" || path === "class1-header" ? NANO_CLASS1 : NANO_STAMP;
+  const feed = path === "header" || path === "class1-header" ? "header" : "usb";
   return createRailCircuit({
     vNom: usb.voltage,
     rSeries,
-    iLimit: usb.currentLimit,
+    iLimit,
     motors: [{ resistance: law.resistance, k: law.k }],
-    ...(path === "none"
-      ? {}
-      : path === "snapshot-feed"
-        ? { boardPath: path, law: nanoUsbLaw() }
-        : { stamp: NANO_STAMP, feed: path }),
+    ...(path === "none" ? {} : { stamp, feed }),
   });
-}
-
-function nanoUsbLaw() {
-  const file = join(
-    catalogRoot(),
-    "snapshots",
-    "sfab",
-    "nano-usb-5v@1.0.0.json"
-  );
-  const law = tableLawOf(JSON.parse(readFileSync(file, "utf8")));
-  if (!law) throw new Error("nano usb snapshot has no table");
-  return law;
 }
 
 /** Settle, then return the rail. `mode` is the D13 pin. */
@@ -154,12 +144,13 @@ function settle(
 }
 
 function point(
-  path: "none" | "usb" | "header" | "snapshot-feed",
+  path: "none" | "usb" | "header" | "class1" | "class1-header",
   rSeries: number,
   fraction: number,
-  connected: boolean
+  connected: boolean,
+  iLimit = usb.currentLimit
 ): RailCircuit {
-  const circuit = rail(path, rSeries);
+  const circuit = rail(path, rSeries, iLimit);
   settle(circuit, fraction, connected, "input");
   return circuit;
 }
@@ -217,7 +208,7 @@ function point(
   const lines: string[] = [];
   for (const [level, path] of [
     ["ideal terminal", "none"],
-    ["snapshot", "snapshot-feed"],
+    ["snapshot", "class1"],
     ["class 2", "usb"],
   ] as const) {
     const bits: string[] = [];
@@ -257,6 +248,119 @@ function point(
   console.log(
     `INFO nano usb path, one SG90: ${us.toFixed(1)} µs per 1 ms step`
   );
+}
+
+function class1Of(dir: string, stem: string): string {
+  const world = JSON.parse(
+    readFileSync(join(dir, `${stem}.world.json`), "utf8")
+  ) as {
+    run: { levels: unknown };
+  };
+  world.run.levels = { default: 1 };
+  const name = `${stem}-c1.world.json`;
+  writeFileSync(join(dir, name), `${JSON.stringify(world, null, 2)}\n`);
+  return name;
+}
+
+function boardGap(
+  low: RecordingRead,
+  high: RecordingRead
+): { maxAbs: number; rms: number } {
+  const n = Math.min(low.frames.length, high.frames.length);
+  let maxAbs = 0;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    const a = low.frames[i]?.boards.nano?.voltage;
+    const b = high.frames[i]?.boards.nano?.voltage;
+    if (a === undefined || b === undefined) continue;
+    const d = Math.abs(a - b);
+    if (d > maxAbs) maxAbs = d;
+    sum += (a - b) ** 2;
+    count += 1;
+  }
+  return { maxAbs, rms: count > 0 ? Math.sqrt(sum / count) : 0 };
+}
+
+async function plannedBoard(
+  dir: string,
+  name: string,
+  behaviour: 1 | 2,
+  rs: number,
+  iLimit: number,
+  supply: "usb" | "bench" = "usb"
+): Promise<{
+  voltage: number;
+  terminal: number;
+  warnings: string[];
+  table: boolean;
+}> {
+  const part =
+    supply === "usb" ? "sfab/usb-port-500ma@1.0.0" : "sfab/bench-supply@1.0.0";
+  writeFileSync(
+    join(dir, "parts", "sfab", `${name}-scene@1.0.0.json`),
+    `{
+  "format": "sfab.part@1",
+  "id": "sfab/${name}-scene@1.0.0",
+  "type": "assembly",
+  "foreign": false,
+  "axes": {
+    "behaviour": { "2": { "default": "netlist", "variants": { "netlist": {
+      "kind": "composite", "omits": ["proof scene"],
+      "netlist": {
+        "instances": {
+          "nano": { "part": "sfab/nano-ch340@1.0.0", "params": { "firmware": "firmware/hold/hold.hex", "source": "firmware/hold/hold.ino" } },
+          "supply": { "part": "${part}", "params": { "Rs": ${rs}, "Ilimit": ${iLimit} } }
+        },
+        "wires": [["supply.5V", "nano.5V"], ["supply.GND", "nano.GND"]],
+        "expose": {}
+      }
+    } } } },
+    "body": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["none"] } } } },
+    "visual": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["none"] } } } }
+  }
+}
+`
+  );
+  const levels =
+    behaviour === 2
+      ? `"default": 1, "types": { "arduino-nano": { "behaviour": 2 } }`
+      : `"default": 1`;
+  writeFileSync(
+    join(dir, `${name}.world.json`),
+    `{
+  "version": 2,
+  "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },
+  "run": { "seed": 1, "levels": { ${levels} } },
+  "root": { "id": "scene", "part": "sfab/${name}-scene@1.0.0" }
+}
+`
+  );
+  const planned = planWorld(dir, `${name}.world.json`);
+  if (!planned.ok) {
+    throw new Error(planned.errors.map((item) => item.message).join("; "));
+  }
+  const board = planned.plan.boards.find((item) => item.id === "nano");
+  const fed = planned.plan.supplies[0];
+  if (!board?.stamp || !fed) throw new Error(`${name} has no board`);
+  const feed = supply === "usb" ? "usb" : "header";
+  const circuit = createRailCircuit({
+    vNom: fed.voltage,
+    rSeries: fed.rSeries,
+    iLimit: fed.currentLimit,
+    motors: [],
+    stamp: board.stamp,
+    feed,
+    pin: board.pin,
+  });
+  circuit.setFixed(board.current);
+  for (let i = 0; i < 200; i++) circuit.solve();
+  return {
+    voltage: circuit.boardVoltage,
+    terminal: circuit.voltage,
+    warnings: planned.plan.report?.warnings.map((item) => item.message) ?? [],
+    table: board.stamp.parts.some((part) => part.form === "table@1"),
+  };
 }
 
 function expectRecorded(read: RecordingRead, label: string): void {
@@ -508,7 +612,7 @@ try {
   const live2 = tail2?.boards.nano?.voltage ?? Number.NaN;
   const live1 = tail1?.boards.nano?.voltage ?? Number.NaN;
   const circuit2 = point("usb", usb.rSeries, 1, true).boardVoltage;
-  const circuit1 = point("snapshot-feed", usb.rSeries, 1, true).boardVoltage;
+  const circuit1 = point("class1", usb.rSeries, 1, true).boardVoltage;
   expect(
     Math.abs(live2 - circuit2) <= 0.001,
     `class 2 world stall ${live2} V vs circuit ${circuit2} V`
@@ -607,6 +711,52 @@ try {
   console.log(
     `nano netlist vs reference: nano-vcc-usb ${vccDelta.toExponential(2)} V, ` +
       `nano-servo-usb ${servoDelta.toExponential(2)} V`
+  );
+
+  const vcc1 = await runWorld(root, class1Of(root, "nano-vcc-usb"), 1000);
+  const servo1 = await runWorld(root, class1Of(root, "nano-servo-usb"), 3000);
+  const vccGap = boardGap(vcc1.read, vcc.read);
+  const servoGap = boardGap(servo1.read, first.read);
+  expect(
+    vccGap.maxAbs <= 0.005,
+    `nano-vcc-usb class 1 vs class 2 ${vccGap.maxAbs} V`
+  );
+  expect(
+    servoGap.maxAbs <= 0.005,
+    `nano-servo-usb class 1 vs class 2 ${servoGap.maxAbs} V`
+  );
+  console.log(
+    `nano-vcc-usb class 1 vs class 2: max-abs ${(vccGap.maxAbs * 1000).toFixed(3)} mV, rms ${(vccGap.rms * 1000).toFixed(3)} mV`
+  );
+  console.log(
+    `nano-servo-usb class 1 vs class 2: max-abs ${(servoGap.maxAbs * 1000).toFixed(3)} mV, rms ${(servoGap.rms * 1000).toFixed(3)} mV`
+  );
+
+  const wide1 = await plannedBoard(root, "wide-c1", 1, 1.5, 0.5);
+  const wide2 = await plannedBoard(root, "wide-c2", 2, 1.5, 0.5);
+  const wideDv = Math.abs(wide1.voltage - wide2.voltage);
+  expect(
+    wide1.warnings.every((line) => !line.includes("ideal terminal")),
+    `wide usb warned: ${wide1.warnings.join("; ")}`
+  );
+  expect(wide1.table, "wide usb class 1 did not stamp the power group");
+  expect(wideDv <= 0.005, `wide usb class 1 vs class 2 ${wideDv} V`);
+  console.log(
+    `class 1 outside feed bounds: Rs 1.5 ohm, Ilimit 0.5 A, no ideal-terminal warning, |Δ| ${(wideDv * 1000).toFixed(3)} mV vs class 2`
+  );
+
+  const head1 = await plannedBoard(root, "head-c1", 1, 0.05, 1, "bench");
+  const head2 = await plannedBoard(root, "head-c2", 2, 0.05, 1, "bench");
+  expect(
+    head1.warnings.every((line) => !line.includes("ideal terminal")),
+    `header warned: ${head1.warnings.join("; ")}`
+  );
+  expect(
+    Math.abs(head1.voltage - head1.terminal) <= 0.001,
+    `header class 1 board ${head1.voltage} V is not the terminal ${head1.terminal} V`
+  );
+  console.log(
+    `class 1 header: board ${head1.voltage.toFixed(4)} V, class 2 ${head2.voltage.toFixed(4)} V, no ideal-terminal warning`
   );
 } finally {
   rmSync(root, { recursive: true, force: true });

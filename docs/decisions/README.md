@@ -15,3 +15,5 @@ Use [`template.md`](template.md) (SFab 4-digit). Prefer a short note in
 | [0007-harness-chat-fill](0007-harness-chat-fill.md) | Chat continue is fill vs prompt from the live session, not the UI-tool helper |
 | [0009-world-simulation](0009-world-simulation.md) | A world is the document; MuJoCo and an avr8js board; one shared run |
 | [0010-layered-simulation](0010-layered-simulation.md) | Parts run at levels on three axes and contribute equations to shared engines; own MNA circuit engine; types v1 |
+| [0011-one-document-kind](0011-one-document-kind.md) | The part is the only document; captures are sidecars and overlays; ports fix once used; only an unreadable document blocks Play |
+| [0012-layers-and-plugin-seams](0012-layers-and-plugin-seams.md) | Seven layers that import only downward; edits through typed operations; compile-time form, tool, importer and engine registries |

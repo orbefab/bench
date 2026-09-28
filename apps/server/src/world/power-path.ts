@@ -99,19 +99,12 @@ export const UNO_DECOUPLE_C = 100e-9;
  * A cable network that is still a named path. A firmware board netlist
  * is not one of these: the caller passes the stamp and `feed`.
  */
-export type BoardPathName = "uno-usb" | "snapshot-feed";
+export type BoardPathName = "uno-usb";
 
 /** What `usbPathFor` tells the worker to put on the rail. */
 export type UsbPath =
   | { kind: "path"; path: BoardPathName }
   | { kind: "netlist"; feed: "usb" | "header" };
-
-/** `snapshot:<publisher/name@version>` on a firmware variant's `boardCircuit`. */
-export function snapshotRefOf(boardCircuit: string | null): string | null {
-  if (!boardCircuit?.startsWith("snapshot:")) return null;
-  const ref = boardCircuit.slice("snapshot:".length);
-  return ref.length > 0 ? ref : null;
-}
 
 /** `path:<name>` on a firmware variant's `boardCircuit`. The Uno cable is `path:uno-usb`. */
 export function pathRefOf(boardCircuit: string | null): string | null {
@@ -128,12 +121,10 @@ export function pathRefOf(boardCircuit: string | null): string | null {
  * `path:uno-usb` names the board netlist the plan already stamped, and
  * only a `usb` connector takes the cable. Any other supply is the header:
  * `feed` is `header`, so `VBUS` is unfed and whatever the netlist puts
- * on the supply port stays. A class-2 board (`hasNetlist`) takes
+ * on the supply port stays. A board netlist (`hasNetlist`) takes
  * `feed: "usb"` from that connector
  * (the cable lands on the board's `usb` port) and `feed: "header"` from
- * any other supply. A class-1 snapshot is `snapshot:<ref>`. The loader
- * keeps that circuit only when the feed is the Thevenin the snapshot
- * was captured through, so this function then sees no circuit.
+ * any other supply. The supply stays a part. The board does not replace it.
  */
 export function usbPathFor(
   connector: string | null,
@@ -146,10 +137,6 @@ export function usbPathFor(
     return usb ? { kind: "path", path: "uno-usb" } : null;
   }
   if (named) return null;
-  if (snapshotRefOf(boardCircuit)) {
-    // The loader already matched this feed's connector and source bounds.
-    return { kind: "path", path: "snapshot-feed" };
-  }
   if (!hasNetlist) return null;
   return { kind: "netlist", feed: usb ? "usb" : "header" };
 }

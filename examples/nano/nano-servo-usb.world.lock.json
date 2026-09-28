@@ -32,7 +32,7 @@
     {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "6d0320e615fdcc56b7c9492e520651645a1efa5a08a318f28f8ec54ea5543e7e",
+      "sha256": "55bf4c046a40fe11e4c66ccc124e8e8882aff31a64682c5fd1dec4a595c07ce8",
       "source": "catalog",
       "version": "1.0.0"
     },

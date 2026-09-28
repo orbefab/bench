@@ -25,9 +25,13 @@ import {
 } from "./world/circuit/elements";
 import { Engine } from "./world/circuit/engine";
 import { AVR_PIN } from "./world/circuit/pin";
-import { type boardStampOf, realize } from "./world/circuit-stamp";
+import {
+  type BoardStamp,
+  type boardStampOf,
+  realize,
+} from "./world/circuit-stamp";
 import { catalogRoot, planWorld } from "./world/plan";
-import { NANO_BOARD_A } from "./world/power-path";
+import { BOARD_LOAD_KNEE_V, NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 
 const law = { k: 0.458, resistance: 7.1, quiescent: 0.01 };
@@ -104,6 +108,79 @@ const nanoParams = {
   firmware: "firmware/vcc/vcc.hex",
   source: "firmware/vcc/vcc.ino",
 };
+
+/** Tie both VBUS nodes to one terminal, the way the shared rail does. */
+function tieUsb(stamp: BoardStamp): BoardStamp {
+  const from = stamp.vbusNode;
+  if (!from) throw new Error("class 1 nano has no VBUS");
+  const map = (node: string) => (node === from ? "term" : node);
+  return {
+    ...stamp,
+    boardNode: map(stamp.boardNode),
+    vbusNode: "term",
+    resetNode: stamp.resetNode ? map(stamp.resetNode) : null,
+    portNodes: Object.fromEntries(
+      Object.entries(stamp.portNodes).map(([name, node]) => [name, map(node)])
+    ),
+    parts: stamp.parts.map((part) => ({
+      ...part,
+      nodes: Object.fromEntries(
+        Object.entries(part.nodes).map(([name, node]) => [name, map(node)])
+      ),
+    })),
+    pins: stamp.pins.map((pin) => ({ ...pin, node: map(pin.node) })),
+  };
+}
+
+function tiedPair(
+  left: BoardStamp,
+  right: BoardStamp,
+  leftAmps: number,
+  rightAmps: number
+): { left: number; right: number } {
+  const leftR = realize(tieUsb(left), "usb", AVR_PIN, {
+    pinId: (port) => `pin.left.${port}`,
+  });
+  const rightR = realize(tieUsb(right), "usb", AVR_PIN, {
+    pinId: (port) => `pin.right.${port}`,
+  });
+  const leftLoad = new CurrentLoad(
+    "load.left",
+    leftR.boardNode,
+    "0",
+    BOARD_LOAD_KNEE_V
+  );
+  const rightLoad = new CurrentLoad(
+    "load.right",
+    rightR.boardNode,
+    "0",
+    BOARD_LOAD_KNEE_V
+  );
+  leftLoad.amps = leftAmps;
+  rightLoad.amps = rightAmps;
+  const engine = new Engine(
+    [
+      new TheveninLimit(
+        "src",
+        "term",
+        "0",
+        usb.voltage,
+        usb.rSeries,
+        usb.currentLimit
+      ),
+      leftLoad,
+      rightLoad,
+      ...leftR.elements,
+      ...rightR.elements,
+    ],
+    { method: "be", h: 0.001, atol: 1e-14, rtol: 1e-12 }
+  );
+  engine.operatingPoint();
+  return {
+    left: engine.voltage(leftR.boardNode),
+    right: engine.voltage(rightR.boardNode),
+  };
+}
 
 function noneAxis(kind: "none"): {
   "0": {
@@ -833,7 +910,7 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
 }
 
 {
-  const dir = mkdtempSync(join(tmpdir(), "sfab-feed-share-"));
+  const dir = mkdtempSync(join(tmpdir(), "sfab-two-class1-"));
   try {
     copyVcc(dir);
     writeJson(
@@ -854,15 +931,35 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       )
     );
     const planned = planWorld(dir, "pair.world.json");
-    expect(!planned.ok, "two feed snapshots planned");
-    if (planned.ok) throw new Error("unreachable");
-    const hit = planned.errors.find(
-      (item) =>
-        item.message.includes("feed snapshot") &&
-        item.message.includes("replace")
+    expect(planned.ok, "two class-1 boards planned");
+    if (!planned.ok) throw new Error("unreachable");
+    const left = planned.plan.boards.find((board) => board.id === "left");
+    const right = planned.plan.boards.find((board) => board.id === "right");
+    const supply = planned.plan.supplies.find((item) => item.id === "usb");
+    expect(left?.stamp && right?.stamp && supply, "both class-1 stamps");
+    if (!left?.stamp || !right?.stamp || !supply)
+      throw new Error("unreachable");
+    const rail = createRailCircuit({
+      vNom: supply.voltage,
+      rSeries: supply.rSeries,
+      iLimit: supply.currentLimit,
+      motors: [],
+      boards: [
+        { id: "left", stamp: left.stamp, feed: "usb", pin: left.pin },
+        { id: "right", stamp: right.stamp, feed: "usb", pin: right.pin },
+      ],
+    });
+    rail.setBoardLoad("left", left.current);
+    rail.setBoardLoad("right", right.current);
+    rail.solve();
+    const hand = tiedPair(left.stamp, right.stamp, left.current, right.current);
+    const dLeft = Math.abs(rail.boardReading("left").voltage - hand.left);
+    const dRight = Math.abs(rail.boardReading("right").voltage - hand.right);
+    expect(dLeft <= 1e-12, `left ${dLeft} V`);
+    expect(dRight <= 1e-12, `right ${dRight} V`);
+    console.log(
+      `two class-1 nanos: shared rail vs one circuit |Δ| ${Math.max(dLeft, dRight).toExponential(2)} V`
     );
-    expect(hit, planned.errors.map((item) => item.message).join("; "));
-    console.log(`feed snapshot: ${hit?.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -11,11 +11,8 @@ import {
   type LockSnapshot,
   type RunReport,
   type SnapshotFile,
-  SUPPLY_FORMS,
   type WorldFileV2,
 } from "@sfab-bench/contract";
-import { snapshotRefOf } from "../power-path";
-import { sourceBoundsOf, sourceOutside } from "../snapshot-law";
 import { type LoadedSnapshot, loadSnapshot } from "../snapshot-load";
 import { checkWorld } from "./check";
 import {
@@ -211,7 +208,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
       const found = loadSnapshot(lib.worldDir, opts, ask.ref, type);
       diagnostics.push(...found.diagnostics);
       if (!found.loaded) continue;
-      if (ask.use === "body") {
+      if (ask.axis === "body") {
         const file = found.loaded.file;
         if (file.form !== "hinge@1" || file.axis !== "body") {
           diagnostics.push(
@@ -242,65 +239,20 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
           continue;
         }
       }
-      if (ask.use === "branch" || ask.use === "body") {
-        remember(snapshots, found.loaded);
-        snapshotRuns.push({
-          path: inst.path,
-          axis: ask.axis,
-          ref: ask.ref,
-        });
-        ran.push({
-          path: inst.path,
-          axis: ask.axis,
-          ref: ask.ref,
-          quality: inst.foreign ? "Q1" : found.loaded.quality,
-          error: found.loaded.file.error,
-          provenance: provenanceOf(found.loaded.file),
-        });
-        continue;
-      }
-      const foundFeed = feedOf(inst, resolved.instances, nets);
-      if (!foundFeed) continue;
-      const feed = foundFeed.feed;
-      const feedPortName = foundFeed.port;
-      const port = portNumbers(feed);
-      const bounds = sourceBoundsOf(found.loaded.file);
-      const sameConnector = connectorOf(feed) === boardConnector(inst);
-      const covered =
-        port !== null &&
-        bounds !== null &&
-        sameConnector &&
-        !sourceOutside(bounds, port.rs, port.ilimit);
-      if (covered) {
-        remember(snapshots, found.loaded);
-        snapshotRuns.push({
-          path: inst.path,
-          axis: "behaviour",
-          ref: ask.ref,
-        });
-        ran.push({
-          path: inst.path,
-          axis: "behaviour",
-          ref: ask.ref,
-          quality: inst.foreign ? "Q1" : found.loaded.quality,
-          error: found.loaded.file.error,
-          provenance: provenanceOf(found.loaded.file),
-        });
-      } else {
-        diagnostics.push(
-          makeDiag({
-            severity: "warning",
-            path: inst.path,
-            port: feedPortName,
-            quantity: "Resistance",
-            left: port ? `${port.rs} Ω, ${port.ilimit} A` : feed.type.id,
-            right: bounds
-              ? `${bounds.resistance[0]} Ω, ${bounds.currentLimit[0]} A`
-              : "captured port",
-            detail: `snapshot ${ask.ref} does not cover this ${feed.type.id}; ideal terminal`,
-          })
-        );
-      }
+      remember(snapshots, found.loaded);
+      snapshotRuns.push({
+        path: inst.path,
+        axis: ask.axis,
+        ref: ask.ref,
+      });
+      ran.push({
+        path: inst.path,
+        axis: ask.axis,
+        ref: ask.ref,
+        quality: inst.foreign ? "Q1" : found.loaded.quality,
+        error: found.loaded.file.error,
+        provenance: provenanceOf(found.loaded.file),
+      });
     }
   }
 
@@ -363,7 +315,6 @@ function remember(rows: LoadedSnapshot[], loaded: LoadedSnapshot): void {
 
 type SnapshotAsk = {
   ref: string;
-  use: "feed" | "branch" | "body";
   axis: "behaviour" | "body";
 };
 
@@ -372,80 +323,11 @@ function snapshotAsks(inst: LiveInstance): SnapshotAsk[] {
   const asks: SnapshotAsk[] = [];
   const impl = inst.axes.behaviour.impl as BehaviourImpl | null;
   if (impl?.kind === "snapshot") {
-    asks.push({ ref: impl.ref, use: "branch", axis: "behaviour" });
-  } else if (impl?.kind === "firmware") {
-    const ref = snapshotRefOf(impl.boardCircuit ?? null);
-    if (ref) asks.push({ ref, use: "feed", axis: "behaviour" });
+    asks.push({ ref: impl.ref, axis: "behaviour" });
   }
   const body = inst.axes.body.impl as BodyImpl | null;
   if (body?.kind === "snapshot") {
-    asks.push({ ref: body.ref, use: "body", axis: "body" });
+    asks.push({ ref: body.ref, axis: "body" });
   }
   return asks;
-}
-
-function boardConnector(inst: LiveInstance): string | null {
-  for (const decl of Object.values(inst.type.ports)) {
-    if (decl.connector) return decl.connector;
-  }
-  return null;
-}
-
-function connectorOf(inst: LiveInstance): string | null {
-  for (const decl of Object.values(inst.type.ports)) {
-    if (decl.connector) return decl.connector;
-  }
-  return null;
-}
-
-function isSupplyInst(inst: LiveInstance): boolean {
-  const impl = inst.axes.behaviour.impl as BehaviourImpl | null;
-  if (impl?.kind !== "form") return false;
-  return (SUPPLY_FORMS as readonly string[]).includes(impl.form);
-}
-
-function feedOf(
-  inst: LiveInstance,
-  instances: LiveInstance[],
-  nets: LiveNet[]
-): { feed: LiveInstance; port: string } | null {
-  const names = Object.entries(inst.type.ports)
-    .filter(
-      ([, decl]) =>
-        !decl.internal && decl.role === "power" && decl.direction === "in"
-    )
-    .map(([name]) => name);
-  for (const name of names) {
-    const net = nets.find((item) =>
-      item.ports.some((port) => port.path === inst.path && port.port === name)
-    );
-    if (!net) continue;
-    for (const port of net.ports) {
-      if (port.path === inst.path) continue;
-      const other = instances.find((item) => item.path === port.path);
-      if (other && isSupplyInst(other)) return { feed: other, port: name };
-    }
-  }
-  return null;
-}
-
-function portNumbers(
-  inst: LiveInstance
-): { rs: number; ilimit: number } | null {
-  const impl = inst.axes.behaviour.impl as BehaviourImpl | null;
-  if (impl?.kind !== "form") return null;
-  const rs = overridden(impl.params?.Rs, inst.params.Rs);
-  const ilimit = overridden(impl.params?.Ilimit, inst.params.Ilimit);
-  if (rs === null || ilimit === null) return null;
-  return { rs, ilimit };
-}
-
-function overridden(form: unknown, instance: unknown): number | null {
-  const raw = typeof instance === "number" ? instance : form;
-  if (typeof raw === "number") return raw;
-  if (raw && typeof raw === "object" && "v" in raw) {
-    const v = (raw as { v: unknown }).v;
-    return typeof v === "number" ? v : null;
-  }
-  return null;
 }

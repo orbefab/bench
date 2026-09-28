@@ -1,20 +1,29 @@
 # Product
 
-Living plan for this repo. Architecture detail is
+Living plan for this repo. What the product does, screen by screen, is
+[`manual.md`](manual.md). Architecture detail is
 [`architecture.md`](architecture.md). Expensive calls are
 [`decisions/`](decisions/). How to run it is [`user/`](user/).
 
 The 2026-09-13 survey that produced the first direction is historical.
-The world is [ADR 0009](decisions/0009-world-simulation.md).
+The world is [ADR 0009](decisions/0009-world-simulation.md); the part as
+the only document is [ADR 0011](decisions/0011-one-document-kind.md), and
+the layers are [ADR 0012](decisions/0012-layers-and-plugin-seams.md). The
+2026-09-27 alignment with the manual is
+[`notes/2026-09-27-bench-alignment.md`](notes/2026-09-27-bench-alignment.md).
 **This file is the source of truth for what we are building next.**
 
 ## What this is
 
-A robotics simulation platform: one world, plus chat, using the AI
+A robotics simulation platform: a 3D world builder for parts. Everything
+you open, nest, wire, play, and capture is a part
+([`manual.md`](manual.md)). You drive it with the editor's tools and with
+chat, as peers: a tool, the agent, and a script make the same typed edits
+to the same document, with one undo history per tab. Chat uses the AI
 subscriptions already on the Mac (Codex, Claude Code, Cursor, Grok,
 OpenCode). Cursor is listed but a Mac login is not visible to this app yet.
-This app does not take API keys for chat. The world runtime is the next
-build. Opening a STEP is what runs today.
+This app does not take API keys for chat. A world runs today from a
+`.world.json`; the editor is A3–A6 below.
 
 The world is the view. CAD, firmware, electronics, and physics sit around
 it. Reinforcement learning is later, and it runs outside this app. A STEP
@@ -25,11 +34,12 @@ Three jobs, kept separate:
 
 | Job | Who |
 | --- | --- |
-| **Authoring** | Whatever produced the STEP, the URDF, and the firmware in the open folder (Jake cadgen, a CAD export, a toolchain, a human). This app does not author CAD and does not compile firmware. |
-| **World** | The run: a `.world.json`, MuJoCo, a board, wires, and the viewer. The STEP viewer is how a part is inspected. This is the product. |
+| **Authoring** | Whatever produced the STEP, the URDF, and the firmware in the open folder (Jake cadgen, a CAD export, a toolchain, a human, or the agent running a tool there). Bench watches and reloads. For now this app does not author CAD and does not compile firmware; in-app part CAD and an MCU IDE are Later, after A6. |
+| **World** | Building and running parts: the part document ([ADR 0011](decisions/0011-one-document-kind.md); a `.world.json` until A3), MuJoCo, a board, wires, the tools, and the viewer. The STEP viewer is how a part is inspected. This is the product. |
 | **Agent host** | This Node process: open folder, harnesses, threads, and the tools that see and run the world. `get_viewer` / `show_artifact` stay. |
 
-North star: global server → **open a folder** → **open a world** → talk.
+North star: global server → **open a folder** → **open a part** → build it
+with tools or chat → **Play** → **Capture**.
 A STEP still opens. Quest Browser joins over HTTPS. Recents and threads
 are shared. A world's live run is shared per document; camera, selection,
 lens, and scrub stay on the client
@@ -45,7 +55,7 @@ tool wrote the file.
 
 Do not re-open these unless the human asks.
 
-- **No adapters.** Project = a directory. A STEP or GLB in it is a document. A world is `<name>.world.json`. Agent cwd = that directory. Skills live in the project if the user put them there. This app does not learn which tool wrote the STEP, the URDF, or the firmware.
+- **No adapters.** Project = a directory. A STEP or GLB in it is a document. A world is `<name>.world.json` until A3 converts it to a part, the only document kind ([ADR 0011](decisions/0011-one-document-kind.md)). Agent cwd = that directory. Skills live in the project if the user put them there. This app does not learn which tool wrote the STEP, the URDF, or the firmware.
 - **Tessellation is a loader**, not an adapter. OpenCascade WASM in the API process, and the only one, producing `assembly.json` + `.tess` + `#o…` ([ADR 0002](decisions/0002-step-loader-occt.md), [ADR 0004](decisions/0004-occt-via-opencascade-js.md)). The Python stopgap it replaced is gone.
 - **One process, two HTTPS clients.** Mac tab (loopback trusted) and Quest Browser (paired). No Unity, no APK.
 - **Share the library.** Recents, thread list, messages at rest, pairing. The folder a tab is in stays the tab's (`?project=`, [ADR 0006](decisions/0006-folder-is-a-tab.md)). For a STEP or GLB the viewport stays per client: loaded file, selection, camera, XR, which chat is open, live stream. `show_artifact` moves only the asking client ([ADR 0003](decisions/0003-library-not-viewport.md)). For a world, the run is shared per document — play state, sim time, poses, signals — and the last play or pause shows who sent it. Camera, selection, lens, and scrub stay per client ([ADR 0009](decisions/0009-world-simulation.md)).
@@ -83,6 +93,16 @@ Shipped rows stay. Next is the world.
 | 17 | later | IWER in the packaged `.app`: confirm the zip does not ship or inject IWER; a future marketing-demo force-install must not leak into Quest LAN or the `.app`. |
 | 18 | **done** | First-run: README + Welcome + user doc point at [sfab-bench-starter](https://github.com/sfab-oss/sfab-bench-starter), which vendors Jake `$cad` and a project Bench skill. No in-app clone. |
 | 19 | **next** | The world ([ADR 0009](decisions/0009-world-simulation.md)). Demo 1: an unmodified `Servo.h` sweep moves a one-joint arm in a `.world.json` on the Mac; the timeline scrubs; the agent can run it and read pulse widths; Quest watches that run and can play or pause. Demo 2 (sensor, ground contact, wheeled robot) is later, as are a lone STEP or URDF opening as a world, rp2040js, `micro-emulator`, 3MF/GLB meshes, `package://`, and RL export. |
+| 20 | **next** | G1 — the Nano's class 1 keeps the supply outside: the `sfab/nano-power-input@1.0.0` branch snapshot plus the board load, behind whatever supply part is in the scene. The `feed` snapshot use is retired (with `sfab/nano-usb-5v`, its bounds gating, and its plan error). Proof: every other printed line unchanged; class-1 lines before and after (about 1–2 mV). |
+| 21 | **next** | G1b — supplies are parts with levels: generic presets on `thevenin-limit@1` (USB 2.0 and USB 3 host ports, 1 A charger, 2 A bench supply) and a `battery@1` form (OCV vs state of charge, internal resistance, capacity). Proof: closed-form checks; no existing line moves. |
+| 22 | planned | G1c — what is on the real board is in the board group: an `ldo-regulator@1` form; Nano VIN → AMS1117 and Uno VIN → NCP1117 plus its source-select comparator inside the power-input groups. Proof: USB-only lines unchanged; 9 V on VIN against the datasheets; a battery on VIN runs a Nano. |
+| 23 | planned | A1 — `packages/parts` (loader, resolver, levels, nets, lint, lock, `Store`) and `packages/engine-circuit`; a lint rule against upward imports ([ADR 0012](decisions/0012-layers-and-plugin-seams.md)). Proof: no printed line changes. |
+| 24 | planned | A2 — `packages/sim` (plan, form adapters as the form registry, orchestrator, recorder, capture runner); `worker.ts` a thin Node host; `bench run`; one rail path (a single board is the N = 1 case); only an unreadable document blocks Play. Proof: no line changes; `bench run` prints the gauge's serial lines with no server. |
+| 25 | planned | G2 — energy residual per seam in the run report, flagged when it grows. Proof: new report lines only. |
+| 26 | planned | A3 — document model, typed edit operations, undo; `.world.json` converter and the `play` block ([ADR 0011](decisions/0011-one-document-kind.md)); fixed ports; dirtying upward; agent tools on edit operations. Proof: converted examples replay their recordings identically. |
+| 27 | planned | A4 — editor shell: tabs, tree, stage, card with one level picker per axis, timeline, chat panel, warnings three ways ([`manual.md`](manual.md)). Proof: browser QA. |
+| 28 | planned | A5 — tool framework plus move/rotate/snap, mount, wire, probe. Proof: browser QA; edit-operation undo tests. |
+| 29 | planned | A6 — Capture from the card: sidecar snapshots and project level overlays, the fixture tool, progress and abort. Proof: a UI capture matches the CLI capture. |
 
 ## Do not build
 
@@ -93,7 +113,9 @@ second tessellator, Tailscale integration, Fusion / CAD-tool integration,
 Windows anything, merging sfab-cad, merging the `mcu` branch.
 
 This app does not compile firmware, ship an in-app code editor, or bundle
-a toolchain. The world is one view plus chat.
+a toolchain, for now. Part CAD and an MCU IDE in the app are Later, after
+A6 (2026-09-27 alignment, D1b). The editor and chat are peers on one
+document.
 ADR 0008 (second domain) lived only on `mcu`, and it is void
 ([ADR 0009](decisions/0009-world-simulation.md)).
 

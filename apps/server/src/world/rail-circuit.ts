@@ -36,7 +36,6 @@ import {
   UNO_BOARD_NODE,
   UNO_TERM_NODE,
 } from "./power-path";
-import type { TableLaw } from "./snapshot-law";
 
 export type { Braking };
 
@@ -66,13 +65,10 @@ export type RailCircuitSpec = {
   braking?: Braking;
   /**
    * Default `none`: the supply terminal is the rail, as in the closed form.
-   * `uno-usb` inserts the Uno cable. `snapshot-feed` is the class-1 USB
-   * law: a Thevenin table, no capacitors. A class-2 board passes `stamp`
-   * and `feed` instead of a path name.
+   * `uno-usb` inserts the Uno cable. A board netlist passes `stamp` and
+   * `feed` instead of a path name. The supply stays a part.
    */
   boardPath?: "none" | BoardPathName;
-  /** Diode-law table for `snapshot-feed`. The supply setpoint is `vNom`. */
-  law?: TableLaw;
   /**
    * `battery@1` source. When set, the rail stamps this instead of
    * `vNom`, `rSeries`, and `iLimit`.
@@ -104,10 +100,6 @@ export type RailCircuitSpec = {
 
 const MASTER_S = 0.001;
 const SUBSTEPS = 10;
-
-function missingLaw(): never {
-  throw new Error("snapshot-feed needs a diode-law table");
-}
 
 export class RailCircuit {
   readonly winding: Float64Array;
@@ -177,7 +169,7 @@ export class RailCircuit {
     string,
     Readonly<Record<string, string>>
   >();
-  /** Plain-branch tables stamped with the board. The feed table is `src`. */
+  /** Plain-branch tables stamped with the board. The supply is `src`. */
   private readonly branchLaws: LawTable[];
   private ready = false;
   private shared = false;
@@ -236,7 +228,6 @@ export class RailCircuit {
     }
     const braking = spec.braking ?? "clip";
     const uno = spec.boardPath === "uno-usb";
-    const snap = spec.boardPath === "snapshot-feed";
     const stamp = spec.stamp ?? null;
     const feed = spec.feed;
     if (stamp && feed !== "usb" && feed !== "header") {
@@ -250,14 +241,12 @@ export class RailCircuit {
     this.path = board;
     this.termNode = realized
       ? realized.feedNode
-      : snap
-        ? UNO_BOARD_NODE
-        : board
-          ? UNO_TERM_NODE
-          : "rail";
+      : board
+        ? UNO_TERM_NODE
+        : "rail";
     this.boardNode = realized
       ? realized.boardNode
-      : board || snap
+      : board
         ? UNO_BOARD_NODE
         : "rail";
     this.drives = realized?.pins ?? [];
@@ -289,13 +278,13 @@ export class RailCircuit {
       (el): el is LawTable => el instanceof LawTable
     );
     this.substeps = inductive || board || realized?.capacitive ? SUBSTEPS : 1;
-    // The snapshot replaces the USB front end. The board load still
-    // has its knee: full current down to 1 V, then linear to 0 A at 0 V.
+    // The board load keeps its knee: full current down to 1 V, then
+    // linear to 0 A at 0 V. The supply is the part on `src`.
     this.load = new CurrentLoad(
       "load",
       this.boardNode,
       "0",
-      board || snap ? BOARD_LOAD_KNEE_V : 0
+      board ? BOARD_LOAD_KNEE_V : 0
     );
     const battery = spec.battery
       ? new BatteryElement("src", this.termNode, "0", spec.battery)
@@ -303,23 +292,14 @@ export class RailCircuit {
     this.battery = battery;
     const supply =
       battery ??
-      (snap
-        ? new LawTable(
-            "src",
-            this.boardNode,
-            "0",
-            spec.law ?? missingLaw(),
-            spec.vNom,
-            spec.iLimit
-          )
-        : new TheveninLimit(
-            "src",
-            this.termNode,
-            "0",
-            spec.vNom,
-            spec.rSeries,
-            spec.iLimit
-          ));
+      new TheveninLimit(
+        "src",
+        this.termNode,
+        "0",
+        spec.vNom,
+        spec.rSeries,
+        spec.iLimit
+      );
     const stamped = realized?.elements ?? [];
     this.fuse = stamped.filter(
       (el): el is PtcFuseElement => el instanceof PtcFuseElement

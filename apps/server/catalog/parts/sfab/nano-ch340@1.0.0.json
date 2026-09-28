@@ -74,7 +74,6 @@
             "chip": "atmega328p",
             "resetPort": "RESET",
             "imageParam": "firmware",
-            "boardCircuit": "snapshot:sfab/nano-usb-5v@1.0.0",
             "params": {
               "brownoutVoltage": 2.7,
               "brownoutAssertVoltage": 2.675,
@@ -88,6 +87,20 @@
             },
             "fuses": {
               "extended": "0xFD"
+            },
+            "board": {
+              "instances": {
+                "power": {
+                  "part": "sfab/nano-power-input@1.0.0",
+                  "level": { "behaviour": 1 }
+                }
+              },
+              "wires": [],
+              "expose": {
+                "VBUS": "power.VBUS",
+                "5V": "power.5V",
+                "GND": "power.GND"
+              }
             },
             "omits": [
               "rail capacitance (snapshot has no state)",

@@ -165,7 +165,7 @@ function linesOf(text: string): string[] {
     .filter((line) => line.length > 0 && line !== "boot");
 }
 
-const NANO_SNAPSHOT = "sfab/nano-usb-5v@1.0.0";
+const NANO_SNAPSHOT = "sfab/nano-power-input@1.0.0";
 /** `1125300 / count` in the gauge sketch: 1.1 * 1023 * 1000, integer division. */
 const VCC_SCALE = 1_125_300;
 
@@ -440,7 +440,7 @@ function expectMix(
   const snaps = run.report.snapshots.filter((row) => row.ref === NANO_SNAPSHOT);
   if (snapshot) {
     expect(
-      snaps.length === 1 && snaps[0]?.quality === "Q2a",
+      snaps.length === 1 && snaps[0]?.quality === "Q1",
       `${label} snapshot ${snaps.map((row) => `${row.ref} ${row.quality}`).join(",")}`
     );
   } else {
