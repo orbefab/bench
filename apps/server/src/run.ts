@@ -21,10 +21,14 @@ export type RunResult = {
   simSeconds: number;
   frames: number;
   resets: number;
+  degraded: { path: string; message: string }[];
 };
 
 export function formatRun(result: RunResult): string {
-  const lines = result.lines.map((row) => `${row.board}: ${row.line}`);
+  const lines = result.degraded.map(
+    (row) => `degraded ${row.path}: ${row.message}`
+  );
+  lines.push(...result.lines.map((row) => `${row.board}: ${row.line}`));
   lines.push(
     `${result.simSeconds.toFixed(3)} s, ${result.frames} frames, ${result.resets} resets`
   );
@@ -117,6 +121,10 @@ export async function runHeadless(opts: {
       simSeconds: settled.simTime,
       frames: body.read.frames.length,
       resets: resetsOf(settled),
+      degraded: (settled.diagnostics ?? []).map((row) => ({
+        path: row.path,
+        message: row.message,
+      })),
     };
   } finally {
     sim.dispose();

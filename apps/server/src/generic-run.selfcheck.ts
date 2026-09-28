@@ -451,18 +451,23 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       },
     });
     const planned = planWorld(dir, "sg90.world.json");
-    expect(!planned.ok, "sg90 class 2 planned");
-    const messages = planned.errors.map((item) => item.message);
-    const motor = messages.find((item) => item.includes("servo.motor"));
-    expect(motor, `no servo.motor error: ${messages.join("; ")}`);
-    expect(motor.includes("no runtime for a declared-only part"), motor);
+    expect(planned.ok, "sg90 class 2 did not run");
+    if (!planned.ok) throw new Error("unreachable");
+    const rows = planned.plan.degraded ?? [];
+    const motor = rows.find((item) => item.message.includes("servo.motor"));
     expect(
-      messages.every((item) => !item.includes("nested instance")),
-      messages.join("; ")
+      motor,
+      `no servo.motor diagnostic: ${rows.map((item) => item.message).join("; ")}`
     );
-    console.log(
-      "sg90 class 2: servo.motor no runtime for a declared-only part"
+    expect(
+      motor.message.includes("no runtime for a declared-only part"),
+      motor.message
     );
+    expect(
+      rows.every((item) => !item.message.includes("nested instance")),
+      rows.map((item) => item.message).join("; ")
+    );
+    console.log(`degraded ${motor.path}: no runtime for a declared-only part`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -661,10 +666,13 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     });
     writeFileSync(join(dir, "missing.hex"), ":00000001FF\n");
     const planned = planWorld(dir, "chip.world.json");
-    expect(!planned.ok, "unknown chip planned");
-    const messages = planned.errors.map((item) => item.message).join("; ");
-    expect(messages.includes('unknown chip "no-such"'), messages);
-    console.log('unknown chip: unknown chip "no-such"');
+    expect(planned.ok, "unknown chip did not run");
+    if (!planned.ok) throw new Error("unreachable");
+    const chip = (planned.plan.degraded ?? []).find((item) =>
+      item.message.includes('unknown chip "no-such"')
+    );
+    expect(chip, "no unknown-chip diagnostic");
+    console.log(`degraded ${chip.path}: unknown chip "no-such"`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -815,11 +823,13 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       },
     });
     const planned = planWorld(dir, "open.world.json");
-    expect(!planned.ok, "an unwired resistor planned");
-    const messages = planned.errors.map((item) => item.message);
-    const named = messages.find((item) => item.includes("r reaches no supply"));
-    expect(named, messages.join("; "));
-    console.log("open resistor: r reaches no supply");
+    expect(planned.ok, "an unwired resistor did not run");
+    if (!planned.ok) throw new Error("unreachable");
+    const named = (planned.plan.degraded ?? []).find((item) =>
+      item.message.includes("r reaches no supply")
+    );
+    expect(named, "no open-resistor diagnostic");
+    console.log(`degraded ${named.path}: no supply reaches it`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

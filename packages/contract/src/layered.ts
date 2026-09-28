@@ -584,7 +584,9 @@ export type LockFile = {
 };
 
 export type Diagnostic = {
-  severity: "warning" | "error";
+  severity: "warning" | "error" | "degraded";
+  /** Set on a degraded part. The run continues. */
+  code?: string;
   path: string;
   port: string;
   quantity: string;
@@ -629,6 +631,11 @@ export type RunReport = {
   buses: { path: string; name: string; protocol: string; ports: string[] }[];
   warnings: Diagnostic[];
   errors: Diagnostic[];
+  /**
+   * Parts that run idle or at a fallback. Absent when nothing degraded,
+   * so a clean report stays byte-identical.
+   */
+  degraded?: Diagnostic[];
   snapshots: {
     path: string;
     axis: AxisName;

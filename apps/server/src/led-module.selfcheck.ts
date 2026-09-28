@@ -237,14 +237,13 @@ function pinHigh(state: WorldState, bit: number): boolean {
     params.across = ["NOPE", "GND"];
     writeFileSync(snapPath, `${JSON.stringify(snap)}\n`);
     const planned = planWorld(dir, "nano-led-module.world.json");
-    expect(!planned.ok, "bad across port was planned");
-    if (!planned.ok) {
-      const hit = planned.errors.find((item) =>
-        item.message.includes("across port NOPE")
-      );
-      expect(hit, planned.errors.map((item) => item.message).join("; "));
-      console.log(`reject across port: ${hit?.message}`);
-    }
+    expect(planned.ok, "bad across port did not run");
+    if (!planned.ok) throw new Error("unreachable");
+    const hit = (planned.plan.degraded ?? []).find((item) =>
+      item.message.includes("across port NOPE")
+    );
+    expect(hit, "no across-port diagnostic");
+    console.log(`degraded ${hit.path}: across port NOPE`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

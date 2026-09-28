@@ -33,6 +33,7 @@ import {
   PmosChannel,
   PtcFuseElement,
   TheveninLimit,
+  VSource,
 } from "@sfab-bench/engine-circuit";
 
 import { type BoardStamp, realize } from "./circuit-stamp";
@@ -109,6 +110,11 @@ export type RailCircuitSpec = {
    */
   primaryId?: string;
   /**
+   * `ideal-voltage@1`. The rail stamps a voltage source on the feed
+   * terminal. A Thevenin limit is the supply when this is absent.
+   */
+  ideal?: boolean;
+  /**
    * Further supplies on this island. Each is a Thevenin or a battery on
    * `node`. The primary stays `src` on the feed terminal.
    */
@@ -118,6 +124,7 @@ export type RailCircuitSpec = {
     rSeries: number;
     iLimit: number;
     battery?: BatteryParams;
+    ideal?: boolean;
     node: string;
   }[];
   /**
@@ -366,14 +373,19 @@ export class RailCircuit {
     this.battery = battery;
     const supply =
       battery ??
-      new TheveninLimit(
-        "src",
-        this.termNode,
-        "0",
-        spec.vNom,
-        spec.rSeries,
-        spec.iLimit
-      );
+      (spec.ideal
+        ? new VSource("src", this.termNode, "0", {
+            kind: "dc",
+            value: spec.vNom,
+          })
+        : new TheveninLimit(
+            "src",
+            this.termNode,
+            "0",
+            spec.vNom,
+            spec.rSeries,
+            spec.iLimit
+          ));
     const stamped = realized?.elements ?? [];
     this.fuse = stamped.filter(
       (el): el is PtcFuseElement => el instanceof PtcFuseElement
@@ -394,14 +406,19 @@ export class RailCircuit {
       extras.push(
         src.battery
           ? new BatteryElement(src.id, src.node, "0", src.battery)
-          : new TheveninLimit(
-              src.id,
-              src.node,
-              "0",
-              src.vNom,
-              src.rSeries,
-              src.iLimit
-            )
+          : src.ideal
+            ? new VSource(src.id, src.node, "0", {
+                kind: "dc",
+                value: src.vNom,
+              })
+            : new TheveninLimit(
+                src.id,
+                src.node,
+                "0",
+                src.vNom,
+                src.rSeries,
+                src.iLimit
+              )
       );
     }
     if ((spec.also?.length ?? 0) > 0 && spec.primaryId) {
@@ -1008,14 +1025,16 @@ function sharedRail(spec: RailCircuitSpec): {
     : null;
   const supply =
     battery ??
-    new TheveninLimit(
-      "src",
-      termNode,
-      "0",
-      spec.vNom,
-      spec.rSeries,
-      spec.iLimit
-    );
+    (spec.ideal
+      ? new VSource("src", termNode, "0", { kind: "dc", value: spec.vNom })
+      : new TheveninLimit(
+          "src",
+          termNode,
+          "0",
+          spec.vNom,
+          spec.rSeries,
+          spec.iLimit
+        ));
   const substeps = inductive || capacitive ? SUBSTEPS : 1;
   const first = tied[0];
   const engine = new Engine([supply, ...loads, ...motors, ...stamped], {

@@ -180,7 +180,7 @@ export type WorldBoardState = {
 export const ATMEGA328P_16MHZ_MIN_V = 3.78;
 
 export type WorldBoardWarning = {
-  code: "below-16mhz-soa";
+  code: "below-16mhz-soa" | "degraded";
   message: string;
 };
 
@@ -277,6 +277,16 @@ export type WorldState = {
    * ignores the power budget. Voltage is solved from this step's loads.
    */
   supplies?: Record<string, WorldSupplyState>;
+  /**
+   * Degraded parts in this run. The card's board warning list also
+   * carries the ones that name a board, after any supply-voltage warning.
+   */
+  diagnostics?: {
+    severity: "degraded";
+    code: string;
+    path: string;
+    message: string;
+  }[];
   /**
    * The recording this run is writing. Absent on a client from before
    * timelines. `from` > 0 means the front of the recording was dropped.

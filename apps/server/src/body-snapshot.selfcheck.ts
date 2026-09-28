@@ -94,14 +94,13 @@ try {
     JSON.stringify(partScene("sfab/idle-train@1.0.0"))
   );
   const idle = planWorld(root, "idle-train.world.json");
-  expect(!idle.ok, "unreached shaft loaded");
-  if (idle.ok) throw new Error("unreachable");
-  const idleMessage = idle.errors.map((error) => error.message).join("; ");
-  expect(
-    idleMessage.includes("idle") && idleMessage.includes("not reached"),
-    idleMessage
+  expect(idle.ok, "unreached shaft did not run");
+  if (!idle.ok) throw new Error("unreachable");
+  const idleHit = (idle.plan.degraded ?? []).find(
+    (row) => row.message.includes("idle") && row.message.includes("not reached")
   );
-  console.log(`reject unreached shaft: ${idleMessage}`);
+  expect(idleHit, "no unreached-shaft diagnostic");
+  console.log(`degraded ${idleHit.path}: shaft not reached`);
 
   writeFileSync(
     join(partDir, "bad-servo@1.0.0.json"),
@@ -112,30 +111,32 @@ try {
     JSON.stringify(scene())
   );
   const planned = planWorld(root, "hinge-behaviour.world.json");
-  expect(!planned.ok, "hinge@1 on behaviour loaded");
-  if (planned.ok) throw new Error("unreachable");
-  const message = planned.errors.map((error) => error.message).join("; ");
-  expect(message.includes("hinge@1 is a body-axis form"), message);
-  console.log(`reject hinge@1 on behaviour: ${message}`);
+  expect(planned.ok, "hinge@1 on behaviour did not run");
+  if (!planned.ok) throw new Error("unreachable");
+  const hingeHit = (planned.plan.degraded ?? []).find((row) =>
+    row.message.includes("hinge@1 is a body-axis form")
+  );
+  expect(hingeHit, "no hinge behaviour diagnostic");
+  console.log(`degraded ${hingeHit.path}: hinge@1 is a body-axis form`);
 
   writeFileSync(
     join(root, "missing-variant.world.json"),
     JSON.stringify(sg90Scene("no-such"))
   );
   const missing = planWorld(root, "missing-variant.world.json");
-  expect(!missing.ok, "missing variant loaded");
-  if (missing.ok) throw new Error("unreachable");
-  const missingMessage = missing.errors
-    .map((error) => error.message)
-    .join("; ");
-  expect(
-    missingMessage.includes("servo") &&
-      missingMessage.includes("body") &&
-      missingMessage.includes("class 1") &&
-      missingMessage.includes("no-such"),
-    missingMessage
+  expect(missing.ok, "missing variant did not run");
+  if (!missing.ok) throw new Error("unreachable");
+  const missingHit = (missing.plan.degraded ?? []).find(
+    (row) =>
+      row.message.includes("servo") &&
+      row.message.includes("body") &&
+      row.message.includes("class 1") &&
+      row.message.includes("no-such")
   );
-  console.log(`reject missing variant: ${missingMessage}`);
+  expect(missingHit, "no missing-variant diagnostic");
+  console.log(
+    `degraded ${missingHit.path}: class 1 variant no-such is not on this part`
+  );
 
   writeFileSync(
     join(partDir, "two-body@1.0.0.json"),
@@ -178,15 +179,17 @@ try {
     JSON.stringify(partScene("sfab/wrong-body@1.0.0"))
   );
   const wrongType = planWorld(root, "wrong-type.world.json");
-  expect(!wrongType.ok, "wrong partType loaded");
-  if (wrongType.ok) throw new Error("unreachable");
-  const typeMessage = wrongType.errors.map((error) => error.message).join("; ");
-  expect(
-    typeMessage.includes("partType other-type") &&
-      typeMessage.includes("hobby-servo-3wire"),
-    typeMessage
+  expect(wrongType.ok, "wrong partType did not run");
+  if (!wrongType.ok) throw new Error("unreachable");
+  const typeHit = (wrongType.plan.degraded ?? []).find(
+    (row) =>
+      row.message.includes("partType other-type") &&
+      row.message.includes("hobby-servo-3wire")
   );
-  console.log(`reject hinge partType: ${typeMessage}`);
+  expect(typeHit, "no partType diagnostic");
+  console.log(
+    `degraded ${typeHit.path}: partType other-type is not hobby-servo-3wire`
+  );
 
   writeFileSync(
     join(snapDir, "ok-hinge@1.0.0.json"),

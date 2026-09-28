@@ -77,7 +77,32 @@ function placeBattery(ctx: SupplyCtx): void {
   ctx.box();
 }
 
+function placeIdeal(ctx: SupplyCtx): void {
+  const numbers = ctx.numbers();
+  if (!numbers) {
+    ctx.reject("the run needs ideal-voltage@1");
+    return;
+  }
+  const pins = ctx.pins();
+  const ports = powerAndGround(ctx, pins);
+  if (!ports) return;
+  ctx.add({
+    id: ctx.inst.path,
+    type: ctx.typeId,
+    voltage: numbers.V ?? 0,
+    currentLimit: 0,
+    rSeries: 0,
+    positivePin: ports.positive,
+    groundPin: ports.ground,
+    connector: ctx.inst.type.ports[ports.positive]?.connector ?? null,
+    pins,
+    ideal: true,
+  });
+  ctx.box();
+}
+
 export const supplyAdapters: FormAdapter[] = [
   { id: "thevenin-limit@1", place: placeThevenin },
   { id: "battery@1", place: placeBattery },
+  { id: "ideal-voltage@1", place: placeIdeal },
 ];

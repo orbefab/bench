@@ -948,15 +948,17 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
       `${JSON.stringify(part, null, 2)}\n`
     );
     const planned = planWorld(dir, "arm.world.json");
-    expect(!planned.ok, "a Uno with no netlist planned");
-    if (planned.ok) throw new Error("unreachable");
-    const hit = planned.errors.find((item) =>
+    expect(planned.ok, "a Uno with no netlist did not run");
+    if (!planned.ok) throw new Error("unreachable");
+    const hit = (planned.plan.degraded ?? []).find((item) =>
       item.message.includes(
         "sfab/uno-r3@1.0.0 has no board netlist for path:uno-usb"
       )
     );
-    expect(hit, planned.errors.map((item) => item.message).join("; "));
-    console.log(`reject no netlist: ${hit?.message}`);
+    expect(hit, "no netlist diagnostic");
+    console.log(
+      `degraded ${hit.path}: sfab/uno-r3@1.0.0 has no board netlist for path:uno-usb`
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -159,6 +159,8 @@ export type RunSupply = {
   groundPin: string;
   /** Cable family on the positive port. Null is the header. */
   connector: string | null;
+  /** `ideal-voltage@1`. The rail stamps a voltage source, not a Thevenin. */
+  ideal?: boolean;
   /** Set when this supply is `battery@1`. The rail stamps this, not `voltage`. */
   battery?: BatteryParams;
   /**
@@ -246,6 +248,11 @@ export type RunPlan = {
   levels?: RunLevel[];
   /** Run report from the loader. The worker keeps it and amends envelope warnings. */
   report?: RunReport | null;
+  /**
+   * Parts that sit idle or fell back. The run still starts. Absent when
+   * every part placed.
+   */
+  degraded?: Diagnostic[];
 };
 
 export type PlanResult =
@@ -458,9 +465,10 @@ function poseOf(inst: LiveInstance): Pose {
   };
 }
 
-function cannot(inst: LiveInstance, detail: string): Diagnostic {
+function cannot(inst: LiveInstance, detail: string, code = "idle"): Diagnostic {
   return {
-    severity: "error",
+    severity: "degraded",
+    code,
     path: inst.path,
     port: "behaviour",
     quantity: "Level",
@@ -468,6 +476,10 @@ function cannot(inst: LiveInstance, detail: string): Diagnostic {
     right: "runnable",
     message: `${inst.path} port behaviour quantity Level: ${detail} (${inst.axes.behaviour.label} vs runnable)`,
   };
+}
+
+function degrade(diag: Diagnostic, code: string): Diagnostic {
+  return { ...diag, severity: "degraded", code: diag.code ?? code };
 }
 
 function electricalWires(nets: LiveNet[]): [string, string][] {
@@ -899,7 +911,9 @@ function build(
       }
       const facts = chipFacts(behaviour.chip);
       if (!facts) {
-        diags.push(cannot(inst, `unknown chip "${behaviour.chip}"`));
+        diags.push(
+          cannot(inst, `unknown chip "${behaviour.chip}"`, "unsupported")
+        );
         continue;
       }
       const alias = pathName === "uno-usb" && behaviour.board === undefined;
@@ -914,7 +928,9 @@ function build(
         ? inst.params[behaviour.imageParam]
         : undefined;
       if (typeof image !== "string") {
-        diags.push(cannot(inst, "the board has no firmware image"));
+        diags.push(
+          cannot(inst, "the board has no firmware image", "missing-file")
+        );
         continue;
       }
       const visual = inst.axes.visual.impl as VisualImpl | null;
@@ -978,7 +994,7 @@ function build(
         numbers: () => formNumbers(inst),
         pins: () => pinsOf(inst.type.ports),
         reject: (detail) => {
-          diags.push(cannot(inst, detail));
+          diags.push(cannot(inst, detail, "bad-params"));
         },
         add: (supply) => {
           supplies.push(supply);
@@ -1102,7 +1118,7 @@ function build(
       if (inst.pose) pushBox(boxes, inst, "part");
       continue;
     }
-    diags.push(cannot(inst, runtimeGap(inst)));
+    diags.push(cannot(inst, runtimeGap(inst), "no-runtime"));
   }
 
   const nets = liveNets(loaded.nets);
@@ -1138,7 +1154,8 @@ function build(
     if (reached.length === 0 && hit.length === 0) {
       crowded.add(part.path);
       diags.push({
-        severity: "error",
+        severity: "degraded",
+        code: "unpowered",
         path: part.path,
         port: "nets",
         quantity: "Part",
@@ -1236,7 +1253,8 @@ function build(
     const count = placed.get(part.path) ?? 0;
     if (count === 1) continue;
     diags.push({
-      severity: "error",
+      severity: "degraded",
+      code: "idle",
       path: part.path,
       port: "nets",
       quantity: "Part",
@@ -1249,24 +1267,19 @@ function build(
     });
   }
 
-  if (diags.length > 0) return { plan: null, diags };
   const environment = world.environment;
   const targets = readTargets(environment.targets);
   if (!targets.ok) {
-    return {
-      plan: null,
-      diags: [
-        {
-          severity: "error",
-          path: "environment.targets",
-          port: "targets",
-          quantity: "Position",
-          left: "targets",
-          right: "box, sphere, or cylinder",
-          message: targets.error.message,
-        },
-      ],
-    };
+    diags.push({
+      severity: "degraded",
+      code: "bad-params",
+      path: "environment.targets",
+      port: "targets",
+      quantity: "Position",
+      left: "targets",
+      right: "box, sphere, or cylinder",
+      message: targets.error.message,
+    });
   }
   notePlaceholderBoxes(loaded);
   return {
@@ -1280,7 +1293,7 @@ function build(
         ...(Array.isArray(environment.stepProps)
           ? { stepProps: environment.stepProps as WorldStepProp[] }
           : {}),
-        targets: targets.targets,
+        targets: targets.ok ? targets.targets : [],
       },
       robots,
       boards,
@@ -1301,6 +1314,7 @@ function build(
         }))
       ),
       report: loaded.report,
+      ...(diags.length > 0 ? { degraded: diags } : {}),
     },
     diags,
   };
@@ -1340,9 +1354,8 @@ export function planWorld(
     catalogDir: env.absolutePath(env.catalogDir()),
     assetRoot: env.absolutePath(found.root),
   });
-  const errors = loaded.diagnostics.filter((diag) => diag.severity === "error");
-  if (errors.length > 0 || !loaded.world) {
-    const shown = errors.length > 0 ? errors : loaded.diagnostics;
+  if (!loaded.world) {
+    const shown = loaded.diagnostics;
     return {
       ok: false,
       errors:
@@ -1352,9 +1365,48 @@ export function planWorld(
     };
   }
   const built = build(loaded, found.root, env.dirname(found.abs), env);
-  const blocked = built.diags.filter((diag) => diag.severity === "error");
-  if (!built.plan || blocked.length > 0) {
-    return { ok: false, errors: blocked.map(fromDiag) };
+  if (!built.plan) {
+    return { ok: false, errors: [schema("World file did not load.")] };
+  }
+  const fromLoad = loaded.diagnostics
+    .filter((diag) => diag.severity === "error")
+    .map((diag) => degrade(diag, degradeCode(diag)));
+  const rows = [
+    ...fromLoad,
+    ...built.diags.map((diag) =>
+      diag.severity === "degraded" ? diag : degrade(diag, degradeCode(diag))
+    ),
+  ];
+  if (rows.length > 0) {
+    built.plan.degraded = rows;
+    if (built.plan.report) {
+      const drop = new Set(rows.map((row) => row.message));
+      built.plan.report = {
+        ...built.plan.report,
+        errors: built.plan.report.errors.filter(
+          (row) => !drop.has(row.message)
+        ),
+        degraded: rows,
+      };
+    }
   }
   return { ok: true, plan: built.plan };
+}
+
+function degradeCode(diag: Diagnostic): string {
+  const text = diag.message;
+  if (
+    text.includes("does not exist") ||
+    text.includes("not found") ||
+    text.includes("missing")
+  ) {
+    return "missing-file";
+  }
+  if (text.includes("unknown chip")) return "unsupported";
+  if (text.includes("no runtime")) return "no-runtime";
+  if (text.includes("reaches no supply") || text.includes("no supply")) {
+    return "unpowered";
+  }
+  if (text.includes("variant") || text.includes("param")) return "bad-params";
+  return "idle";
 }

@@ -12,6 +12,7 @@ import {
   ATMEGA328P_16MHZ_MIN_V,
   arduinoPinBit,
   atmega328pSoaWarning,
+  type Diagnostic,
   type JointLimitKind,
   pastLimitAmount,
   RECORD_FRAME_MS,
@@ -388,6 +389,8 @@ function createSession(host: SimHost) {
     rSeries: number;
     /** Set for `battery@1`. The rail stamps this instead of the three numbers. */
     battery?: BatteryParams;
+    /** `ideal-voltage@1`. The rail stamps a voltage source. */
+    ideal?: boolean;
   };
 
   let loads: Load[] = [];
@@ -441,6 +444,8 @@ function createSession(host: SimHost) {
   let worldSha256 = "";
   let runPlan: RunPlan | null = null;
   let runReport: RunReport | null = null;
+  /** Degraded parts for this load. Copied onto the live state. */
+  let degradedLive: Diagnostic[] = [];
   let reportPending = false;
   const envelopeWarned = new Set<string>();
   /** One empty-battery warning per supply, for this load of the world. */
@@ -562,7 +567,20 @@ function createSession(host: SimHost) {
         brownout: board.brownout,
         ...(power?.supplyId ? { voltage: node } : {}),
         ...ledReading(board.id),
-        ...(soa ? { warnings: [soa] } : {}),
+        ...(() => {
+          const extra = degradedLive.filter(
+            (row) =>
+              row.path === board.id || row.path.startsWith(`${board.id}.`)
+          );
+          const warnings = [
+            ...(soa ? [soa] : []),
+            ...extra.map((row) => ({
+              code: "degraded" as const,
+              message: row.message,
+            })),
+          ];
+          return warnings.length > 0 ? { warnings } : {};
+        })(),
       };
     }
     const parts: Record<string, WorldPartState> = {};
@@ -603,6 +621,16 @@ function createSession(host: SimHost) {
       boards: boardState,
       parts,
       supplies: supplyLive,
+      ...(degradedLive.length > 0
+        ? {
+            diagnostics: degradedLive.map((row) => ({
+              severity: "degraded" as const,
+              code: row.code ?? "idle",
+              path: row.path,
+              message: row.message,
+            })),
+          }
+        : {}),
       ...(recorder ? { recording: recorder.summary(data.time) } : {}),
     };
   }
@@ -972,6 +1000,27 @@ function createSession(host: SimHost) {
     }));
   }
 
+  function noteDegraded(path: string, code: string, message: string): void {
+    if (degradedLive.some((row) => row.path === path && row.code === code)) {
+      return;
+    }
+    const row: Diagnostic = {
+      severity: "degraded",
+      code,
+      path,
+      port: "*",
+      quantity: "Part",
+      left: path,
+      right: "idle",
+      message,
+    };
+    degradedLive.push(row);
+    if (!runReport) return;
+    const list = runReport.degraded ?? [];
+    if (list.some((item) => item.path === path && item.code === code)) return;
+    runReport.degraded = [...list, row];
+  }
+
   function bootBoard(spec: BoardSpec): AvrBoard {
     const board = new AvrBoard(spec.id);
     attachAnalog(board);
@@ -983,6 +1032,11 @@ function createSession(host: SimHost) {
     }
     const bytes = files?.read(spec.firmware);
     if (!bytes) {
+      noteDegraded(
+        spec.id,
+        "missing-file",
+        `firmware "${spec.firmware}" does not exist`
+      );
       board.stop(`firmware "${spec.firmware}" does not exist`);
       return board;
     }
@@ -1018,6 +1072,7 @@ function createSession(host: SimHost) {
       currentLimit: supply.currentLimit,
       rSeries: supply.rSeries,
       ...(supply.battery ? { battery: supply.battery } : {}),
+      ...(supply.ideal ? { ideal: true as const } : {}),
     }));
     boardPower = new Map();
     for (const board of plan.boards) {
@@ -1062,6 +1117,7 @@ function createSession(host: SimHost) {
     for (const part of plan.parts) {
       if (!part.motor || part.torqueNm === undefined) continue;
       const supplyId = partFeeds[part.id] ?? null;
+      if (!supplyId) noteDegraded(part.id, "unpowered", "no supply reaches it");
       const signal = drives.find((item) => item.partId === part.id);
       let drive: ServoDrive | null = null;
       if (part.drives && sim) {
@@ -1177,6 +1233,7 @@ function createSession(host: SimHost) {
         ...(usb && vbus ? { keep: [vbus] } : {}),
         primaryId: primary.id,
         ...(primary.battery ? { battery: primary.battery } : {}),
+        ...(primary.ideal ? { ideal: true as const } : {}),
         also: [
           {
             id: railSupply.id,
@@ -1185,6 +1242,7 @@ function createSession(host: SimHost) {
             iLimit: railSupply.currentLimit,
             node: railNode,
             ...(railSupply.battery ? { battery: railSupply.battery } : {}),
+            ...(railSupply.ideal ? { ideal: true as const } : {}),
           },
         ],
       });
@@ -1240,6 +1298,7 @@ function createSession(host: SimHost) {
               ? { pin: fed.pin, ledAlias: `${fed.id}.led` }
               : {}),
             ...(supply.battery ? { battery: supply.battery } : {}),
+            ...(supply.ideal ? { ideal: true as const } : {}),
             boards: stamped.map((board) => {
               const one = railAttachment({
                 connector: supplyConnectorOf(supply.id),
@@ -1282,6 +1341,7 @@ function createSession(host: SimHost) {
                 }
               : {}),
             ...(supply.battery ? { battery: supply.battery } : {}),
+            ...(supply.ideal ? { ideal: true as const } : {}),
           });
       if (fuseStart === "tripped") circuit.tripFuse();
       for (let i = 0; i < members.length; i++) {
@@ -2353,6 +2413,7 @@ function createSession(host: SimHost) {
     runReport = planned.plan.report
       ? structuredClone(planned.plan.report)
       : null;
+    degradedLive = [...(planned.plan.degraded ?? [])];
     reportPending = runReport !== null;
     envelopeWarned.clear();
     batteryWarned.clear();

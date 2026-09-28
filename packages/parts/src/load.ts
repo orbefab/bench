@@ -5,8 +5,10 @@ import {
   type BehaviourImpl,
   type BodyImpl,
   type Diagnostic,
+  type LevelClass,
   type LockFile,
   type LockSnapshot,
+  type PartFile,
   type RunReport,
   type SnapshotFile,
   SUPPLY_FORMS,
@@ -35,39 +37,99 @@ import { type LoadedSnapshot, loadSnapshot } from "./snapshot-load";
 
 export type LoadOptions = LibraryOptions;
 
+function isSupply(inst: LiveInstance): boolean {
+  const behaviour = inst.axes.behaviour.impl as {
+    kind?: string;
+    form?: string;
+  } | null;
+  return (
+    behaviour?.kind === "form" &&
+    !!behaviour.form &&
+    (SUPPLY_FORMS as readonly string[]).includes(behaviour.form)
+  );
+}
+
+function behaviourImpl(
+  part: PartFile,
+  level: LevelClass
+): BehaviourImpl | null {
+  const slot = part.axes?.behaviour?.[String(level) as "0"];
+  const impl = slot?.variants[slot.default];
+  return impl ?? null;
+}
+
 /**
- * Power-input groups at class 1 whose VIN net has a supply. The branch
- * snapshot cannot regulate, so the second resolve runs class 2.
+ * Smallest class distance from `requested`. On a tie, the more detailed
+ * class. A snapshot does not express a port outside its branch, so it
+ * is not a candidate once this scene drives such a port.
  */
-function vinFallbackPaths(
+function nearestExpressing(
+  part: PartFile,
+  requested: LevelClass
+): LevelClass | null {
+  const available = Object.keys(part.axes?.behaviour ?? {})
+    .map((key) => Number(key))
+    .filter(
+      (level): level is LevelClass =>
+        level === 0 || level === 1 || level === 2 || level === 3
+    );
+  let best: LevelClass | null = null;
+  let dist = Number.POSITIVE_INFINITY;
+  for (const level of available) {
+    const impl = behaviourImpl(part, level);
+    if (!impl || impl.kind === "snapshot") continue;
+    const gap = Math.abs(level - requested);
+    if (gap < dist || (gap === dist && best !== null && level > best)) {
+      best = level;
+      dist = gap;
+    }
+  }
+  return best;
+}
+
+/**
+ * A branch snapshot does not expose a port the scene drives with a
+ * supply. The second resolve runs the nearest level that can.
+ */
+function nearestFallback(
   instances: LiveInstance[],
-  nets: LiveNet[]
-): Set<string> {
-  const supplies = new Set<string>();
+  nets: LiveNet[],
+  worldDir: string,
+  opts: LoadOptions
+): Map<string, LevelClass> {
+  const supplies = new Set(instances.filter(isSupply).map((inst) => inst.path));
+  const out = new Map<string, LevelClass>();
+  if (supplies.size === 0) return out;
   for (const inst of instances) {
     const behaviour = inst.axes.behaviour.impl as {
       kind?: string;
-      form?: string;
+      ref?: string;
     } | null;
-    if (
-      behaviour?.kind !== "form" ||
-      !behaviour.form ||
-      !(SUPPLY_FORMS as readonly string[]).includes(behaviour.form)
-    ) {
-      continue;
+    if (behaviour?.kind !== "snapshot" || !behaviour.ref) continue;
+    const chosen = inst.axes.behaviour.class;
+    if (chosen === null) continue;
+    const driven: string[] = [];
+    for (const [port, decl] of Object.entries(inst.type.ports)) {
+      if (decl.role === "ground") continue;
+      const net = nets.find((item) =>
+        item.ports.some((end) => end.path === inst.path && end.port === port)
+      );
+      if (!net) continue;
+      if (net.ports.some((end) => supplies.has(end.path))) driven.push(port);
     }
-    supplies.add(inst.path);
-  }
-  const out = new Set<string>();
-  if (supplies.size === 0) return out;
-  for (const inst of instances) {
-    if (inst.type.id !== "power-input") continue;
-    if (inst.axes.behaviour.class !== 1) continue;
-    const net = nets.find((item) =>
-      item.ports.some((port) => port.path === inst.path && port.port === "VIN")
-    );
-    if (!net) continue;
-    if (net.ports.some((port) => supplies.has(port.path))) out.add(inst.path);
+    if (driven.length === 0) continue;
+    const found = loadSnapshot(worldDir, opts, behaviour.ref, inst.type);
+    const params = found.loaded?.file.params as
+      | { across?: unknown }
+      | undefined;
+    const across = Array.isArray(params?.across)
+      ? params.across.filter((item): item is string => typeof item === "string")
+      : null;
+    if (!across) continue;
+    if (driven.every((port) => across.includes(port))) continue;
+    const next = nearestExpressing(inst.part, chosen);
+    if (next === null || next === chosen) continue;
+    out.set(inst.path, next);
   }
   return out;
 }
@@ -165,8 +227,13 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   try {
     resolved = resolveLevels(lib, rules);
     const first = buildNets(resolved.instances, lib.world.run.levels.nets);
-    const vin = vinFallbackPaths(resolved.instances, first.nets);
-    if (vin.size > 0) resolved = resolveLevels(lib, rules, vin);
+    const nearer = nearestFallback(
+      resolved.instances,
+      first.nets,
+      lib.worldDir,
+      opts
+    );
+    if (nearer.size > 0) resolved = resolveLevels(lib, rules, nearer);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     diagnostics.push(
