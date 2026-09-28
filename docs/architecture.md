@@ -77,10 +77,10 @@ that no longer mean what they did.
 
 ## World runtime (ADR 0009)
 
-[ADR 0009](decisions/0009-world-simulation.md) adds a world document,
-`<name>.world.json`, and a server-side runtime, one per document. The
-file is World v2: one root part, the environment, and the run settings
-([formats](formats.md) §4). A file with `"version": 1` does not load.
+[ADR 0009](decisions/0009-world-simulation.md) adds a server-side runtime,
+one per open document. The document is a root part; a `.world.json` is a
+World v2 import (one root part, the environment, and the run settings,
+[formats](formats.md) §4). A file with `"version": 1` does not load.
 The runtime steps MuJoCo and an avr8js
 board and streams one shared run — play state, sim time, poses, signals —
 to every client of that document. Camera, selection, lens, and timeline
