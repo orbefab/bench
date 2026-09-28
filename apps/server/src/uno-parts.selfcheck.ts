@@ -1,9 +1,11 @@
 /**
- * ptc-fuse@1 and pmos-switch@1 outside the Uno cable. The fuse's thermal
- * step and the MOSFET's gate are per instance, in any stamped circuit.
+ * ptc-fuse@1 and pmos-switch@1 outside the Uno cable, and the Uno
+ * power-input group captured as a table. The fuse's thermal step and
+ * the MOSFET's gate are per instance, in any stamped circuit.
  */
 
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -15,7 +17,13 @@ import { join } from "node:path";
 
 import { fileURLToPath } from "node:url";
 
-import type { PartFile } from "@sfab-bench/contract";
+import type {
+  PartFile,
+  RecordingRead,
+  RunReport,
+  SnapshotFile,
+} from "@sfab-bench/contract";
+import { closeRootWatches } from "./projects";
 import { ISource, thermalVoltage, VSource } from "./world/circuit/elements";
 import { Engine } from "./world/circuit/engine";
 import { AVR_PIN } from "./world/circuit/pin";
@@ -32,6 +40,7 @@ import {
   boardStampOf,
   realize,
 } from "./world/circuit-stamp";
+import { attachWorld, readRecording, stopWorld } from "./world/host";
 import {
   type Library,
   lintLibrary,
@@ -41,6 +50,8 @@ import {
 import { catalogRoot, planWorld } from "./world/plan";
 import { railAttachment } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
+import { branchDc } from "./world/snapshot-dc";
+import { tableLawOf } from "./world/snapshot-law";
 import { UnoReferenceRail } from "./world/uno-reference";
 import { powerFeedsOf } from "./world/wiring";
 
@@ -527,4 +538,180 @@ function fuseTrace(startTripped: boolean): {
   console.log(
     `uno fuseStart tripped: board Δ ${sci(run.delta)} V, trip ${run.trip.join("/")}, reset ${run.reset.join("/")}`
   );
+}
+
+{
+  const file = join(
+    catalogRoot(),
+    "snapshots",
+    "sfab",
+    "uno-power-input@1.0.0.json"
+  );
+  const snap = JSON.parse(readFileSync(file, "utf8")) as SnapshotFile;
+  const table = tableLawOf(snap);
+  expect(table, "uno power snapshot has no table");
+  if (!table) throw new Error("uno power snapshot has no table");
+  const hi = table.iAxis[table.iAxis.length - 1] ?? 0;
+  expect(Math.abs(hi - fuseParams.iHold) < 1e-9, `envelope end ${hi} A`);
+  const stamp = assemblyStampOf("sfab/uno-power-input@1.0.0", "netlist", {
+    boardId: "power",
+    across: table.across,
+  });
+  let knot = 0;
+  for (let i = 0; i < table.iAxis.length; i++) {
+    const amps = table.iAxis[i] ?? 0;
+    const got = branchDc(stamp, table.across[0], table.across[1], amps);
+    knot = Math.max(knot, Math.abs(got - (table.vAxis[i] ?? 0)));
+  }
+  const rows = snap.error;
+  if (!Array.isArray(rows)) {
+    throw new Error("uno power snapshot has no static error");
+  }
+  const interp = rows.find((row) => row.metric === "static-max-abs");
+  expect(interp, "uno power snapshot has no static error");
+  expect(knot <= 1e-6, `knot error ${knot} V`);
+  expect((interp?.value ?? 1) <= 0.002, `interpolation ${interp?.value} V`);
+  console.log(
+    `uno power snapshot: knots ${table.iAxis.length}, knot error ${(knot * 1e6).toFixed(3)} µV, interpolation ${((interp?.value ?? 0) * 1000).toFixed(3)} mV, lint ${snap.quality}`
+  );
+}
+
+type ArmRun = {
+  voltages: number[];
+  maxCurrent: number;
+  warnings: string[];
+};
+
+function seriesDelta(a: number[], b: number[]): { max: number; rms: number } {
+  const n = Math.min(a.length, b.length);
+  expect(n > 0, "no samples");
+  let max = 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const d = Math.abs((a[i] ?? 0) - (b[i] ?? 0));
+    if (!Number.isFinite(d)) throw new Error("board voltage was not finite");
+    if (d > max) max = d;
+    sum += d * d;
+  }
+  return { max, rms: Math.sqrt(sum / n) };
+}
+
+function withUnoLevels(file: string, out: string, powerClass: 1 | 2): void {
+  const world = JSON.parse(readFileSync(file, "utf8")) as {
+    run: { levels: { paths?: Record<string, { behaviour: number }> } };
+  };
+  const paths: Record<string, { behaviour: number }> = {
+    ...(world.run.levels.paths ?? {}),
+    uno: { behaviour: 2 },
+  };
+  if (powerClass === 1) paths["uno.power"] = { behaviour: 1 };
+  world.run.levels.paths = paths;
+  writeFileSync(out, `${JSON.stringify(world, null, 2)}\n`);
+}
+
+async function runArm(dir: string, world: string, ms: number): Promise<ArmRun> {
+  const seen: {
+    report: RunReport | null;
+    failed: string | null;
+    sim: number;
+  } = { report: null, failed: null, sim: -1 };
+  const attached = await attachWorld(dir, world, {
+    sender: { kind: "loopback", label: "Mac" },
+    onEvent(event) {
+      if (event.type === "error") {
+        seen.failed =
+          event.message ?? event.errors.map((item) => item.message).join("; ");
+      }
+      if (event.type === "state") {
+        seen.sim = event.state.simTime;
+        if (event.report) seen.report = event.report;
+      }
+    },
+  });
+  if ("error" in attached) throw new Error(attached.error);
+  try {
+    attached.step(ms);
+    const deadline = Date.now() + Math.max(180_000, ms * 40);
+    while (Date.now() < deadline) {
+      if (seen.failed) throw new Error(seen.failed);
+      if (seen.sim >= ms / 1000 - 1e-3) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    if (seen.sim < ms / 1000 - 1e-3) throw new Error(`${world} timed out`);
+    const read = await readRecording(dir, world, { from: 0, to: ms / 1000 });
+    if ("error" in read) throw new Error(read.error);
+    if (!seen.report) throw new Error(`${world} published no report`);
+    return {
+      voltages: boardVolts(read),
+      maxCurrent: peakSupply(read),
+      warnings: seen.report.warnings.map((item) => item.message),
+    };
+  } finally {
+    attached.detach();
+    await stopWorld(dir, world);
+    closeRootWatches();
+  }
+}
+
+function boardVolts(read: RecordingRead): number[] {
+  return read.frames.map((frame) => frame.boards.uno?.voltage ?? Number.NaN);
+}
+
+function peakSupply(read: RecordingRead): number {
+  let max = 0;
+  for (const frame of read.frames) {
+    for (const supply of Object.values(frame.supplies)) {
+      max = Math.max(max, supply.current, supply.maxCurrent);
+    }
+  }
+  return max;
+}
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-uno-mix-"));
+  try {
+    cpSync(armDir, dir, { recursive: true });
+    withUnoLevels(
+      join(dir, "arm.world.json"),
+      join(dir, "arm-class2.world.json"),
+      2
+    );
+    withUnoLevels(
+      join(dir, "arm.world.json"),
+      join(dir, "arm-mixed.world.json"),
+      1
+    );
+    withUnoLevels(
+      join(dir, "arm-stall.world.json"),
+      join(dir, "arm-stall-mixed.world.json"),
+      1
+    );
+    const full = await runArm(dir, "arm-class2.world.json", 3000);
+    const mixed = await runArm(dir, "arm-mixed.world.json", 3000);
+    const rail = seriesDelta(full.voltages, mixed.voltages);
+    const envelope = mixed.warnings.filter((line) =>
+      line.includes("envelope exceeded")
+    );
+    console.log(
+      `uno power mixed arm.world.json: 5V max-abs ${(rail.max * 1000).toFixed(3)} mV, rms ${(rail.rms * 1000).toFixed(3)} mV, supply peak ${mixed.maxCurrent.toFixed(4)} A, ${envelope.length > 0 ? envelope.join("; ") : "no warning"}`
+    );
+
+    const stall = await runArm(dir, "arm-stall-mixed.world.json", 3000);
+    const stallEnvelope = stall.warnings.filter((line) =>
+      line.includes("envelope exceeded")
+    );
+    if (stall.maxCurrent > fuseParams.iHold + 1e-9) {
+      expect(
+        stallEnvelope.length > 0,
+        `arm-stall ${stall.maxCurrent} A did not warn`
+      );
+      console.log(`uno power envelope: ${stallEnvelope.join("; ")}`);
+    } else {
+      console.log(
+        `uno power snapshot arm-stall: supply ${stall.maxCurrent.toFixed(4)} A, under iHold ${fuseParams.iHold} A`
+      );
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

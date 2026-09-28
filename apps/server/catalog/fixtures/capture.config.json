@@ -97,6 +97,25 @@
       "envelope": {}
     },
     {
+      "id": "sfab/uno-power-input@1.0.0",
+      "part": "sfab/uno-power-input@1.0.0",
+      "variant": "netlist",
+      "instance": "power",
+      "across": ["VBUS", "5V"],
+      "through": "VBUS",
+      "iSense": 1,
+      "fitV": 0.002,
+      "baseline": { "level": "2", "value": 0 },
+      "heldOut": "fixture",
+      "staticError": true,
+      "sweep": {
+        "fixture": "sfab/uno-power-input",
+        "currentPort": "VBUS",
+        "currentQuantity": "Current"
+      },
+      "envelope": {}
+    },
+    {
       "id": "sfab/led-module-red@1.0.0",
       "part": "sfab/led-module-red@1.0.0",
       "variant": "netlist",

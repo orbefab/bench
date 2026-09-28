@@ -74,7 +74,7 @@
     {
       "id": "sfab/uno-power-input@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/uno-power-input@1.0.0.json",
-      "sha256": "d2ebbb276b5a9f12ed1dfd05b23b0681cf54a3c3b9b8b487fb9ebc13c589371e",
+      "sha256": "38056b0b27ac44c87d5af3a381d9cc463612505b1d73a1354ce494032ccbf135",
       "source": "catalog",
       "version": "1.0.0"
     },

@@ -19,6 +19,21 @@
   ],
   "axes": {
     "behaviour": {
+      "1": {
+        "default": "table",
+        "variants": {
+          "table": {
+            "kind": "snapshot",
+            "ref": "sfab/uno-power-input@1.0.0",
+            "omits": [
+              "fuse trip",
+              "thermal state",
+              "rail capacitance",
+              "temperature"
+            ]
+          }
+        }
+      },
       "2": {
         "default": "netlist",
         "variants": {

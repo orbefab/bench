@@ -1,0 +1,74 @@
+{
+  "axis": "behaviour",
+  "envelope": {
+    "bounds": {
+      "VBUS.current": [
+        0,
+        0.5
+      ]
+    }
+  },
+  "error": [
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "static-max-abs",
+      "quantity": "VBUS.voltage",
+      "value": 0
+    }
+  ],
+  "form": "table@1",
+  "format": "sfab.snapshot@1",
+  "params": {
+    "across": [
+      "VBUS",
+      "5V"
+    ],
+    "iAxis": [
+      0,
+      0.5
+    ],
+    "iSense": 1,
+    "vAxis": [
+      0,
+      0.105
+    ]
+  },
+  "part": "sfab/uno-power-input@1.0.0",
+  "partType": "power-input",
+  "ports": {
+    "inputs": [
+      "VBUS.current"
+    ],
+    "outputs": [
+      "VBUS.voltage"
+    ]
+  },
+  "provenance": {
+    "bench": {
+      "avr8js": "0.21.1",
+      "mujoco": "3.14.0",
+      "version": "0.2.2"
+    },
+    "created": "2026-09-27T00:00:00.000Z",
+    "fixture": {
+      "hash": "c2d87f1514891fc52ee3ce87e86af8d897cd8ff291e8f290d815723d20ab4626",
+      "ref": "sfab/uno-power-input",
+      "seed": 20260927
+    },
+    "from": {
+      "hash": "f78d482b9c7ebaadb868e1e4f8e9a6c46698425d6ca545fd182fd60d7221de08",
+      "level": "2",
+      "part": "sfab/uno-power-input@1.0.0"
+    },
+    "source": "captured",
+    "tool": {
+      "name": "sfab-bench-capture",
+      "version": "1"
+    }
+  },
+  "quality": "Q1"
+}
