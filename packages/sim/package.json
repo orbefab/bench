@@ -15,6 +15,7 @@
     "./power-path": "./src/power-path.ts",
     "./rail-circuit": "./src/rail-circuit.ts",
     "./record": "./src/record.ts",
+    "./seams": "./src/seams.ts",
     "./servo": "./src/servo.ts",
     "./ranger": "./src/ranger.ts",
     "./targets": "./src/targets.ts",

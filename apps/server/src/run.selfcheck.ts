@@ -44,6 +44,8 @@ function recordedLines(read: RecordingRead): string[] {
 function cliLines(stdout: string): string[] {
   const lines: string[] = [];
   for (const raw of stdout.split("\n")) {
+    // Seam totals are not serial. The gauge has a motor, so `bench run` prints one.
+    if (raw.startsWith("seam ")) continue;
     const match = /^([^:]+): (.*)$/.exec(raw);
     if (!match?.[1] || match[2] === undefined) continue;
     const line = match[2].trim();

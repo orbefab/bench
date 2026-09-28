@@ -63,6 +63,7 @@ import { type BoardPathName, chipFacts, railAttachment } from "./power-path";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
+import { SEAM_STEP_S, SeamLedger } from "./seams";
 import { blankTrack, type ServoTrack, trackServo } from "./servo";
 import { targetPosition } from "./targets";
 import {
@@ -241,7 +242,10 @@ export type FromWorker =
       state: WorldState;
       /** Set on the snapshot produced by a `step` that carried `request`. */
       request?: number;
-      /** Present on the first state, and again when an envelope warning lands. */
+      /**
+       * Present on the first state, when an envelope warning lands, and
+       * at most once per seam window.
+       */
       report?: RunReport;
     }
   | {
@@ -447,6 +451,7 @@ function createSession(host: SimHost) {
   let worldSha256 = "";
   let runPlan: RunPlan | null = null;
   let runReport: RunReport | null = null;
+  const seams = new SeamLedger();
   /** Degraded parts for this load. Copied onto the live state. */
   let degradedLive: Diagnostic[] = [];
   let reportPending = false;
@@ -2568,13 +2573,53 @@ function createSession(host: SimHost) {
     // the pose from the previous master step, the same lag as the ADC latch.
     placeTargets();
     sim.mj.mj_step(sim.model, sim.data);
+    noteMotorSeams();
     classifyLoads();
     recordStep();
     stampNodes(simMs());
   }
 
+  /**
+   * Joules across the motor seam. Reads the rail's ω and current and the
+   * joint speed around the body step. Does not write an engine input.
+   */
+  function noteMotorSeams(): void {
+    if (!sim) return;
+    let noted = false;
+    for (const load of loads) {
+      const drive = load.drive;
+      const sample = load.sample;
+      if (!drive || !sample) continue;
+      const connected = !sample.limp;
+      const omegaAfter = scalar(
+        sim.data.jnt(drive.jointName).qvel as Float64Array
+      );
+      const ctrl = sim.data.actuator(load.partId).ctrl as number;
+      seams.note({
+        path: load.partId,
+        dt: SEAM_STEP_S,
+        k: drive.law.k,
+        omega: connected ? sample.omega : 0,
+        current: load.winding,
+        ctrl,
+        omegaBefore: sample.omega,
+        omegaAfter,
+      });
+      noted = true;
+    }
+    if (!noted) return;
+    const closed = seams.endStep();
+    if (!runReport) return;
+    const rows = seams.rows();
+    if (rows.length === 0) return;
+    runReport.seams = rows;
+    for (const warning of closed.warnings) runReport.warnings.push(warning);
+    if (closed.closed) reportPending = true;
+  }
+
   function dispose() {
     serialChunks.length = 0;
+    seams.reset();
     playing = false;
     throwOnStep = false;
     recorder = null;

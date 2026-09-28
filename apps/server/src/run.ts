@@ -3,8 +3,9 @@
  */
 import { performance } from "node:perf_hooks";
 
-import type { WorldState } from "@sfab-bench/contract";
+import type { SeamEnergy, WorldState } from "@sfab-bench/contract";
 import { sha256Bytes } from "@sfab-bench/parts";
+import { seamLine } from "@sfab-bench/sim/seams";
 import { type LoadResult, Sim } from "@sfab-bench/sim/sim";
 
 import { projectReal, readerFor, readInside } from "./world/files";
@@ -22,6 +23,7 @@ export type RunResult = {
   frames: number;
   resets: number;
   degraded: { path: string; message: string }[];
+  seams: SeamEnergy[];
 };
 
 export function formatRun(result: RunResult): string {
@@ -29,6 +31,7 @@ export function formatRun(result: RunResult): string {
     (row) => `degraded ${row.path}: ${row.message}`
   );
   lines.push(...result.lines.map((row) => `${row.board}: ${row.line}`));
+  lines.push(...result.seams.map((row) => seamLine(row)));
   lines.push(
     `${result.simSeconds.toFixed(3)} s, ${result.frames} frames, ${result.resets} resets`
   );
@@ -80,8 +83,13 @@ export async function runHeadless(opts: {
 }): Promise<RunResult> {
   const lines: RunLine[] = [];
   const pending = new Map<string, string>();
+  let seams: SeamEnergy[] = [];
   const sim = new Sim({
-    post() {},
+    post(message) {
+      if (message.type === "state" && message.report?.seams) {
+        seams = message.report.seams;
+      }
+    },
     now: () => performance.now(),
     schedule: (fn, ms) => setTimeout(fn, ms),
     clear(handle) {
@@ -125,6 +133,7 @@ export async function runHeadless(opts: {
         path: row.path,
         message: row.message,
       })),
+      seams,
     };
   } finally {
     sim.dispose();

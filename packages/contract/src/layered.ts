@@ -585,7 +585,10 @@ export type LockFile = {
 
 export type Diagnostic = {
   severity: "warning" | "error" | "degraded";
-  /** Set on a degraded part. The run continues. */
+  /**
+   * Set on a degraded part, and on a seam residual that is growing.
+   * The run continues.
+   */
   code?: string;
   path: string;
   port: string;
@@ -593,6 +596,23 @@ export type Diagnostic = {
   left: string;
   right: string;
   message: string;
+};
+
+/** Circuit-to-body cut of a `dc-motor@1` servo. */
+export type SeamKind = "motor";
+
+/**
+ * Joules at one engine seam for the run so far. `residual` is
+ * `sent − received − declared`.
+ */
+export type SeamEnergy = {
+  path: string;
+  kind: SeamKind;
+  sent: number;
+  received: number;
+  declared: number;
+  residual: number;
+  flagged: boolean;
 };
 
 export type RunReport = {
@@ -666,6 +686,11 @@ export type RunReport = {
   foreign: { path: string; part: string; qualityCap: "Q1" }[];
   /** Empty when the loader did not start a run. */
   engines: { name: string; cost: string }[];
+  /**
+   * Energy at each engine seam. Absent when the run has no seam, so a
+   * report without one stays byte-identical.
+   */
+  seams?: SeamEnergy[];
 };
 
 export type SnapshotQuality = "Q0" | "Q1" | "Q2a" | "Q2b" | "Q3";
