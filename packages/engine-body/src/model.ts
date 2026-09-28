@@ -2,6 +2,7 @@ import type { MainModule, MjModel, MjSpec, MjVFS } from "@mujoco/mujoco";
 import {
   extractUrdfJointsAndMeshes,
   resolveUrdfMesh,
+  targetPosition,
   WORLD_TARGET_ROBOT,
   type WorldError,
   type WorldPose,
@@ -9,9 +10,37 @@ import {
   type WorldTarget,
 } from "@sfab-bench/contract";
 
-import type { WorldBytes } from "./files";
-import type { RunPlan } from "./plan";
-import { targetPosition } from "./targets";
+/** Bytes relative to the world file. Mesh paths are joined before the read. */
+export type BodyBytes = {
+  read(relativeToWorld: string): Uint8Array | null;
+};
+
+type BodyMotor = {
+  armature: number;
+  frictionloss: number;
+  damping: number;
+};
+
+/**
+ * The slice of a run plan the compiler reads. The server's plan is
+ * assignable: the extra fields stay with the host.
+ */
+export type BodyScene = {
+  environment: {
+    ground: { plane: boolean };
+    gravity: [number, number, number];
+    primitives?: WorldPrimitive[];
+    targets: WorldTarget[];
+  };
+  robots: { id: string; urdf: string; pose: WorldPose }[];
+  parts: {
+    id: string;
+    drives?: { robot: string; joint: string };
+    motor?: BodyMotor;
+    torqueNm?: number;
+  }[];
+  rangers?: { length: number };
+};
 
 const TIMESTEP_S = 0.001;
 
@@ -221,7 +250,7 @@ function targetBody(target: WorldTarget): string {
   return `<body name="${WORLD_TARGET_ROBOT}/${target.id}" mocap="true" ${pose}>${geom}</body>`;
 }
 
-function worldXml(plan: RunPlan): string {
+function worldXml(plan: BodyScene): string {
   const geoms: string[] = [];
   if (plan.environment.ground.plane) {
     geoms.push('<geom name="ground" type="plane" size="2 2 0.1"/>');
@@ -269,7 +298,7 @@ function readNum(value: Int32Array, index: number): number {
  * Armature, frictionloss, and viscous damping come from the part
  * catalog and replace the URDF values on the driven joint.
  */
-function applyServoDynamics(mj: MainModule, model: MjModel, plan: RunPlan) {
+function applyServoDynamics(mj: MainModule, model: MjModel, plan: BodyScene) {
   const armature = model.dof_armature as Float64Array;
   const friction = model.dof_frictionloss as Float64Array;
   const damping = model.dof_damping as Float64Array;
@@ -297,7 +326,11 @@ function applyServoDynamics(mj: MainModule, model: MjModel, plan: RunPlan) {
  * clips `qfrc_actuator` to `jnt_actfrcrange` after the actuator range,
  * and the URDF `effort` placeholder is wider than the SG90's clamp.
  */
-function applyServoTorqueClamp(mj: MainModule, model: MjModel, plan: RunPlan) {
+function applyServoTorqueClamp(
+  mj: MainModule,
+  model: MjModel,
+  plan: BodyScene
+) {
   const range = model.jnt_actfrcrange as Float64Array;
   const trnid = model.actuator_trnid as Int32Array;
   const actuatorType = mj.mjtObj.mjOBJ_ACTUATOR.value;
@@ -371,8 +404,8 @@ export function urdfSolrefLimits(xml: string): Map<string, [number, number]> {
 }
 
 function urdfLimitSolref(
-  plan: RunPlan,
-  files: WorldBytes
+  plan: BodyScene,
+  files: BodyBytes
 ): Map<string, [number, number]> {
   const out = new Map<string, [number, number]>();
   for (const robot of plan.robots) {
@@ -437,8 +470,8 @@ function forceCompiler(spec: MjSpec) {
  * motor actuator named with the part id. The step loop writes the torque.
  */
 export async function compileWorld(
-  plan: RunPlan,
-  files: WorldBytes
+  plan: BodyScene,
+  files: BodyBytes
 ): Promise<CompiledWorld | CompileFailure> {
   const worldDoc = plan;
   const mj = await mujoco();

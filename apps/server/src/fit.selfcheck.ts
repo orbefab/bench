@@ -3,9 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { PartFile } from "@sfab-bench/contract";
+import { compileWorld } from "@sfab-bench/engine-body";
 
 import { projectReal, readerFor } from "./world/files";
-import { compileWorld } from "./world/model";
 import { catalogRoot, planWorld } from "./world/plan";
 import {
   type MotorLaw,

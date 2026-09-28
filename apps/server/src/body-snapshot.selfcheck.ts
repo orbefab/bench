@@ -24,9 +24,10 @@ import type {
   WorldState,
 } from "@sfab-bench/contract";
 
+import { collapse, reflection } from "@sfab-bench/engine-body";
+
 import { levelCard } from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
-import { collapse, reflection } from "./world/body/gear-train";
 import { writeHingeSnapshot } from "./world/body/hinge-capture";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { applyLevelEdit } from "./world/level-edit";

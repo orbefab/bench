@@ -1,7 +1,6 @@
 /** Ported from layered-sim E5 gears.ts (c34b085): the rigid-gear collapse. */
 
-import type { GearTrain } from "@sfab-bench/contract";
-import { walkGearTrain } from "@sfab-bench/parts";
+import { type GearTrain, walkGearTrain } from "@sfab-bench/contract";
 
 export type CollapsedHinge = {
   /** Σ n² J, kg·m². */

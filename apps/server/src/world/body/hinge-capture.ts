@@ -16,9 +16,8 @@ import {
   type SnapshotFile,
 } from "@sfab-bench/contract";
 
+import { collapse, gearTrainXml, hingeXml } from "@sfab-bench/engine-body";
 import { contentHash, lintSnapshot, sortValue } from "@sfab-bench/parts";
-import { collapse } from "./gear-train";
-import { gearTrainXml, hingeXml } from "./mjcf";
 
 const STEP_S = 0.001;
 

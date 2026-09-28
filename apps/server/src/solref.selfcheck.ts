@@ -1,4 +1,7 @@
-import { clampSolrefTimeconst, urdfSolrefLimits } from "./world/model";
+import {
+  clampSolrefTimeconst,
+  urdfSolrefLimits,
+} from "@sfab-bench/engine-body";
 
 /**
  * A negative solreflimit time constant stays negative. Zero and a

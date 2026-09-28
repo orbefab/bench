@@ -19,6 +19,7 @@ import {
   type WorldStepProp,
   type WorldTarget,
 } from "@sfab-bench/contract";
+import { collapse } from "@sfab-bench/engine-body";
 import { type AvrPinParams, avrPinParams } from "@sfab-bench/engine-circuit";
 import {
   type BatteryParams,
@@ -39,7 +40,6 @@ import {
   type WireEnd,
 } from "@sfab-bench/parts";
 
-import { collapse } from "./body/gear-train";
 import {
   type BoardStamp,
   type CircuitInst,

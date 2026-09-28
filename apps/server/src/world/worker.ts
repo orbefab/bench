@@ -28,6 +28,11 @@ import {
   type WorldSupplyState,
   type WorldVec3,
 } from "@sfab-bench/contract";
+import {
+  type CompiledWorld,
+  compileWorld,
+  type WorldModelCounts,
+} from "@sfab-bench/engine-body";
 import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   type AdcConversion,
@@ -40,11 +45,6 @@ import { type BatteryParams, boundOutside } from "@sfab-bench/parts";
 
 import { analogRead } from "./analog-pin";
 import { projectReal, readerFor, readInside, type WorldBytes } from "./files";
-import {
-  type CompiledWorld,
-  compileWorld,
-  type WorldModelCounts,
-} from "./model";
 import { planWorld, type RunBoard, type RunPlan } from "./plan";
 import {
   type BrownoutState,

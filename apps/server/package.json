@@ -37,6 +37,7 @@
     "@hono/zod-validator": "^0.9.1",
     "@mujoco/mujoco": "3.14.0",
     "@sfab-bench/contract": "workspace:*",
+    "@sfab-bench/engine-body": "workspace:*",
     "@sfab-bench/engine-circuit": "workspace:*",
     "@sfab-bench/engine-mcu": "workspace:*",
     "@sfab-bench/parts": "workspace:*",

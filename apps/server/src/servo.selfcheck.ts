@@ -10,11 +10,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { WorldServerMessage, WorldState } from "@sfab-bench/contract";
+import { compileWorld, JOINT_LIMIT_SOLREF } from "@sfab-bench/engine-body";
 
 import { closeRootWatches } from "./projects";
 import { projectReal, readerFor } from "./world/files";
 import { attachWorld, stopWorld } from "./world/host";
-import { compileWorld, JOINT_LIMIT_SOLREF } from "./world/model";
 import { planWorld } from "./world/plan";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import {

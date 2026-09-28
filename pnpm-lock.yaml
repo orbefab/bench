@@ -163,6 +163,9 @@ importers:
       '@sfab-bench/contract':
         specifier: workspace:*
         version: link:../../packages/contract
+      '@sfab-bench/engine-body':
+        specifier: workspace:*
+        version: link:../../packages/engine-body
       '@sfab-bench/engine-circuit':
         specifier: workspace:*
         version: link:../../packages/engine-circuit
@@ -357,6 +360,19 @@ importers:
       ai:
         specifier: ^7.0.99
         version: 7.0.99(zod@4.6.5)
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
+  packages/engine-body:
+    dependencies:
+      '@mujoco/mujoco':
+        specifier: 3.14.0
+        version: 3.14.0
+      '@sfab-bench/contract':
+        specifier: workspace:*
+        version: link:../contract
     devDependencies:
       typescript:
         specifier: ^5.9.2

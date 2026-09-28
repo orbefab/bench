@@ -1,0 +1,21 @@
+{
+  "name": "@sfab-bench/engine-body",
+  "version": "0.2.2",
+  "private": true,
+  "description": "MuJoCo body engine. No file access.",
+  "homepage": "https://bench.sfab.ai",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mujoco/mujoco": "3.14.0",
+    "@sfab-bench/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

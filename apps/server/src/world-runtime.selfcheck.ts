@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import type { WorldServerMessage } from "@sfab-bench/contract";
+import { compileWorld, ensureMujocoCompiler } from "@sfab-bench/engine-body";
 import { RX_BACKLOG } from "@sfab-bench/engine-mcu";
 
 import { handleProjectFile } from "./cad-pkg";
@@ -26,7 +27,6 @@ import {
   worldWorkerCount,
   worldWorkerEntry,
 } from "./world/host";
-import { compileWorld, ensureMujocoCompiler } from "./world/model";
 import { planWorld } from "./world/plan";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import type { FromWorker, ToWorker } from "./world/worker";
