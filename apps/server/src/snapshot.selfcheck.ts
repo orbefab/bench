@@ -1,9 +1,10 @@
 /**
- * Power-input snapshot: lint, capture byte-identity, selection, report.
+ * Power-input snapshot: lint, capture byte-identity, class-1 comparisons, selection, report.
  * Ported from layered-sim E4 (fd10742). The feed snapshot is retired.
  */
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -17,11 +18,17 @@ import type {
   PartTypeFile,
   RunReport,
   SnapshotFile,
+  WorldState,
 } from "@sfab-bench/contract";
 
-import { captureCatalog } from "./capture";
+import { captureCatalog, type FreeRunSpec, runClassScenes } from "./capture";
+import { closeRootWatches } from "./projects";
+import { boardStampOf } from "./world/circuit-stamp";
+import { attachWorld, stopWorld } from "./world/host";
 import { canonicalJson } from "./world/parts/si";
 import { catalogRoot, planWorld } from "./world/plan";
+import { NANO_BOARD_A } from "./world/power-path";
+import { createRailCircuit } from "./world/rail-circuit";
 import { envelopeOf, outsideEnvelope } from "./world/snapshot-law";
 import { FIXTURE_SUPPLY, lintSnapshot } from "./world/snapshot-lint";
 import { loadSnapshot } from "./world/snapshot-load";
@@ -29,6 +36,9 @@ import { loadSnapshot } from "./world/snapshot-load";
 const SNAPSHOT_ID = "sfab/nano-power-input@1.0.0";
 const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
+);
+const armDir = fileURLToPath(
+  new URL("../../../examples/arm/", import.meta.url)
 );
 
 function expect(cond: boolean, message: string): void {
@@ -80,11 +90,11 @@ expect(clean.quality === "Q1", `linter granted ${clean.quality}`);
 const env = envelopeOf(committed);
 expect(env !== null, "snapshot envelope");
 expect(
-  env !== null && !outsideEnvelope(env, 0, env.current[1]),
+  env !== null && !outsideEnvelope(env, env.current[1]),
   "current bound is outside itself"
 );
 expect(
-  env !== null && outsideEnvelope(env, 0, env.current[1] + 0.01),
+  env !== null && outsideEnvelope(env, env.current[1] + 0.01),
   "current just above the bound is inside"
 );
 console.log(
@@ -146,12 +156,131 @@ console.log("lint: committed snapshot Q1");
   );
   console.log(`lint fixture supply: ${hit?.message}`);
 }
+{
+  const copy = structuredClone(committed);
+  copy.params.supplyRef = 5;
+  const dir = mkdtempSync(join(tmpdir(), "sfab-supply-ref-"));
+  try {
+    const file = join(dir, "snapshots", "sfab", "nano-power-input@1.0.0.json");
+    mkdirSync(join(dir, "snapshots", "sfab"), { recursive: true });
+    writeFileSync(file, JSON.stringify(copy));
+    const loaded = loadSnapshot(
+      dir,
+      { catalogDir: join(dir, "catalog"), assetRoot: dir },
+      SNAPSHOT_ID,
+      powerType()
+    );
+    expect(loaded.loaded === null, "supplyRef file loaded");
+    const hit = loaded.diagnostics.find((diag) =>
+      diag.message.includes(FIXTURE_SUPPLY)
+    );
+    expect(
+      hit !== undefined,
+      `supplyRef was accepted: ${loaded.diagnostics.map((d) => d.message).join("\n")}`
+    );
+    console.log(`lint fixture supplyRef: ${hit?.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 console.log("lint: broken copies rejected");
 
 expect(stats.staticMaxAbsMv <= 10, `fit ${stats.staticMaxAbsMv} mV`);
 console.log(
   `fit: static ${stats.staticMaxAbsMv.toFixed(3)} mV (line ${stats.lineMaxAbsMv.toFixed(3)} mV rejected), knots ${stats.knots}, trip ${stats.tripA} A, envelope <= ${stats.envelopeMaxA} A`
 );
+
+const FREE_RUN: FreeRunSpec = {
+  project: "nano",
+  board: "nano",
+  currentPart: "servo",
+  boardPart: "sfab/nano-ch340@1.0.0",
+  supplyInstance: "usb",
+  supplyPart: "sfab/usb-port-500ma@1.0.0",
+  flagInstance: "flag",
+  stallFrom: "arm",
+  stallDir: "firmware/stall",
+  wires: [
+    ["usb.5V", "nano.5V"],
+    ["usb.GND", "nano.GND"],
+    ["nano.D9", "servo.signal"],
+    ["nano.5V", "servo.V+"],
+    ["nano.GND", "servo.GND"],
+    ["servo.shaft", "flag.hinge"],
+    ["servo.mount", "flag.base"],
+  ],
+};
+
+const FREE_CASES = [
+  {
+    name: "hold",
+    firmware: "firmware/hold/hold.hex",
+    source: "firmware/hold/hold.ino",
+    flag: "sfab/flag@1.0.0",
+    ms: 1200,
+    load: "sfab/sg90@1.0.0",
+  },
+  {
+    name: "move",
+    firmware: "firmware/vcc/vcc.hex",
+    source: "firmware/vcc/vcc.ino",
+    flag: "sfab/flag@1.0.0",
+    ms: 2500,
+    load: "sfab/sg90@1.0.0",
+  },
+  {
+    name: "stall",
+    firmware: "firmware/stall/stall.hex",
+    source: "firmware/stall/stall.ino",
+    flag: "sfab/flag-stop@1.0.0",
+    ms: 1000,
+    load: "sfab/sg90@1.0.0",
+  },
+];
+
+const free = await runClassScenes(FREE_RUN, FREE_CASES);
+for (const row of free.cases) {
+  expect(row.maxAbsMv <= 50, `${row.name} max-abs ${row.maxAbsMv} mV`);
+  expect(row.rmsMv <= 10, `${row.name} rms ${row.rmsMv} mV`);
+  expect(
+    row.resets1 === row.resets2,
+    `${row.name} resets ${row.resets1}/${row.resets2}`
+  );
+  expect(
+    row.secondRmsMv <= 1.5 * row.firstRmsMv + 1e-9,
+    `${row.name} rms grew ${row.firstRmsMv} -> ${row.secondRmsMv}`
+  );
+  console.log(
+    `free-run ${row.name}: max-abs ${row.maxAbsMv.toFixed(3)} mV, rms ${row.rmsMv.toFixed(3)} mV, half ${row.firstRmsMv.toFixed(3)}/${row.secondRmsMv.toFixed(3)} mV, resets ${row.resets1}/${row.resets2}`
+  );
+}
+const mg90s = await runClassScenes(
+  FREE_RUN,
+  FREE_CASES.filter((spec) => spec.name !== "move").map((spec) => ({
+    ...spec,
+    load: "sfab/mg90s@1.0.0",
+  }))
+);
+for (const row of mg90s.cases) {
+  expect(row.maxAbsMv <= 50, `mg90s ${row.name} max-abs ${row.maxAbsMv} mV`);
+  expect(row.rmsMv <= 10, `mg90s ${row.name} rms ${row.rmsMv} mV`);
+  expect(
+    row.resets1 === row.resets2,
+    `mg90s ${row.name} resets ${row.resets1}/${row.resets2}`
+  );
+  expect(
+    row.secondRmsMv <= 1.5 * row.firstRmsMv + 1e-9,
+    `mg90s ${row.name} rms grew ${row.firstRmsMv} -> ${row.secondRmsMv}`
+  );
+  const stalled =
+    row.name === "stall"
+      ? `, class 1 ${row.voltage1.toFixed(4)} V, class 2 ${row.voltage2.toFixed(4)} V, servo current class 1 ${row.current1.toFixed(4)} A, class 2 ${row.current2.toFixed(4)} A`
+      : "";
+  console.log(
+    `free-run mg90s ${row.name}: max-abs ${row.maxAbsMv.toFixed(3)} mV, rms ${row.rmsMv.toFixed(3)} mV, half ${row.firstRmsMv.toFixed(3)}/${row.secondRmsMv.toFixed(3)} mV, resets ${row.resets1}/${row.resets2}${stalled}`
+  );
+}
+overLimit();
 
 const root = mkdtempSync(join(tmpdir(), "sfab-snap-"));
 try {
@@ -231,6 +360,21 @@ try {
   console.log(
     `selection: path 2 ${highNano.variant} (${highNano.reason}), path 1 ${lowNano.variant} power snapshot ${SNAPSHOT_ID} Q1 (${lowNano.reason}), bench and wide usb keep the power group`
   );
+
+  const stalled = await envelopeRun(root);
+  expect(
+    stalled.low.envelope.length === 1,
+    `envelope warnings ${stalled.low.envelope.length}: ${stalled.low.envelope.join("; ")}`
+  );
+  if (stalled.high.resets > 0) {
+    expect(
+      stalled.low.resets > 0,
+      `class 2 reset ${stalled.high.resets} times and class 1 did not`
+    );
+  }
+  console.log(
+    `envelope: one warning, run continued; resets class 2 ${stalled.high.resets}, class 1 ${stalled.low.resets}`
+  );
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
@@ -256,6 +400,9 @@ expect(
 );
 console.log("report: byte-identical, quality, error, omits");
 
+console.log(
+  `INFO move µs/ms class 2 ${free.moveUsPerMs.class2.toFixed(1)}, class 1 ${free.moveUsPerMs.class1.toFixed(1)}`
+);
 console.log(
   "unchanged: class-2 Nano, Uno, arm, gauge, and worlds without a Nano stay on the existing self-checks"
 );
@@ -379,4 +526,164 @@ function writeMismatch(dir: string): void {
 }
 `
   );
+}
+
+function overLimit(): void {
+  for (const n of [1, 2, 3]) {
+    const motors = Array.from({ length: n }, () => ({
+      resistance: 6.5,
+      k: 0.3,
+    }));
+    const usb = stalledRail("circuits", motors);
+    const snap = stalledRail("avr8js", motors);
+    const dvMv = Math.abs(usb - snap) * 1000;
+    console.log(
+      `over-limit n=${n}: class 2 ${usb.toFixed(3)} V, class 1 ${snap.toFixed(3)} V, |Δ| ${dvMv.toFixed(1)} mV`
+    );
+    expect(dvMv <= 50, `n=${n} differs by ${dvMv.toFixed(1)} mV`);
+  }
+}
+
+function stalledRail(
+  variant: "circuits" | "avr8js",
+  motors: { resistance: number; k: number }[]
+): number {
+  const circuit = createRailCircuit({
+    vNom: 5,
+    rSeries: 0.5,
+    iLimit: 0.9,
+    motors,
+    stamp: boardStampOf("sfab/nano-ch340@1.0.0", variant, { boardId: "nano" }),
+    feed: "usb",
+  });
+  circuit.setFixed(NANO_BOARD_A + 0.0252);
+  for (let i = 0; i < motors.length; i++) circuit.setMotor(i, 1, 0, true);
+  for (let k = 0; k < 200; k++) circuit.solve();
+  return circuit.boardVoltage;
+}
+
+async function envelopeRun(dir: string): Promise<{
+  low: { envelope: string[]; resets: number };
+  high: { resets: number };
+}> {
+  mkdirSync(join(dir, "firmware", "stall"), { recursive: true });
+  cpSync(
+    join(armDir, "firmware", "stall", "stall.hex"),
+    join(dir, "firmware", "stall", "stall.hex")
+  );
+  cpSync(
+    join(armDir, "firmware", "stall", "stall.ino"),
+    join(dir, "firmware", "stall", "stall.ino")
+  );
+  writeFileSync(
+    join(dir, "robot", "flag-stop.urdf"),
+    `<?xml version="1.0"?>
+<robot name="flag-stop"><mujoco><compiler fusestatic="false" discardvisual="false"/></mujoco>
+<link name="base"><inertial><origin xyz="0 0 0.01"/><mass value="0.02"/><inertia ixx="0.000003" ixy="0" ixz="0" iyy="0.000003" iyz="0" izz="0.000005"/></inertial></link>
+<link name="vane"><inertial><origin xyz="0.04 0 0"/><mass value="0.01"/><inertia ixx="0.0000004" ixy="0" ixz="0" iyy="0.0000054" iyz="0" izz="0.0000055"/></inertial></link>
+<joint name="hinge" type="revolute"><parent link="base"/><child link="vane"/><origin xyz="0 0 0.0125"/><axis xyz="0 0 1"/>
+<limit lower="0" upper="0.05" effort="0.18" velocity="10.472"/><dynamics damping="0.001" friction="0"/></joint></robot>
+`
+  );
+  writeFileSync(
+    join(dir, "parts", "sfab", "flag-stop@1.0.0.json"),
+    `{"format":"sfab.part@1","id":"sfab/flag-stop@1.0.0","type":"flag-hinge","foreign":false,"sources":[{"title":"stall stop","ref":"upper limit 0.05 rad"}],"axes":{"behaviour":{"1":{"default":"rigid","variants":{"rigid":{"kind":"form","form":"multibody@1","params":{},"omits":["joint flexibility"]}}}},"body":{"1":{"default":"urdf","variants":{"urdf":{"kind":"urdf","file":"robot/flag-stop.urdf","omits":["link flex"]}}}},"visual":{"0":{"default":"box","variants":{"box":{"kind":"box","size":[0.08,0.04,0.02],"omits":["link meshes"]}}}}}}`
+  );
+  writeFileSync(
+    join(dir, "parts", "sfab", "over-scene@1.0.0.json"),
+    `{
+  "format": "sfab.part@1", "id": "sfab/over-scene@1.0.0", "type": "assembly", "foreign": false,
+  "axes": { "behaviour": { "2": { "default": "netlist", "variants": { "netlist": {
+    "kind": "composite", "omits": ["no snapshot of this assembly"],
+    "netlist": {
+      "instances": {
+        "flag": { "part": "sfab/flag-stop@1.0.0" },
+        "flag2": { "part": "sfab/flag-stop@1.0.0", "pose": { "position": [0.25, 0, 0], "rotation": [1, 0, 0, 0] } },
+        "nano": { "part": "sfab/nano-ch340@1.0.0", "params": { "firmware": "firmware/stall/stall.hex", "source": "firmware/stall/stall.ino" } },
+        "usb": { "part": "sfab/usb-port-500ma@1.0.0", "params": { "Ilimit": 2 } },
+        "servo": { "part": "sfab/sg90@1.0.0" },
+        "servo2": { "part": "sfab/sg90@1.0.0", "pose": { "position": [0.25, 0, 0], "rotation": [1, 0, 0, 0] } }
+      },
+      "wires": [
+        ["usb.5V", "nano.5V"], ["usb.GND", "nano.GND"],
+        ["nano.D9", "servo.signal"], ["nano.5V", "servo.V+"], ["nano.GND", "servo.GND"],
+        ["servo.shaft", "flag.hinge"], ["servo.mount", "flag.base"],
+        ["nano.D9", "servo2.signal"], ["nano.5V", "servo2.V+"], ["nano.GND", "servo2.GND"],
+        ["servo2.shaft", "flag2.hinge"], ["servo2.mount", "flag2.base"]
+      ],
+      "expose": {}
+    }
+  } } } },
+  "body": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["assembly adds no body"] } } } },
+  "visual": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["assembly adds no visual"] } } } } }
+}
+`
+  );
+  writeFileSync(
+    join(dir, "over-1.world.json"),
+    `{"version":2,"environment":{"ground":{"plane":true},"gravity":[0,0,-9.81]},"run":{"seed":1,"levels":{"default":1}},"root":{"id":"scene","part":"sfab/over-scene@1.0.0"}}`
+  );
+  writeFileSync(
+    join(dir, "over-2.world.json"),
+    `{"version":2,"environment":{"ground":{"plane":true},"gravity":[0,0,-9.81]},"run":{"seed":1,"levels":{"default":1,"paths":{"nano":{"behaviour":2}}}},"root":{"id":"scene","part":"sfab/over-scene@1.0.0"}}`
+  );
+  console.log(
+    "envelope load: two stalled SG90s, USB Ilimit 2 A (the stock 0.9 A port sits on the bound)"
+  );
+  const low = await runStall(dir, "over-1.world.json");
+  const high = await runStall(dir, "over-2.world.json");
+  return { low, high };
+}
+
+async function runStall(
+  dir: string,
+  world: string
+): Promise<{ envelope: string[]; resets: number }> {
+  const seen: {
+    state: WorldState | null;
+    report: RunReport | null;
+    failed: string | null;
+  } = {
+    state: null,
+    report: null,
+    failed: null,
+  };
+  const attached = await attachWorld(dir, world, {
+    sender: { kind: "loopback", label: "Mac" },
+    onEvent(event) {
+      if (event.type === "error") {
+        seen.failed =
+          event.message ?? event.errors.map((item) => item.message).join("; ");
+      }
+      if (event.type === "state") {
+        seen.state = event.state;
+        if (event.report) seen.report = event.report;
+      }
+    },
+  });
+  if ("error" in attached) throw new Error(attached.error);
+  const ms = 600;
+  try {
+    attached.step(ms);
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      if (seen.failed) throw new Error(seen.failed);
+      if ((seen.state?.simTime ?? -1) >= ms / 1000 - 1e-3) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    if (!seen.state || seen.state.simTime < ms / 1000 - 1e-3) {
+      throw new Error(
+        `${world} timed out at ${seen.state?.simTime ?? "no state"} s`
+      );
+    }
+  } finally {
+    attached.detach();
+    await stopWorld(dir, world);
+    closeRootWatches();
+  }
+  const row = seen.report?.snapshots.find((item) => item.ref === SNAPSHOT_ID);
+  return {
+    envelope: row?.envelope ?? [],
+    resets: seen.state?.boards.nano?.resets ?? 0,
+  };
 }
