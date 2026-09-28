@@ -425,11 +425,13 @@ export class Engine {
     this.gminFloor = 0;
     if (this.withDiodeGmin()) return;
     if (this.sourceFallback()) return;
-    const why =
-      this.diodes.length === 0
-        ? `Newton did not converge at t=${this.ctx.t}`
-        : `Newton failed returning from gmin at t=${this.ctx.t}`;
-    throw new Error(why);
+    const where =
+      this.ctx.t === 0
+        ? "at the operating point (t = 0)"
+        : `at t=${this.ctx.t}`;
+    throw new Error(
+      `Newton did not converge ${where} after ${this.newtonIters} iterations`
+    );
   }
 
   /**
