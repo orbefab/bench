@@ -141,7 +141,11 @@ each layer imports only from the layers below it. A lint rule enforces it.
 | L6 | `apps/web` | Editor shell and tool framework; speaks the protocol only |
 
 Tools, the agent, and scripts all change a document through L1's edit
-operations, so one undo history covers them.
+operations, so one undo history covers them. An edit is applied in
+`packages/parts` (`EditSession`): in memory, checked by loading the new
+text through an overlay store, then the part and the lock are written
+together. The server keeps one undo history per open document and
+restarts the run from that write.
 
 **Plugin seams** are compile-time registries of in-repo packages:
 

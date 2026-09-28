@@ -293,6 +293,39 @@ type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual",
 
 `world_set_level` writes a class number onto one axis. When that axis held a variant rule, the write replaces the rule with the class alone. The other axes keep their variant objects.
 
+## 4.1 Edit operations
+
+Tools, the socket, and a script change the open document by sending an `EditOp`. Each one names that document by path. The operation is plain JSON. The part file is not written any other way.
+
+```ts
+type EditOp =
+  | { kind: "add-instance"; document: string; id: string; part: string;
+      pose?: Pose; params?: Params; level?: LevelSpec }
+  | { kind: "remove-instance"; document: string; id: string }
+  | { kind: "set-pose"; document: string; id: string; pose?: Pose }
+  | { kind: "set-param"; document: string; id: string; name: string;
+      value?: number | string | boolean }
+  | { kind: "set-level"; document: string;
+      scope: "default" | "type" | "path"; key?: string;
+      axis?: "behaviour" | "body" | "visual"; class: 0 | 1 | 2 | 3 | null }
+  | { kind: "wire"; document: string; a: PortRef; b: PortRef }
+  | { kind: "unwire"; document: string; a: PortRef; b: PortRef }
+  | { kind: "rename-instance"; document: string; id: string; to: string }
+  | { kind: "set-play"; document: string;
+      gravity?: [number, number, number]; seed?: number; timestep?: number }
+  | { kind: "batch"; document: string; label: string; ops: EditOp[] };
+```
+
+A port ref is `instance.port`, split at the last dot. `add-instance` adds a child of the document part's composite netlist. `remove-instance` also drops the wires, `expose` entries, and `play.levels.paths` rules that name that instance. `set-param` is SI and is checked against the part's param quantities. `set-level` is the same table edit as `world_set_level`: a class number, or `null` to remove a type or path rule. The default cannot be removed. `rename-instance` rewrites wires, `expose`, and path keys in this document. It does not rename the part file. `set-play` may store a timestep other than `0.001`; the run still steps 1 ms and warns. `batch` is one undo step.
+
+The inverse is an `EditOp` that restores the previous part. `remove-instance` inverts to `add-instance` carrying the instance, its wires, its expose entries, and its path rules, including their order. `wire` inverts to `unwire`, and `unwire` remembers the wire's index. `rename-instance` inverts to the swap. `set-pose`, `set-param`, and `set-play` invert to the previous value, or to a clear when the field was absent. `set-level` inverts to the previous `play.levels` table, because a class number cannot restore a variant rule. A batch inverts to its inverses in reverse order, with the same label.
+
+History is two stacks of `{ label, op, inverse, before, after }`. `before` and `after` are the SHA-256 of the part file text. A new edit clears redo. The stack keeps 200 steps. One open document has one history.
+
+An edit is applied in memory, serialized, and loaded through an overlay store that serves the new text for that path. No temp file is written into the project. The load builds the lock. The open part is re-pinned, new parts gain rows, and rows nothing resolves any more are dropped. Any other hash drift is refused. The part is written first, then the lock. Both writes are a temp file and a rename. If the lock write throws, the previous part text is put back.
+
+If the part file on disk no longer matches the history's `after` hash, undo and redo refuse: `the document changed outside this session`. The next open, or the next apply that can read the new file, clears that history. A catalog part is read-only.
+
 ## 5. Library and lockfile (D-007, D-023.5)
 
 Lookup order:
