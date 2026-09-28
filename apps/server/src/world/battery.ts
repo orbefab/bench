@@ -152,8 +152,7 @@ export function batteryFrom(
   return { ok: true, params: built };
 }
 
-const EMPTY =
-  "terminal is at the empty open-circuit voltage; the run continues";
+const EMPTY = "empty cell keeps its internal resistance; the run continues";
 
 export class BatteryElement implements Element {
   readonly form = "battery@1";
@@ -165,7 +164,7 @@ export class BatteryElement implements Element {
   /** Set once, when the cell first reads empty. */
   warning: string | null = null;
   warnCount = 0;
-  /** Ohms in the stamp. 0 once the cell is empty, so the terminal is `ocv(0)`. */
+  /** Ohms in the stamp. An empty cell keeps `rInternal`. */
   private ohms: number;
   /** Volts in the stamp. */
   private volts: number;
@@ -265,7 +264,6 @@ export class BatteryElement implements Element {
     this.empty = true;
     this.soc = soc;
     this.volts = ocvAt(this.params.ocv, 0);
-    this.ohms = 0;
     if (this.warning !== null) return;
     this.warning = EMPTY;
     this.warnCount = 1;
