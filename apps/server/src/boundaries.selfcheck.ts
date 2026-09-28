@@ -61,6 +61,14 @@ refuse(
   "an engine imports neither node nor parts nor the server nor apps",
   `boundary: refused import "@sfab-bench/parts" in ${engineProbe} (an engine imports neither node nor parts nor the server nor apps)`
 );
+const mcuToCircuit = "packages/engine-mcu/src/_boundary_probe.ts";
+refuse(
+  mcuToCircuit,
+  'import "@sfab-bench/engine-circuit";\n',
+  "lint/style/noRestrictedImports",
+  "an engine does not import another engine",
+  `boundary: refused import "@sfab-bench/engine-circuit" in ${mcuToCircuit} (an engine does not import another engine)`
+);
 refuse(
   webProbe,
   'import "@sfab-bench/engine-circuit";\n',
@@ -84,9 +92,13 @@ function walk(dir: string, out: string[]): void {
   }
 }
 
+const packagesDir = path.join(root, "packages");
 const layerRoots = [
-  path.join(root, "packages/parts/src"),
-  path.join(root, "packages/engine-circuit/src"),
+  path.join(packagesDir, "parts", "src"),
+  ...readdirSync(packagesDir)
+    .filter((name) => name.startsWith("engine-"))
+    .sort()
+    .map((name) => path.join(packagesDir, name, "src")),
 ];
 const files: string[] = [];
 for (const dir of layerRoots) walk(dir, files);
