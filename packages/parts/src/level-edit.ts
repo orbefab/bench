@@ -282,6 +282,12 @@ export function lockAfterLevels(
     resolved.snapshots ?? []
   );
   if (snapshot) return { error: snapshot };
+  const overlay = rowDrift(
+    "level overlay",
+    pinned.overlays ?? [],
+    resolved.overlays ?? []
+  );
+  if (overlay) return { error: overlay };
   const snapshots = resolved.snapshots ?? [];
   const parts = pinned.parts.map((row) => {
     if (!refreshing.has(row.id)) return row;
@@ -295,6 +301,7 @@ export function lockAfterLevels(
       parts,
       types: pinned.types,
       ...(snapshots.length > 0 ? { snapshots } : {}),
+      ...(pinned.overlays ? { overlays: pinned.overlays } : {}),
     },
   };
 }
@@ -326,6 +333,13 @@ export function lockAfterEdit(
   if ("error" in parts) return parts;
   const types = mergeRows("part type", pinned.types, resolved.types, new Set());
   if ("error" in types) return types;
+  const overlays = mergeRows(
+    "level overlay",
+    pinned.overlays ?? [],
+    resolved.overlays ?? [],
+    refreshing
+  );
+  if ("error" in overlays) return overlays;
   const snapshot = snapshotDrift(
     pinned.snapshots ?? [],
     resolved.snapshots ?? []
@@ -334,6 +348,8 @@ export function lockAfterEdit(
   const lock = structuredClone(pinned);
   lock.parts = parts.rows;
   lock.types = types.rows;
+  if (overlays.rows.length > 0) lock.overlays = overlays.rows;
+  else delete lock.overlays;
   const snapshots = shapeSnapshots(
     pinned.snapshots ?? [],
     resolved.snapshots ?? []
@@ -344,7 +360,7 @@ export function lockAfterEdit(
 }
 
 function mergeRows<T extends { id: string; sha256: string }>(
-  kind: "part" | "part type",
+  kind: "part" | "part type" | "level overlay",
   pinned: T[],
   resolved: T[],
   refresh: ReadonlySet<string>
@@ -401,7 +417,7 @@ function shapeLike<T extends object>(sample: T | undefined, row: T): T {
 }
 
 function rowDrift(
-  kind: "part" | "part type",
+  kind: "part" | "part type" | "level overlay",
   pinned: { id: string; sha256: string }[],
   resolved: { id: string; sha256: string }[],
   refresh: ReadonlySet<string> = new Set()

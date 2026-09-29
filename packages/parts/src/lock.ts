@@ -4,6 +4,7 @@ import {
   type Diagnostic,
   LOCK_FORMAT,
   type LockFile,
+  type LockOverlay,
   type LockPart,
   type LockSnapshot,
   type LockType,
@@ -42,12 +43,26 @@ export function buildLock(
   const pinned = [...snapshots].sort((a, b) =>
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0
   );
+  const overlays: LockOverlay[] = [...lib.parts.values()]
+    .flatMap((loaded) =>
+      loaded.overlay
+        ? [
+            {
+              id: loaded.part.id,
+              sha256: loaded.overlay.sha256,
+              path: loaded.overlay.path,
+            },
+          ]
+        : []
+    )
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return {
     format: LOCK_FORMAT,
     world: lib.worldName,
     parts,
     types,
     ...(pinned.length > 0 ? { snapshots: pinned } : {}),
+    ...(overlays.length > 0 ? { overlays } : {}),
   };
 }
 
@@ -120,12 +135,18 @@ export function verifyLock(
     (expected.snapshots ?? []).map((row) => [row.id, row.sha256]),
     (lock.snapshots ?? []).map((row) => [row.id, row.sha256])
   );
+  compareRows(
+    diags,
+    "level overlay",
+    (expected.overlays ?? []).map((row) => [row.id, row.sha256]),
+    (lock.overlays ?? []).map((row) => [row.id, row.sha256])
+  );
   return diags;
 }
 
 function compareRows(
   diags: Diagnostic[],
-  kind: "part" | "part type" | "snapshot",
+  kind: "part" | "part type" | "snapshot" | "level overlay",
   expected: [string, string][],
   got: [string, string][]
 ): void {

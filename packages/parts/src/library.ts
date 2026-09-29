@@ -8,6 +8,8 @@ import {
   DOMAIN_QUANTITIES,
   FORM_PARAMS,
   GROUND_PART_ID,
+  LEVEL_OVERLAY_FORMAT,
+  type LevelOverlayFile,
   PART_FORMAT,
   PART_TYPE_FORMAT,
   type PartFile,
@@ -47,6 +49,8 @@ export type LoadedPart = {
   path: string;
   sha256: string;
   shadowed?: string;
+  /** The project's level overlay merged into `part`. `sha256` stays the library file's. */
+  overlay?: { path: string; sha256: string };
 };
 
 export type LoadedType = {
@@ -191,13 +195,95 @@ export function loadPartById(
   ) {
     shadowed = relPosix(opts.assetRoot, catalogPath);
   }
+  const sha256 = contentHash(raw);
+  let overlay: LoadedPart["overlay"];
+  if (found.source !== "world") {
+    const file = overlayFile(worldDir, id);
+    if (file && opts.store.exists(file)) {
+      const merged = mergeOverlay(raw, readJson(opts.store, file), id);
+      if (isDiag(merged)) return merged;
+      overlay = { path: relPosix(opts.assetRoot, file), sha256: merged.sha256 };
+    }
+  }
   return {
     part: raw,
     source: found.source,
     path: relPosix(opts.assetRoot, found.file),
-    sha256: contentHash(raw),
+    sha256,
     shadowed,
+    ...(overlay ? { overlay } : {}),
   };
+}
+
+function overlayFile(base: string, id: string): string | null {
+  const parsed = parsePartRef(id);
+  if (!parsed) return null;
+  return join(
+    base,
+    "overlays",
+    parsed.publisher,
+    `${parsed.name}@${parsed.version}.levels.json`
+  );
+}
+
+const OVERLAY_AXES = ["behaviour", "body", "visual"] as const;
+
+/**
+ * Adds the overlay's variants to `part` in place. A name the library
+ * already has is an error, not an override. A level the library lacks
+ * gets its first variant, by name, as the default.
+ */
+function mergeOverlay(
+  part: PartFile,
+  rawOverlay: unknown,
+  id: string
+): { sha256: string } | Diagnostic {
+  const bad = (left: string, detail: string) =>
+    makeDiag({
+      severity: "error",
+      path: id,
+      port: "overlay",
+      quantity: "Levels",
+      left,
+      right: "sfab.level-overlay@1",
+      detail,
+    });
+  const overlay = rawOverlay as LevelOverlayFile;
+  if (overlay?.format !== LEVEL_OVERLAY_FORMAT) {
+    return bad(String(overlay?.format), "level overlay format mismatch");
+  }
+  if (overlay.part !== id) {
+    return bad(String(overlay.part), "level overlay names another part");
+  }
+  const axes = (part.axes ??= {}) as Record<
+    string,
+    Record<string, { default: string; variants: Record<string, unknown> }>
+  >;
+  for (const axis of OVERLAY_AXES) {
+    const levels = overlay.axes?.[axis];
+    if (!levels) continue;
+    for (const [level, add] of Object.entries(levels)) {
+      const names = Object.keys(add.variants ?? {}).sort();
+      if (names.length === 0) continue;
+      const map = (axes[axis] ??= {});
+      const slot = map[level];
+      if (!slot) {
+        const first = names[0] as string;
+        map[level] = { default: first, variants: {} };
+      }
+      const target = map[level] as { variants: Record<string, unknown> };
+      for (const name of names) {
+        if (name in target.variants) {
+          return bad(
+            `${axis} ${level} ${name}`,
+            `level overlay variant ${name} clashes with a variant of ${id} ${axis} level ${level}`
+          );
+        }
+        target.variants[name] = (add.variants as Record<string, unknown>)[name];
+      }
+    }
+  }
+  return { sha256: contentHash(rawOverlay as object) };
 }
 
 export function loadTypeById(

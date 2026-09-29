@@ -226,6 +226,26 @@ function lockRewrites(
         }
       }
     }
+    if (lock.overlays) {
+      const from = fromId.slice(fromId.indexOf("/") + 1);
+      const to = toId.slice(toId.indexOf("/") + 1);
+      for (const row of lock.overlays) {
+        const path = row.id === fromId ? row.path.split(from).join(to) : row.path;
+        const sha = snapshotSha.get(path);
+        if (path !== row.path) {
+          row.path = path;
+          changed = true;
+        }
+        if (row.id === fromId) {
+          row.id = toId;
+          changed = true;
+        }
+        if (sha && sha !== row.sha256) {
+          row.sha256 = sha;
+          changed = true;
+        }
+      }
+    }
     if (moving) {
       const stem = basename(nextFile).replace(/\.json$/, "");
       if (lock.world !== stem) {
@@ -236,6 +256,7 @@ function lockRewrites(
     if (sortById(lock.parts)) changed = true;
     if (lock.types && sortById(lock.types)) changed = true;
     if (lock.snapshots && sortById(lock.snapshots)) changed = true;
+    if (lock.overlays && sortById(lock.overlays)) changed = true;
     if (!changed) return;
     const after = formatLock(lock, before);
     if (moving) {

@@ -258,6 +258,7 @@ export const LOCK_FORMAT = "sfab.lock@1" as const;
 export const RUN_REPORT_FORMAT = "sfab.run-report@1" as const;
 export const SNAPSHOT_FORMAT = "sfab.snapshot@1" as const;
 export const FIXTURE_FORMAT = "sfab.fixture@1" as const;
+export const LEVEL_OVERLAY_FORMAT = "sfab.level-overlay@1" as const;
 
 export type PartTypeFile = {
   format: typeof PART_TYPE_FORMAT;
@@ -717,6 +718,13 @@ export type LockSnapshot = {
   path: string;
 };
 
+/** A project's level overlay for a library part. `id` is the part id. */
+export type LockOverlay = {
+  id: string;
+  sha256: string;
+  path: string;
+};
+
 export type LockFile = {
   format: typeof LOCK_FORMAT;
   world: string;
@@ -724,6 +732,22 @@ export type LockFile = {
   types: LockType[];
   /** Present when the resolved levels name a snapshot. */
   snapshots?: LockSnapshot[];
+  /** Present when a project overlay adds variants to a library part. */
+  overlays?: LockOverlay[];
+};
+
+/**
+ * Variants a project adds to a library part's levels. It never changes a
+ * default and never removes a variant. `overlays/<pub>/<name>@<ver>.levels.json`.
+ */
+export type LevelOverlayFile = {
+  format: typeof LEVEL_OVERLAY_FORMAT;
+  part: string;
+  axes: {
+    behaviour?: Record<string, { variants: Record<string, BehaviourImpl> }>;
+    body?: Record<string, { variants: Record<string, BodyImpl> }>;
+    visual?: Record<string, { variants: Record<string, VisualImpl> }>;
+  };
 };
 
 export type Diagnostic = {
