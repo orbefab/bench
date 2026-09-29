@@ -32,7 +32,8 @@ const TOOL_BUTTONS: readonly {
 export function useMoveReason(): string | null {
   const tree = useWorld((s) => s.tree);
   const path = useWorld((s) => s.selection?.path ?? null);
-  const target = moveTarget(tree, path);
+  const openDocument = useWorld((s) => s.path);
+  const target = moveTarget(tree, path, openDocument);
   return target.ok ? null : target.reason;
 }
 

@@ -14,6 +14,7 @@ import type {
 import {
   type InstanceTarget,
   instanceEditTarget,
+  stageEditTarget,
 } from "@/lib/world-edit-target";
 import { findViewNode } from "@/lib/world-tree";
 
@@ -26,17 +27,27 @@ export type MoveTarget =
   | { ok: true; node: WorldViewNode; target: InstanceTarget }
   | { ok: false; reason: string };
 
+/**
+ * `openDocument` is the open tab's file path. A stage scene that the open
+ * part owns (`$root` while the stage is not the document) moves like any
+ * other direct child; a stage that is the document is the origin.
+ */
 export function moveTarget(
   tree: WorldViewTree | null,
-  path: string | null
+  path: string | null,
+  openDocument: string
 ): MoveTarget {
   if (!tree || !path) return { ok: false, reason: "Select a part" };
-  if (path === "$root") return { ok: false, reason: REASON_ORIGIN };
   const node = findViewNode(tree.nodes, path);
   if (!node) return { ok: false, reason: "Select a part" };
+  if (path === "$root") {
+    const stage = stageEditTarget(tree, openDocument);
+    if (!stage) return { ok: false, reason: REASON_ORIGIN };
+    return { ok: true, node, target: stage };
+  }
   if (node.role === "target") return { ok: false, reason: REASON_RUN };
   if (node.role === "ground") return { ok: false, reason: REASON_GROUND };
-  const target = instanceEditTarget(tree, path);
+  const target = instanceEditTarget(tree, path, openDocument);
   if (!target) return { ok: false, reason: REASON_ORIGIN };
   if (target.part !== undefined) {
     return { ok: false, reason: REASON_OPEN_PART };

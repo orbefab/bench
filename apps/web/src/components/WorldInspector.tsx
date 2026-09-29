@@ -734,7 +734,8 @@ const POSE_FIELD_LABELS: Record<PoseFieldKey, string> = {
 /** Position and rotation of an instance. Works in every tool mode. */
 function PoseSection({ node }: { node: WorldViewNode }) {
   const tree = useWorld((s) => s.tree);
-  const move = moveTarget(tree, node.id);
+  const openDocument = useWorld((s) => s.path);
+  const move = moveTarget(tree, node.id, openDocument);
   const stays = useWorldTool((s) => s.stays);
   const fields = poseToFields(node.pose);
   const reason = move.ok ? undefined : move.reason;
@@ -774,7 +775,7 @@ function commitParam(
 ) {
   const tree = worldStore.getState().tree;
   if (!tree) return;
-  const target = instanceEditTarget(tree, node.id);
+  const target = instanceEditTarget(tree, node.id, worldStore.getState().path);
   if (!target) return;
   let value: number | string | boolean = raw;
   if (typeof previous === "number") {
@@ -1098,7 +1099,7 @@ function InstanceBody({
         )}
       </Section>
       <LiveBody node={node} link={link} outline={outline} />
-      {node.id === "$root" ? null : <PoseSection node={node} />}
+      <PoseSection node={node} />
       {card.params.length > 0 ? (
         <Section title="Params">
           {card.params.map((param) =>

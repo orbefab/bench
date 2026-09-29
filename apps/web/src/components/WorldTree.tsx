@@ -156,7 +156,12 @@ function deleteSelection() {
   const tree = state.tree;
   if (!tree) return;
   if (state.wire) {
-    const target = wireEditTarget(tree, state.wire.owner, state.wire.index);
+    const target = wireEditTarget(
+      tree,
+      state.wire.owner,
+      state.wire.index,
+      state.path
+    );
     if (!target) return;
     sendWorldEdit({
       part: target.part,
@@ -172,7 +177,7 @@ function deleteSelection() {
     return;
   }
   if (!state.selection || state.selection.path === "$root") return;
-  const target = instanceEditTarget(tree, state.selection.path);
+  const target = instanceEditTarget(tree, state.selection.path, state.path);
   if (!target) return;
   sendWorldEdit({
     part: target.part,
@@ -406,7 +411,11 @@ function RenameField({
           onDone();
           return;
         }
-        const target = instanceEditTarget(tree, path);
+        const target = instanceEditTarget(
+          tree,
+          path,
+          worldStore.getState().path
+        );
         const to = draft.trim();
         if (!target || !to || to === node?.name) {
           onDone();

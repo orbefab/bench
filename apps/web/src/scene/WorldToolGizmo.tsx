@@ -46,10 +46,31 @@ export function WorldToolGizmo({
   const path = useWorld((s) => s.selection?.path ?? null);
   const session = useXrSession();
   const invalidate = useThree((s) => s.invalidate);
+  const orbit = useThree((s) => s.controls) as { enabled?: boolean } | null;
   const controlsRef = useRef<ComponentRef<typeof TransformControls>>(null);
-  const move = moveTarget(tree, path);
+  const orbitWas = useRef<boolean | undefined>(undefined);
+  const openDocument = useWorld((s) => s.path);
+  const move = moveTarget(tree, path, openDocument);
+
+  // The installed three-stdlib never dispatches `dragging-changed`, so drei
+  // does not stop the orbit under a handle drag. Do it on the press.
+  const pauseOrbit = () => {
+    if (!orbit || orbitWas.current !== undefined) return;
+    orbitWas.current = orbit.enabled;
+    orbit.enabled = false;
+  };
+  const resumeOrbit = () => {
+    if (orbit && orbitWas.current !== undefined) {
+      orbit.enabled = orbitWas.current;
+    }
+    orbitWas.current = undefined;
+  };
   const pose = move.ok ? move.node.pose : null;
   const active = mode !== "select" && move.ok && path !== null && !session;
+
+  // The handles leaving mid-drag (tool, selection, unmount) give the orbit back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resumeOrbit only reads the orbit and a ref
+  useEffect(() => resumeOrbit, [active, orbit]);
 
   useLayoutEffect(() => {
     const proxy = proxyRef.current;
@@ -80,6 +101,7 @@ export function WorldToolGizmo({
       controls.dragging = false;
       controls.axis = null;
     }
+    resumeOrbit();
     const proxy = proxyRef.current;
     if (proxy) place(proxy, move.node.pose);
     previewPose(path, null);
@@ -97,13 +119,17 @@ export function WorldToolGizmo({
         mode={mode === "rotate" ? "rotate" : "translate"}
         space="local"
         size={0.8}
-        onMouseDown={() => beginToolGesture(cancel)}
+        onMouseDown={() => {
+          pauseOrbit();
+          beginToolGesture(cancel);
+        }}
         onObjectChange={() => {
           const next = current();
           if (next) previewPose(path, next);
         }}
         onMouseUp={() => {
           endToolGesture();
+          resumeOrbit();
           const next = current();
           const commit = next ? poseCommit(move, path, next) : null;
           if (commit) commitToolEdit(commit);

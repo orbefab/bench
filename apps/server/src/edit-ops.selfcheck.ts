@@ -627,6 +627,65 @@ try {
       console.log(
         "socket set-pose from the web: labelled, wrote the pose, undo restored the files byte for byte"
       );
+
+      // The tab Open part makes from the USB root: its world is the scene's
+      // own file and the edit names that file, with no `part`. The part id
+      // is a name only a nested owner's edit carries, with `part`.
+      const beforeTab = pairOf(tools, SCENE);
+      const tabMove = (document: string) =>
+        parseWorldClient(
+          JSON.stringify({
+            type: "edit",
+            label: "Move nano",
+            ops: [
+              {
+                kind: "set-pose",
+                document,
+                id: "nano",
+                pose: {
+                  position: [0.0912, 0.0123, 0.004],
+                  rotation: [1, 0, 0, 0],
+                },
+              },
+            ],
+          })
+        );
+      const byId = tabMove("sfab/nano-servo-scene@1.0.0");
+      if ("error" in byId || byId.type !== "edit") throw new Error("parse");
+      const refusedById = await handleLiveEdit(tools, SCENE, byId);
+      expect(
+        refusedById.type === "error" &&
+          refusedById.message === "an edit names a different document",
+        JSON.stringify(refusedById)
+      );
+      expect(
+        samePair(pairOf(tools, SCENE), beforeTab),
+        "a refused part-tab edit wrote"
+      );
+      const byFile = tabMove(SCENE);
+      if ("error" in byFile || byFile.type !== "edit") throw new Error("parse");
+      const tabEvent = await handleLiveEdit(tools, SCENE, byFile);
+      expect(
+        tabEvent.type === "edited" && tabEvent.label === "Move nano",
+        JSON.stringify(tabEvent)
+      );
+      expect(
+        pairOf(tools, SCENE).part.includes("0.0912"),
+        "the part-tab move is not in the scene file"
+      );
+      const tabUndo = await handleLiveEdit(
+        tools,
+        SCENE,
+        parseWorldClient(JSON.stringify({ type: "undo" })) as never
+      );
+      expect(tabUndo.type === "edited", JSON.stringify(tabUndo));
+      expect(
+        samePair(pairOf(tools, SCENE), beforeTab),
+        "undo of the part-tab move changed the files"
+      );
+      console.log(
+        "socket set-pose on a part tab: the tab's file is accepted, the part id is refused, undo restored the files byte for byte"
+      );
     }
   );
 
@@ -642,6 +701,7 @@ try {
   console.log(`sandbox: ${refusedPart}`);
 } finally {
   await stopWorld(tools, USB);
+  await stopWorld(tools, SCENE);
   closeRootWatches();
   rmSync(work, { recursive: true, force: true });
   rmSync(frames, { recursive: true, force: true });

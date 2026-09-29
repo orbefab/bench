@@ -558,7 +558,7 @@ export function WorldScene({
     if (worldToolStore.getState().mode !== "select") return;
     const state = worldStore.getState();
     if (state.selection?.path !== pick.path) return;
-    const move = moveTarget(state.tree, pick.path);
+    const move = moveTarget(state.tree, pick.path, state.path);
     const content = contentRef.current;
     if (!move.ok || !content) return;
     startBodyDrag({
