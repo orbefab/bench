@@ -580,6 +580,53 @@ try {
           `socket redo: ${redoEvent.label} undo ${redoEvent.canUndo} redo ${redoEvent.canRedo}`
         );
       }
+
+      // What the web's Move and Rotate tools send: one labelled set-pose in
+      // the document frame with a scalar-first quaternion, then one undo.
+      const beforeMove = pairOf(tools, USB);
+      const quarter = Math.SQRT1_2;
+      const moveRaw = JSON.stringify({
+        type: "edit",
+        label: "Move scene",
+        ops: [
+          {
+            kind: "set-pose",
+            document: USB,
+            id: "scene",
+            pose: {
+              position: [0.1234, -0.0567, 0.006],
+              rotation: [quarter, 0, 0, quarter],
+            },
+          },
+        ],
+      });
+      const moveMsg = parseWorldClient(moveRaw);
+      if ("error" in moveMsg) throw new Error(moveMsg.error);
+      if (moveMsg.type !== "edit") throw new Error(moveMsg.type);
+      const moveEvent = await handleLiveEdit(tools, USB, moveMsg);
+      expect(
+        moveEvent.type === "edited" && moveEvent.label === "Move scene",
+        JSON.stringify(moveEvent)
+      );
+      const afterMove = pairOf(tools, USB);
+      expect(!samePair(afterMove, beforeMove), "the web move wrote nothing");
+      expect(
+        afterMove.part.includes("0.1234") && afterMove.part.includes("0.7071"),
+        "the web move is not in the part file"
+      );
+      const moveUndo = await handleLiveEdit(
+        tools,
+        USB,
+        parseWorldClient(JSON.stringify({ type: "undo" })) as never
+      );
+      expect(moveUndo.type === "edited", JSON.stringify(moveUndo));
+      expect(
+        samePair(pairOf(tools, USB), beforeMove),
+        "undo of the web move changed the files"
+      );
+      console.log(
+        "socket set-pose from the web: labelled, wrote the pose, undo restored the files byte for byte"
+      );
     }
   );
 
