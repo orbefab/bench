@@ -5,13 +5,7 @@
 
 import { useEffect } from "react";
 
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { RunPlayingDialog } from "@/components/RunPlayingDialog";
 import { partTabLabel } from "@/lib/world-part-tabs";
 import {
   closePartFile,
@@ -128,33 +122,15 @@ export function PartParkDialog() {
   if (!pending) return null;
   const leaving = pending.kind === "close" ? "close" : "leave";
   return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open) stayPartPark();
-      }}
-    >
-      <AlertDialogContent>
-        <AlertDialogTitle>This run is still playing</AlertDialogTitle>
-        <AlertDialogDescription>
-          {leaving === "close"
-            ? "Closing this part drops the live run. The recording stays on the timeline."
-            : "Parking this part drops the live run. The recording stays on the timeline."}
-        </AlertDialogDescription>
-        <div className="mt-4 flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => stayPartPark()}
-          >
-            Stay
-          </Button>
-          <Button type="button" onClick={() => stopPartPark()}>
-            Stop and continue
-          </Button>
-        </div>
-      </AlertDialogContent>
-    </AlertDialog>
+    <RunPlayingDialog
+      description={
+        leaving === "close"
+          ? "Closing this part drops the live run. The recording stays on the timeline."
+          : "Parking this part drops the live run. The recording stays on the timeline."
+      }
+      onStay={stayPartPark}
+      onStop={stopPartPark}
+    />
   );
 }
 

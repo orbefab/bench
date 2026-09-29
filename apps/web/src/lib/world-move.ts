@@ -75,9 +75,12 @@ export function poseCommit(
   move: Extract<MoveTarget, { ok: true }>,
   path: string,
   pose: Pose,
-  verb = "Move"
+  verb?: string
 ): PoseCommit | null {
   if (samePose(move.node.pose, pose)) return null;
+  const turned = move.node.pose.position.every(
+    (value, i) => value === pose.position[i]
+  );
   return {
     ops: [
       {
@@ -88,7 +91,7 @@ export function poseCommit(
       },
     ],
     part: move.target.part,
-    label: `${verb} ${move.node.name}`,
+    label: `${verb ?? (turned ? "Rotate" : "Move")} ${move.node.name}`,
     previewPath: path,
   };
 }

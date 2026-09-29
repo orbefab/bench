@@ -1,12 +1,7 @@
 import { Home, MousePointer2, Move3d, Rotate3d } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { RunPlayingDialog } from "@/components/RunPlayingDialog";
 import { Button } from "@/components/ui/button";
 import { formatWorldIssues, visibleAssetIssues } from "@/lib/world-issues";
 import { moveTarget } from "@/lib/world-move";
@@ -137,31 +132,11 @@ export function WorldToolDialog() {
   const pending = useWorldTool((s) => s.pending);
   if (!pending) return null;
   return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open) stayToolCommit();
-      }}
-    >
-      <AlertDialogContent>
-        <AlertDialogTitle>This run is still playing</AlertDialogTitle>
-        <AlertDialogDescription>
-          {pending.label} restarts the run. The recording stays on the timeline.
-        </AlertDialogDescription>
-        <div className="mt-4 flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => stayToolCommit()}
-          >
-            Stay
-          </Button>
-          <Button type="button" onClick={() => stopToolCommit()}>
-            Stop and continue
-          </Button>
-        </div>
-      </AlertDialogContent>
-    </AlertDialog>
+    <RunPlayingDialog
+      description={`${pending.label} restarts the run. The recording stays on the timeline.`}
+      onStay={stayToolCommit}
+      onStop={stopToolCommit}
+    />
   );
 }
 

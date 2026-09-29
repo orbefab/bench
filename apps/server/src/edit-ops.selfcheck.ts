@@ -212,9 +212,11 @@ function viewPorts(project: string, world: string, refs: string[]) {
     }
     return null;
   };
+  const tree = planned.plan.tree;
+  expect(tree, `${world} has no view tree`);
   const words = refs.map((ref) => {
     const at = ref.indexOf(".");
-    const node = find(planned.plan.tree.nodes, ref.slice(0, at));
+    const node = find(tree.nodes, ref.slice(0, at));
     const port = node?.ports.find((item) => item.name === ref.slice(at + 1));
     expect(port, `view port ${ref} is missing`);
     expect(port.domain, `view port ${ref} has no domain`);
@@ -785,7 +787,7 @@ try {
       ] as const) {
         const refused = await handleLiveEdit(tools, SCENE, wireMsg(a, b));
         expect(
-          refused.type === "error" && refused.message.includes(text),
+          refused.type === "error" && !!refused.message?.includes(text),
           JSON.stringify(refused)
         );
         expect(

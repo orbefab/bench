@@ -1,4 +1,4 @@
-import type { WorldViewNode, WorldViewTree } from "@sfab-bench/contract";
+import type { Pose, WorldViewNode, WorldViewTree } from "@sfab-bench/contract";
 
 import {
   moveTarget,
@@ -192,6 +192,18 @@ if (arrow.ok) {
   expect(
     poseCommit(arrow, "uno", pose) === null,
     "an unchanged pose sends nothing"
+  );
+  const quarter: Pose = {
+    position: arrow.node.pose.position,
+    rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+  };
+  expect(
+    poseCommit(arrow, "uno", quarter)?.label === "Rotate uno",
+    "a rotation-only edit is a Rotate"
+  );
+  expect(
+    poseCommit(arrow, "uno", quarter, "Set pose of")?.label === "Set pose of uno",
+    "a named verb wins"
   );
 }
 

@@ -1,7 +1,6 @@
+import { parkGuard, parkOutcome } from "./world-park";
 import {
   reduceWorldTool,
-  toolCommitGuard,
-  toolCommitOutcome,
   toolEscape,
   toolLabel,
   WORLD_TOOL_START,
@@ -65,13 +64,14 @@ expect(toolLabel("select") === "Select", "Select label");
 expect(toolLabel("move") === "Move", "Move label");
 expect(toolLabel("rotate") === "Rotate", "Rotate label");
 
-// A tool commit restarts the run, so a playing run asks first.
-expect(toolCommitGuard("playing") === "ask", "a playing run asks");
-expect(toolCommitGuard("paused") === "go", "a paused run commits");
-expect(toolCommitGuard("idle") === "go", "an idle run commits");
-expect(toolCommitOutcome("stay") === "drop", "Stay drops the gesture");
+// A tool commit restarts the run, so it asks with the park guard: a
+// playing run asks, Stay drops the gesture, Stop pauses and applies it.
+expect(parkGuard("playing") === "ask", "a playing run asks");
+expect(parkGuard("paused") === "go", "a paused run commits");
+expect(parkGuard("idle") === "go", "an idle run commits");
+expect(parkOutcome("stay") === "stay", "Stay drops the gesture");
 expect(
-  toolCommitOutcome("stop") === "stop-and-apply",
+  parkOutcome("stop") === "stop-and-continue",
   "Stop and continue pauses, then applies"
 );
 

@@ -9,11 +9,9 @@ import { useStore as useZustandStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import { sendWorldCommand, sendWorldEdit } from "@/hooks/useWorldRun";
-import type { ParkChoice } from "@/lib/world-park";
+import { type ParkChoice, parkGuard, parkOutcome } from "@/lib/world-park";
 import {
   reduceWorldTool,
-  toolCommitGuard,
-  toolCommitOutcome,
   toolEscape,
   WORLD_TOOL_START,
   type WorldToolMode,
@@ -99,7 +97,7 @@ export function escapeWorldTool(): boolean {
  * edit restarts it; a paused or idle run commits without asking.
  */
 export function commitToolEdit(commit: ToolCommit) {
-  if (toolCommitGuard(phaseNow()) === "ask") {
+  if (parkGuard(phaseNow()) === "ask") {
     worldToolStore.setState({ pending: commit });
     return;
   }
@@ -113,7 +111,7 @@ function sendToolEdit(commit: ToolCommit) {
 function answerToolCommit(choice: ParkChoice) {
   const pending = worldToolStore.getState().pending;
   if (!pending) return;
-  if (toolCommitOutcome(choice) === "drop") {
+  if (parkOutcome(choice) === "stay") {
     worldToolStore.setState((s) => ({ pending: null, stays: s.stays + 1 }));
     if (pending.previewPath) previewPose(pending.previewPath, null);
     else clearPreviews();
