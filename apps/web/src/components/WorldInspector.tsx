@@ -5,7 +5,13 @@ import {
   type WorldViewNode,
   type WorldViewPlay,
 } from "@sfab-bench/contract";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { SerialConsole } from "@/components/SerialConsole";
 import { SourceView } from "@/components/SourceView";
@@ -789,6 +795,17 @@ function commitPlay(
   });
 }
 
+/**
+ * Enter commits by leaving the field. Mark the key handled first: an
+ * unhandled Enter that lands on the body after the blur is sent back
+ * by Chrome on macOS, and in an unfocused window it repeats forever.
+ */
+function commitOnEnter(event: ReactKeyboardEvent<HTMLInputElement>) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  event.currentTarget.blur();
+}
+
 function NumberField({
   label,
   value,
@@ -815,9 +832,7 @@ function NumberField({
           }
           onCommit(next);
         }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-        }}
+        onKeyDown={commitOnEnter}
       />
     </label>
   );
@@ -938,6 +953,7 @@ function InstanceBody({
                 <input
                   className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-[12px]"
                   defaultValue={param.value}
+                  onKeyDown={commitOnEnter}
                   onBlur={(event) =>
                     commitParam(
                       node,
