@@ -1,15 +1,10 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import {
-  type ClientPrincipal,
-  type EditOp,
-  SERIAL_TEXT_MAX,
-  WORLD_NONCE_MAX,
-  type WorldClientMessage,
-  type WorldSender,
-  type WorldServerMessage,
+import type {
+  ClientPrincipal,
+  WorldSender,
+  WorldServerMessage,
 } from "@sfab-bench/contract";
-import { readEditOp } from "@sfab-bench/parts";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
@@ -17,6 +12,7 @@ import { resolveUpgradePrincipal, runWithPrincipal } from "../principal";
 import { resolveRequestRoot } from "../projects";
 import { handleLiveEdit, historiesForConnect } from "./edit";
 import { attachWorld, type WorldHandle } from "./host";
+import { parseFailureReply, parseWorldClient } from "./live-message";
 
 /**
  * A world run is per document and streams poses at 30 Hz. The session
@@ -42,31 +38,6 @@ export function worldSender(principal: ClientPrincipal): WorldSender {
   throw new Error("an account principal cannot open a world socket");
 }
 
-type ParsedClient =
-  | WorldClientMessage
-  | { error: string }
-  | { error: string; kind: "board"; board: string; nonce?: string };
-
-function isNonce(nonce: unknown): nonce is string {
-  return (
-    typeof nonce === "string" &&
-    nonce.length >= 1 &&
-    nonce.length <= WORLD_NONCE_MAX
-  );
-}
-
-function boardParseError(
-  message: string,
-  board: unknown,
-  nonce: unknown
-): ParsedClient {
-  const id = typeof board === "string" ? board : "";
-  if (isNonce(nonce)) {
-    return { error: message, kind: "board", board: id, nonce };
-  }
-  return { error: message, kind: "board", board: id };
-}
-
 /** A failed seek or timeline read. Not a world `error`: the run stays up. */
 export function scrubReadError(
   kind: "seek" | "timeline",
@@ -76,128 +47,6 @@ export function scrubReadError(
   if (kind === "seek" && nonce)
     return { type: "timeline-error", message, nonce };
   return { type: "timeline-error", message };
-}
-
-export function parseWorldClient(raw: string): ParsedClient {
-  let value: unknown;
-  try {
-    value = JSON.parse(raw) as unknown;
-  } catch {
-    return { error: "message is not JSON" };
-  }
-  if (!value || typeof value !== "object")
-    return { error: "message is not an object" };
-  const type = (value as { type?: unknown }).type;
-  if (type === "play" || type === "pause") {
-    const nonce = (value as { nonce?: unknown }).nonce;
-    if (nonce === undefined) return { type };
-    if (!isNonce(nonce)) return { error: "nonce must be a short string" };
-    return { type, nonce };
-  }
-  if (type === "step") {
-    const n = (value as { n?: unknown }).n;
-    if (typeof n !== "number" || !Number.isInteger(n) || n < 0) {
-      return { error: "step needs a whole number of steps" };
-    }
-    return { type: "step", n };
-  }
-  if (type === "serial-send") {
-    const board = (value as { board?: unknown }).board;
-    const text = (value as { text?: unknown }).text;
-    const nonce = (value as { nonce?: unknown }).nonce;
-    if (typeof board !== "string" || board.length < 1 || board.length > 64) {
-      return boardParseError("serial needs a board id", board, nonce);
-    }
-    if (typeof text !== "string" || text.length > SERIAL_TEXT_MAX) {
-      return boardParseError(
-        `serial text must be a string of at most ${SERIAL_TEXT_MAX} characters`,
-        board,
-        nonce
-      );
-    }
-    if (nonce === undefined) return { type: "serial-send", board, text };
-    if (!isNonce(nonce)) {
-      return boardParseError("nonce must be a short string", board, nonce);
-    }
-    return { type: "serial-send", board, text, nonce };
-  }
-  if (type === "timeline") {
-    const from = (value as { from?: unknown }).from;
-    const to = (value as { to?: unknown }).to;
-    const maxPoints = (value as { maxPoints?: unknown }).maxPoints;
-    if (typeof from !== "number" || !Number.isFinite(from) || from < 0) {
-      return { error: "timeline needs a start time" };
-    }
-    if (typeof to !== "number" || !Number.isFinite(to) || to < from) {
-      return { error: "timeline needs an end time" };
-    }
-    if (
-      typeof maxPoints !== "number" ||
-      !Number.isInteger(maxPoints) ||
-      maxPoints < 1
-    ) {
-      return { error: "timeline needs a point count" };
-    }
-    const tracks = (value as { tracks?: unknown }).tracks;
-    if (tracks === undefined) return { type: "timeline", from, to, maxPoints };
-    if (
-      !Array.isArray(tracks) ||
-      tracks.length > 64 ||
-      tracks.some((id) => typeof id !== "string" || id.length > 256)
-    ) {
-      return { error: "timeline tracks must be a short list of port ids" };
-    }
-    return { type: "timeline", from, to, maxPoints, tracks };
-  }
-  if (type === "seek") {
-    const t = (value as { t?: unknown }).t;
-    const nonce = (value as { nonce?: unknown }).nonce;
-    if (typeof t !== "number" || !Number.isFinite(t) || t < 0) {
-      return { error: "seek needs a time" };
-    }
-    if (!isNonce(nonce)) return { error: "nonce must be a short string" };
-    return { type: "seek", t, nonce };
-  }
-  if (type === "undo" || type === "redo") {
-    const part = (value as { part?: unknown }).part;
-    if (part !== undefined && typeof part !== "string") {
-      return { error: "part must be a part id" };
-    }
-    return { type, ...(typeof part === "string" ? { part } : {}) };
-  }
-  if (type === "histories") return { type: "histories" };
-  if (type === "edit") {
-    const ops = (value as { ops?: unknown }).ops;
-    const label = (value as { label?: unknown }).label;
-    const part = (value as { part?: unknown }).part;
-    const confirm = (value as { confirm?: unknown }).confirm;
-    if (!Array.isArray(ops) || ops.length === 0) {
-      return { error: "edit needs operations" };
-    }
-    if (label !== undefined && typeof label !== "string") {
-      return { error: "edit label must be a string" };
-    }
-    if (part !== undefined && typeof part !== "string") {
-      return { error: "part must be a part id" };
-    }
-    if (confirm !== undefined && confirm !== "break") {
-      return { error: "confirm must be break" };
-    }
-    const parsed: EditOp[] = [];
-    for (const item of ops) {
-      const read = readEditOp(item);
-      if ("error" in read) return { error: read.error };
-      parsed.push(read);
-    }
-    return {
-      type: "edit",
-      ops: parsed,
-      ...(typeof label === "string" ? { label } : {}),
-      ...(typeof part === "string" ? { part } : {}),
-      ...(confirm === "break" ? { confirm } : {}),
-    };
-  }
-  return { error: "unknown world message" };
 }
 
 function send(ws: WebSocket, event: WorldServerMessage) {
@@ -249,16 +98,7 @@ wss.on(
       ws.on("message", (data) => {
         const parsed = parseWorldClient(String(data));
         if ("error" in parsed) {
-          if ("kind" in parsed && parsed.kind === "board") {
-            send(ws, {
-              type: "board-error",
-              board: parsed.board,
-              message: parsed.error,
-              ...(parsed.nonce ? { nonce: parsed.nonce } : {}),
-            });
-          } else {
-            send(ws, { type: "error", errors: [], message: parsed.error });
-          }
+          send(ws, parseFailureReply(parsed));
           return;
         }
         if (parsed.type === "play") handle?.play(parsed.nonce);

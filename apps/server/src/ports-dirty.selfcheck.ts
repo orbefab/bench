@@ -43,7 +43,7 @@ import { runViewerContext } from "./viewer-context";
 import { handleLiveEdit } from "./world/edit";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { stopWorld, worldWorkerCount } from "./world/host";
-import { parseWorldClient } from "./world/live";
+import { parseWorldClient } from "./world/live-message";
 import { absolutePath, nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
 import { catalogRoot, planWorld } from "./world/plan";

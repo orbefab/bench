@@ -12,7 +12,7 @@ import {
 
 import { closeRootWatches } from "./projects";
 import { attachWorld, stopWorld } from "./world/host";
-import { parseWorldClient } from "./world/live";
+import { parseWorldClient } from "./world/live-message";
 
 /**
  * Probe: a port asked for by id comes back as tracks computed from what the

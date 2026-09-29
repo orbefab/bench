@@ -42,7 +42,7 @@ import { runViewerContext } from "./viewer-context";
 import { handleLiveEdit } from "./world/edit";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { stopWorld, worldWorkerCount } from "./world/host";
-import { parseWorldClient } from "./world/live";
+import { parseWorldClient } from "./world/live-message";
 import { absolutePath, nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
 import { catalogRoot, planWorld } from "./world/plan";
@@ -725,7 +725,8 @@ try {
       if ("error" in byId || byId.type !== "edit") throw new Error("parse");
       const refusedById = await handleLiveEdit(tools, SCENE, byId);
       expect(
-        refusedById.type === "error" &&
+        refusedById.type === "edit-refused" &&
+          refusedById.kind === "edit" &&
           refusedById.message === "an edit names a different document",
         JSON.stringify(refusedById)
       );
@@ -799,7 +800,10 @@ try {
       ] as const) {
         const refused = await handleLiveEdit(tools, SCENE, wireMsg(a, b));
         expect(
-          refused.type === "error" && !!refused.message?.includes(text),
+          refused.type === "edit-refused" &&
+            refused.kind === "edit" &&
+            !!refused.message.includes(text) &&
+            refused.refusal?.detail === text,
           JSON.stringify(refused)
         );
         expect(

@@ -9,6 +9,7 @@ import { join, relative, sep } from "node:path";
 
 import type {
   EditOp,
+  EditRefusal,
   RunReport,
   WorldClientMessage,
   WorldServerMessage,
@@ -20,10 +21,10 @@ import {
   editLabel,
   type NeedsConfirm,
   partFilePath,
-  readEditOp,
 } from "@sfab-bench/parts";
 
 import { publishWorldEvent, restartWorld, stopWorld } from "./host";
+import { editRefused } from "./live-message";
 import { absolutePath, nodeStore } from "./node-store";
 import { catalogRoot } from "./plan-host";
 
@@ -92,6 +93,17 @@ export type DocumentEdit = {
   renamed?: { from: string; to: string };
 };
 
+/**
+ * A write that did not happen. `refusal` is set when the edit itself was
+ * refused. `runFault` is set when the edit landed and the document then
+ * could not run: that is a run problem, not a refusal.
+ */
+export type EditError = {
+  error: string;
+  refusal?: EditRefusal;
+  runFault?: true;
+};
+
 export async function applyDocumentEdit(
   project: string,
   world: string,
@@ -99,7 +111,7 @@ export async function applyDocumentEdit(
   label?: string,
   part?: string,
   confirm?: "break"
-): Promise<DocumentEdit | NeedsConfirm | { error: string }> {
+): Promise<DocumentEdit | NeedsConfirm | EditError> {
   const opened = openSession(project, world, part);
   if ("error" in opened) return opened;
   const { session, key } = opened;
@@ -133,7 +145,7 @@ export async function undoDocument(
   project: string,
   world: string,
   part?: string
-): Promise<DocumentEdit | { error: string }> {
+): Promise<DocumentEdit | EditError> {
   const opened = openSession(project, world, part);
   if ("error" in opened) return opened;
   const { session, key } = opened;
@@ -150,7 +162,7 @@ export async function redoDocument(
   project: string,
   world: string,
   part?: string
-): Promise<DocumentEdit | { error: string }> {
+): Promise<DocumentEdit | EditError> {
   const opened = openSession(project, world, part);
   if ("error" in opened) return opened;
   const { session, key } = opened;
@@ -175,48 +187,53 @@ function redoSentence(canRedo: boolean): string {
   return canRedo ? "Redo is available." : "Redo is not available.";
 }
 
-/** The live socket's edit, undo, and redo. */
+/**
+ * The live socket's edit, undo, and redo. The socket has already read the
+ * ops (`parseWorldClient`), so they are typed here and read once.
+ */
 export async function handleLiveEdit(
   project: string,
   world: string,
   message: Extract<WorldClientMessage, { type: "edit" | "undo" | "redo" }>
 ): Promise<WorldServerMessage> {
-  if (message.type === "undo")
-    return editedMessage(await undoDocument(project, world, message.part));
-  if (message.type === "redo")
-    return editedMessage(await redoDocument(project, world, message.part));
-  const allowed = documentNames(project, world, message.part);
-  const ops: EditOp[] = [];
-  for (const item of message.ops) {
-    const read = readEditOp(item);
-    if ("error" in read)
-      return { type: "error", errors: [], message: read.error };
-    if (!allowed.has(read.document)) {
-      return {
-        type: "error",
-        errors: [],
-        message: "an edit names a different document",
-      };
-    }
-    ops.push(read);
+  if (message.type === "undo") {
+    return editedMessage(
+      await undoDocument(project, world, message.part),
+      "undo",
+      message.part
+    );
   }
-  if (ops.length === 0) {
-    return { type: "error", errors: [], message: "edit needs operations" };
+  if (message.type === "redo") {
+    return editedMessage(
+      await redoDocument(project, world, message.part),
+      "redo",
+      message.part
+    );
+  }
+  const allowed = documentNames(project, world, message.part);
+  if (message.ops.some((op) => !allowed.has(op.document))) {
+    return editRefused("edit", "an edit names a different document", {
+      part: message.part,
+    });
   }
   return editedMessage(
     await applyDocumentEdit(
       project,
       world,
-      ops,
-      message.label ?? editLabel(ops[0] as EditOp),
+      message.ops,
+      message.label ?? editLabel(message.ops[0] as EditOp),
       message.part,
       message.confirm
-    )
+    ),
+    "edit",
+    message.part
   );
 }
 
 function editedMessage(
-  result: DocumentEdit | NeedsConfirm | { error: string }
+  result: DocumentEdit | NeedsConfirm | EditError,
+  kind: "edit" | "undo" | "redo",
+  part: string | undefined
 ): WorldServerMessage {
   if ("needsConfirm" in result) {
     return {
@@ -233,8 +250,15 @@ function editedMessage(
       message: confirmSentence(result.ports),
     };
   }
-  if ("error" in result)
-    return { type: "error", errors: [], message: result.error };
+  if ("error" in result) {
+    if (result.runFault) {
+      return { type: "error", errors: [], message: result.error };
+    }
+    return editRefused(kind, result.error, {
+      part,
+      refusal: result.refusal,
+    });
+  }
   return editedPayload(result);
 }
 

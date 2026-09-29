@@ -708,6 +708,20 @@ export type Diagnostic = {
   message: string;
 };
 
+/**
+ * What a refused edit is made of. A `Diagnostic.message` is these fields
+ * worded as `<path> port <port> quantity <quantity>: <detail> (<left> vs
+ * <right>)`; the wire and the card read the fields, not that sentence.
+ */
+export type EditRefusal = {
+  path: string;
+  port: string;
+  quantity: string;
+  left: string;
+  right: string;
+  detail: string;
+};
+
 /** Circuit-to-body cut of a `dc-motor@1` servo. */
 export type SeamKind = "motor";
 

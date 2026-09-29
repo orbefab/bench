@@ -8,6 +8,7 @@
 
 import type {
   EditOp,
+  EditRefusal,
   LockFile,
   PartFile,
   RunReport,
@@ -20,6 +21,7 @@ import {
   type EditContext,
   editLabel,
   quantityOn,
+  refusalOf,
 } from "./edit";
 import { expandPartType } from "./expand";
 import { formatPart, partStyle } from "./format-part";
@@ -90,7 +92,11 @@ export type NeedsConfirm = {
   ports: { name: string; dependents: PortDependent[] }[];
 };
 
-export type EditResult = AppliedEdit | { error: string } | NeedsConfirm;
+/** `refusal` is set when the pure edit refused, so a client need not read the sentence. */
+export type EditResult =
+  | AppliedEdit
+  | { error: string; refusal?: EditRefusal }
+  | NeedsConfirm;
 
 export class EditSession {
   private filePath: string;
@@ -295,7 +301,12 @@ export class EditSession {
 
   private commit(op: EditOp, label: string): EditResult {
     const edited = applyEdit(this.part, op, this.context());
-    if ("error" in edited) return { error: edited.error.message };
+    if ("error" in edited) {
+      return {
+        error: edited.error.message,
+        refusal: refusalOf(edited.error),
+      };
+    }
     const sealed = this.sealPorts(this.part, edited.part, edited.inverse);
     if ("error" in sealed) return sealed;
     if (sealed.broken.length > 0 && op.confirm !== "break") {

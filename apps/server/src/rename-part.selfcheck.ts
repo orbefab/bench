@@ -31,7 +31,7 @@ import { viewOf } from "@sfab-bench/sim/view";
 import { closeRootWatches } from "./projects";
 import { handleLiveEdit, historiesForConnect } from "./world/edit";
 import { stopWorld, worldWorkerCount } from "./world/host";
-import { parseWorldClient } from "./world/live";
+import { parseWorldClient } from "./world/live-message";
 import { absolutePath, nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
 

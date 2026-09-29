@@ -1,5 +1,6 @@
 import { ok as expect } from "node:assert/strict";
-import { parseWorldClient, scrubReadError } from "./world/live";
+import { scrubReadError } from "./world/live";
+import { parseWorldClient } from "./world/live-message";
 
 /**
  * A bad scrub is not a world failure, and negative times are refused.

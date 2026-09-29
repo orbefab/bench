@@ -9,6 +9,7 @@ import type {
   AxisName,
   Diagnostic,
   EditOp,
+  EditRefusal,
   LevelClass,
   LevelSpec,
   Netlist,
@@ -28,6 +29,14 @@ import {
 import { environmentKind } from "./document";
 import { applyLevelEdit } from "./level-edit";
 import { makeDiag, parsePartRef, splitPortRef } from "./si";
+
+/** A refused edit: the diagnostic, and the detail its sentence was built from. */
+export type EditFailure = Diagnostic & { detail: string };
+
+export function refusalOf(failure: EditFailure): EditRefusal {
+  const { path, port, quantity, left, right, detail } = failure;
+  return { path, port, quantity, left, right, detail };
+}
 
 export type EditContext = {
   /** Paths that name this open document. */
@@ -52,7 +61,7 @@ export function applyEdit(
   part: PartFile,
   op: EditOp,
   ctx: EditContext
-): EditSuccess | { error: Diagnostic } {
+): EditSuccess | { error: EditFailure } {
   const named = namesThis(op, ctx);
   if (named) return named;
   const next = structuredClone(part);
@@ -233,7 +242,7 @@ function applyTo(
   part: PartFile,
   op: EditOp,
   ctx: EditContext
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   switch (op.kind) {
     case "batch":
       return applyBatch(part, op, ctx);
@@ -265,7 +274,7 @@ function applyTo(
 function applyPin(
   part: PartFile,
   op: Extract<EditOp, { kind: "pin-expose" }>
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   const netlist = needNetlist(part);
   if ("error" in netlist) return netlist;
   if (op.remove) {
@@ -287,7 +296,7 @@ function applyBatch(
   part: PartFile,
   op: Extract<EditOp, { kind: "batch" }>,
   ctx: EditContext
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   if (op.ops.length === 0) {
     return fail(
       op.document,
@@ -331,7 +340,7 @@ function applyAdd(
   part: PartFile,
   op: Extract<EditOp, { kind: "add-instance" }>,
   ctx: EditContext
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   const netlist = needNetlist(part);
   if ("error" in netlist) return netlist;
   const idError = checkId(op.id);
@@ -405,7 +414,7 @@ function applyAdd(
 function applyRemove(
   part: PartFile,
   op: Extract<EditOp, { kind: "remove-instance" }>
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   const netlist = needNetlist(part);
   if ("error" in netlist) return netlist;
   if (!netlist.instances[op.id]) {
@@ -471,7 +480,7 @@ function applyRemove(
 function applyPose(
   part: PartFile,
   op: Extract<EditOp, { kind: "set-pose" }>
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   const netlist = needNetlist(part);
   if ("error" in netlist) return netlist;
   const instance = netlist.instances[op.id];
@@ -518,7 +527,7 @@ function applyParam(
   part: PartFile,
   op: Extract<EditOp, { kind: "set-param" }>,
   ctx: EditContext
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   const netlist = needNetlist(part);
   if ("error" in netlist) return netlist;
   const instance = netlist.instances[op.id];
@@ -623,7 +632,7 @@ function applyLevel(
   part: PartFile,
   op: Extract<EditOp, { kind: "set-level" }>,
   ctx: EditContext
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   if (!part.play) {
     return fail(
       part.id,
@@ -677,7 +686,7 @@ function applyWire(
   part: PartFile,
   op: Extract<EditOp, { kind: "wire" }>,
   ctx: EditContext
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   const netlist = needNetlist(part);
   if ("error" in netlist) return netlist;
   const ends = [op.a, op.b];
@@ -772,7 +781,7 @@ function applyWire(
 function applyUnwire(
   part: PartFile,
   op: Extract<EditOp, { kind: "unwire" }>
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   const netlist = needNetlist(part);
   if ("error" in netlist) return netlist;
   const index = netlist.wires.findIndex((wire) => sameWire(wire, [op.a, op.b]));
@@ -802,7 +811,7 @@ function applyUnwire(
 function applyRename(
   part: PartFile,
   op: Extract<EditOp, { kind: "rename-instance" }>
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   const netlist = needNetlist(part);
   if ("error" in netlist) return netlist;
   const idError = checkId(op.to);
@@ -867,7 +876,7 @@ function applyRenamePart(
   part: PartFile,
   op: Extract<EditOp, { kind: "rename-part" }>,
   ctx: EditContext
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   const parsed = parsePartRef(part.id);
   if (!parsed) {
     return fail(
@@ -919,7 +928,7 @@ function containsRename(op: EditOp): boolean {
 function applyPlay(
   part: PartFile,
   op: Extract<EditOp, { kind: "set-play" }>
-): { inverse: EditOp } | { error: Diagnostic } {
+): { inverse: EditOp } | { error: EditFailure } {
   if (op.play) {
     part.play = structuredClone(op.play);
     return {
@@ -1018,7 +1027,7 @@ function variantKnown(
   part: PartFile,
   op: Extract<EditOp, { kind: "set-level" }>,
   ctx: EditContext
-): { error: Diagnostic } | null {
+): { error: EditFailure } | null {
   if (!op.variant || !op.axis || op.class === null) return null;
   if (op.scope === "path") {
     if (!op.key) return null;
@@ -1059,7 +1068,7 @@ function variantOn(
   axis: AxisName,
   level: LevelClass,
   name: string
-): { error: Diagnostic } | null {
+): { error: EditFailure } | null {
   const slot = part.axes?.[axis]?.[String(level) as "0"];
   const names = slot ? Object.keys(slot.variants) : [];
   if (names.includes(name)) return null;
@@ -1140,7 +1149,10 @@ function levelLabel(op: Extract<EditOp, { kind: "set-level" }>): string {
   return `set ${where}${axis} to class ${op.class}${named}`;
 }
 
-function namesThis(op: EditOp, ctx: EditContext): { error: Diagnostic } | null {
+function namesThis(
+  op: EditOp,
+  ctx: EditContext
+): { error: EditFailure } | null {
   if (ctx.names.includes(op.document)) return null;
   return fail(
     op.document,
@@ -1152,7 +1164,7 @@ function namesThis(op: EditOp, ctx: EditContext): { error: Diagnostic } | null {
   );
 }
 
-function needNetlist(part: PartFile): Netlist | { error: Diagnostic } {
+function needNetlist(part: PartFile): Netlist | { error: EditFailure } {
   const netlist = documentNetlist(part);
   if (!netlist) {
     return fail(
@@ -1212,17 +1224,20 @@ function fail(
   left: string,
   right: string,
   detail: string
-): { error: Diagnostic } {
+): { error: EditFailure } {
   return {
-    error: makeDiag({
-      severity: "error",
-      path,
-      port,
-      quantity,
-      left,
-      right,
+    error: {
+      ...makeDiag({
+        severity: "error",
+        path,
+        port,
+        quantity,
+        left,
+        right,
+        detail,
+      }),
       detail,
-    }),
+    },
   };
 }
 

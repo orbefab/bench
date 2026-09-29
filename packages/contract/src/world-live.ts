@@ -8,7 +8,7 @@
  */
 
 import type { EditOp } from "./edit";
-import type { RunReport } from "./layered";
+import type { EditRefusal, RunReport } from "./layered";
 import type { WorldError, WorldQuat, WorldVec3 } from "./world";
 
 export type WorldLinkPose = {
@@ -406,6 +406,19 @@ export type WorldServerMessage =
    * `nonce` is set for a failed seek so that client can retire it.
    */
   | { type: "timeline-error"; message: string; nonce?: string }
+  /**
+   * An edit, undo, or redo was refused, and nothing was written. `message`
+   * is the whole sentence. `refusal` is set when the edit itself was
+   * refused: it says where, and the wire refusals carry their own
+   * sentence in `detail`. Only the sender hears this.
+   */
+  | {
+      type: "edit-refused";
+      kind: "edit" | "undo" | "redo";
+      part?: string;
+      message: string;
+      refusal?: EditRefusal;
+    }
   /**
    * An edit, undo, or redo landed. The run reloads separately.
    * `canUndo` and `canRedo` are for `part`, or for the open document
