@@ -36,6 +36,7 @@ import {
   type PortDependent,
   type PortWorld,
   portDependents,
+  portDomain,
   portNames,
 } from "./ports";
 import { type PlannedFile, planPartRename } from "./rename";
@@ -816,6 +817,7 @@ export class EditSession {
         return "part" in found ? found.part : null;
       },
       portsOf: (id) => portNames(this.portWorld(), id),
+      domainOf: (id, port) => portDomain(this.portWorld(), id, port),
       quantityOf(id, name) {
         const found = loadPartById(worldDir, opts, id);
         return "part" in found ? quantityOn(found.part, name) : null;

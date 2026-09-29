@@ -35,6 +35,8 @@ export type EditContext = {
   partById(id: string): PartFile | null;
   /** Port names on the part's type. Null when the part or its type is missing. */
   portsOf(partId: string): readonly string[] | null;
+  /** The domain the part's type declares for a port. Null when it has none. */
+  domainOf(partId: string, port: string): string | null;
   /**
    * The quantity of one behaviour param, or `"text"` for a firmware
    * path. Null when the part or the param is unknown.
@@ -723,6 +725,31 @@ function applyWire(
         `port ${split.port} does not exist`
       );
     }
+  }
+  if (op.a === op.b) {
+    return fail(
+      part.id,
+      op.a,
+      "Port",
+      op.a,
+      op.b,
+      `${op.a} cannot be wired to itself`
+    );
+  }
+  const [domainA, domainB] = ends.map((ref) => {
+    const split = splitPortRef(ref);
+    const instance = split ? netlist.instances[split.inst] : undefined;
+    return split && instance ? ctx.domainOf(instance.part, split.port) : null;
+  });
+  if (domainA && domainB && domainA !== domainB) {
+    return fail(
+      part.id,
+      op.a,
+      "Port",
+      `${op.a} ${domainA}`,
+      `${op.b} ${domainB}`,
+      `${op.a} is ${domainA} and ${op.b} is ${domainB}; a wire joins ports of one domain`
+    );
   }
   const pair: [PortRef, PortRef] = [op.a, op.b];
   if (netlist.wires.some((wire) => sameWire(wire, pair))) {

@@ -22,6 +22,7 @@ import {
   emptySnapshot,
   type Pose,
   type RunReport,
+  type WorldViewNode,
 } from "@sfab-bench/contract";
 import {
   EditSession,
@@ -190,7 +191,41 @@ function reject(project: string, world: string, op: EditOp, needle: string) {
   console.log(`edit rejected: ${applied.error}`);
 }
 
+const ARM_SCENE = "parts/sfab/arm-scene@1.0.0.json";
+const armDir = fileURLToPath(
+  new URL("../../../examples/arm/", import.meta.url)
+);
+
+function viewPorts(project: string, world: string, refs: string[]) {
+  const planned = planWorld(project, world);
+  if (!planned.ok) {
+    throw new Error(planned.errors.map((error) => error.message).join("; "));
+  }
+  const find = (
+    nodes: readonly WorldViewNode[],
+    id: string
+  ): WorldViewNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) return node;
+      const inner = find(node.children, id);
+      if (inner) return inner;
+    }
+    return null;
+  };
+  const words = refs.map((ref) => {
+    const at = ref.indexOf(".");
+    const node = find(planned.plan.tree.nodes, ref.slice(0, at));
+    const port = node?.ports.find((item) => item.name === ref.slice(at + 1));
+    expect(port, `view port ${ref} is missing`);
+    expect(port.domain, `view port ${ref} has no domain`);
+    return `${ref} ${port.domain} ${port.wired ? "wired" : "free"}`;
+  });
+  console.log(`view ports ${basename(world)}: ${words.join(", ")}`);
+}
+
 const work = copyNano("sfab-edit-ops-");
+const arm = mkdtempSync(join(tmpdir(), "sfab-edit-arm-"));
+cpSync(armDir, arm, { recursive: true });
 const frames = copyNano("sfab-edit-frames-");
 const tools = copyNano("sfab-edit-tools-");
 
@@ -410,6 +445,18 @@ try {
   reject(
     work,
     SCENE,
+    docOp(SCENE, { kind: "wire", a: "nano.D10", b: "servo.shaft" }),
+    "nano.D10 is electrical and servo.shaft is rotational"
+  );
+  reject(
+    work,
+    SCENE,
+    docOp(SCENE, { kind: "wire", a: "nano.D10", b: "nano.D10" }),
+    "nano.D10 cannot be wired to itself"
+  );
+  reject(
+    work,
+    SCENE,
     docOp(SCENE, { kind: "remove-instance", id: "missing" }),
     'no instance "missing"'
   );
@@ -510,6 +557,16 @@ try {
   console.log(
     `edit set-level path servo body collapsed: ${SPAN_MS} ms, ${editedRun.count} frames byte-identical, serial ${editedRun.serial.length} lines identical, report differs only in world, lock`
   );
+
+  // The view's ports carry the type's domain and whether a wire in the
+  // parent names them. The stage's port markers read these two fields.
+  viewPorts(work, SCENE, ["nano.D9", "nano.D10", "servo.shaft", "servo.mount"]);
+  viewPorts(arm, ARM_SCENE, [
+    "uno.D9",
+    "uno.D10",
+    "servo.signal",
+    "servo.shaft",
+  ]);
 
   await runViewerContext(
     { root: tools, file: "", snapshot: emptySnapshot(), show: () => {} },
@@ -686,6 +743,69 @@ try {
       console.log(
         "socket set-pose on a part tab: the tab's file is accepted, the part id is refused, undo restored the files byte for byte"
       );
+
+      // What the Wire tool sends: one labelled wire on the tab's file, then
+      // the two refusals, which write nothing, then one undo.
+      const wireMsg = (a: string, b: string) => {
+        const parsed = parseWorldClient(
+          JSON.stringify({
+            type: "edit",
+            label: `Wire ${a} to ${b}`,
+            ops: [{ kind: "wire", document: SCENE, a, b }],
+          })
+        );
+        if ("error" in parsed || parsed.type !== "edit") {
+          throw new Error("parse");
+        }
+        return parsed;
+      };
+      const beforeWire = pairOf(tools, SCENE);
+      const wireEvent = await handleLiveEdit(
+        tools,
+        SCENE,
+        wireMsg("nano.D10", "servo.signal")
+      );
+      expect(
+        wireEvent.type === "edited" &&
+          wireEvent.label === "Wire nano.D10 to servo.signal",
+        JSON.stringify(wireEvent)
+      );
+      expect(
+        pairOf(tools, SCENE).part.includes('["nano.D10", "servo.signal"]'),
+        "the web wire is not in the scene file"
+      );
+      const afterWire = pairOf(tools, SCENE);
+      for (const [a, b, text] of [
+        [
+          "nano.D10",
+          "servo.shaft",
+          "nano.D10 is electrical and servo.shaft is rotational; a wire joins ports of one domain",
+        ],
+        ["nano.D9", "nano.D9", "nano.D9 cannot be wired to itself"],
+      ] as const) {
+        const refused = await handleLiveEdit(tools, SCENE, wireMsg(a, b));
+        expect(
+          refused.type === "error" && refused.message.includes(text),
+          JSON.stringify(refused)
+        );
+        expect(
+          samePair(pairOf(tools, SCENE), afterWire),
+          `a refused wire ${a} ${b} wrote`
+        );
+      }
+      const wireUndo = await handleLiveEdit(
+        tools,
+        SCENE,
+        parseWorldClient(JSON.stringify({ type: "undo" })) as never
+      );
+      expect(wireUndo.type === "edited", JSON.stringify(wireUndo));
+      expect(
+        samePair(pairOf(tools, SCENE), beforeWire),
+        "undo of the web wire changed the files"
+      );
+      console.log(
+        "socket wire from the web: labelled, wrote the wire, a domain mismatch and a self wire were refused without writing, undo restored the files byte for byte"
+      );
     }
   );
 
@@ -704,6 +824,7 @@ try {
   await stopWorld(tools, SCENE);
   closeRootWatches();
   rmSync(work, { recursive: true, force: true });
+  rmSync(arm, { recursive: true, force: true });
   rmSync(frames, { recursive: true, force: true });
   rmSync(tools, { recursive: true, force: true });
 }

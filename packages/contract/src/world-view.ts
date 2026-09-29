@@ -3,7 +3,7 @@
  * plan. Not a file format.
  */
 
-import type { AxisName, LevelClass, Params, Pose } from "./layered";
+import type { AxisName, Domain, LevelClass, Params, Pose } from "./layered";
 import type { WorldPrimitive, WorldStepProp, WorldTarget } from "./world";
 
 export type WorldViewRobot = {
@@ -80,6 +80,10 @@ export type WorldViewPort = {
   name: string;
   source: "type" | "expose" | "auto";
   fixed: boolean;
+  /** The port domain the type declares. Absent on a bubbled port. */
+  domain?: Domain;
+  /** The port is on a wire in its parent's netlist. */
+  wired: boolean;
 };
 
 /** One authored wire in an assembly's netlist, in file order. */

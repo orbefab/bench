@@ -17,8 +17,8 @@ const node: WorldViewNode = {
     rotation: [1, 0, 0, 0],
   },
   ports: [
-    { name: "signal", source: "type", fixed: true },
-    { name: "V+", source: "type", fixed: false },
+    { name: "signal", source: "type", fixed: true, wired: false },
+    { name: "V+", source: "type", fixed: false, wired: false },
   ],
   params: { K: 0.2 },
   levels: [

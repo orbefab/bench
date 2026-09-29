@@ -105,6 +105,7 @@ export {
   type PortSource,
   type PortWorld,
   portDependents,
+  portDomain,
   portNames,
 } from "./ports";
 export { type PlannedRename, planPartRename } from "./rename";

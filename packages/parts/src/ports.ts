@@ -6,6 +6,7 @@
  */
 
 import type {
+  Domain,
   LevelClass,
   Netlist,
   PartFile,
@@ -97,6 +98,21 @@ export function portNames(
 ): string[] | null {
   if (!world.part(partId)) return null;
   return collectPartPorts(world, partId, spec).map((port) => port.name);
+}
+
+/**
+ * The domain a part's type declares for a port. Null when the part, or a
+ * type that declares the port, is missing: a bubbled port of a composite
+ * has no domain of its own.
+ */
+export function portDomain(
+  world: PortWorld,
+  partId: string,
+  name: string
+): Domain | null {
+  const part = world.part(partId);
+  if (!part) return null;
+  return world.typePorts(part)?.[name]?.domain ?? null;
 }
 
 /**

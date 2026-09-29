@@ -29,6 +29,7 @@ import {
   type RunRoot,
   type RunSlot,
   type Store,
+  splitPortRef,
 } from "@sfab-bench/parts";
 
 import { formAdapter } from "./forms";
@@ -156,6 +157,7 @@ export function runTree(input: {
     const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
     const netlist = behaviourNetlist(inst.part, behaviour);
     if (!parent || !netlist) continue;
+    markWired(nodes, inst.path, netlist.wires);
     for (const id of Object.keys(netlist.instances)) {
       const path = inst.path === "$root" ? id : `${inst.path}.${id}`;
       const child = nodes.get(path);
@@ -221,12 +223,37 @@ function portsOf(
           ...(axis.variant ? { variant: axis.variant } : {}),
         };
   return bindDependents(collectPartPorts(world, inst.part.id, spec), deps).map(
-    (port) => ({
-      name: port.name,
-      source: port.source,
-      fixed: port.fixed,
-    })
+    (port) => {
+      const domain = inst.type.ports[port.name]?.domain;
+      return {
+        name: port.name,
+        source: port.source,
+        fixed: port.fixed,
+        ...(domain ? { domain } : {}),
+        wired: false,
+      };
+    }
   );
+}
+
+/** Marks the child ports that a wire in this netlist names. */
+function markWired(
+  nodes: Map<string, WorldViewNode>,
+  parentPath: string,
+  wires: readonly (readonly [string, string])[]
+) {
+  for (const wire of wires) {
+    for (const ref of wire) {
+      const end = splitPortRef(ref);
+      if (!end) continue;
+      const path =
+        parentPath === "$root" ? end.inst : `${parentPath}.${end.inst}`;
+      const port = nodes
+        .get(path)
+        ?.ports.find((item) => item.name === end.port);
+      if (port) port.wired = true;
+    }
+  }
 }
 
 function portWorld(resolved: readonly LiveInstance[]): PortWorld {
