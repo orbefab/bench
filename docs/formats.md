@@ -99,11 +99,26 @@ type PartFile = {
   sources?: Citation[];
   ratings?: Record<string, Ratings>;            // per port, overrides the type
   play?: PlayBlock;                             // read only when this part is the root of a run
+  capture?: { behaviour?: CaptureRecipe; body?: CaptureRecipe }; // how to capture that axis of this part
   axes: {
     behaviour?: AxisMap<BehaviourImpl>;
     body?: AxisMap<BodyImpl>;
     visual?: AxisMap<VisualImpl>;
   };
+};
+
+// A `table@1` recipe (behaviour). A `hinge@1` recipe (body) has `form`, `fixture`, `baseline`,
+// `heldOut: "fixture"`, `sourceLevel` and `into?` instead.
+type CaptureRecipe = {
+  variant: string; instance: string;            // the variant to stamp and the board instance that holds it
+  across?: [string, string]; through: string;   // the port pair, and the port the current goes through
+  iSense: 1 | -1; fitV: number;
+  baseline: { level: string; value: number };
+  heldOut: "fixture" | "use-like" | "both";
+  staticError?: boolean;
+  sweep: { fixture?: string; currentPort?: string; currentQuantity?: string; current?: number[] };
+  envelope: { marginA?: number };
+  into?: string;                                // level that takes the new variant; absent: the level that holds a snapshot
 };
 
 // D-004: classes 0..3, named variants inside each class, one default per class.
@@ -411,6 +426,7 @@ type LockFile = {
   parts: { id: string; version: string; sha256: string; source: "world" | "library" | "catalog" | "inline"; path: string }[];
   types: { id: string; sha256: string; source: "world" | "library" | "catalog" | "inline"; path: string }[];
   snapshots?: { id: string; sha256: string; source: "world" | "library" | "catalog" | "inline"; path: string }[];
+  overlays?: { id: string; sha256: string; path: string }[];   // present when a level overlay adds variants to a library part
 };
 ```
 
@@ -419,6 +435,24 @@ The lock sits beside the document. A root part `parts/sfab/arm-bench@1.0.0.json`
 A part file whose hash no longer matches the lock is an error that names the part. A snapshot file is pinned the same way, and only when the resolved variant actually runs it. The key is omitted when the run uses none.
 
 Snapshot files are looked up like parts, in `snapshots/<publisher>/<name>@<version>.json` under the world, the personal library, then the catalog (`apps/server/catalog/snapshots/`).
+
+### Level overlay
+
+A catalog or library part is read-only, so a capture of one lands in the project as a level overlay: `overlays/<publisher>/<name>@<version>.levels.json`.
+
+```ts
+type LevelOverlay = {
+  format: "sfab.level-overlay@1";
+  part: string;                                          // the library part's id
+  axes: { behaviour?: Record<string, { variants: Record<string, BehaviourImpl> }>;
+          body?:      Record<string, { variants: Record<string, BodyImpl> }>;
+          visual?:    Record<string, { variants: Record<string, VisualImpl> }> };  // keyed by level "0".."3"
+};
+```
+
+The loader adds the overlay's variants to the part before it plans. An overlay never removes a variant and never changes a default, except that a level the library lacks takes its first variant, by name, as the default. A variant name the library already has is an error, not an override. The library file is unchanged and keeps its own `sha256`. The lock pins the overlay in `overlays`, keyed by the part id, and a changed overlay is reported like a changed part. A part in the project needs no overlay: its own file holds the variants.
+
+Captures made from the world socket are numbered per part and axis. The next ref is `snapshots/<publisher>/<name>-<axis>-<n>@<version>.json`, the variant is `capture-<n>`, and `snapshots/.captures.json` keeps the counter so a removed capture's number is not reused.
 
 ## 6. Snapshot
 
@@ -446,6 +480,7 @@ type Snapshot = {
   provenance: {
     source: "captured" | "authored" | "measured" | "imported";
     from?: { part: string; level: string; hash: string };   // level = class string
+    variant?: string; instance?: string;                    // table@1: the behaviour variant and board instance the hash stamped
     fixture?: { ref: string; hash: string; seed: number };
     data?: { file: string; sha256: string; rig?: string };
     tool?: { name: string; version: string; file?: string };
@@ -509,7 +544,7 @@ Quality in the file is a claim. The linter grants Q0, Q1, Q2a, Q2b, or Q3 from t
 
 `apps/server/catalog/fixtures/capture.config.json` is a list of entries. Capture dispatches on `form`. A `table@1` entry names the part, the variant, the instance, the `across` pair, the port the current goes through, the sweep, the envelope, the baseline level, and an optional free-run case list. A `hinge@1` entry names the part, the fixture, the baseline and the source class. The runner reads those fields from the entry. It has no part-specific numbers.
 
-A plain-branch capture drives an ideal current source through `p` into `m` on the assembly's stamp and reads `V(p) − V(m)`, with `m` pinned at 0. `provenance.from` holds the part id and the stamp hash. An entry that asks records `static-max-abs` against its baseline level, the max-abs error between knots. Free-run rows are written when the entry has cases.
+A plain-branch capture drives an ideal current source through `p` into `m` on the assembly's stamp and reads `V(p) − V(m)`, with `m` pinned at 0. `provenance.from` holds the part id and the stamp hash. `provenance.variant` and `provenance.instance` record the behaviour variant and the board instance that were stamped. The stale check reads them from the snapshot and reads the catalog config only for a snapshot that lacks them. An entry that asks records `static-max-abs` against its baseline level, the max-abs error between knots. Free-run rows are written when the entry has cases.
 
 Rebuild with `pnpm --filter @sfab-bench/server capture`. The timestamp comes from the config, not the wall clock.
 
