@@ -146,7 +146,12 @@ operations, so one undo history covers them. An edit is applied in
 text through an overlay store, then the part and the lock are written
 together. A nested edit re-pins that part's row in every project root
 that uses it, in the same step. The server keeps one undo history per
-open part and restarts the run from that write. The web editor reads
+open part and restarts the run from that write. A browser tab is one project
+folder (`?project=`, [ADR 0006](decisions/0006-folder-is-a-tab.md)); part tabs
+are the open part files inside it, and only the focused part tab is in
+`?world=`. One client keeps one live run socket, on the focused part tab.
+A parked part tab holds no socket; the server's idle timer stops that
+document's worker. The web editor reads
 `WorldView.tree` for the part tree, the card, and warning markers. L1 bubbles a composite's
 free nets into ports. L3, at plan time, recomputes a running capture's
 `from.hash` and marks it stale without changing its frames.
