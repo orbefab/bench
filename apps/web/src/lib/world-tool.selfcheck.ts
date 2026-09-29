@@ -1,5 +1,6 @@
 import { parkGuard, parkOutcome } from "./world-park";
 import {
+  isPortTool,
   isPoseTool,
   reduceWorldTool,
   toolEscape,
@@ -113,6 +114,41 @@ expect(
   "Wire and Select take no gizmo"
 );
 
+// Probe is one more mode with no key: the button enters it, a click on a
+// port is not a gesture, and Esc leaves it.
+const probing = reduceWorldTool(WORLD_TOOL_START, {
+  type: "pick",
+  mode: "probe",
+});
+expect(probing.mode === "probe" && !probing.gesture, "a button picks Probe");
+expect(
+  reduceWorldTool(wired, { type: "pick", mode: "probe" }).mode === "probe",
+  "Probe replaces Wire"
+);
+expect(
+  reduceWorldTool(probing, { type: "pick", mode: "wire" }).mode === "wire",
+  "Wire replaces Probe"
+);
+expect(
+  reduceWorldTool(probing, { type: "pick", mode: "probe" }) === probing,
+  "picking Probe again changes nothing"
+);
+const leaveProbe = toolEscape(probing);
+expect(
+  leaveProbe.did === "leave-tool" && leaveProbe.state.mode === "select",
+  "Esc leaves Probe when nothing is pending"
+);
+expect(
+  reduceWorldTool(probing, { type: "reset" }) === WORLD_TOOL_START,
+  "a closed document resets Probe"
+);
+expect(!isPoseTool("probe"), "Probe takes no gizmo");
+expect(
+  isPortTool("wire") && isPortTool("probe") && !isPortTool("move"),
+  "Wire and Probe draw the port markers"
+);
+
+expect(toolLabel("probe") === "Probe", "Probe label");
 expect(toolLabel("select") === "Select", "Select label");
 expect(toolLabel("wire") === "Wire", "Wire label");
 expect(toolLabel("move") === "Move", "Move label");

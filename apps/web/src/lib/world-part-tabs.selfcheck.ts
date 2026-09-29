@@ -91,6 +91,7 @@ const parked = savePartTab(sidebar, arm, {
   seeded: true,
   camera: { position: [1, 2, 3], target: [0, 0, 0] },
   timeline: { from: 0, to: 1.5, playhead: 0.4 },
+  probes: ["port:servo.signal", "port:usb.5V"],
   history: {
     undoOrder: [""],
     redoOrder: [],
@@ -111,6 +112,14 @@ expect(
     restored.timeline.playhead === 0.4 &&
     restored.history.parts[0]?.canUndo === true,
   "a parked tab restores its selection, tree, camera, and timeline"
+);
+expect(
+  restored?.probes.join(",") === "port:servo.signal,port:usb.5V",
+  "a parked tab keeps its probe list"
+);
+expect(
+  partTabSnapshot(back, usb)?.probes.length === 0,
+  "another tab has its own, empty probe list"
 );
 
 let closed = closePartTab(back, arm);

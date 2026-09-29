@@ -99,6 +99,19 @@ expect(
   "a body alone is empty space in Wire"
 );
 expect(pointerOwner("wire", []) === "empty", "no hit is empty space in Wire");
+expect(
+  pointerOwner("probe", ["body", "marker"]) === "marker",
+  "a marker behind a nearer body wins in Probe"
+);
+expect(
+  pointerOwner("probe", ["marker"]) === "marker",
+  "a marker alone is picked in Probe"
+);
+expect(
+  pointerOwner("probe", ["body"]) === "empty",
+  "a body alone is empty space in Probe"
+);
+expect(pointerOwner("probe", []) === "empty", "no hit is empty space in Probe");
 for (const mode of ["select", "move", "rotate"] as const) {
   expect(
     pointerOwner(mode, ["body"]) === "body",
