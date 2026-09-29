@@ -600,6 +600,37 @@ export type PlayBlock = {
   stepProps?: unknown[];
 };
 
+/** How to capture one axis of a part. The part's id names the capture. */
+export type CaptureRecipe =
+  | {
+      variant: string;
+      instance: string;
+      across?: [string, string];
+      through: string;
+      iSense: 1 | -1;
+      fitV: number;
+      baseline: { level: string; value: number };
+      heldOut: "fixture" | "use-like" | "both";
+      staticError?: boolean;
+      sweep: {
+        fixture?: string;
+        currentPort?: string;
+        currentQuantity?: string;
+        current?: number[];
+      };
+      envelope: { marginA?: number };
+      /** Level id that takes the new variant. Absent: the level that already holds a snapshot. */
+      into?: string;
+    }
+  | {
+      form: "hinge@1";
+      fixture: string;
+      baseline: { level: string; value: number };
+      heldOut: "fixture";
+      sourceLevel: "0" | "1" | "2" | "3";
+      into?: string;
+    };
+
 export type PartFile = {
   format: typeof PART_FORMAT;
   id: string;
@@ -608,6 +639,8 @@ export type PartFile = {
   declaredOnly?: boolean;
   sources?: Citation[];
   ratings?: Record<string, Ratings>;
+  /** Capture recipes for a project part. A catalog entry is the fallback. */
+  capture?: { behaviour?: CaptureRecipe; body?: CaptureRecipe };
   /** Present on a root document. Ignored when this part is nested. */
   play?: PlayBlock;
   axes?: {

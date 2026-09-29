@@ -84,6 +84,8 @@ export type CaptureEntry = {
     current?: number[];
   };
   envelope: { marginA?: number };
+  /** Level id that takes the new variant. Absent: the level that holds a snapshot. */
+  into?: string;
   freeRun?: FreeRunSpec;
   cases?: Record<string, FreeCase>;
 };
