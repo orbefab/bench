@@ -234,6 +234,9 @@ function lockRewrites(
         changed = true;
       }
     }
+    if (sortById(lock.parts)) changed = true;
+    if (lock.types && sortById(lock.types)) changed = true;
+    if (lock.snapshots && sortById(lock.snapshots)) changed = true;
     if (!changed) return;
     const after = formatLock(lock, before);
     if (moving) {
@@ -383,6 +386,12 @@ function parseJson(text: string): unknown {
   } catch {
     return null;
   }
+}
+
+function sortById<T extends { id: string }>(rows: T[]): boolean {
+  const before = rows.map((row) => row.id).join("\0");
+  rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return rows.map((row) => row.id).join("\0") !== before;
 }
 
 function formatLock(lock: LockFile, previous: string): string {

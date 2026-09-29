@@ -19,7 +19,12 @@ import { fileURLToPath } from "node:url";
 
 import type { LockFile, PartFile } from "@sfab-bench/contract";
 import { SNAPSHOT_FORMAT } from "@sfab-bench/contract";
-import { EditSession, EXTERNAL_EDIT, planPartRename } from "@sfab-bench/parts";
+import {
+  EditSession,
+  EXTERNAL_EDIT,
+  loadWorldV2,
+  planPartRename,
+} from "@sfab-bench/parts";
 import { viewOf } from "@sfab-bench/sim/view";
 
 import { closeRootWatches } from "./projects";
@@ -185,6 +190,7 @@ function proveScene() {
         );
       }
     }
+    for (const parent of [USB, COLLAPSED]) proveLockOrder(project, parent);
     const shot = textOf(project, snapRel);
     expect(shot.includes(NEXT_ID) && !shot.includes(SCENE_ID), "snapshot part");
     const leftover = [...treeOf(project).values()].some((text) =>
@@ -210,6 +216,21 @@ function proveScene() {
   } finally {
     rmSync(project, { recursive: true, force: true });
   }
+}
+
+function proveLockOrder(project: string, world: string) {
+  const disk = JSON.parse(
+    textOf(project, world.replace(/\.json$/, ".lock.json"))
+  ) as LockFile;
+  const loaded = loadWorldV2(absolutePath(join(project, world)), {
+    store: nodeStore,
+    catalogDir: absolutePath(catalogRoot()),
+    assetRoot: absolutePath(project),
+  });
+  expect(loaded.lock, `${world} did not build a lock`);
+  const fresh = loaded.lock?.parts.map((row) => row.id).join("\n");
+  const written = disk.parts.map((row) => row.id).join("\n");
+  expect(written === fresh, `${world} lock order\n${written}\nvs\n${fresh}`);
 }
 
 function proveRootLock() {
