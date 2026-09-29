@@ -1,3 +1,4 @@
+import type { ProjectRow } from "@sfab-bench/contract";
 import { Folder } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StartTruncatedPath } from "@/components/StartTruncatedPath";
@@ -11,7 +12,6 @@ import {
   browsePath,
   fetchProject,
   openTabProject,
-  type ProjectRow,
   registerAndOpenTab,
   shortPath,
 } from "@/lib/project";

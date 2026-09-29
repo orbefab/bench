@@ -1,12 +1,9 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
+import type { ClientPrincipal } from "@sfab-bench/contract";
 import { type WebSocket, WebSocketServer } from "ws";
 
-import {
-  type ClientPrincipal,
-  resolveUpgradePrincipal,
-  runWithPrincipal,
-} from "./principal";
+import { resolveUpgradePrincipal, runWithPrincipal } from "./principal";
 import { type SessionSocket, sendSnapshot, subscribeSession } from "./session";
 
 const wss = new WebSocketServer({ noServer: true });

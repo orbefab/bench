@@ -1,17 +1,14 @@
 import { Container, Input, Text } from "@react-three/uikit";
 import { useContext, useEffect, useMemo, useState } from "react";
 
-import {
-  type HarnessModel,
-  harnessModelName,
-  useHarnesses,
-} from "@/hooks/useHarnesses";
+import { harnessModelName, useHarnesses } from "@/hooks/useHarnesses";
 import {
   CHAT_EFFORT_LABEL,
   CHAT_EFFORTS,
   type ChatEffort,
   HARNESS_IDS,
   type HarnessId,
+  type HarnessModel,
   harnessSupportsEffort,
 } from "@/lib/harness";
 import { usePrefs } from "@/state/prefs";

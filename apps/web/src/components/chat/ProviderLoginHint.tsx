@@ -1,7 +1,7 @@
 import { loginHintCopy } from "@/chat/model-picker";
 import { CommandBlock } from "@/components/chat/CommandBlock";
 import { Button } from "@/components/ui/button";
-import type { HarnessInfo } from "@/hooks/useHarnesses";
+import type { HarnessInfo } from "@/lib/harness";
 
 export function ProviderLoginHint({
   info,

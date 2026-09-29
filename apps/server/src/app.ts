@@ -1,6 +1,7 @@
 import type { HttpBindings } from "@hono/node-server";
 import { zValidator } from "@hono/zod-validator";
 import {
+  type ClientPrincipal,
   DEFAULT_CHAT_EFFORT,
   DEFAULT_HARNESS,
   DEFAULT_HARNESS_MODEL,
@@ -28,7 +29,6 @@ import {
   redeemFragment,
 } from "./pairing";
 import {
-  type ClientPrincipal,
   publicPrincipal,
   resolvePrincipal,
   runWithPrincipal,

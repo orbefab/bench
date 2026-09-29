@@ -1,6 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import {
+  type ClientPrincipal,
   type EditOp,
   SERIAL_TEXT_MAX,
   WORLD_NONCE_MAX,
@@ -12,7 +13,6 @@ import { readEditOp } from "@sfab-bench/parts";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 
-import type { ClientPrincipal } from "../principal";
 import { resolveUpgradePrincipal, runWithPrincipal } from "../principal";
 import { resolveRequestRoot } from "../projects";
 import { handleLiveEdit, historiesForConnect } from "./edit";

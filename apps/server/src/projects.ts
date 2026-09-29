@@ -20,6 +20,7 @@ import {
 import {
   type CatalogEntry,
   PART_FORMAT,
+  type ProjectRow,
   partDocumentProject,
 } from "@sfab-bench/contract";
 import { db } from "./db";
@@ -44,13 +45,6 @@ const SKIP_DIRS = new Set([
   "coverage",
   "tmp",
 ]);
-
-export type ProjectRow = {
-  path: string;
-  name: string;
-  lastFile: string | null;
-  openedAt: number;
-};
 
 export type ProjectKind = "loopback" | "paired" | "account";
 

@@ -1,10 +1,11 @@
 import type {
+  ClientPrincipal,
   ProjectSession,
   SessionClient,
   SessionEvent,
   SessionSnapshot,
 } from "@sfab-bench/contract";
-import { type ClientPrincipal, getPrincipal } from "./principal";
+import { getPrincipal } from "./principal";
 import {
   catalogRevision,
   currentProject,
