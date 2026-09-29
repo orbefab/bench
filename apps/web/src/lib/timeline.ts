@@ -190,7 +190,9 @@ export function tracksForSelection(
 
 /** Smallest vertical span, so a flat or jittering trace does not fill the strip. */
 export function minSpan(unit: TimelineTrack["unit"]): number {
-  return unit === "deg" ? 1 : 0.1;
+  if (unit === "deg") return 1;
+  if (unit === "A") return 0.01;
+  return 0.1;
 }
 
 export function seriesValues(

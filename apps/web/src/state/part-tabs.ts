@@ -27,6 +27,7 @@ import {
 import { captureWorldCamera, restoreWorldCamera } from "@/scene/world-camera";
 import { viewerStore } from "@/state/viewer";
 import { worldStore } from "@/state/world";
+import { probedPorts, setProbes } from "@/state/world-probe";
 import {
   resetTimeline,
   restoreTimeline,
@@ -140,6 +141,7 @@ function liveSnapshot(): PartTabSnapshot {
     seeded: fold.seededPath === hud.path && hud.path !== "",
     camera: captureWorldCamera(),
     timeline,
+    probes: [...probedPorts()],
     history: hud.history,
   };
 }
@@ -162,6 +164,7 @@ function held(snap: PartTabSnapshot): boolean {
     snap.wire !== null ||
     snap.collapsed.length > 0 ||
     snap.camera !== null ||
+    snap.probes.length > 0 ||
     snap.history.parts.length > 0
   );
 }
@@ -193,6 +196,7 @@ function activate(file: string, history: "push" | "replace") {
     if (snap.wire) worldStore.getState().selectWire(snap.wire);
     if (snap.camera) restoreWorldCamera(snap.camera);
     else restoreWorldCamera(null);
+    setProbes(snap.probes);
     const timeline = snap.timeline;
     if (timeline?.recording) {
       restoreTimeline({

@@ -10,6 +10,7 @@ import { useSyncExternalStore } from "react";
 import { followLiveEdge, seekTimeFor } from "@/lib/timeline";
 import { worldCommandNonce } from "@/lib/world-nonce";
 import { invalidateSceneNow } from "@/scene/invalidate";
+import { probedPorts, probeStore } from "@/state/world-probe";
 
 /**
  * This client's scrub. The shared run keeps playing; only this tab's
@@ -22,6 +23,8 @@ export type TimelineData = {
   to: number;
   tracks: TimelineTrack[];
   markers: TimelineMarker[];
+  /** Probed ports with no recorded quantity. Absent when none were asked for. */
+  unrecorded?: string[];
 };
 
 export type TimelineSnapshot = {
@@ -137,6 +140,7 @@ export function takeTimeline(
     to: message.to,
     tracks: message.tracks,
     markers: message.markers,
+    ...(message.unrecorded ? { unrecorded: message.unrecorded } : {}),
   };
   emit();
 }
@@ -272,11 +276,20 @@ function scheduleTimeline(delay: number) {
   timelineTimer = setTimeout(() => {
     timelineTimer = null;
     if (!recording || !send) return;
+    const probed = probedPorts();
     send({
       type: "timeline",
       from: recording.from,
       to: recording.to,
       maxPoints: 480,
+      ...(probed.length > 0 ? { tracks: [...probed] } : {}),
     });
   }, delay);
 }
+
+// A newly probed port is read at once; a removed one needs no read.
+probeStore.subscribe((state, prev) => {
+  if (previous || !recording) return;
+  if (state.ports.every((id) => prev.ports.includes(id))) return;
+  scheduleTimeline(0);
+});

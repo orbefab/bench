@@ -45,6 +45,8 @@ export type PartTabSnapshot = {
   seeded: boolean;
   camera: PartTabCamera | null;
   timeline: PartTabTimeline | null;
+  /** Probed ports (`portProbeId`), in the order they were picked. */
+  probes: readonly string[];
   history: HistoryModel;
 };
 
@@ -81,6 +83,7 @@ export function emptyPartTabSnapshot(): PartTabSnapshot {
     seeded: false,
     camera: null,
     timeline: null,
+    probes: [],
     history: emptyHistory(),
   };
 }
