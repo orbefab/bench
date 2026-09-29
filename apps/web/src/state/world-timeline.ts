@@ -30,6 +30,8 @@ export type TimelineSnapshot = {
   /** Null while this client follows the live edge. */
   playhead: number | null;
   frame: RecordedFrame | null;
+  /** The worker that wrote this recording is gone. Play starts a new one. */
+  previous: boolean;
 };
 
 const listeners = new Set<() => void>();
@@ -38,11 +40,15 @@ let recording: RecordingSummary | null = null;
 let data: TimelineData | null = null;
 let playhead: number | null = null;
 let frame: RecordedFrame | null = null;
+let previous = false;
+/** The live recording that arrived while a previous run is on screen. */
+let pendingRecording: RecordingSummary | null = null;
 let snapshot: TimelineSnapshot = {
   recording: null,
   data: null,
   playhead: null,
   frame: null,
+  previous: false,
 };
 let shownTo = -1;
 let send: ((message: WorldClientMessage) => void) | null = null;
@@ -51,7 +57,7 @@ let queued: number | null = null;
 let timelineTimer: ReturnType<typeof setTimeout> | null = null;
 
 function emit() {
-  snapshot = { recording, data, playhead, frame };
+  snapshot = { recording, data, playhead, frame, previous };
   for (const listener of listeners) listener();
 }
 
@@ -81,7 +87,7 @@ export function bindWorldSocket(
   next: ((message: WorldClientMessage) => void) | null
 ) {
   send = next;
-  if (!next) goLive();
+  if (!next && !previous) goLive();
 }
 
 export function noteLiveRecording(
@@ -89,6 +95,10 @@ export function noteLiveRecording(
   playing: boolean
 ) {
   if (!summary) return;
+  if (previous) {
+    pendingRecording = summary;
+    return;
+  }
   const prev = recording;
   const idChanged = !prev || prev.id !== summary.id;
   recording = summary;
@@ -171,6 +181,7 @@ export function scrubTo(t: number) {
   const next = Math.min(recording.to, Math.max(recording.from, t));
   playhead = next;
   emit();
+  if (previous) return;
   if (!data) scheduleTimeline(0);
   sendSeek(seekTimeFor(next, recording.from, recording.to));
 }
@@ -185,6 +196,8 @@ export function resetTimeline() {
   data = null;
   playhead = null;
   frame = null;
+  previous = false;
+  pendingRecording = null;
   inflight = null;
   queued = null;
   shownTo = -1;
@@ -192,7 +205,48 @@ export function resetTimeline() {
   invalidateSceneNow();
 }
 
+/**
+ * Show a parked tab's strip. The recording stays on screen, and a new
+ * attach is held until Play. Scrubbing moves the playhead locally: the
+ * worker that wrote the frames is gone.
+ */
+export function restoreTimeline(next: TimelineSnapshot) {
+  if (timelineTimer) {
+    clearTimeout(timelineTimer);
+    timelineTimer = null;
+  }
+  recording = next.recording;
+  data = next.data;
+  playhead = next.playhead;
+  frame = next.frame;
+  previous = next.previous && next.recording !== null;
+  pendingRecording = null;
+  inflight = null;
+  queued = null;
+  shownTo = next.recording?.to ?? -1;
+  emit();
+  invalidateSceneNow();
+}
+
+/** Play replaces the previous run with the recording the server is writing. */
+export function releasePreviousRun() {
+  if (!previous && pendingRecording === null) return;
+  const summary = pendingRecording;
+  previous = false;
+  pendingRecording = null;
+  if (!summary) {
+    resetTimeline();
+    return;
+  }
+  recording = null;
+  data = null;
+  playhead = null;
+  frame = null;
+  noteLiveRecording(summary, false);
+}
+
 export function goLive() {
+  if (previous) return;
   inflight = null;
   queued = null;
   if (playhead === null && frame === null) return;

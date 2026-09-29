@@ -32,6 +32,7 @@ import {
   bindWorldSocket,
   goLive,
   noteLiveRecording,
+  releasePreviousRun,
   resetTimeline,
   takeFrame,
   takeTimeline,
@@ -49,7 +50,10 @@ const sentNonces = new Set<string>();
 const sentSerialNonces = new Set<string>();
 
 export function sendWorldCommand(type: "play" | "pause") {
-  if (type === "play") goLive();
+  if (type === "play") {
+    releasePreviousRun();
+    goLive();
+  }
   if (socket?.readyState !== WebSocket.OPEN) return;
   const nonce = worldCommandNonce();
   sentNonces.add(nonce);
@@ -332,6 +336,10 @@ export function useWorldRun(project: string, world: string) {
         });
         return;
       }
+      if (message.type === "histories") {
+        worldStore.getState().syncHistory(message.histories);
+        return;
+      }
       if (message.type === "edited") {
         const pending = pendingEdit;
         pendingEdit = null;
@@ -406,6 +414,9 @@ export function useWorldRun(project: string, world: string) {
       };
       ws.onopen = () => {
         attempt = 0;
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "histories" }));
+        }
       };
       ws.onclose = () => {
         if (socket === ws) socket = null;

@@ -2,7 +2,6 @@ import type { WorldViewNode } from "@sfab-bench/contract";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
-import { fileLabel } from "@/cad/loadCadReview";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -10,6 +9,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  PartBreadcrumb,
+  PartParkDialog,
+  PartTabStrip,
+} from "@/components/WorldPartTabs";
 import {
   breakWorldEdit,
   sendWorldCommand,
@@ -31,48 +35,44 @@ import {
   warningText,
 } from "@/lib/world-warnings";
 import { useWorld, worldStore } from "@/state/world";
+import { useTreeFold, writeTreeFold } from "@/state/world-tree-fold";
 
 export function WorldTopBar() {
-  const path = useWorld((s) => s.path);
-  const part = useWorld((s) => s.tree?.part ?? "");
   const history = useWorld((s) => s.history);
   const buttons = historyButtons(history);
   const label = useWorld((s) => s.editLabel);
-  const name = fileLabel(path);
   return (
-    <header className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-      <span
-        className="max-w-64 truncate text-sm font-medium"
-        title={part || name}
-      >
-        {name}
-      </span>
-      <div className="min-w-0 flex-1" />
-      {label ? (
-        <span className="hidden truncate text-xs text-muted-foreground sm:inline">
-          {label}
-        </span>
-      ) : null}
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-7 px-2 text-xs"
-        disabled={!buttons.canUndo}
-        onClick={() => sendWorldUndo()}
-      >
-        Undo
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-7 px-2 text-xs"
-        disabled={!buttons.canRedo}
-        onClick={() => sendWorldRedo()}
-      >
-        Redo
-      </Button>
+    <header className="flex shrink-0 flex-col border-b border-border">
+      <div className="flex h-9 items-center gap-2 px-3">
+        <PartTabStrip />
+        {label ? (
+          <span className="hidden max-w-40 truncate text-xs text-muted-foreground sm:inline">
+            {label}
+          </span>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          disabled={!buttons.canUndo}
+          onClick={() => sendWorldUndo()}
+        >
+          Undo
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          disabled={!buttons.canRedo}
+          onClick={() => sendWorldRedo()}
+        >
+          Redo
+        </Button>
+      </div>
+      <PartBreadcrumb />
+      <PartParkDialog />
     </header>
   );
 }
@@ -206,8 +206,8 @@ export function WorldTree() {
   const diagnostics = useWorld((s) => s.diagnostics);
   const renameTick = useWorld((s) => s.renameTick);
   const path = useWorld((s) => s.path);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const [seededPath, setSeededPath] = useState<string | null>(null);
+  const fold = useTreeFold();
+  const collapsed = fold.collapsed;
   const [renaming, setRenaming] = useState<string | null>(null);
   const grouped = useMemo(
     () => instanceWarningMap(warningsFromRun(report, diagnostics)),
@@ -222,19 +222,21 @@ export function WorldTree() {
     if (!tree || !path) return;
     const target = wire ? wire.owner : (selection?.path ?? null);
     const kind = wire ? "wire" : "instance";
-    setCollapsed((current) => {
-      const step = nextCollapse({
-        collapsed: current,
-        nodes: tree.nodes,
-        documentPath: path,
-        seededPath,
-        target,
-        kind,
-      });
-      return step.wrote ? step.collapsed : current;
+    const step = nextCollapse({
+      collapsed,
+      nodes: tree.nodes,
+      documentPath: path,
+      seededPath: fold.seededPath,
+      target,
+      kind,
     });
-    if (seededPath !== path) setSeededPath(path);
-  }, [tree, path, seededPath, selection?.path, wire]);
+    if (step.wrote || step.seededPath !== fold.seededPath) {
+      writeTreeFold({
+        collapsed: step.collapsed,
+        seededPath: step.seededPath,
+      });
+    }
+  }, [tree, path, fold, collapsed, selection?.path, wire]);
   useEffect(() => {
     if (renameTick === 0) return;
     const path = worldStore.getState().selection?.path;
@@ -288,7 +290,10 @@ export function WorldTree() {
                       const next = new Set(collapsed);
                       if (next.has(row.path)) next.delete(row.path);
                       else next.add(row.path);
-                      setCollapsed(next);
+                      writeTreeFold({
+                        collapsed: next,
+                        seededPath: fold.seededPath,
+                      });
                     }}
                   >
                     {collapsed.has(row.path) ? "▸" : "▾"}

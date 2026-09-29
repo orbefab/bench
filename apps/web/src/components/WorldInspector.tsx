@@ -16,6 +16,7 @@ import {
 import { SerialConsole } from "@/components/SerialConsole";
 import { SourceView } from "@/components/SourceView";
 import { Button } from "@/components/ui/button";
+import { openPartFile } from "@/components/WorldPartTabs";
 import { sendBoardSerial, sendWorldEdit } from "@/hooks/useWorldRun";
 import { ampsText } from "@/lib/amps-text";
 import {
@@ -35,6 +36,7 @@ import { relFromWorldFile } from "@/lib/world-assets";
 import { instanceCard } from "@/lib/world-card";
 import { instanceEditTarget } from "@/lib/world-edit-target";
 import { formatSimTime } from "@/lib/world-issues";
+import { openPartTarget } from "@/lib/world-open-part";
 import {
   formatJointReadout,
   formatLiveDegrees,
@@ -882,6 +884,33 @@ function PlayFields({ play }: { play: WorldViewPlay }) {
   );
 }
 
+function OpenPart({ node }: { node: WorldViewNode }) {
+  const target = openPartTarget(node);
+  return (
+    <div className="mb-3">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-7 px-2 text-xs"
+        disabled={!target.enabled}
+        title={target.enabled ? "Open this part" : target.reason}
+        onClick={() => {
+          if (!target.enabled) return;
+          openPartFile(target.file, node.id, node.part);
+        }}
+      >
+        Open part
+      </Button>
+      {!target.enabled ? (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {target.reason}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function InstanceBody({
   node,
   link,
@@ -1000,6 +1029,7 @@ function InstanceBody({
           </select>
         </Section>
       ))}
+      <OpenPart node={node} />
       <WarningList rows={warnings} />
     </>
   );

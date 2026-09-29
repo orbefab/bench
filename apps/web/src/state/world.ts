@@ -22,6 +22,7 @@ import {
   type HistoryModel,
   refuseHistory,
   sameHistory,
+  syncHistories,
 } from "@/lib/world-history";
 import type { AssetIssue } from "@/lib/world-issues";
 import type { WorldOutline } from "@/lib/world-outline";
@@ -151,6 +152,9 @@ export type WorldHudState = {
   requestRename: () => void;
   applyHistory: (answer: HistoryAnswer, label: string) => void;
   refuseHistory: (kind: "undo" | "redo", part?: string) => void;
+  /** Put a parked tab's history back. The connect reply then trims it. */
+  replaceHistory: (history: HistoryModel) => void;
+  syncHistory: (rows: HistoryAnswer["histories"]) => void;
   setSignals: (
     joints: Record<string, Record<string, number>>,
     pins: Record<string, WorldPinState>,
@@ -374,6 +378,16 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
   },
   refuseHistory: (kind, part) => {
     set({ history: refuseHistory(get().history, kind, part) });
+  },
+  replaceHistory: (history) => {
+    if (sameHistory(get().history, history)) return;
+    set({ history, editLabel: null, editError: null, confirm: null });
+  },
+  syncHistory: (rows) => {
+    if (!rows) return;
+    const history = syncHistories(get().history, rows);
+    if (sameHistory(get().history, history)) return;
+    set({ history });
   },
   setSignals: (joints, pins, parts) => {
     const current = get();

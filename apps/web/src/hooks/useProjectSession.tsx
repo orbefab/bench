@@ -28,7 +28,6 @@ import {
 } from "@/lib/feedback";
 import { shouldReloadOpenFile } from "@/lib/files-rail";
 import { LIBRARY_FILES_EVENT } from "@/lib/motion";
-import { openWorld } from "@/lib/open-document";
 import { registerAndOpenTab } from "@/lib/project";
 import { projectUrl } from "@/lib/project-query";
 import { redact } from "@/lib/redact";
@@ -39,6 +38,7 @@ import type {
   SessionSnapshot,
 } from "@/lib/session";
 import { emitFolderError } from "@/lib/welcome";
+import { showPartFile } from "@/state/part-tabs";
 import { prefsStore } from "@/state/prefs";
 import { viewerStore } from "@/state/viewer";
 import { worldStore } from "@/state/world";
@@ -122,9 +122,7 @@ export function ProjectSessionProvider({
         appliedDeepLink.current = true;
         const doc = readOpenDocument(window.location.search);
         if (doc.kind === "world") {
-          if (worldStore.getState().path !== doc.path) {
-            openWorld(doc.path, { history: "replace" });
-          }
+          showPartFile(doc.path, { origin: "boot", history: "replace" });
         } else if (doc.kind === "file") {
           void viewerStore.getState().loadModel(doc.path);
         }
@@ -182,8 +180,9 @@ export function ProjectSessionProvider({
     const onPopDocument = () => {
       ignoreDocumentHistory(() => {
         const doc = readOpenDocument(window.location.search);
-        if (doc.kind === "world") openWorld(doc.path, { history: "replace" });
-        else {
+        if (doc.kind === "world") {
+          showPartFile(doc.path, { origin: "pop", history: "replace" });
+        } else {
           void viewerStore
             .getState()
             .loadModel(doc.kind === "file" ? doc.path : "");
@@ -321,7 +320,11 @@ export function ProjectSessionProvider({
         Boolean(world.runMessage) ||
         world.runErrors.length > 0;
       if (!reload && !shouldReloadOpenFile(next, world.path, failed)) return;
-      openWorld(next, { history: "push", force: reload || failed });
+      showPartFile(next, {
+        origin: "sidebar",
+        history: "push",
+        ...(reload || failed ? { force: true } : {}),
+      });
       return;
     }
     const { url, error, loadModel } = viewerStore.getState();

@@ -25,7 +25,7 @@ import { goLive, scrubTo, useWorldTimeline } from "@/state/world-timeline";
  * The shared run keeps its own sim time (D-015). Hidden in XR (D-008).
  */
 export function WorldTimeline({ docked = false }: { docked?: boolean }) {
-  const { recording, data, playhead } = useWorldTimeline();
+  const { recording, data, playhead, previous } = useWorldTimeline();
   const selection = useWorld((s) => s.selection);
   const playing = useWorld((s) => s.playing);
   const connection = useWorld((s) => s.connection);
@@ -200,10 +200,15 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
         variant={live ? "secondary" : "default"}
         className="h-9 shrink-0 self-center px-2.5"
         aria-pressed={live}
-        title={shortcutTooltip("Return to live", "timeline-live", mac)}
+        title={
+          previous
+            ? "Previous run"
+            : shortcutTooltip("Return to live", "timeline-live", mac)
+        }
+        disabled={previous}
         onClick={() => goLive()}
       >
-        Live
+        {previous ? "Previous run" : "Live"}
       </Button>
     </div>
   );

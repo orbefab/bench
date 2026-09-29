@@ -15,6 +15,11 @@ import { bindSceneInvalidate } from "@/scene/invalidate";
 import { RecenterOnReset } from "@/scene/RecenterOnReset";
 import { SpawnInFront } from "@/scene/SpawnInFront";
 import { WorldScene } from "@/scene/WorldScene";
+import {
+  applyWorldCamera,
+  bindWorldCamera,
+  takePendingWorldCamera,
+} from "@/scene/world-camera";
 import { prefsStore } from "@/state/prefs";
 import { sceneStore, useScene } from "@/state/scene";
 import { useViewer, viewerStore } from "@/state/viewer";
@@ -120,6 +125,32 @@ function FitBridge() {
   return null;
 }
 
+function WorldCameraBridge() {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as {
+    target: THREE.Vector3;
+    update: () => void;
+  } | null;
+  useLayoutEffect(() => {
+    bindWorldCamera(
+      () => {
+        if (!controls) return null;
+        return {
+          position: [camera.position.x, camera.position.y, camera.position.z],
+          target: [controls.target.x, controls.target.y, controls.target.z],
+        };
+      },
+      (pose) => {
+        camera.position.set(...pose.position);
+        controls?.target.set(...pose.target);
+        controls?.update();
+      }
+    );
+    return () => bindWorldCamera(null, null);
+  }, [camera, controls]);
+  return null;
+}
+
 function SceneCrashBridge({
   error,
   reset,
@@ -144,6 +175,11 @@ export function ViewerCanvas() {
   const reduceMotion = usePrefersReducedMotion();
   const onFit = useCallback((obj: THREE.Object3D) => {
     if (xrStore.getState().session) return;
+    const pending = takePendingWorldCamera();
+    if (pending) {
+      applyWorldCamera(pending);
+      return;
+    }
     sceneStore.getState().fit?.(obj, homeFitDirection());
   }, []);
 
@@ -171,6 +207,7 @@ export function ViewerCanvas() {
         <directionalLight position={[0.55, 1.1, 0.45]} intensity={1.35} />
         <directionalLight position={[-0.6, 0.25, -0.35]} intensity={0.35} />
         <FitBridge />
+        <WorldCameraBridge />
         <group
           ref={(group) => {
             setPlaced(group);
