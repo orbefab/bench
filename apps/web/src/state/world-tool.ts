@@ -17,6 +17,7 @@ import {
   type WorldToolMode,
   type WorldToolState,
 } from "@/lib/world-tool";
+import { type WireTap, wireCommit, wireStep } from "@/lib/world-wire";
 import { clearPreviews, previewPose } from "@/scene/world-preview";
 import { phaseNow } from "@/state/part-tabs";
 import { worldStore } from "@/state/world";
@@ -33,12 +34,15 @@ type WorldToolStore = WorldToolState & {
   pending: ToolCommit | null;
   /** Counts Stay choices, so a card field drops the value that was refused. */
   stays: number;
+  /** The first port of a wire, held until the second is picked. */
+  wireFrom: string | null;
 };
 
 export const worldToolStore = createStore<WorldToolStore>()(() => ({
   ...WORLD_TOOL_START,
   pending: null,
   stays: 0,
+  wireFrom: null,
 }));
 
 export function useWorldTool<T>(selector: (state: WorldToolStore) => T): T {
@@ -81,6 +85,40 @@ function cancelWorldGesture() {
   cancelGesture = null;
   cancel?.();
   apply({ type: "end" });
+}
+
+function holdWire(ref: string) {
+  worldToolStore.setState({ wireFrom: ref });
+  beginToolGesture(() => worldToolStore.setState({ wireFrom: null }));
+}
+
+function dropWire() {
+  worldToolStore.setState({ wireFrom: null });
+  endToolGesture();
+}
+
+function stepWire(tap: WireTap) {
+  const state = worldToolStore.getState();
+  if (state.mode !== "wire" || state.pending) return;
+  const next = wireStep(state.wireFrom, tap);
+  if (next.hold !== state.wireFrom) {
+    if (next.hold === null) dropWire();
+    else holdWire(next.hold);
+  }
+  if (next.commit) {
+    commitToolEdit(wireCommit(next.commit, worldStore.getState().path));
+  }
+}
+
+/** A click on a port marker: the first port holds, the second commits. */
+export function tapWirePort(ref: string) {
+  stepWire({ type: "port", ref });
+}
+
+/** A click on anything that is not a port lets go of a held first port. */
+export function tapWireEmpty() {
+  if (worldToolStore.getState().wireFrom === null) return;
+  stepWire({ type: "empty" });
 }
 
 /** True when Esc was ours. The selection clear runs only when it was not. */

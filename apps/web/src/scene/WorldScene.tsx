@@ -29,6 +29,7 @@ import {
 } from "@/lib/world-assets";
 import { objectFromPose, poseDelta } from "@/lib/world-drag";
 import { moveTarget } from "@/lib/world-move";
+import { type PortBody, ROBOT_HALF } from "@/lib/world-ports";
 import {
   urdfRpyQuaternion,
   WORLD_TO_SCENE_X,
@@ -41,6 +42,7 @@ import {
   warningText,
 } from "@/lib/world-warnings";
 import { invalidateSceneNow } from "@/scene/invalidate";
+import { WireLayer } from "@/scene/WorldPortMarkers";
 import { WorldToolGizmo } from "@/scene/WorldToolGizmo";
 import { startBodyDrag } from "@/scene/world-body-drag";
 import { setWorldFitTarget } from "@/scene/world-fit";
@@ -52,7 +54,7 @@ import {
   worldStore,
 } from "@/state/world";
 import { resetTimeline, worldViewPoses } from "@/state/world-timeline";
-import { worldToolStore } from "@/state/world-tool";
+import { tapWireEmpty, worldToolStore } from "@/state/world-tool";
 import { useXrTheme } from "@/xr/ui/theme";
 
 const ROBOT_COLORS = [0xc4b8a5, 0x8fa3b0, 0xb7a0c4, 0xa3b59a, 0xc4a090];
@@ -460,6 +462,25 @@ export function WorldScene({
     return [...byRobot.entries()];
   }, [loaded]);
 
+  const portBodies = useMemo<PortBody[]>(() => {
+    const document = loaded?.document;
+    if (!document) return [];
+    const halves = (size: readonly number[]): WorldVec3 => [
+      size[0] / 2,
+      size[1] / 2,
+      size[2] / 2,
+    ];
+    return [
+      ...document.boards
+        .filter((board) => board.pose && finiteVec(board.size, 3))
+        .map((board) => ({ id: board.id, half: halves(board.size) })),
+      ...document.boxes
+        .filter((box) => box.pose && finiteVec(box.size, 3))
+        .map((box) => ({ id: box.id, half: halves(box.size) })),
+      ...robots.map(([robotId]) => ({ id: robotId, half: [...ROBOT_HALF] })),
+    ] as PortBody[];
+  }, [loaded, robots]);
+
   const linkMaterials = useMemo(() => {
     const map = new Map<string, THREE.MeshStandardMaterial>();
     robots.forEach(([robotId, links], index) => {
@@ -590,6 +611,7 @@ export function WorldScene({
       onClick: (event: ThreeEvent<MouseEvent>) => {
         event.stopPropagation();
         if (event.delta > 2 || sessionRef.current) return;
+        tapWireEmpty();
         worldStore.getState().select(pick);
       },
       onPointerMove: hover,
@@ -609,6 +631,7 @@ export function WorldScene({
         onClick: (event: ThreeEvent<MouseEvent>) => {
           event.stopPropagation();
           if (event.delta > 2) return;
+          tapWireEmpty();
           worldStore.getState().select(null);
         },
         onPointerMove: (event: ThreeEvent<PointerEvent>) => {
@@ -801,6 +824,7 @@ export function WorldScene({
           );
         })}
         <WarningCallouts />
+        <WireLayer bodies={portBodies} />
       </group>
       <WorldToolGizmo proxyRef={proxyRef} />
     </>
