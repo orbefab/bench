@@ -1,5 +1,7 @@
 /**
  * Whether a capture's `from.hash` still matches the part at `from.level`.
+ * The variant and board instance come from the snapshot's provenance; the
+ * catalog config answers only for a snapshot that predates them.
  * Table captures hash `describeNetlist(stamp, 0, "header")`. Hinge
  * captures hash the gear-train variant. One stamp or one hash per
  * snapshot per plan, not per step.
@@ -32,7 +34,13 @@ export function provenanceHash(
     if (file.form !== "table@1") return { checked: false };
     const across = pair(file.params.across);
     if (!across) return { checked: false };
-    const captured = captureOf(from.part, opts.catalogDir, env);
+    const captured =
+      file.provenance.variant && file.provenance.instance
+        ? {
+            variant: file.provenance.variant,
+            instance: file.provenance.instance,
+          }
+        : captureOf(from.part, opts.catalogDir, env);
     const variant =
       captured?.variant ?? defaultVariant(from.part, from.level, opts, env);
     if (!variant) return { checked: false };

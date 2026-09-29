@@ -84,11 +84,13 @@
       "level": "2",
       "part": "sfab/led-module-red@1.0.0"
     },
+    "instance": "module",
     "source": "captured",
     "tool": {
       "name": "sfab-bench-capture",
       "version": "1"
-    }
+    },
+    "variant": "netlist"
   },
   "quality": "Q1"
 }

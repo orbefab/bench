@@ -925,6 +925,9 @@ export type SnapshotFile = {
   provenance: {
     source: "captured" | "authored" | "measured" | "imported";
     from?: { part: string; level: string; hash: string };
+    /** The behaviour variant and board instance a table capture stamped. */
+    variant?: string;
+    instance?: string;
     fixture?: { ref: string; hash: string; seed: number };
     data?: { file: string; sha256: string; rig?: string };
     tool?: { name: string; version: string; file?: string };

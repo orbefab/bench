@@ -521,6 +521,8 @@ function snapshotOf(input: {
         level: input.config.baseline.level,
         hash: input.hash,
       },
+      variant: input.config.variant,
+      instance: input.config.instance,
       fixture: {
         ref: input.fixtureRef,
         hash: contentHash(input.fixture),

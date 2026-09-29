@@ -102,11 +102,13 @@
       "level": "2",
       "part": "sfab/nano-power-input@1.0.0"
     },
+    "instance": "power",
     "source": "captured",
     "tool": {
       "name": "sfab-bench-capture",
       "version": "1"
-    }
+    },
+    "variant": "netlist"
   },
   "quality": "Q1"
 }

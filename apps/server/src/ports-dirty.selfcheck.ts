@@ -288,6 +288,45 @@ function freshToday() {
     }
   }
   console.log(`fresh today: ${n} catalog and example snapshots, all fresh`);
+
+  const power = JSON.parse(
+    readFileSync(
+      join(catalog, "snapshots", "sfab", "nano-power-input@1.0.0.json"),
+      "utf8"
+    )
+  ) as SnapshotFile;
+  const opts = { catalogDir: catalog, worldDir: catalog, assetRoot: catalog };
+  expect(
+    power.provenance.variant === "netlist" &&
+      power.provenance.instance === "power",
+    "the catalog snapshot records its variant and instance"
+  );
+  const asRecorded = provenanceHash(power, opts, nodeStampEnv);
+  const { variant: _v, instance: _i, ...bare } = power.provenance;
+  const legacy = provenanceHash(
+    { ...power, provenance: bare },
+    opts,
+    nodeStampEnv
+  );
+  expect(
+    asRecorded.checked &&
+      legacy.checked &&
+      asRecorded.hash === legacy.hash &&
+      asRecorded.hash === power.provenance.from?.hash,
+    "a snapshot without variant and instance falls back to the config, same hash"
+  );
+  const moved = provenanceHash(
+    { ...power, provenance: { ...power.provenance, variant: "no-such" } },
+    opts,
+    nodeStampEnv
+  );
+  expect(
+    !moved.checked,
+    "the recorded variant wins over the config: a wrong one is not silently repaired"
+  );
+  console.log(
+    "fresh from provenance: variant and instance recorded, config only for a snapshot without them"
+  );
 }
 
 function walk(dir: string): string[] {
