@@ -145,7 +145,8 @@ operations, so one undo history covers them. An edit is applied in
 `packages/parts` (`EditSession`): in memory, checked by loading the new
 text through an overlay store, then the part and the lock are written
 together. A nested edit re-pins that part's row in every project root
-that uses it, in the same step. The server keeps one undo history per
+that uses it, in the same step. Rename part file is one edit operation
+that writes every affected project file as one atomic step. The server keeps one undo history per
 open part and restarts the run from that write. A browser tab is one project
 folder (`?project=`, [ADR 0006](decisions/0006-folder-is-a-tab.md)); part tabs
 are the open part files inside it, and only the focused part tab is in

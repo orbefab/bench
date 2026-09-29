@@ -105,7 +105,7 @@ Shipped rows stay. Next is the world.
 | 26c | **done** | A3c — fixed ports (D4) and dirtying upward (G3). |
 | 27a | **done** | A4a — editor shell: tree, docked card with one level picker per axis, timeline, warnings three ways, undo, Stay / Break ([`manual.md`](manual.md)). Proof: web self-checks; browser QA is the manager's. |
 | 27b | **done** | A4b — part tabs, breadcrumb, Open part, parking a tab. Proof: web self-checks; browser QA is the manager's. |
-| 27c | planned | A4c — Rename part file. Proof: browser QA. |
+| 27c | **done** | A4c — Rename part file, and a leaf part opened as the root. Proof: self-checks; browser QA is the manager's. |
 | 28 | planned | A5 — tool framework plus move/rotate/snap, mount, wire, probe. Proof: browser QA; edit-operation undo tests. |
 | 29 | planned | A6 — Capture from the card: sidecar snapshots and project level overlays, the fixture tool, progress and abort. Proof: a UI capture matches the CLI capture. |
 
