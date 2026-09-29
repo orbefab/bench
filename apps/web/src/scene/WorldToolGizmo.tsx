@@ -14,6 +14,7 @@ import { useXrSession } from "@/hooks/useXrSession";
 import { objectFromPose, poseFromObject } from "@/lib/world-drag";
 import { moveTarget, poseCommit } from "@/lib/world-move";
 import { isPoseTool } from "@/lib/world-tool";
+import { useOrbitPause } from "@/scene/use-orbit-pause";
 import { previewPose, registerPreview } from "@/scene/world-preview";
 import { useWorld } from "@/state/world";
 import {
@@ -47,31 +48,19 @@ export function WorldToolGizmo({
   const path = useWorld((s) => s.selection?.path ?? null);
   const session = useXrSession();
   const invalidate = useThree((s) => s.invalidate);
-  const orbit = useThree((s) => s.controls) as { enabled?: boolean } | null;
   const controlsRef = useRef<ComponentRef<typeof TransformControls>>(null);
-  const orbitWas = useRef<boolean | undefined>(undefined);
+  const { pause: pauseOrbit, resume: resumeOrbit } = useOrbitPause();
   const openDocument = useWorld((s) => s.path);
   const move = moveTarget(tree, path, openDocument);
 
   // The installed three-stdlib never dispatches `dragging-changed`, so drei
-  // does not stop the orbit under a handle drag. Do it on the press.
-  const pauseOrbit = () => {
-    if (!orbit || orbitWas.current !== undefined) return;
-    orbitWas.current = orbit.enabled;
-    orbit.enabled = false;
-  };
-  const resumeOrbit = () => {
-    if (orbit && orbitWas.current !== undefined) {
-      orbit.enabled = orbitWas.current;
-    }
-    orbitWas.current = undefined;
-  };
+  // does not stop the orbit under a handle drag. `pauseOrbit` runs on the press.
   const pose = move.ok ? move.node.pose : null;
   const active = isPoseTool(mode) && move.ok && path !== null && !session;
 
-  // The handles leaving mid-drag (tool, selection, unmount) give the orbit back.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: resumeOrbit only reads the orbit and a ref
-  useEffect(() => resumeOrbit, [active, orbit]);
+  // The handles leaving mid-drag (tool, selection) give the orbit back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `active` is the trigger, the effect only reads `resumeOrbit`
+  useEffect(() => resumeOrbit, [active, resumeOrbit]);
 
   useLayoutEffect(() => {
     const proxy = proxyRef.current;

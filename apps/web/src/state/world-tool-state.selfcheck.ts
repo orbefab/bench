@@ -1,7 +1,7 @@
 import { ok } from "node:assert/strict";
+import { WORLD_TOOLS } from "@/lib/world-tool";
 import { bindSceneInvalidate } from "@/scene/invalidate";
 import { worldStore } from "./world";
-import { WORLD_TOOLS } from "@/lib/world-tool";
 import {
   beginToolGesture,
   endToolGesture,

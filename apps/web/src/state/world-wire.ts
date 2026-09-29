@@ -38,7 +38,10 @@ function dropWire() {
 
 function stepWire(tap: WireTap) {
   const held = wireStore.getState().from;
-  if (worldToolStore.getState().mode !== "wire" || worldEditStore.getState().pending) {
+  if (
+    worldToolStore.getState().mode !== "wire" ||
+    worldEditStore.getState().pending
+  ) {
     return;
   }
   const next = wireStep(held, tap);

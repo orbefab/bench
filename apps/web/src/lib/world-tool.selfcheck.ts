@@ -204,7 +204,9 @@ expect(
 expect(toolForKey("w") === "wire", "the table maps w to Wire");
 expect(toolForKey("W") === "wire", "the table maps W to Wire");
 expect(
-  toolForKey("m") === null && toolForKey("F2") === null && toolForKey(" ") === null,
+  toolForKey("m") === null &&
+    toolForKey("F2") === null &&
+    toolForKey(" ") === null,
   "a key no tool owns maps to nothing"
 );
 

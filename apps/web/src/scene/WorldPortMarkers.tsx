@@ -12,7 +12,9 @@ import {
 import * as THREE from "three";
 
 import { useXrSession } from "@/hooks/useXrSession";
+import { isClick, pointerOnPlane } from "@/lib/world-drag";
 import { type PortBody, type PortMarker, wireMarkers } from "@/lib/world-ports";
+import type { WorldToolMode } from "@/lib/world-tool";
 import { isDimmed } from "@/lib/world-wire";
 import { PORT_MARKER_TAG } from "@/scene/world-pointer";
 import { useWorld } from "@/state/world";
@@ -96,7 +98,7 @@ export function PortMarkers({
               userData={{ [PORT_MARKER_TAG]: true }}
               onClick={(event) => {
                 event.stopPropagation();
-                if (event.delta > 2) return;
+                if (!isClick(event.delta)) return;
                 onPick(marker.ref);
               }}
               onPointerOver={(event) => {
@@ -181,29 +183,21 @@ function RubberBand({
   useEffect(() => {
     const element = gl.domElement;
     const raycaster = new THREE.Raycaster();
-    const plane = new THREE.Plane();
-    const ndc = new THREE.Vector2();
-    const anchor = new THREE.Vector3();
-    const normal = new THREE.Vector3();
-    const hit = new THREE.Vector3();
     const move = (event: PointerEvent) => {
       const group = frame.current;
       if (!group) return;
-      const rect = element.getBoundingClientRect();
-      ndc.set(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1
-      );
-      raycaster.setFromCamera(ndc, camera);
       group.updateWorldMatrix(true, false);
-      anchor.set(from[0], from[1], from[2]);
-      group.localToWorld(anchor);
-      normal.set(0, 0, 1).transformDirection(group.matrixWorld);
-      plane.setFromNormalAndCoplanarPoint(normal, anchor);
-      if (!raycaster.ray.intersectPlane(plane, hit)) return;
-      group.worldToLocal(hit);
+      const hit = pointerOnPlane(
+        event,
+        element.getBoundingClientRect(),
+        camera,
+        group.matrixWorld.clone().invert(),
+        from[2],
+        raycaster
+      );
+      if (!hit) return;
       const position = line.geometry.getAttribute("position");
-      position.setXYZ(1, hit.x, hit.y, hit.z);
+      position.setXYZ(1, hit[0], hit[1], hit[2]);
       position.needsUpdate = true;
       invalidate();
     };
@@ -214,26 +208,39 @@ function RubberBand({
 }
 
 /**
- * The Wire tool's layer, inside the world content group so a marker is in
- * the document frame. Present only in Wire, and not in an XR session.
+ * What a port-marker layer derives before it draws: the markers of the open
+ * document, and whether the layer shows at all (`tool` is the active tool,
+ * and there is no XR session).
  */
-export function WireLayer({ bodies }: { bodies: readonly PortBody[] }) {
+function useMarkerLayer(
+  tool: WorldToolMode,
+  bodies: readonly PortBody[]
+): { visible: boolean; markers: PortMarker[] } {
   const session = useXrSession();
   const mode = useWorldTool((s) => s.mode);
-  const held = useWireHeld();
   const tree = useWorld((s) => s.tree);
   const openDocument = useWorld((s) => s.path);
-  const frame = useRef<THREE.Group>(null);
   const markers = useMemo(
     () => wireMarkers(tree, bodies, openDocument),
     [tree, bodies, openDocument]
   );
+  return { visible: !session && mode === tool, markers };
+}
+
+/**
+ * The Wire tool's layer, inside the world content group so a marker is in
+ * the document frame. Present only in Wire, and not in an XR session.
+ */
+export function WireLayer({ bodies }: { bodies: readonly PortBody[] }) {
+  const { visible, markers } = useMarkerLayer("wire", bodies);
+  const held = useWireHeld();
+  const frame = useRef<THREE.Group>(null);
   const heldMarker = markers.find((marker) => marker.ref === held) ?? null;
   const dimmed = useMemo(
     () => (marker: PortMarker) => isDimmed(marker, heldMarker),
     [heldMarker]
   );
-  if (session || mode !== "wire") return null;
+  if (!visible) return null;
   return (
     <group ref={frame} name="wire-layer">
       <PortMarkers
@@ -254,15 +261,8 @@ export function WireLayer({ bodies }: { bodies: readonly PortBody[] }) {
  * timeline. Present only in Probe, and not in an XR session.
  */
 export function ProbeLayer({ bodies }: { bodies: readonly PortBody[] }) {
-  const session = useXrSession();
-  const mode = useWorldTool((s) => s.mode);
+  const { visible, markers } = useMarkerLayer("probe", bodies);
   const probes = useProbes();
-  const tree = useWorld((s) => s.tree);
-  const openDocument = useWorld((s) => s.path);
-  const markers = useMemo(
-    () => wireMarkers(tree, bodies, openDocument),
-    [tree, bodies, openDocument]
-  );
   const marked = useMemo(
     () =>
       new Set(
@@ -274,7 +274,7 @@ export function ProbeLayer({ bodies }: { bodies: readonly PortBody[] }) {
       ),
     [markers, probes]
   );
-  if (session || mode !== "probe") return null;
+  if (!visible) return null;
   return (
     <group name="probe-layer">
       <PortMarkers

@@ -2,10 +2,14 @@ import { ok as expect } from "node:assert/strict";
 import * as THREE from "three";
 
 import {
+  DRAG_START_PX,
   dragStarted,
+  isClick,
   objectFromPose,
+  pointerOnPlane,
   poseDelta,
   poseFromObject,
+  rayOnPlane,
   rayPlaneZ,
   slidePose,
 } from "./world-drag";
@@ -136,6 +140,80 @@ near(slid.position[2], 0.006, "slide keeps z");
 expect(slid.rotation.join() === "1,0,0,0", "a slide does not turn");
 expect(!dragStarted(1, 1), "a small move is a click");
 expect(dragStarted(4, 0), "four pixels is a drag");
+
+// One threshold: under DRAG_START_PX is a click, at or over is a drag. No
+// press is neither. A click test and a drag test agree at every distance.
+expect(DRAG_START_PX === 4, "a drag starts at four pixels");
+expect(isClick(3) && !dragStarted(3, 0), "three pixels is a click");
+expect(!isClick(4) && dragStarted(4, 0), "four pixels is a drag, not a click");
+expect(!isClick(5) && dragStarted(0, 5), "five pixels is a drag, not a click");
+expect(isClick(0) && isClick(2), "a still press is a click");
+for (const px of [0, 1, 2, 3, 3.9, 4, 4.1, 5, 12]) {
+  expect(isClick(px) !== dragStarted(px, 0), `${px} px is a click or a drag`);
+}
+
+// The pointer on a plane of a frame: a camera 1 m above the origin looking
+// down, in a 200 x 100 canvas. The centre is straight below the camera.
+const camera = new THREE.PerspectiveCamera(90, 2, 0.01, 10);
+camera.position.set(0, 0, 1);
+camera.lookAt(0, 0, 0);
+camera.updateMatrixWorld(true);
+const canvas = { left: 10, top: 20, width: 200, height: 100 };
+const flat = new THREE.Matrix4();
+const centre = pointerOnPlane(
+  { clientX: 110, clientY: 70 },
+  canvas,
+  camera,
+  flat,
+  0
+);
+expect(centre !== null, "the pointer meets the floor");
+near(centre?.[0] ?? 9, 0, "the centre is under the camera x");
+near(centre?.[1] ?? 9, 0, "the centre is under the camera y");
+near(centre?.[2] ?? 9, 0, "the hit is on the plane");
+const right = pointerOnPlane(
+  { clientX: 210, clientY: 70 },
+  canvas,
+  camera,
+  flat,
+  0
+);
+near(right?.[0] ?? 9, 2, "the right edge is one aspect times the height off");
+const raised = pointerOnPlane(
+  { clientX: 110, clientY: 70 },
+  canvas,
+  camera,
+  flat,
+  0.5
+);
+near(raised?.[2] ?? 9, 0.5, "a raised plane is hit at its height");
+// A frame moved by (1, 2, 0): the hit is given in the frame, not the world.
+const shifted = new THREE.Matrix4().makeTranslation(1, 2, 0).invert();
+const inFrame = pointerOnPlane(
+  { clientX: 110, clientY: 70 },
+  canvas,
+  camera,
+  shifted,
+  0
+);
+near(inFrame?.[0] ?? 9, -1, "the hit is in the frame: x");
+near(inFrame?.[1] ?? 9, -2, "the hit is in the frame: y");
+const away = pointerOnPlane(
+  { clientX: 110, clientY: 70 },
+  canvas,
+  camera,
+  flat,
+  2
+);
+expect(away === null, "a plane behind the camera is not hit");
+const ray = new THREE.Ray(
+  new THREE.Vector3(0, 0, 1),
+  new THREE.Vector3(0, 0, -1)
+);
+expect(
+  rayOnPlane(ray, flat, 0)?.[2] === 0,
+  "a ray is projected the same way as the pointer"
+);
 
 // A robot preview moves the base from one pose to the other.
 const delta = poseDelta(start, turned);

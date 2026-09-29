@@ -2,8 +2,14 @@ import type { RootState, ThreeEvent } from "@react-three/fiber";
 import type { Pose, WorldVec3 } from "@sfab-bench/contract";
 import * as THREE from "three";
 
-import { dragStarted, rayPlaneZ, slidePose } from "@/lib/world-drag";
+import {
+  dragStarted,
+  pointerOnPlane,
+  rayOnPlane,
+  slidePose,
+} from "@/lib/world-drag";
 import { type MoveTarget, poseCommit } from "@/lib/world-move";
+import type { useOrbitPause } from "@/scene/use-orbit-pause";
 import { previewPose } from "@/scene/world-preview";
 import {
   beginToolGesture,
@@ -23,24 +29,16 @@ export function startBodyDrag(input: {
   content: THREE.Object3D;
   move: Extract<MoveTarget, { ok: true }>;
   path: string;
+  orbit: ReturnType<typeof useOrbitPause>;
 }) {
-  const { event, three, content, move, path } = input;
+  const { event, three, content, move, path, orbit } = input;
   const base: Pose = move.node.pose;
   const inverse = content.matrixWorld.clone().invert();
-  const hit = (ray: THREE.Ray): WorldVec3 | null => {
-    const local = ray.clone().applyMatrix4(inverse);
-    return rayPlaneZ(
-      [local.origin.x, local.origin.y, local.origin.z],
-      [local.direction.x, local.direction.y, local.direction.z],
-      base.position[2]
-    );
-  };
-  const origin = hit(event.ray);
-  if (!origin) return;
+  const grabbed = rayOnPlane(event.ray, inverse, base.position[2]);
+  if (!grabbed) return;
+  const origin: WorldVec3 = grabbed;
 
-  const controls = three.controls as { enabled?: boolean } | null;
-  const orbitWas = controls?.enabled;
-  if (controls) controls.enabled = false;
+  orbit.pause();
   const raycaster = new THREE.Raycaster();
   const down = { x: event.clientX, y: event.clientY };
   let started = false;
@@ -50,7 +48,7 @@ export function startBodyDrag(input: {
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
     window.removeEventListener("pointercancel", onCancel);
-    if (controls && orbitWas !== undefined) controls.enabled = orbitWas;
+    orbit.resume();
   };
   const restore = () => {
     latest = null;
@@ -68,17 +66,16 @@ export function startBodyDrag(input: {
       started = true;
       beginToolGesture(cancel);
     }
-    const rect = three.gl.domElement.getBoundingClientRect();
-    raycaster.setFromCamera(
-      new THREE.Vector2(
-        ((e.clientX - rect.left) / rect.width) * 2 - 1,
-        -((e.clientY - rect.top) / rect.height) * 2 + 1
-      ),
-      three.camera
+    const now = pointerOnPlane(
+      e,
+      three.gl.domElement.getBoundingClientRect(),
+      three.camera,
+      inverse,
+      base.position[2],
+      raycaster
     );
-    const now = hit(raycaster.ray);
     if (!now) return;
-    latest = slidePose(base, origin as WorldVec3, now);
+    latest = slidePose(base, origin, now);
     previewPose(path, latest);
   }
   function onUp(e: PointerEvent) {

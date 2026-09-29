@@ -27,7 +27,7 @@ import {
   loadWorldAssets,
   releaseMeshes,
 } from "@/lib/world-assets";
-import { objectFromPose, poseDelta } from "@/lib/world-drag";
+import { isClick, objectFromPose, poseDelta } from "@/lib/world-drag";
 import { moveTarget } from "@/lib/world-move";
 import { type PortBody, ROBOT_HALF } from "@/lib/world-ports";
 import {
@@ -42,6 +42,7 @@ import {
   warningText,
 } from "@/lib/world-warnings";
 import { invalidateSceneNow } from "@/scene/invalidate";
+import { useOrbitPause } from "@/scene/use-orbit-pause";
 import { ProbeLayer, WireLayer } from "@/scene/WorldPortMarkers";
 import { WorldToolGizmo } from "@/scene/WorldToolGizmo";
 import { startBodyDrag } from "@/scene/world-body-drag";
@@ -352,7 +353,7 @@ function WarningCallouts() {
                 if (owner === "marker") return;
                 event.stopPropagation();
                 if (owner === "empty") {
-                  if (event.delta <= 2) tapEmpty();
+                  if (isClick(event.delta)) tapEmpty();
                   return;
                 }
                 worldStore.getState().select({
@@ -404,6 +405,7 @@ export function WorldScene({
   const proxyRef = useRef<THREE.Group>(null);
   const linkGroups = useRef(new Map<string, THREE.Group>());
   const getThree = useThree((s) => s.get);
+  const orbit = useOrbitPause();
   const theme = useXrTheme();
 
   useEffect(() => {
@@ -597,6 +599,7 @@ export function WorldScene({
       content,
       move,
       path: pick.path,
+      orbit,
     });
   };
 
@@ -622,7 +625,7 @@ export function WorldScene({
         const owner = rayOwner(event);
         if (owner === "marker") return;
         event.stopPropagation();
-        if (event.delta > 2 || sessionRef.current) return;
+        if (!isClick(event.delta) || sessionRef.current) return;
         tapEmpty();
         if (owner === "body") worldStore.getState().select(pick);
       },
@@ -643,7 +646,7 @@ export function WorldScene({
         onClick: (event: ThreeEvent<MouseEvent>) => {
           if (rayOwner(event) === "marker") return;
           event.stopPropagation();
-          if (event.delta > 2) return;
+          if (!isClick(event.delta)) return;
           tapEmpty();
           worldStore.getState().select(null);
         },

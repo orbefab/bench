@@ -105,9 +105,50 @@ export function poseDelta(
   return { position, quaternion };
 }
 
-/** A slide under this many pixels is a click. */
+/** A press that moves under this many pixels is a click; at or over, a drag. */
 export const DRAG_START_PX = 4;
 
+/** `distance` is the pixels between press and release (r3f's `event.delta`). */
+export function isClick(distance: number): boolean {
+  return distance < DRAG_START_PX;
+}
+
 export function dragStarted(dx: number, dy: number): boolean {
-  return Math.hypot(dx, dy) >= DRAG_START_PX;
+  return !isClick(Math.hypot(dx, dy));
+}
+
+/**
+ * Where a ray meets the plane `z` of a frame, in that frame, or null.
+ * `worldToFrame` is the inverse of the frame's world matrix.
+ */
+export function rayOnPlane(
+  ray: THREE.Ray,
+  worldToFrame: THREE.Matrix4,
+  z: number
+): WorldVec3 | null {
+  const local = ray.clone().applyMatrix4(worldToFrame);
+  return rayPlaneZ(
+    [local.origin.x, local.origin.y, local.origin.z],
+    [local.direction.x, local.direction.y, local.direction.z],
+    z
+  );
+}
+
+/** Where the pointer, over the canvas at `rect`, meets the plane `z` of a frame. */
+export function pointerOnPlane(
+  pointer: { clientX: number; clientY: number },
+  rect: { left: number; top: number; width: number; height: number },
+  camera: THREE.Camera,
+  worldToFrame: THREE.Matrix4,
+  z: number,
+  raycaster: THREE.Raycaster = new THREE.Raycaster()
+): WorldVec3 | null {
+  raycaster.setFromCamera(
+    new THREE.Vector2(
+      ((pointer.clientX - rect.left) / rect.width) * 2 - 1,
+      -((pointer.clientY - rect.top) / rect.height) * 2 + 1
+    ),
+    camera
+  );
+  return rayOnPlane(raycaster.ray, worldToFrame, z);
 }
