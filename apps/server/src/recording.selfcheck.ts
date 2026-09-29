@@ -809,9 +809,10 @@ async function factor(enabled: boolean): Promise<number> {
 const withRecorder = await factor(true);
 const without = await factor(false);
 const ratio = without > 0 ? withRecorder / without : 0;
-console.log(
-  `real-time factor with recorder ${withRecorder.toFixed(2)}×, without ${without.toFixed(2)}× (${(ratio * 100).toFixed(0)}%)`
-);
+if (process.env.BENCH_TIMINGS === "1")
+  console.log(
+    `real-time factor with recorder ${withRecorder.toFixed(2)}×, without ${without.toFixed(2)}× (${(ratio * 100).toFixed(0)}%)`
+  );
 expect(
   ratio >= 0.8,
   `recorder factor ${withRecorder.toFixed(2)} is below 80% of ${without.toFixed(2)}`

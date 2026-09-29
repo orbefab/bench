@@ -243,9 +243,10 @@ function point(
   const t0 = performance.now();
   for (let i = 0; i < n; i++) cost.solve();
   const us = ((performance.now() - t0) * 1000) / n;
-  console.log(
-    `INFO nano usb path, one SG90: ${us.toFixed(1)} µs per 1 ms step`
-  );
+  if (process.env.BENCH_TIMINGS === "1")
+    console.log(
+      `INFO nano usb path, one SG90: ${us.toFixed(1)} µs per 1 ms step`
+    );
 }
 
 function class1Of(dir: string, stem: string): string {

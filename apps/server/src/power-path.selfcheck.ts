@@ -416,9 +416,10 @@ expect(
     expectBoard(cost, "twelve servos");
   }
   const us = ((performance.now() - t0) * 1000) / n;
-  console.log(
-    `INFO uno usb path, 12 servos: ${us.toFixed(1)} µs per 1 ms step`
-  );
+  if (process.env.BENCH_TIMINGS === "1")
+    console.log(
+      `INFO uno usb path, 12 servos: ${us.toFixed(1)} µs per 1 ms step`
+    );
 }
 
 async function runWorld(

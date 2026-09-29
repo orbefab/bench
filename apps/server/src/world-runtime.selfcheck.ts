@@ -976,9 +976,10 @@ try {
     inOrder(page.text, ["10\r\n", "90\r\n", "120\r\n"]),
     `serial order ${JSON.stringify(page.text)}`
   );
-  console.log(
-    `board lockstep rtf ${(3.5 / wallS).toFixed(3)} (3.500 sim s / ${wallS.toFixed(3)} wall s)`
-  );
+  if (process.env.BENCH_TIMINGS === "1")
+    console.log(
+      `board lockstep rtf ${(3.5 / wallS).toFixed(3)} (3.500 sim s / ${wallS.toFixed(3)} wall s)`
+    );
   const mid = page.text.indexOf("90\r\n");
   const newer = readSerial(
     armDir,

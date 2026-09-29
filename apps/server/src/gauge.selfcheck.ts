@@ -792,9 +792,10 @@ try {
   const gaugeRun = await gaugeOnce();
   const gauge = gaugeRun.read;
   const elapsedMs = performance.now() - started;
-  console.log(
-    `INFO gauge world: ${((elapsedMs / 7000) * 1000).toFixed(1)} us wall per simulated ms`
-  );
+  if (process.env.BENCH_TIMINGS === "1")
+    console.log(
+      `INFO gauge world: ${((elapsedMs / 7000) * 1000).toFixed(1)} us wall per simulated ms`
+    );
   let held = 0;
   const readings: { t: number; us: number; d: number; angle: number }[] = [];
   const vcc: number[] = [];

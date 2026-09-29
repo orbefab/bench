@@ -288,9 +288,10 @@ function seriesDelta(a: number[], b: number[]): { max: number; rms: number } {
     const started = Date.now();
     const full = await runProject(dir, "parts/sfab/gauge-usb@1.0.0.json", 7000);
     const mixed = await runProject(dir, "gauge-mixed.world.json", 7000);
-    console.log(
-      `INFO mixed gauge: ${((Date.now() - started) / 1000).toFixed(1)} s wall`
-    );
+    if (process.env.BENCH_TIMINGS === "1")
+      console.log(
+        `INFO mixed gauge: ${((Date.now() - started) / 1000).toFixed(1)} s wall`
+      );
     const measure = (text: string) =>
       text
         .split(/\r?\n/)

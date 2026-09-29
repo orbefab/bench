@@ -295,10 +295,11 @@ export async function buildPackageHere(
       components,
     };
     writeFileSync(join(dest, "assembly.json"), JSON.stringify(pkg));
-    console.log(
-      `[occt] ${basename(stepAbs)}: ${occurrences.length} occurrences, ` +
-        `${Object.keys(components).length} components, ${triangles} triangles, ${Date.now() - started}ms`
-    );
+    if (process.env.BENCH_TIMINGS === "1")
+      console.log(
+        `[occt] ${basename(stepAbs)}: ${occurrences.length} occurrences, ` +
+          `${Object.keys(components).length} components, ${triangles} triangles, ${Date.now() - started}ms`
+      );
   } finally {
     document.close();
   }

@@ -433,9 +433,10 @@ const bench = { voltage: 5, rSeries: 0.05, currentLimit: 1 };
   }
   const sorted = Array.from(times).sort((a, b) => a - b);
   const median = sorted[sorted.length >> 1] ?? 0;
-  console.log(
-    `INFO coupling cost: ${median.toFixed(1)} µs per 1 ms for 12 servos`
-  );
+  if (process.env.BENCH_TIMINGS === "1")
+    console.log(
+      `INFO coupling cost: ${median.toFixed(1)} µs per 1 ms for 12 servos`
+    );
 }
 
 async function runWorld(world: string): Promise<RecordingRead> {

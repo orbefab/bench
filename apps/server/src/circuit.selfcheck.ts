@@ -1,7 +1,7 @@
 /**
  * Circuit engine, pin element, and ADC (ADR 0010).
  * Traces are ngspice, stored under fixtures/circuit. Nothing here is timed
- * except the INFO lines.
+ * except the INFO lines, which print only with BENCH_TIMINGS=1.
  */
 
 import { readFileSync } from "node:fs";
@@ -45,6 +45,8 @@ import {
   nanoUsbDeck,
 } from "./world/nano-reference";
 import { unoUsbTrace } from "./world/uno-reference";
+
+const timings = process.env.BENCH_TIMINGS === "1";
 
 function benchUs(engine: Engine, warmup: number, samples: number): number {
   engine.operatingPoint();
@@ -588,13 +590,15 @@ for (const rail of POT_RAILS) {
     40,
     15
   );
-  console.log(`INFO linear 50 nodes: ${linearUs.toFixed(2)} µs/step`);
+  if (timings)
+    console.log(`INFO linear 50 nodes: ${linearUs.toFixed(2)} µs/step`);
   const diodeUs = benchUs(
     new Engine(ladder(50, true), { method: "be", h: 1e-6 }),
     40,
     15
   );
-  console.log(`INFO diodes 50 nodes (10%): ${diodeUs.toFixed(2)} µs/step`);
+  if (timings)
+    console.log(`INFO diodes 50 nodes (10%): ${diodeUs.toFixed(2)} µs/step`);
 }
 
 {

@@ -404,9 +404,10 @@ expect(
 );
 console.log("report: byte-identical, quality, error, omits");
 
-console.log(
-  `INFO move µs/ms class 2 ${free.moveUsPerMs.class2.toFixed(1)}, class 1 ${free.moveUsPerMs.class1.toFixed(1)}`
-);
+if (process.env.BENCH_TIMINGS === "1")
+  console.log(
+    `INFO move µs/ms class 2 ${free.moveUsPerMs.class2.toFixed(1)}, class 1 ${free.moveUsPerMs.class1.toFixed(1)}`
+  );
 console.log(
   "unchanged: class-2 Nano, Uno, arm, gauge, and worlds without a Nano stay on the existing self-checks"
 );
