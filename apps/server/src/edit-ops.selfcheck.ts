@@ -637,6 +637,21 @@ try {
         );
       }
 
+      const badLabel = parseWorldClient(
+        JSON.stringify({
+          type: "edit",
+          label: 5,
+          ops: [
+            { kind: "set-pose", document: USB, id: "ground", pose: pose(0) },
+          ],
+        })
+      );
+      expect(
+        "error" in badLabel && badLabel.error === "edit label must be a string",
+        JSON.stringify(badLabel)
+      );
+      console.log("socket edit with a non-string label: refused as a label");
+
       // What the web's Move and Rotate tools send: one labelled set-pose in
       // the document frame with a scalar-first quaternion, then one undo.
       const beforeMove = pairOf(tools, USB);

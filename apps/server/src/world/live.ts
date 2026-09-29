@@ -47,17 +47,21 @@ type ParsedClient =
   | { error: string }
   | { error: string; kind: "board"; board: string; nonce?: string };
 
+function isNonce(nonce: unknown): nonce is string {
+  return (
+    typeof nonce === "string" &&
+    nonce.length >= 1 &&
+    nonce.length <= WORLD_NONCE_MAX
+  );
+}
+
 function boardParseError(
   message: string,
   board: unknown,
   nonce: unknown
 ): ParsedClient {
   const id = typeof board === "string" ? board : "";
-  if (
-    typeof nonce === "string" &&
-    nonce.length > 0 &&
-    nonce.length <= WORLD_NONCE_MAX
-  ) {
+  if (isNonce(nonce)) {
     return { error: message, kind: "board", board: id, nonce };
   }
   return { error: message, kind: "board", board: id };
@@ -87,13 +91,7 @@ export function parseWorldClient(raw: string): ParsedClient {
   if (type === "play" || type === "pause") {
     const nonce = (value as { nonce?: unknown }).nonce;
     if (nonce === undefined) return { type };
-    if (
-      typeof nonce !== "string" ||
-      nonce.length < 1 ||
-      nonce.length > WORLD_NONCE_MAX
-    ) {
-      return { error: "nonce must be a short string" };
-    }
+    if (!isNonce(nonce)) return { error: "nonce must be a short string" };
     return { type, nonce };
   }
   if (type === "step") {
@@ -118,11 +116,7 @@ export function parseWorldClient(raw: string): ParsedClient {
       );
     }
     if (nonce === undefined) return { type: "serial-send", board, text };
-    if (
-      typeof nonce !== "string" ||
-      nonce.length < 1 ||
-      nonce.length > WORLD_NONCE_MAX
-    ) {
+    if (!isNonce(nonce)) {
       return boardParseError("nonce must be a short string", board, nonce);
     }
     return { type: "serial-send", board, text, nonce };
@@ -161,13 +155,7 @@ export function parseWorldClient(raw: string): ParsedClient {
     if (typeof t !== "number" || !Number.isFinite(t) || t < 0) {
       return { error: "seek needs a time" };
     }
-    if (
-      typeof nonce !== "string" ||
-      nonce.length < 1 ||
-      nonce.length > WORLD_NONCE_MAX
-    ) {
-      return { error: "nonce must be a short string" };
-    }
+    if (!isNonce(nonce)) return { error: "nonce must be a short string" };
     return { type: "seek", t, nonce };
   }
   if (type === "undo" || type === "redo") {
@@ -187,7 +175,7 @@ export function parseWorldClient(raw: string): ParsedClient {
       return { error: "edit needs operations" };
     }
     if (label !== undefined && typeof label !== "string") {
-      return { error: "edit needs operations" };
+      return { error: "edit label must be a string" };
     }
     if (part !== undefined && typeof part !== "string") {
       return { error: "part must be a part id" };
@@ -212,7 +200,7 @@ export function parseWorldClient(raw: string): ParsedClient {
   return { error: "unknown world message" };
 }
 
-function send(ws: WebSocket, event: unknown) {
+function send(ws: WebSocket, event: WorldServerMessage) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(event));
 }
 
