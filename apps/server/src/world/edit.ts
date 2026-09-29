@@ -23,11 +23,14 @@ import {
   readEditOp,
 } from "@sfab-bench/parts";
 
-import { publishWorldEvent, restartWorld } from "./host";
+import { publishWorldEvent, restartWorld, stopWorld } from "./host";
 import { absolutePath, nodeStore } from "./node-store";
 import { catalogRoot } from "./plan-host";
 
 const sessions = new Map<string, EditSession>();
+
+/** Part ids this process has renamed, so undo still finds the file. */
+const partFileAlias = new Map<string, string>();
 
 type SessionMeta = {
   /** Absent when the session is the open document. */
@@ -83,6 +86,10 @@ export type DocumentEdit = {
   report: RunReport;
   sentence: string;
   warnings?: string[];
+  /** Project-relative. Set when this step moved the open document. */
+  moved?: { from: string; to: string };
+  /** Ids. Kept so a later undo still finds the session. Not on the wire. */
+  renamed?: { from: string; to: string };
 };
 
 export async function applyDocumentEdit(
@@ -93,8 +100,9 @@ export async function applyDocumentEdit(
   part?: string,
   confirm?: "break"
 ): Promise<DocumentEdit | NeedsConfirm | { error: string }> {
-  const session = openSession(project, world, part);
-  if ("error" in session) return session;
+  const opened = openSession(project, world, part);
+  if ("error" in opened) return opened;
+  const { session, key } = opened;
   if (ops.length === 0) return { error: "edit needs operations" };
   const op: EditOp =
     ops.length === 1
@@ -115,14 +123,10 @@ export async function applyDocumentEdit(
   const applied = session.apply(op, label);
   if ("needsConfirm" in applied) return applied;
   if ("error" in applied) return applied;
-  const restarted = await restartWorld(project, world);
-  if ("error" in restarted) return restarted;
-  const result = {
+  return finishEdit(project, world, part, session, key, {
     ...applied,
     sentence: editSentence(applied.label, applied.canUndo),
-  };
-  announce(project, world, part, result);
-  return result;
+  });
 }
 
 export async function undoDocument(
@@ -130,19 +134,16 @@ export async function undoDocument(
   world: string,
   part?: string
 ): Promise<DocumentEdit | { error: string }> {
-  const session = openSession(project, world, part);
-  if ("error" in session) return session;
+  const opened = openSession(project, world, part);
+  if ("error" in opened) return opened;
+  const { session, key } = opened;
   const applied = session.undo();
   if ("needsConfirm" in applied) return { error: "nothing to undo" };
   if ("error" in applied) return applied;
-  const restarted = await restartWorld(project, world);
-  if ("error" in restarted) return restarted;
-  const result = {
+  return finishEdit(project, world, part, session, key, {
     ...applied,
     sentence: `Undid ${applied.label}. ${redoSentence(applied.canRedo)}`,
-  };
-  announce(project, world, part, result);
-  return result;
+  });
 }
 
 export async function redoDocument(
@@ -150,19 +151,16 @@ export async function redoDocument(
   world: string,
   part?: string
 ): Promise<DocumentEdit | { error: string }> {
-  const session = openSession(project, world, part);
-  if ("error" in session) return session;
+  const opened = openSession(project, world, part);
+  if ("error" in opened) return opened;
+  const { session, key } = opened;
   const applied = session.redo();
   if ("needsConfirm" in applied) return { error: "nothing to redo" };
   if ("error" in applied) return applied;
-  const restarted = await restartWorld(project, world);
-  if ("error" in restarted) return restarted;
-  const result = {
+  return finishEdit(project, world, part, session, key, {
     ...applied,
     sentence: `Redid ${applied.label}. ${undoSentence(applied.canUndo)}`,
-  };
-  announce(project, world, part, result);
-  return result;
+  });
 }
 
 export function editSentence(label: string, canUndo: boolean): string {
@@ -273,6 +271,7 @@ function editedPayload(
     ...(result.warnings && result.warnings.length > 0
       ? { warnings: result.warnings }
       : {}),
+    ...(result.moved ? { moved: result.moved } : {}),
   };
 }
 
@@ -280,7 +279,7 @@ function openSession(
   project: string,
   world: string,
   part?: string
-): EditSession | { error: string } {
+): { session: EditSession; key: string } | { error: string } {
   const root = absolutePath(project);
   const located = locatePart(root, world, part);
   if ("error" in located) return located;
@@ -289,8 +288,9 @@ function openSession(
   meta.worlds.add(worldKey(project, world));
   if (part) meta.part = part;
   sessionMeta.set(key, meta);
+  if (part) partFileAlias.set(part, key);
   const found = sessions.get(key);
-  if (found) return found;
+  if (found) return { session: found, key };
   const opened = EditSession.open({
     file: key,
     names: [...located.names, key],
@@ -300,7 +300,68 @@ function openSession(
   });
   if ("error" in opened) return opened;
   sessions.set(key, opened);
-  return opened;
+  return { session: opened, key };
+}
+
+/**
+ * Re-key the session when the file moved, then restart the run.
+ * The open document's own rename stops that doc after the clients
+ * hear `moved`: the file is gone, and they reconnect at the new path.
+ * A nested rename still restarts the document it was sent through.
+ */
+async function finishEdit(
+  project: string,
+  world: string,
+  part: string | undefined,
+  session: EditSession,
+  beforeKey: string,
+  result: DocumentEdit
+): Promise<DocumentEdit | { error: string }> {
+  rekey(project, session, beforeKey, result);
+  if (result.moved && sameRel(result.moved.from, world)) {
+    announce(project, world, part, result);
+    await stopWorld(project, world);
+    return result;
+  }
+  const restarted = await restartWorld(project, world);
+  if ("error" in restarted) return restarted;
+  announce(project, world, part, result);
+  return result;
+}
+
+function rekey(
+  project: string,
+  session: EditSession,
+  beforeKey: string,
+  result: DocumentEdit
+): void {
+  if (!result.moved && !result.renamed) return;
+  const root = absolutePath(project);
+  const nextFile = result.moved
+    ? canonical(absolutePath(join(root, result.moved.to)))
+    : canonical(session.file);
+  const names = new Set<string>([
+    ...(result.moved ? [result.moved.to, result.moved.from] : []),
+    nextFile,
+  ]);
+  if (result.renamed) {
+    names.add(result.renamed.from);
+    names.add(result.renamed.to);
+    partFileAlias.set(result.renamed.from, nextFile);
+    partFileAlias.set(result.renamed.to, nextFile);
+  }
+  session.adopt(nextFile, [...names]);
+  if (nextFile === beforeKey) return;
+  sessions.delete(beforeKey);
+  sessions.set(nextFile, session);
+  const meta = sessionMeta.get(beforeKey);
+  sessionMeta.delete(beforeKey);
+  if (meta) sessionMeta.set(nextFile, meta);
+}
+
+function sameRel(a: string, b: string): boolean {
+  const clean = (path: string) => path.replace(/\\/g, "/").replace(/^\.\//, "");
+  return clean(a) === clean(b);
 }
 
 function locatePart(
@@ -313,9 +374,16 @@ function locatePart(
     return { file, names: [world, file] };
   }
   const file = partFilePath(root, part);
-  if (!file) return { error: `no part ${part}` };
-  const rel = relative(root, file).split(sep).join("/");
-  return { file, names: [part, rel, file] };
+  if (file && nodeStore.exists(file)) {
+    const rel = relative(root, file).split(sep).join("/");
+    return { file, names: [part, rel, file] };
+  }
+  const aliased = partFileAlias.get(part);
+  if (aliased) {
+    const rel = relative(root, aliased).split(sep).join("/");
+    return { file: aliased, names: [part, rel, aliased] };
+  }
+  return { error: `no part ${part}` };
 }
 
 function documentNames(

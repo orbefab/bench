@@ -1102,7 +1102,7 @@ export const worldTools = {
   }),
   world_edit: tool({
     description:
-      "Change one part through typed edit operations, as one undo step, then restart the run. world is the project-relative part path from get_viewer. part is a part id inside that world; the root is the default. ops is add-instance, remove-instance, set-pose, set-param, set-level, wire, unwire, rename-instance, set-play, or a batch of those. Each op's document is the part's path. A catalog part is read-only. break: true applies an edit that drops fixed ports. Without it, removing a fixed port changes nothing and the sentence says to send it again. Returns what changed and whether undo is available.",
+      "Change one part through typed edit operations, as one undo step, then restart the run. world is the project-relative part path from get_viewer. part is a part id inside that world; the root is the default. ops is add-instance, remove-instance, set-pose, set-param, set-level, wire, unwire, rename-instance, rename-part, set-play, or a batch of those. Each op's document is the part's path. A catalog part is read-only. break: true applies an edit that drops fixed ports. Without it, removing a fixed port changes nothing and the sentence says to send it again. Returns what changed and whether undo is available.",
     inputSchema: z.object({
       world: z.string(),
       ops: z.array(z.record(z.string(), z.unknown())).min(1),

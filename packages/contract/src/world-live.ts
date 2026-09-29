@@ -408,6 +408,11 @@ export type WorldServerMessage =
       histories?: { part?: string; canUndo: boolean; canRedo: boolean }[];
       /** Ports a break disconnected. Absent when the edit broke none. */
       warnings?: string[];
+      /**
+       * A rename moved this document. Project-relative paths. Present
+       * on the apply and on the undo or redo of that rename.
+       */
+      moved?: { from: string; to: string };
     }
   /**
    * Undo flags for this document, with no edit attached. A part tab
