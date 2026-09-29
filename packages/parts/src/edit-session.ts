@@ -41,7 +41,7 @@ import {
   portDomain,
   portNames,
 } from "./ports";
-import { type PlannedFile, planPartRename } from "./rename";
+import { type PlannedFile, planPartRename, type SkippedFile } from "./rename";
 import { sha256Hex } from "./sha256";
 import { canonicalJson } from "./si";
 import type { Store } from "./store";
@@ -84,6 +84,8 @@ export type AppliedEdit = {
   moved?: { from: string; to: string };
   /** Part ids before and after this step. The server keeps aliases. */
   renamed?: { from: string; to: string };
+  /** Project files a rename could not read, so it did not check them for the old id. */
+  skipped?: SkippedFile[];
 };
 
 export type NeedsConfirm = {
@@ -296,6 +298,7 @@ export class EditSession {
       report: loaded.report,
       moved: { from: planned.fromRel, to: planned.toRel },
       renamed: { from: planned.fromId, to: planned.toId },
+      ...(planned.skipped.length > 0 ? { skipped: planned.skipped } : {}),
     };
   }
 

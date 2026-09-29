@@ -135,9 +135,23 @@ export async function applyDocumentEdit(
   const applied = session.apply(op, label);
   if ("needsConfirm" in applied) return applied;
   if ("error" in applied) return applied;
+  const unread = (applied.skipped ?? []).map(
+    (row) => `${row.file}: ${row.error}`
+  );
   return finishEdit(project, world, part, session, key, {
     ...applied,
-    sentence: editSentence(applied.label, applied.canUndo),
+    ...(unread.length > 0
+      ? {
+          warnings: [
+            ...(applied.warnings ?? []),
+            ...unread.map((line) => `not checked for the old name, ${line}`),
+          ],
+        }
+      : {}),
+    sentence:
+      unread.length > 0
+        ? `${editSentence(applied.label, applied.canUndo)} Not checked for the old name: ${unread.join("; ")}.`
+        : editSentence(applied.label, applied.canUndo),
   });
 }
 

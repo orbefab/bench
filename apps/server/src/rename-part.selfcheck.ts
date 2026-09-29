@@ -12,6 +12,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,7 +30,11 @@ import {
 import { viewOf } from "@sfab-bench/sim/view";
 
 import { closeRootWatches } from "./projects";
-import { handleLiveEdit, historiesForConnect } from "./world/edit";
+import {
+  applyDocumentEdit,
+  handleLiveEdit,
+  historiesForConnect,
+} from "./world/edit";
 import { stopWorld, worldWorkerCount } from "./world/host";
 import { parseWorldClient } from "./world/live-message";
 import { absolutePath, nodeStore } from "./world/node-store";
@@ -609,6 +614,108 @@ async function proveUndoOrder() {
   }
 }
 
+async function proveUnreadable() {
+  const project = copyNano("sfab-rename-broken-");
+  try {
+    const brokenRel = "parts/sfab/broken@1.0.0.json";
+    const brokenText = '{ "id": "sfab/broken@1.0.0", ';
+    writeFileSync(join(project, brokenRel), brokenText);
+    const old = new Date("2001-02-03T04:05:06Z");
+    const stamped = new Map<string, number>();
+    for (const [rel] of treeOf(project)) {
+      utimesSync(join(project, rel), old, old);
+      stamped.set(rel, statSync(join(project, rel)).mtimeMs);
+    }
+    const before = treeOf(project);
+
+    const file = absolutePath(join(project, SCENE));
+    const text = readFileSync(file, "utf8");
+    const planned = planPartRename({
+      store: nodeStore,
+      projectDir: absolutePath(project),
+      catalogDir: absolutePath(catalogRoot()),
+      file,
+      text,
+      part: JSON.parse(text) as PartFile,
+      to: "servo-scene",
+      document: SCENE,
+    });
+    if ("error" in planned) throw new Error(planned.error);
+    expect(
+      planned.skipped.length === 1 &&
+        planned.skipped[0]?.file === brokenRel &&
+        planned.skipped[0].error === "not valid JSON",
+      JSON.stringify(planned.skipped)
+    );
+    const planPaths = new Set(
+      planned.files.map((row) =>
+        relative(absolutePath(project), row.path).split("\\").join("/")
+      )
+    );
+    expect(!planPaths.has(brokenRel), "the broken file is in the plan");
+    expect(
+      !planPaths.has("parts/sfab/flag@1.0.0.json"),
+      "an untouched part is in the plan"
+    );
+
+    const applied = await applyDocumentEdit(project, SCENE, [
+      { kind: "rename-part", document: SCENE, to: "servo-scene" },
+    ]);
+    expect("sentence" in applied, JSON.stringify(applied));
+    if (!("sentence" in applied)) return;
+    expect(
+      applied.warnings?.length === 1 &&
+        applied.warnings[0]?.includes(`${brokenRel}: not valid JSON`),
+      JSON.stringify(applied.warnings)
+    );
+    expect(
+      applied.sentence.includes(`Not checked for the old name: ${brokenRel}`),
+      applied.sentence
+    );
+    expect(existsSync(join(project, NEXT_SCENE)), "the rename did not land");
+    const after = treeOf(project);
+    expect(after.get(brokenRel) === brokenText, "the broken file was written");
+    const written = new Set<string>();
+    for (const [rel, body] of after) {
+      if (before.get(rel) === body) {
+        expect(
+          statSync(join(project, rel)).mtimeMs === stamped.get(rel),
+          `${rel} has the same bytes but was rewritten`
+        );
+      } else written.add(rel);
+    }
+    const flag = "parts/sfab/flag@1.0.0.json";
+    expect(
+      !written.has(flag) && !written.has(brokenRel),
+      `written: ${[...written].join(", ")}`
+    );
+    const clean = copyNano("sfab-rename-clean-");
+    try {
+      const cleanApplied = await applyDocumentEdit(clean, SCENE, [
+        { kind: "rename-part", document: SCENE, to: "servo-scene" },
+      ]);
+      expect(
+        "sentence" in cleanApplied &&
+          cleanApplied.warnings === undefined &&
+          !cleanApplied.sentence.includes("Not checked"),
+        JSON.stringify(cleanApplied)
+      );
+    } finally {
+      await stopWorld(clean, NEXT_SCENE);
+      await stopWorld(clean, SCENE);
+      rmSync(clean, { recursive: true, force: true });
+    }
+    console.log(
+      `rename unreadable: ${brokenRel} reported, ${written.size} files written, the rest untouched`
+    );
+  } finally {
+    await stopWorld(project, NEXT_SCENE);
+    await stopWorld(project, SCENE);
+    closeRootWatches();
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
 proveScene();
 proveRootLock();
 proveRefusals();
@@ -618,5 +725,6 @@ proveLeaf(armDir, "parts/sfab/arm@1.0.0.json", "arm");
 proveIdle();
 await proveMoved();
 await proveUndoOrder();
+await proveUnreadable();
 expect(worldWorkerCount() === 0, "a world worker was left behind");
 console.log("rename-part.selfcheck ok");

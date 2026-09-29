@@ -9,6 +9,7 @@ import type { EditOp, LockFile, PartFile } from "@sfab-bench/contract";
 import { SNAPSHOT_FORMAT } from "@sfab-bench/contract";
 
 import { partFilePath } from "./document";
+import { formatPart, partStyle } from "./format-part";
 import { lockPathFor } from "./lock";
 import { basename, join, normalize, relative } from "./path";
 import { findPartFile } from "./ports";
@@ -21,8 +22,16 @@ export type PlannedFile = {
   before: string | null;
 };
 
+/** A project file the rename could not read or parse, so it did not look at it. */
+export type SkippedFile = {
+  /** Project-relative. */
+  file: string;
+  error: string;
+};
+
 export type PlannedRename = {
   files: PlannedFile[];
+  skipped: SkippedFile[];
   /** Part text at the new path. */
   text: string;
   part: PartFile;
@@ -70,13 +79,15 @@ export function planPartRename(input: {
   if (input.store.exists(nextFile)) return { error: `${toId} already exists` };
 
   const fromId = input.part.id;
-  const nextText = rewriteId(input.text, fromId, toId);
-  let part: PartFile;
+  let source: unknown;
   try {
-    part = JSON.parse(nextText) as PartFile;
+    source = JSON.parse(input.text) as unknown;
   } catch {
     return { error: "world file is not JSON" };
   }
+  const own = swapDoc({ text: input.text, value: source }, fromId, toId);
+  const part = own.value as PartFile;
+  const nextText = own.text;
   if (part.id !== toId) return { error: "the part id did not change" };
 
   const files: PlannedFile[] = [
@@ -86,51 +97,34 @@ export function planPartRename(input: {
   const parentSha = new Map<string, string>();
   parentSha.set(toId, contentHash(part));
 
-  const parents = projectParts(input.store, input.projectDir).filter(
+  const docs = new Docs(input.store, input.projectDir);
+  const projectFiles = projectParts(docs);
+  const parents = projectFiles.filter(
     (file) => normalize(file) !== normalize(input.file)
   );
   for (const file of parents) {
-    let before: string;
-    try {
-      before = input.store.readText(file);
-    } catch {
-      continue;
-    }
-    if (!before.includes(fromId)) continue;
-    if (!referencesInstance(before, fromId)) continue;
-    const after = rewriteId(before, fromId, toId);
-    let parsedParent: PartFile;
-    try {
-      parsedParent = JSON.parse(after) as PartFile;
-    } catch {
-      return { error: "a parent part is not JSON" };
-    }
-    files.push({ path: file, text: after, before });
-    if (parsedParent.id)
-      parentSha.set(parsedParent.id, contentHash(parsedParent));
+    const doc = docs.load(file);
+    if (!doc) continue;
+    if (!instancePartIds(doc.value).includes(fromId)) continue;
+    const next = swapDoc(doc, fromId, toId);
+    files.push({ path: file, text: next.text, before: doc.text });
+    const nextPart = next.value as PartFile;
+    if (nextPart.id) parentSha.set(nextPart.id, contentHash(nextPart));
   }
 
-  const snapshots = projectSnapshots(input.store, input.projectDir);
   const snapshotSha = new Map<string, string>();
-  for (const file of snapshots) {
-    let before: string;
-    try {
-      before = input.store.readText(file);
-    } catch {
-      continue;
-    }
-    if (!mentionsPart(parseJson(before), fromId)) continue;
-    const after = rewriteId(before, fromId, toId);
-    files.push({ path: file, text: after, before });
-    const parsedSnap = parseJson(after);
-    if (parsedSnap)
-      snapshotSha.set(
-        projectRel(input.projectDir, file),
-        contentHash(parsedSnap)
-      );
+  for (const file of projectSnapshots(docs)) {
+    const doc = docs.load(file);
+    if (!doc || !mentionsPart(doc.value, fromId)) continue;
+    const next = swapDoc(doc, fromId, toId);
+    files.push({ path: file, text: next.text, before: doc.text });
+    snapshotSha.set(
+      projectRel(input.projectDir, file),
+      contentHash(next.value)
+    );
   }
 
-  const overlays = projectOverlays(input.store, input.projectDir, parsed, to);
+  const overlays = projectOverlays(docs, parsed, to);
   for (const row of overlays) {
     files.push(row.file);
     if (row.shaKey && row.parsed) {
@@ -140,6 +134,8 @@ export function planPartRename(input: {
 
   const locks = lockRewrites(
     input,
+    docs,
+    projectFiles,
     fromId,
     toId,
     nextFile,
@@ -156,6 +152,7 @@ export function planPartRename(input: {
   };
   return {
     files,
+    skipped: docs.skipped(),
     text: nextText,
     part,
     nextFile,
@@ -173,6 +170,8 @@ function lockRewrites(
     projectDir: string;
     file: string;
   },
+  docs: Docs,
+  projectFiles: readonly string[],
   fromId: string,
   toId: string,
   nextFile: string,
@@ -249,12 +248,7 @@ function lockRewrites(
 
   const own = consider(lockPathFor(input.file), true);
   if (own && "error" in own) return own;
-  const roots = lockedLockPaths(
-    input.store,
-    input.projectDir,
-    fromId,
-    input.file
-  );
+  const roots = lockedLockPaths(docs, projectFiles, fromId, input.file);
   for (const lockPath of roots) {
     const decided = consider(lockPath, false);
     if (decided && "error" in decided) return decided;
@@ -268,24 +262,19 @@ function lockRewrites(
  * a root lock is the pin, and a nested part has none.
  */
 function lockedLockPaths(
-  store: Store,
-  projectDir: string,
+  docs: Docs,
+  parts: readonly string[],
   partId: string,
   skipFile: string
 ): string[] {
-  const parts = projectParts(store, projectDir);
   const out: string[] = [];
   for (const file of parts) {
     if (normalize(file) === normalize(skipFile)) continue;
     const lock = lockPathFor(file);
-    if (!store.exists(lock)) continue;
-    let text: string;
-    try {
-      text = store.readText(file);
-    } catch {
-      continue;
-    }
-    if (usesPart(store, parts, text, partId, new Set())) {
+    if (!docs.exists(lock)) continue;
+    const doc = docs.load(file);
+    if (!doc) continue;
+    if (usesPart(docs, parts, doc.value, partId, new Set())) {
       out.push(lock);
     }
   }
@@ -294,40 +283,25 @@ function lockedLockPaths(
 }
 
 function usesPart(
-  store: Store,
+  docs: Docs,
   parts: readonly string[],
-  text: string,
+  value: unknown,
   partId: string,
   seen: Set<string>
 ): boolean {
-  const parsed = parseJson(text) as { id?: string } | null;
-  const id = parsed && typeof parsed.id === "string" ? parsed.id : "";
-  if (!id || seen.has(id)) return false;
+  const id = (value as { id?: unknown } | null)?.id;
+  if (typeof id !== "string" || !id || seen.has(id)) return false;
   seen.add(id);
-  if (text.includes(`"${partId}"`) && referencesInstance(text, partId))
-    return true;
-  if (!parsed) return false;
-  const refs = instancePartIds(parsed);
+  const refs = instancePartIds(value);
+  if (refs.includes(partId)) return true;
   for (const ref of refs) {
-    if (ref === partId) return true;
     const child = parts.find((file) => {
-      try {
-        const body = store.readText(file);
-        return (
-          body.includes(`"id": "${ref}"`) || body.includes(`"id":"${ref}"`)
-        );
-      } catch {
-        return false;
-      }
+      const doc = docs.load(file);
+      return (doc?.value as { id?: unknown } | undefined)?.id === ref;
     });
     if (!child) continue;
-    let body: string;
-    try {
-      body = store.readText(child);
-    } catch {
-      continue;
-    }
-    if (usesPart(store, parts, body, partId, seen)) return true;
+    const doc = docs.load(child);
+    if (doc && usesPart(docs, parts, doc.value, partId, seen)) return true;
   }
   return false;
 }
@@ -359,11 +333,6 @@ function instancePartIds(value: unknown): string[] {
   return out;
 }
 
-function referencesInstance(text: string, partId: string): boolean {
-  const parsed = parseJson(text);
-  return instancePartIds(parsed).includes(partId);
-}
-
 function mentionsPart(value: unknown, partId: string): boolean {
   if (!value || typeof value !== "object") return false;
   if (Array.isArray(value))
@@ -376,15 +345,122 @@ function mentionsPart(value: unknown, partId: string): boolean {
   return false;
 }
 
-function rewriteId(text: string, fromId: string, toId: string): string {
-  return text.split(fromId).join(toId);
+/** Every string value that is exactly `fromId` becomes `toId`. Keys and longer strings stay. */
+function swapIds(
+  value: unknown,
+  fromId: string,
+  toId: string
+): { value: unknown; hit: boolean } {
+  if (typeof value === "string") {
+    return value === fromId
+      ? { value: toId, hit: true }
+      : { value, hit: false };
+  }
+  if (Array.isArray(value)) {
+    let hit = false;
+    const items = value.map((item) => {
+      const next = swapIds(item, fromId, toId);
+      hit ||= next.hit;
+      return next.value;
+    });
+    return { value: items, hit };
+  }
+  if (value && typeof value === "object") {
+    let hit = false;
+    const row: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      const next = swapIds(child, fromId, toId);
+      hit ||= next.hit;
+      row[key] = next.value;
+    }
+    return { value: row, hit };
+  }
+  return { value, hit: false };
 }
 
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
+type Doc = { text: string; value: unknown };
+
+/**
+ * The document with its id strings swapped, in the style it was written.
+ * A file `formatPart` would not print back unchanged keeps its own layout:
+ * the quoted ids are replaced in the text, and the result is kept only if
+ * it parses to the swapped value.
+ */
+function swapDoc(
+  doc: Doc,
+  fromId: string,
+  toId: string
+): { text: string; value: unknown; hit: boolean } {
+  const swapped = swapIds(doc.value, fromId, toId);
+  if (!swapped.hit) return { text: doc.text, value: doc.value, hit: false };
+  const style = partStyle(doc.text);
+  if (formatPart(doc.value, style) !== doc.text) {
+    const spliced = doc.text
+      .split(JSON.stringify(fromId))
+      .join(JSON.stringify(toId));
+    if (JSON.stringify(JSON.parse(spliced)) === JSON.stringify(swapped.value)) {
+      return { text: spliced, value: swapped.value, hit: true };
+    }
+  }
+  return {
+    text: formatPart(swapped.value, style),
+    value: swapped.value,
+    hit: true,
+  };
+}
+
+/** Reads project JSON once. A file it cannot read or parse is recorded, not dropped. */
+class Docs {
+  private readonly cache = new Map<string, Doc | null>();
+  private readonly failed = new Map<string, string>();
+
+  constructor(
+    private readonly store: Store,
+    readonly projectDir: string
+  ) {}
+
+  exists(file: string): boolean {
+    return this.store.exists(file);
+  }
+
+  list(dir: string): string[] {
+    if (!this.store.exists(dir)) return [];
+    try {
+      return this.store.list(dir);
+    } catch (err: unknown) {
+      this.fail(dir, err);
+      return [];
+    }
+  }
+
+  load(file: string): Doc | null {
+    const key = normalize(file);
+    if (this.cache.has(key)) return this.cache.get(key) ?? null;
+    let doc: Doc | null = null;
+    try {
+      const text = this.store.readText(file);
+      doc = { text, value: JSON.parse(text) as unknown };
+    } catch (err: unknown) {
+      this.fail(file, err);
+    }
+    this.cache.set(key, doc);
+    return doc;
+  }
+
+  skipped(): SkippedFile[] {
+    return [...this.failed]
+      .map(([file, error]) => ({ file, error }))
+      .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+  }
+
+  private fail(file: string, err: unknown): void {
+    const error =
+      err instanceof SyntaxError
+        ? "not valid JSON"
+        : err instanceof Error
+          ? err.message
+          : "could not be read";
+    this.failed.set(projectRel(this.projectDir, file), error);
   }
 }
 
@@ -404,8 +480,8 @@ function projectRel(projectDir: string, file: string): string {
   return relative(normalize(projectDir), normalize(file)).split("\\").join("/");
 }
 
-function projectParts(store: Store, projectDir: string): string[] {
-  return walkJson(store, join(projectDir, "parts")).filter(
+function projectParts(docs: Docs): string[] {
+  return walkJson(docs, join(docs.projectDir, "parts")).filter(
     (file) =>
       file.endsWith(".json") &&
       !file.endsWith(".lock.json") &&
@@ -413,85 +489,59 @@ function projectParts(store: Store, projectDir: string): string[] {
   );
 }
 
-function projectSnapshots(store: Store, projectDir: string): string[] {
-  return walkJson(store, join(projectDir, "snapshots")).filter((file) => {
+function projectSnapshots(docs: Docs): string[] {
+  return walkJson(docs, join(docs.projectDir, "snapshots")).filter((file) => {
     if (!file.endsWith(".json") || file.includes(".edit-")) return false;
-    const parsed = parseJson(safeRead(store, file));
-    if (!parsed || typeof parsed !== "object") return false;
-    return (parsed as { format?: unknown }).format === SNAPSHOT_FORMAT;
+    const value = docs.load(file)?.value;
+    if (!value || typeof value !== "object") return false;
+    return (value as { format?: unknown }).format === SNAPSHOT_FORMAT;
   });
 }
 
 function projectOverlays(
-  store: Store,
-  projectDir: string,
+  docs: Docs,
   parsed: { publisher: string; name: string; version: string },
   toName: string
 ): { file: PlannedFile; shaKey?: string; parsed?: unknown }[] {
-  const dir = join(projectDir, "overlays");
+  const dir = join(docs.projectDir, "overlays");
   const stem = `${parsed.name}@${parsed.version}`;
   const nextStem = `${toName}@${parsed.version}`;
+  const fromId = `${parsed.publisher}/${stem}`;
+  const toId = `${parsed.publisher}/${nextStem}`;
   const out: { file: PlannedFile; shaKey?: string; parsed?: unknown }[] = [];
-  for (const file of walkJson(store, dir)) {
+  for (const file of walkJson(docs, dir)) {
     if (file.includes(".edit-")) continue;
-    let before: string;
-    try {
-      before = store.readText(file);
-    } catch {
-      continue;
-    }
-    const base = basename(file);
-    const renamed = base.includes(stem);
-    const mentions = before.includes(`${parsed.publisher}/${stem}`);
-    if (!renamed && !mentions) continue;
-    const after = mentions
-      ? rewriteId(
-          before,
-          `${parsed.publisher}/${stem}`,
-          `${parsed.publisher}/${nextStem}`
-        )
-      : before;
+    const doc = docs.load(file);
+    if (!doc) continue;
+    const renamed = basename(file).includes(stem);
+    const swapped = swapDoc(doc, fromId, toId);
+    if (!renamed && !swapped.hit) continue;
+    const { text: after, value } = swapped;
     const nextPath = renamed ? file.split(stem).join(nextStem) : file;
     if (nextPath === file) {
-      if (after !== before) {
-        out.push({
-          file: { path: file, text: after, before },
-          shaKey: projectRel(projectDir, file),
-          parsed: parseJson(after),
-        });
-      }
+      out.push({
+        file: { path: file, text: after, before: doc.text },
+        shaKey: projectRel(docs.projectDir, file),
+        parsed: value,
+      });
       continue;
     }
     out.push({
-      file: { path: file, text: null, before },
+      file: { path: file, text: null, before: doc.text },
     });
     out.push({
       file: { path: nextPath, text: after, before: null },
-      shaKey: projectRel(projectDir, nextPath),
-      parsed: parseJson(after),
+      shaKey: projectRel(docs.projectDir, nextPath),
+      parsed: value,
     });
   }
   return out;
 }
 
-function safeRead(store: Store, file: string): string {
-  try {
-    return store.readText(file);
-  } catch {
-    return "";
-  }
-}
-
-function walkJson(store: Store, dir: string): string[] {
+function walkJson(docs: Docs, dir: string): string[] {
   const out: string[] = [];
   const visit = (folder: string) => {
-    let names: string[];
-    try {
-      names = store.list(folder);
-    } catch {
-      return;
-    }
-    for (const name of names) {
+    for (const name of docs.list(folder)) {
       if (name.startsWith(".")) continue;
       const child = join(folder, name);
       if (name.endsWith(".json") || name.endsWith(".lock.json")) {
