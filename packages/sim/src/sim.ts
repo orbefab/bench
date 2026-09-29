@@ -1259,6 +1259,35 @@ function createSession(host: SimHost) {
     stampNodes(simMs());
   }
 
+  /** What a rail circuit stamps for one supply. */
+  function supplyTerms(
+    supply: Pick<
+      SupplySpec,
+      "voltage" | "rSeries" | "currentLimit" | "battery" | "ideal"
+    >
+  ) {
+    return {
+      vNom: supply.voltage,
+      rSeries: supply.rSeries,
+      iLimit: supply.currentLimit,
+      ...(supply.battery ? { battery: supply.battery } : {}),
+      ...(supply.ideal ? { ideal: true as const } : {}),
+    };
+  }
+
+  /** The winding sits on the powering board's 5V node, not on the terminal. */
+  function motorsOf(members: readonly Load[]) {
+    return members.map((load) => {
+      const drive = load.drive;
+      if (!drive) throw new Error("rail motor has no drive");
+      return {
+        resistance: drive.law.resistance,
+        k: drive.law.k,
+        boardId: load.powerBoard ?? drive.board?.id,
+      };
+    });
+  }
+
   /** One circuit per supply. Motor laws are fixed for the run; s and ω are not. */
   function bindRails() {
     rails = new Map();
@@ -1375,21 +1404,9 @@ function createSession(host: SimHost) {
         const primaryNode = nodeFor(primary.id);
         const islandSpans = spansOn(boardsSorted.map((board) => board.id));
         const circuit = createRailCircuit({
-          vNom: primary.voltage,
-          rSeries: primary.rSeries,
-          iLimit: primary.currentLimit,
-          motors: members.map((load) => {
-            const drive = load.drive;
-            if (!drive) throw new Error("rail motor has no drive");
-            return {
-              resistance: drive.law.resistance,
-              k: drive.law.k,
-              boardId: load.powerBoard ?? drive.board?.id,
-            };
-          }),
+          ...supplyTerms(primary),
+          motors: motorsOf(members),
           ...(islandSpans ? { spans: islandSpans } : {}),
-          ...(primary.battery ? { battery: primary.battery } : {}),
-          ...(primary.ideal ? { ideal: true as const } : {}),
           primaryId: primary.id,
           primaryNode,
           boards: boardsSorted.map((board) => {
@@ -1417,12 +1434,8 @@ function createSession(host: SimHost) {
           }),
           also: suppliesSorted.slice(1).map((item) => ({
             id: item.id,
-            vNom: item.voltage,
-            rSeries: item.rSeries,
-            iLimit: item.currentLimit,
+            ...supplyTerms(item),
             node: nodeFor(item.id),
-            ...(item.battery ? { battery: item.battery } : {}),
-            ...(item.ideal ? { ideal: true as const } : {}),
           })),
         });
         noteOpen(circuit);
@@ -1462,35 +1475,19 @@ function createSession(host: SimHost) {
       const members = island.supplyIds.flatMap((id) => groups.get(id) ?? []);
       const primary = vinSupply;
       const circuit = createRailCircuit({
-        vNom: primary.voltage,
-        rSeries: primary.rSeries,
-        iLimit: primary.currentLimit,
-        motors: members.map((load) => {
-          const drive = load.drive;
-          if (!drive) throw new Error("rail motor has no drive");
-          return {
-            resistance: drive.law.resistance,
-            k: drive.law.k,
-            boardId: load.powerBoard ?? drive.board?.id,
-          };
-        }),
+        ...supplyTerms(primary),
+        motors: motorsOf(members),
         pin: only.pin,
         ledAlias: `${only.id}.led`,
         stamp: only.stamp,
         feed: "vin",
         ...(usb && vbus ? { keep: [vbus] } : {}),
         primaryId: primary.id,
-        ...(primary.battery ? { battery: primary.battery } : {}),
-        ...(primary.ideal ? { ideal: true as const } : {}),
         also: [
           {
             id: railSupply.id,
-            vNom: railSupply.voltage,
-            rSeries: railSupply.rSeries,
-            iLimit: railSupply.currentLimit,
+            ...supplyTerms(railSupply),
             node: railNode,
-            ...(railSupply.battery ? { battery: railSupply.battery } : {}),
-            ...(railSupply.ideal ? { ideal: true as const } : {}),
           },
         ],
       });
@@ -1531,24 +1528,12 @@ function createSession(host: SimHost) {
       const sharedSpans = spansOn(stamped.map((board) => board.id));
       const circuit = shared
         ? createRailCircuit({
-            vNom: supply.voltage,
-            rSeries: supply.rSeries,
-            iLimit: supply.currentLimit,
-            motors: members.map((load) => {
-              const drive = load.drive;
-              if (!drive) throw new Error("rail motor has no drive");
-              return {
-                resistance: drive.law.resistance,
-                k: drive.law.k,
-                boardId: load.powerBoard ?? drive.board?.id,
-              };
-            }),
+            ...supplyTerms(supply),
+            motors: motorsOf(members),
             ...(stamped.length === 1 && path ? { boardPath: path } : {}),
             ...(stamped.length === 1 && fed
               ? { pin: fed.pin, ledAlias: `${fed.id}.led` }
               : {}),
-            ...(supply.battery ? { battery: supply.battery } : {}),
-            ...(supply.ideal ? { ideal: true as const } : {}),
             ...(sharedSpans ? { spans: sharedSpans } : {}),
             boards: stamped.map((board) => {
               const one = railAttachment({
@@ -1570,19 +1555,8 @@ function createSession(host: SimHost) {
             }),
           })
         : createRailCircuit({
-            vNom: supply.voltage,
-            rSeries: supply.rSeries,
-            iLimit: supply.currentLimit,
-            motors: members.map((load) => {
-              const drive = load.drive;
-              if (!drive) throw new Error("rail motor has no drive");
-              return {
-                resistance: drive.law.resistance,
-                k: drive.law.k,
-                // The terminal is VIN. The winding sits on this board's 5V node.
-                boardId: load.powerBoard ?? drive.board?.id,
-              };
-            }),
+            ...supplyTerms(supply),
+            motors: motorsOf(members),
             ...(path ? { boardPath: path } : {}),
             ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
             ...(attached.stamp && (fed?.vinFeed || attached.feed)
@@ -1591,8 +1565,6 @@ function createSession(host: SimHost) {
                   feed: fed?.vinFeed ? "vin" : attached.feed,
                 }
               : {}),
-            ...(supply.battery ? { battery: supply.battery } : {}),
-            ...(supply.ideal ? { ideal: true as const } : {}),
           });
       noteOpen(circuit);
       if (fuseStart === "tripped") circuit.tripFuse();
@@ -1783,57 +1755,11 @@ function createSession(host: SimHost) {
   }
 
   /**
-   * Intervals between edges of every stamped pin inside this millisecond.
-   * A single level change charges the rail for the part of the millisecond
-   * after the edge. A pulse has both edges, and those intervals are the duty.
-   */
-  function pinPieces(
-    avr: AvrBoard,
-    circuit: RailCircuit
-  ): { dt: number; drive: { bit: number; mode: PinMode }[] }[] | null {
-    const bits = circuit.driveBits;
-    const start = driveAtStart.get(avr.id);
-    if (!start || bits.length === 0) return null;
-    const wanted = new Set(bits);
-    const edges = avr.pinChanges.filter(
-      (edge) => wanted.has(edge.bit) && edge.cycle >= avr.stepOrigin
-    );
-    if (edges.length === 0) return null;
-    const span = avr.cycles() - avr.stepOrigin;
-    if (!(span > 0)) return null;
-    const mode = new Map(start);
-    const pieces: { dt: number; drive: { bit: number; mode: PinMode }[] }[] =
-      [];
-    let t = 0;
-    let changed = false;
-    const driveOf = () =>
-      bits.map((bit) => ({
-        bit,
-        mode: mode.get(bit) ?? ("input" as const),
-      }));
-    for (const edge of edges) {
-      const when = ((edge.cycle - avr.stepOrigin) / span) * DEFAULT_TIMESTEP_S;
-      const dt = when - t;
-      if (dt > 1e-12) pieces.push({ dt, drive: driveOf() });
-      const prev = mode.get(edge.bit);
-      if (prev === "high" || prev === "low") {
-        const next: PinMode = edge.high ? "high" : "low";
-        if (next !== prev) {
-          mode.set(edge.bit, next);
-          changed = true;
-        }
-      }
-      if (when > t) t = when;
-    }
-    if (!changed) return null;
-    const rest = DEFAULT_TIMESTEP_S - t;
-    if (rest > 1e-12) pieces.push({ dt: rest, drive: driveOf() });
-    return pieces.length > 0 ? pieces : null;
-  }
-
-  /**
-   * Pin edges of every board on one rail, merged onto one timeline.
-   * A board that does not toggle contributes its held mode to each piece.
+   * Intervals between edges of every stamped pin on one rail, inside this
+   * millisecond, merged onto one timeline. A single level change charges the
+   * rail for the part of the millisecond after the edge. A pulse has both
+   * edges, and those intervals are the duty. A board that does not toggle
+   * contributes its held mode to each piece.
    */
   function pinPiecesUnion(
     specs: readonly { id: string }[],
@@ -1926,7 +1852,7 @@ function createSession(host: SimHost) {
     const group = rails.get(supplyId);
     if (!group) return { voltage: 0, current: 0, board: 0, boardMin: 0 };
     const { circuit, loads: members } = group;
-    let pieces: ReturnType<typeof pinPieces> = null;
+    let pieces: ReturnType<typeof pinPiecesUnion> = null;
     if (circuit.boardIds.length > 1) {
       // Every board on the circuit, not only the ones `supplyId` feeds.
       // Two supplies on one island name different boards.
@@ -1968,7 +1894,7 @@ function createSession(host: SimHost) {
     } else {
       circuit.setFixed(fixed);
       const avr = drivenBoard(supplyId);
-      pieces = avr ? pinPieces(avr, circuit) : null;
+      pieces = avr ? pinPiecesUnion([avr], circuit) : null;
       if (avr && !pieces) {
         // DDR set and PORT set is high, DDR set and PORT clear is low,
         // PORT set alone is the pull-up, and neither is an input.

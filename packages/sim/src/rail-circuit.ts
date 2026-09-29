@@ -404,13 +404,21 @@ export class RailCircuit {
     load.amps = amps;
   }
 
+  /** One board's pins. A one-board rail answers for any id with its own. */
+  private pinsOf(id: string) {
+    return this.boardOrder.length === 0
+      ? this.drives
+      : (this.boardDrives.get(id) ?? []);
+  }
+
   driveBitsOf(id: string): readonly number[] {
-    return (this.boardDrives.get(id) ?? []).map((row) => row.bit);
+    return this.pinsOf(id).map((row) => row.bit);
   }
 
   setBoardDrive(id: string, bit: number, mode: PinMode): void {
-    const found = this.boardDrives.get(id)?.find((row) => row.bit === bit);
-    found?.pin.setMode(mode);
+    this.pinsOf(id)
+      .find((row) => row.bit === bit)
+      ?.pin.setMode(mode);
   }
 
   /**
