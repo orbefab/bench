@@ -51,7 +51,7 @@ export function pickWorldTool(mode: WorldToolMode) {
   apply({ type: "pick", mode });
 }
 
-/** W: enter the tool, or leave it when it is already the tool. */
+/** A tool's hotkey: enter the tool, or leave it when it is already the tool. */
 export function toggleWorldTool(mode: WorldToolMode) {
   if (worldToolStore.getState().gesture) cancelWorldGesture();
   apply({ type: "toggle", mode });

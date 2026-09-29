@@ -83,6 +83,23 @@ for (const tool of WORLD_TOOLS) {
     `${tool.mode} key comes from the table`
   );
 }
+// The registry's tool rows match the table: a hotkey needs its row, and a row its hotkey.
+for (const tool of WORLD_TOOLS) {
+  const key = "hotkey" in tool ? tool.hotkey : null;
+  const row = SHORTCUTS.find((r) => r.id === `world-tool-${tool.mode}`);
+  expect(
+    key ? row?.keys.join() === key.toUpperCase() : row === undefined,
+    `${tool.mode} registry row matches its table hotkey`
+  );
+}
+expect(
+  SHORTCUTS.filter(
+    (r) => r.id.startsWith("world-tool-") && r.id !== "world-tool-escape"
+  ).every((r) =>
+    WORLD_TOOLS.some((tool) => r.id === `world-tool-${tool.mode}`)
+  ),
+  "every tool row in the registry names a tool in the table"
+);
 expect(
   editorKeyAction({ key: "w", meta: true }, false) === null,
   "⌘W stays the browser's"

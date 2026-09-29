@@ -108,7 +108,7 @@ export function WorldHotkeys() {
           ? String(target.tagName)
           : "";
       if (action === "play" && (tag === "BUTTON" || tag === "A")) return;
-      if (typeof action === "object") {
+      if (typeof action !== "string") {
         // A held key does not flicker the tool, and a question waits for its answer.
         if (event.repeat || worldEditStore.getState().pending) return;
         event.preventDefault();
