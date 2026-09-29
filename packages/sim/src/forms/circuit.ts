@@ -15,7 +15,7 @@ import {
   type PtcFuseParams,
   Resistor,
 } from "@sfab-bench/engine-circuit";
-import { isScalarParam } from "@sfab-bench/parts";
+import { mergeFormParams, siValue } from "@sfab-bench/parts";
 
 import type { AssignedPart } from "../circuit-stamp";
 import type { FormAdapter, StampedElements } from "./types";
@@ -42,14 +42,10 @@ export function parseCircuitParams(
   if (behaviour.kind !== "form") return null;
   const form = FORM_PARAMS[behaviour.form as FormId];
   const out: Record<string, number> = {};
-  for (const key of Object.keys(form.params)) {
-    const value = behaviour.params[key];
-    if (value !== undefined && isScalarParam(value)) {
-      out[key] = typeof value === "number" ? value : value.v;
-    }
-  }
-  for (const [key, value] of Object.entries(params)) {
-    if (typeof value === "number" && form.params[key]) out[key] = value;
+  for (const [key, value] of Object.entries(
+    mergeFormParams(behaviour.params, params, form.params)
+  )) {
+    out[key] = siValue(value);
   }
   return out;
 }

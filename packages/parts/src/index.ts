@@ -83,6 +83,7 @@ export {
   verifyLock,
   writeLock,
 } from "./lock";
+export { mergeFormParams } from "./merge";
 export {
   buildNets,
   collectPorts,

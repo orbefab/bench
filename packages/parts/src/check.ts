@@ -10,12 +10,12 @@ import {
   RATING_FIELD_QUANTITY,
   type Ratings,
   SI_UNIT,
-  type SiNumber,
   SUPPLY_FORMS,
   type VisualImpl,
 } from "@sfab-bench/contract";
 import { batteryFrom, ocvAt } from "./battery";
 import type { LiveInstance } from "./levels";
+import { mergeFormParams } from "./merge";
 import { collectPorts, type LiveNet, type LivePort, type Wire } from "./nets";
 import { resolve } from "./path";
 import {
@@ -198,14 +198,11 @@ function plausibilityDiags(inst: LiveInstance): Diagnostic[] {
   const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
   if (behaviour?.kind === "form") {
     const form = FORM_PARAMS[behaviour.form];
-    const params: Record<string, SiNumber> = {};
-    for (const [key, value] of Object.entries(behaviour.params)) {
-      if (isScalarParam(value)) params[key] = value;
-    }
-    for (const [key, override] of Object.entries(inst.params)) {
-      if (typeof override === "number" && form?.params[key])
-        params[key] = override;
-    }
+    const params = mergeFormParams(
+      behaviour.params,
+      inst.params,
+      form?.params ?? {}
+    );
     for (const [key, value] of Object.entries(params)) {
       const quantity = form?.params[key];
       if (!quantity) continue;

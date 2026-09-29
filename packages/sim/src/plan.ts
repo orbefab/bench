@@ -26,12 +26,12 @@ import {
   class2BoardNetlist,
   envelopeOf,
   gearTrainErrors,
-  isScalarParam,
   type LiveInstance,
   type LiveNet,
   type LoadResult,
   loadWorldV2,
   makeDiag,
+  mergeFormParams,
   pathRefOf,
   siValue,
   tableLawOf,
@@ -396,11 +396,10 @@ function formNumbers(inst: LiveInstance): Record<string, number> | null {
   const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
   if (!behaviour || behaviour.kind !== "form") return null;
   const out: Record<string, number> = {};
-  for (const [key, value] of Object.entries(behaviour.params)) {
-    if (isScalarParam(value)) out[key] = siValue(value);
-  }
-  for (const [key, value] of Object.entries(inst.params)) {
-    if (typeof value === "number" && Object.hasOwn(out, key)) out[key] = value;
+  for (const [key, value] of Object.entries(
+    mergeFormParams(behaviour.params, inst.params)
+  )) {
+    out[key] = siValue(value);
   }
   return out;
 }
