@@ -8,8 +8,6 @@ import type { EditOp } from "@sfab-bench/contract";
 import { useStore as useZustandStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import { sendWorldCommand, sendWorldEdit } from "@/hooks/useWorldRun";
-import { type ParkChoice, parkGuard, parkOutcome } from "@/lib/world-park";
 import {
   reduceWorldTool,
   toolEscape,
@@ -19,9 +17,13 @@ import {
 } from "@/lib/world-tool";
 import { type WireTap, wireCommit, wireStep } from "@/lib/world-wire";
 import { invalidateSceneNow } from "@/scene/invalidate";
-import { clearPreviews, previewPose } from "@/scene/world-preview";
-import { phaseNow } from "@/state/part-tabs";
+import { clearPreviews } from "@/scene/world-preview";
 import { worldStore } from "@/state/world";
+import {
+  commitEdit,
+  dropPendingEdit,
+  worldEditStore,
+} from "@/state/world-edit";
 
 export type ToolCommit = {
   ops: EditOp[];
@@ -32,17 +34,12 @@ export type ToolCommit = {
 };
 
 type WorldToolStore = WorldToolState & {
-  pending: ToolCommit | null;
-  /** Counts Stay choices, so a card field drops the value that was refused. */
-  stays: number;
   /** The first port of a wire, held until the second is picked. */
   wireFrom: string | null;
 };
 
 export const worldToolStore = createStore<WorldToolStore>()(() => ({
   ...WORLD_TOOL_START,
-  pending: null,
-  stays: 0,
   wireFrom: null,
 }));
 
@@ -100,7 +97,7 @@ function dropWire() {
 
 function stepWire(tap: WireTap) {
   const state = worldToolStore.getState();
-  if (state.mode !== "wire" || state.pending) return;
+  if (state.mode !== "wire" || worldEditStore.getState().pending) return;
   const next = wireStep(state.wireFrom, tap);
   if (next.hold !== state.wireFrom) {
     if (next.hold === null) dropWire();
@@ -137,42 +134,9 @@ export function escapeWorldTool(): boolean {
   return false;
 }
 
-/**
- * A tool commit is an ordinary edit. A playing run asks first, because an
- * edit restarts it; a paused or idle run commits without asking.
- */
+/** A tool commit is an ordinary edit: `commitEdit` decides whether to ask. */
 export function commitToolEdit(commit: ToolCommit) {
-  if (parkGuard(phaseNow()) === "ask") {
-    worldToolStore.setState({ pending: commit });
-    return;
-  }
-  sendToolEdit(commit);
-}
-
-function sendToolEdit(commit: ToolCommit) {
-  sendWorldEdit({ ops: commit.ops, part: commit.part, label: commit.label });
-}
-
-function answerToolCommit(choice: ParkChoice) {
-  const pending = worldToolStore.getState().pending;
-  if (!pending) return;
-  if (parkOutcome(choice) === "stay") {
-    worldToolStore.setState((s) => ({ pending: null, stays: s.stays + 1 }));
-    if (pending.previewPath) previewPose(pending.previewPath, null);
-    else clearPreviews();
-    return;
-  }
-  worldToolStore.setState({ pending: null });
-  sendWorldCommand("pause");
-  sendToolEdit(pending);
-}
-
-export function stayToolCommit() {
-  answerToolCommit("stay");
-}
-
-export function stopToolCommit() {
-  answerToolCommit("stop");
+  commitEdit(commit.ops, commit);
 }
 
 function resetWorldTool() {
@@ -181,9 +145,7 @@ function resetWorldTool() {
   cancelGesture = null;
   cancel?.();
   apply({ type: "reset" });
-  if (worldToolStore.getState().pending) {
-    worldToolStore.setState({ pending: null });
-  }
+  dropPendingEdit();
   clearPreviews();
 }
 

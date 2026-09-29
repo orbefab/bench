@@ -18,7 +18,7 @@ import { SerialConsole } from "@/components/SerialConsole";
 import { SourceView } from "@/components/SourceView";
 import { Button } from "@/components/ui/button";
 import { openPartFile } from "@/components/WorldPartTabs";
-import { sendBoardSerial, sendWorldEdit } from "@/hooks/useWorldRun";
+import { sendBoardSerial } from "@/hooks/useWorldRun";
 import { ampsText } from "@/lib/amps-text";
 import {
   boardStatusLabel,
@@ -39,6 +39,14 @@ import { instanceEditTarget } from "@/lib/world-edit-target";
 import { formatSimTime } from "@/lib/world-issues";
 import { moveTarget, poseCommit } from "@/lib/world-move";
 import { openPartTarget } from "@/lib/world-open-part";
+import {
+  type LevelOption,
+  type PlayChange,
+  renamePartOp,
+  setLevelOp,
+  setParamOp,
+  setPlayOp,
+} from "@/lib/world-ops";
 import {
   formatJointReadout,
   formatLiveDegrees,
@@ -76,8 +84,9 @@ import {
 } from "@/state/board-console";
 import { usePartTabs } from "@/state/part-tabs";
 import { useWorld, worldStore } from "@/state/world";
+import { commitEdit, useWorldEdit } from "@/state/world-edit";
 import { useWorldTimeline } from "@/state/world-timeline";
-import { commitToolEdit, useWorldTool } from "@/state/world-tool";
+import { commitToolEdit } from "@/state/world-tool";
 
 function useWorldSelectionEsc() {
   useEffect(() => {
@@ -737,7 +746,6 @@ function PoseSection({ node }: { node: WorldViewNode }) {
   const tree = useWorld((s) => s.tree);
   const openDocument = useWorld((s) => s.path);
   const move = moveTarget(tree, node.id, openDocument);
-  const stays = useWorldTool((s) => s.stays);
   const fields = poseToFields(node.pose);
   const reason = move.ok ? undefined : move.reason;
   return (
@@ -748,7 +756,7 @@ function PoseSection({ node }: { node: WorldViewNode }) {
       <div className="grid grid-cols-2 gap-x-2">
         {POSE_FIELD_KEYS.map((key) => (
           <NumberField
-            key={`${key}:${stays}`}
+            key={key}
             label={POSE_FIELD_LABELS[key]}
             value={fields[key]}
             disabled={!move.ok}
@@ -778,83 +786,22 @@ function commitParam(
   if (!tree) return;
   const target = instanceEditTarget(tree, node.id, worldStore.getState().path);
   if (!target) return;
-  let value: number | string | boolean = raw;
-  if (typeof previous === "number") {
-    const next = Number(raw);
-    if (!Number.isFinite(next) || next === previous) return;
-    value = next;
-  } else if (typeof previous === "boolean") {
-    value = raw === "true";
-    if (value === previous) return;
-  } else if (raw === previous) {
-    return;
-  }
-  sendWorldEdit({
-    part: target.part,
-    ops: [
-      {
-        kind: "set-param",
-        document: target.document,
-        id: target.id,
-        name,
-        value,
-      },
-    ],
-  });
+  const op = setParamOp(target, name, raw, previous);
+  if (op) commitEdit([op], { part: target.part });
 }
 
 function commitLevel(
   path: string,
   axis: WorldViewNode["levels"][number]["axis"],
-  option: {
-    class: 0 | 1 | 2 | 3;
-    variant: string;
-    runnable: boolean;
-    chosen: boolean;
-  }
+  option: LevelOption
 ) {
-  if (!option.runnable || option.chosen) return;
-  sendWorldEdit({
-    ops: [
-      {
-        kind: "set-level",
-        document: worldStore.getState().path,
-        scope: "path",
-        key: path,
-        axis,
-        class: option.class,
-        variant: option.variant,
-      },
-    ],
-  });
+  const op = setLevelOp(worldStore.getState().path, path, axis, option);
+  if (op) commitEdit([op]);
 }
 
-function commitPlay(
-  current: WorldViewPlay,
-  next: { gravity?: [number, number, number]; seed?: number; timestep?: number }
-) {
-  if (
-    next.gravity &&
-    next.gravity.every((value, index) => value === current.gravity[index])
-  ) {
-    return;
-  }
-  if (next.seed !== undefined && next.seed === current.seed) return;
-  if (
-    next.timestep !== undefined &&
-    next.timestep === (current.timestep ?? DEFAULT_TIMESTEP_S)
-  ) {
-    return;
-  }
-  sendWorldEdit({
-    ops: [
-      {
-        kind: "set-play",
-        document: worldStore.getState().path,
-        ...next,
-      },
-    ],
-  });
+function commitPlay(current: WorldViewPlay, next: PlayChange) {
+  const op = setPlayOp(worldStore.getState().path, current, next);
+  if (op) commitEdit([op]);
 }
 
 /**
@@ -882,7 +829,9 @@ function NumberField({
   title?: string;
 }) {
   const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  const stays = useWorldEdit((s) => s.stays);
+  // Stay on the ask drops the typed value, even when the card's did not move.
+  useEffect(() => setDraft(String(value)), [value, stays]);
   return (
     <label className="mb-1.5 block min-w-0" title={title}>
       <span className="text-[11px] text-muted-foreground">{label}</span>
@@ -969,13 +918,9 @@ function RenamePartFile({
   const [draft, setDraft] = useState(name);
   useEffect(() => setDraft(name), [name]);
   const commit = () => {
-    const next = draft.trim();
     setOpen(false);
-    if (!next || next === name) return;
-    sendWorldEdit({
-      ops: [{ kind: "rename-part", document, to: next }],
-      ...(part ? { part } : {}),
-    });
+    const op = renamePartOp(document, name, draft);
+    if (op) commitEdit([op], { part });
   };
   return (
     <div className="mb-3">
@@ -1080,6 +1025,7 @@ function InstanceBody({
   rootPart?: string;
 }) {
   const card = instanceCard(node);
+  const stays = useWorldEdit((s) => s.stays);
   return (
     <>
       <Section title="Ports">
@@ -1133,7 +1079,7 @@ function InstanceBody({
                 }
               />
             ) : (
-              <label key={param.name} className="mb-1.5 block">
+              <label key={`${param.name}:${stays}`} className="mb-1.5 block">
                 <span className="text-[11px] text-muted-foreground">
                   {param.name}
                 </span>

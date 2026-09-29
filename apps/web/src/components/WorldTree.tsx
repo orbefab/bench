@@ -15,9 +15,7 @@ import {
   PartTabStrip,
 } from "@/components/WorldPartTabs";
 import {
-  breakWorldEdit,
   sendWorldCommand,
-  sendWorldEdit,
   sendWorldRedo,
   sendWorldUndo,
   stayWorldEdit,
@@ -33,6 +31,7 @@ import { confirmActions, confirmLines } from "@/lib/world-confirm";
 import { instanceEditTarget, wireEditTarget } from "@/lib/world-edit-target";
 import { historyButtons } from "@/lib/world-history";
 import { editorKeyAction } from "@/lib/world-keys";
+import { removeInstanceOp, renameInstanceOp, unwireOp } from "@/lib/world-ops";
 import { findViewNode, nextCollapse, treeRows } from "@/lib/world-tree";
 import {
   instanceWarningMap,
@@ -41,11 +40,8 @@ import {
   warningText,
 } from "@/lib/world-warnings";
 import { useWorld, worldStore } from "@/state/world";
-import {
-  escapeWorldTool,
-  toggleWorldTool,
-  worldToolStore,
-} from "@/state/world-tool";
+import { breakWorldEdit, commitEdit, worldEditStore } from "@/state/world-edit";
+import { escapeWorldTool, toggleWorldTool } from "@/state/world-tool";
 import { useTreeFold, writeTreeFold } from "@/state/world-tree-fold";
 
 export function WorldTopBar() {
@@ -114,7 +110,7 @@ export function WorldHotkeys() {
       if (action === "play" && (tag === "BUTTON" || tag === "A")) return;
       if (action === "wire") {
         // A held key does not flicker the tool, and a question waits for its answer.
-        if (event.repeat || worldToolStore.getState().pending) return;
+        if (event.repeat || worldEditStore.getState().pending) return;
         event.preventDefault();
         toggleWorldTool("wire");
         return;
@@ -174,32 +170,13 @@ function deleteSelection() {
       state.path
     );
     if (!target) return;
-    sendWorldEdit({
-      part: target.part,
-      ops: [
-        {
-          kind: "unwire",
-          document: target.document,
-          a: target.a,
-          b: target.b,
-        },
-      ],
-    });
+    commitEdit([unwireOp(target)], { part: target.part });
     return;
   }
   if (!state.selection || state.selection.path === ROOT_PATH) return;
   const target = instanceEditTarget(tree, state.selection.path, state.path);
   if (!target) return;
-  sendWorldEdit({
-    part: target.part,
-    ops: [
-      {
-        kind: "remove-instance",
-        document: target.document,
-        id: target.id,
-      },
-    ],
-  });
+  commitEdit([removeInstanceOp(target)], { part: target.part });
 }
 
 export function WorldConfirmDialog() {
@@ -427,22 +404,10 @@ function RenameField({
           path,
           worldStore.getState().path
         );
-        const to = draft.trim();
-        if (!target || !to || to === node?.name) {
-          onDone();
-          return;
-        }
-        sendWorldEdit({
-          part: target.part,
-          ops: [
-            {
-              kind: "rename-instance",
-              document: target.document,
-              id: target.id,
-              to,
-            },
-          ],
-        });
+        const op = target
+          ? renameInstanceOp(target, node?.name ?? "", draft)
+          : null;
+        if (target && op) commitEdit([op], { part: target.part });
         onDone();
       }}
     />

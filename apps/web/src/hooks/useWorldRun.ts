@@ -9,7 +9,7 @@ import { useEffect } from "react";
 
 import { showToast } from "@/components/ui/toast";
 import { getDeviceToken } from "@/lib/api";
-import { editMessageText } from "@/lib/world-edit-message";
+import { editRefusalText, historyRefusalTitle } from "@/lib/world-edit-refusal";
 import { historyButtons } from "@/lib/world-history";
 import { decideHudSample } from "@/lib/world-hud";
 import { commandNotice, isOwnCommandNonce } from "@/lib/world-issues";
@@ -133,18 +133,6 @@ export function sendWorldRedo() {
 export function stayWorldEdit() {
   pendingEdit = null;
   worldStore.getState().setConfirm(null);
-}
-
-/** Break N: the same operations, with confirm. */
-export function breakWorldEdit() {
-  const confirm = worldStore.getState().confirm;
-  if (!confirm || confirm.ops.length === 0) return;
-  sendWorldEdit({
-    ops: confirm.ops,
-    part: confirm.part,
-    label: confirm.label,
-    confirm: "break",
-  });
 }
 
 function senderLabel(by: WorldSender): string {
@@ -360,37 +348,24 @@ export function useWorldRun(project: string, world: string) {
         showNotice(message.label);
         return;
       }
-      if (message.type === "error") {
+      if (message.type === "edit-refused") {
         const pending = pendingEdit;
-        const refusal = pending !== null && (message.errors?.length ?? 0) === 0;
-        const bare =
-          message.message === "nothing to undo" ||
-          message.message === "nothing to redo";
-        if (refusal || bare) {
-          pendingEdit = null;
-          worldStore.getState().setConfirm(null);
-          const kind =
-            pending?.kind === "redo" || message.message === "nothing to redo"
-              ? "redo"
-              : pending?.kind === "undo" ||
-                  message.message === "nothing to undo"
-                ? "undo"
-                : "edit";
-          if (kind === "undo" || kind === "redo") {
-            worldStore.getState().refuseHistory(kind, pending?.part);
-            showToast({
-              type: "info",
-              title: kind === "redo" ? "Nothing to redo." : "Nothing to undo.",
-            });
-          } else {
-            worldStore
-              .getState()
-              .setEditError(
-                editMessageText(message.message ?? "The edit was refused.")
-              );
-          }
+        pendingEdit = null;
+        worldStore.getState().setConfirm(null);
+        if (message.kind === "edit") {
+          worldStore.getState().setEditError(editRefusalText(message));
           return;
         }
+        worldStore
+          .getState()
+          .refuseHistory(message.kind, message.part ?? pending?.part);
+        showToast({ type: "info", title: historyRefusalTitle(message.kind) });
+        return;
+      }
+      if (message.type === "error") {
+        // A run problem, never an edit refusal: whatever edit was waiting is over.
+        pendingEdit = null;
+        worldStore.getState().setConfirm(null);
         if (!sawState) resetTimeline();
         const live = worldLiveState();
         if (live) setWorldLiveState({ ...live, playing: false });

@@ -15,11 +15,11 @@ import { moveTarget } from "@/lib/world-move";
 import { isPoseTool, toolLabel, type WorldToolMode } from "@/lib/world-tool";
 import { useWorld } from "@/state/world";
 import {
-  pickWorldTool,
-  stayToolCommit,
-  stopToolCommit,
-  useWorldTool,
-} from "@/state/world-tool";
+  stayPendingEdit,
+  stopPendingEdit,
+  useWorldEdit,
+} from "@/state/world-edit";
+import { pickWorldTool, useWorldTool } from "@/state/world-tool";
 
 const TOOL_BUTTONS: readonly {
   mode: WorldToolMode;
@@ -138,15 +138,15 @@ export function WorldControls({
   );
 }
 
-/** A tool commit restarts the run, so a playing run asks first. */
+/** An edit restarts the run, so a playing run asks first. */
 export function WorldToolDialog() {
-  const pending = useWorldTool((s) => s.pending);
+  const pending = useWorldEdit((s) => s.pending);
   if (!pending) return null;
   return (
     <RunPlayingDialog
-      description={`${pending.label} restarts the run. The recording stays on the timeline.`}
-      onStay={stayToolCommit}
-      onStop={stopToolCommit}
+      description={`${pending.label ?? "This edit"} restarts the run. The recording stays on the timeline.`}
+      onStay={stayPendingEdit}
+      onStop={stopPendingEdit}
     />
   );
 }
