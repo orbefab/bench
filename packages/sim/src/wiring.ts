@@ -326,16 +326,17 @@ export function supplyPositiveNode(plan: RunPlan, supplyId: string): string {
 }
 
 /**
- * Supply positive pins that reach `path.port` by a power wire. The one
- * "which supply feeds this port" answer: the plan builder and the rail
- * binding both read it.
+ * Supplies whose positive pin is on the electrical net of `path.port`,
+ * whatever kind of pin the net's wires star out from. The one "which
+ * supply feeds this port" answer: the plan builder and the rail binding
+ * both read it.
  */
 export function suppliesOnPort(
   plan: PowerWiring,
   path: string,
   port: string
 ): string[] {
-  const hit = reachedFrom(`${path}.${port}`, wireGraph(plan, "power"));
+  const hit = reachedFrom(`${path}.${port}`, wireGraph(plan));
   const ids: string[] = [];
   for (const supply of plan.supplies) {
     if (hit.has(`${supply.id}.${supply.positivePin}`)) ids.push(supply.id);
