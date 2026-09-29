@@ -99,7 +99,7 @@ function captureInFlight(): boolean {
   return false;
 }
 
-function phaseNow() {
+export function phaseNow() {
   const hud = worldStore.getState();
   const strip = worldTimelineSnapshot();
   const started =

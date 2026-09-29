@@ -36,6 +36,7 @@ import { relFromWorldFile } from "@/lib/world-assets";
 import { instanceCard } from "@/lib/world-card";
 import { instanceEditTarget } from "@/lib/world-edit-target";
 import { formatSimTime } from "@/lib/world-issues";
+import { moveTarget, poseCommit } from "@/lib/world-move";
 import { openPartTarget } from "@/lib/world-open-part";
 import {
   formatJointReadout,
@@ -48,6 +49,12 @@ import {
   type WorldOutlinePart,
   type WorldOutlineSupply,
 } from "@/lib/world-outline";
+import {
+  editPoseField,
+  POSE_FIELD_KEYS,
+  type PoseFieldKey,
+  poseToFields,
+} from "@/lib/world-pose-fields";
 import {
   partFileName,
   RENAME_LIBRARY_REASON,
@@ -69,6 +76,7 @@ import {
 import { usePartTabs } from "@/state/part-tabs";
 import { useWorld, worldStore } from "@/state/world";
 import { useWorldTimeline } from "@/state/world-timeline";
+import { commitToolEdit, useWorldTool } from "@/state/world-tool";
 
 function useWorldSelectionEsc() {
   useEffect(() => {
@@ -714,6 +722,50 @@ function LiveBody({
   return null;
 }
 
+const POSE_FIELD_LABELS: Record<PoseFieldKey, string> = {
+  x: "x (mm)",
+  y: "y (mm)",
+  z: "z (mm)",
+  rx: "rotate x (°)",
+  ry: "rotate y (°)",
+  rz: "rotate z (°)",
+};
+
+/** Position and rotation of an instance. Works in every tool mode. */
+function PoseSection({ node }: { node: WorldViewNode }) {
+  const tree = useWorld((s) => s.tree);
+  const move = moveTarget(tree, node.id);
+  const stays = useWorldTool((s) => s.stays);
+  const fields = poseToFields(node.pose);
+  const reason = move.ok ? undefined : move.reason;
+  return (
+    <Section title="Pose">
+      {reason ? (
+        <p className="mb-1.5 text-[11px] text-muted-foreground">{reason}</p>
+      ) : null}
+      <div className="grid grid-cols-2 gap-x-2">
+        {POSE_FIELD_KEYS.map((key) => (
+          <NumberField
+            key={`${key}:${stays}`}
+            label={POSE_FIELD_LABELS[key]}
+            value={fields[key]}
+            disabled={!move.ok}
+            title={reason}
+            onCommit={(value) => {
+              if (!move.ok) return;
+              const next = editPoseField(node.pose, key, String(value));
+              const commit = next
+                ? poseCommit(move, node.id, next, "Set pose of")
+                : null;
+              if (commit) commitToolEdit(commit);
+            }}
+          />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 function commitParam(
   node: WorldViewNode,
   name: string,
@@ -818,18 +870,23 @@ function NumberField({
   label,
   value,
   onCommit,
+  disabled,
+  title,
 }: {
   label: string;
   value: number;
   onCommit: (value: number) => void;
+  disabled?: boolean;
+  title?: string;
 }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
   return (
-    <label className="mb-1.5 block min-w-0">
+    <label className="mb-1.5 block min-w-0" title={title}>
       <span className="text-[11px] text-muted-foreground">{label}</span>
       <input
-        className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-[12px]"
+        className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-[12px] disabled:opacity-50"
+        disabled={disabled}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => {
@@ -1041,6 +1098,7 @@ function InstanceBody({
         )}
       </Section>
       <LiveBody node={node} link={link} outline={outline} />
+      {node.id === "$root" ? null : <PoseSection node={node} />}
       {card.params.length > 0 ? (
         <Section title="Params">
           {card.params.map((param) =>

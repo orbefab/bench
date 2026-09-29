@@ -38,7 +38,11 @@ import {
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { ToastProvider, Toasts } from "@/components/ui/toast";
-import { WorldControls, WorldProblemCard } from "@/components/WorldChrome";
+import {
+  WorldControls,
+  WorldProblemCard,
+  WorldToolDialog,
+} from "@/components/WorldChrome";
 import { WorldInspector } from "@/components/WorldInspector";
 import { WorldTimeline } from "@/components/WorldTimeline";
 import {
@@ -549,6 +553,7 @@ function ViewerShell({ host }: { host: boolean }) {
             </div>
             <WorldHotkeys />
             <WorldConfirmDialog />
+            <WorldToolDialog />
           </div>
         ) : (
           <div

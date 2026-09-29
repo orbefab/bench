@@ -22,7 +22,13 @@ import {
   sendWorldUndo,
   stayWorldEdit,
 } from "@/hooks/useWorldRun";
-import { isEditableTarget } from "@/lib/shortcuts";
+import {
+  activeEscLayer,
+  compactChatSheetOpen,
+  isEditableTarget,
+  matchesShortcut,
+  probeEscLayers,
+} from "@/lib/shortcuts";
 import { confirmActions, confirmLines } from "@/lib/world-confirm";
 import { instanceEditTarget, wireEditTarget } from "@/lib/world-edit-target";
 import { historyButtons } from "@/lib/world-history";
@@ -35,6 +41,7 @@ import {
   warningText,
 } from "@/lib/world-warnings";
 import { useWorld, worldStore } from "@/state/world";
+import { escapeWorldTool } from "@/state/world-tool";
 import { useTreeFold, writeTreeFold } from "@/state/world-tree-fold";
 
 export function WorldTopBar() {
@@ -116,6 +123,30 @@ export function WorldHotkeys() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [path]);
+  // Capture phase and preventDefault: a tool takes Esc before the selection
+  // clear, and no other layer is open (those keep Esc).
+  useEffect(() => {
+    if (!path) return;
+    const onEsc = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (
+        !matchesShortcut(event, "world-tool-escape", {
+          mac: false,
+          activeElement: document.activeElement,
+        })
+      ) {
+        return;
+      }
+      const layers = {
+        ...probeEscLayers(document),
+        compactChat: compactChatSheetOpen(document),
+      };
+      if (activeEscLayer(layers)) return;
+      if (escapeWorldTool()) event.preventDefault();
+    };
+    window.addEventListener("keydown", onEsc, true);
+    return () => window.removeEventListener("keydown", onEsc, true);
   }, [path]);
   return null;
 }

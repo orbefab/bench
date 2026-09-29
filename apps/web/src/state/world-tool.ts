@@ -1,0 +1,153 @@
+/**
+ * The world tool mode and the commit a tool is waiting to make. The
+ * transitions are pure (`lib/world-tool.ts`); this holds them for the stage,
+ * the toolbar and the Esc key. `state/viewer.ts` stays the CAD tool state.
+ */
+
+import type { EditOp } from "@sfab-bench/contract";
+import { useStore as useZustandStore } from "zustand";
+import { createStore } from "zustand/vanilla";
+
+import { sendWorldCommand, sendWorldEdit } from "@/hooks/useWorldRun";
+import {
+  reduceWorldTool,
+  toolCommitGuard,
+  toolCommitOutcome,
+  toolEscape,
+  WORLD_TOOL_START,
+  type WorldToolMode,
+  type WorldToolState,
+} from "@/lib/world-tool";
+import { clearPreviews, previewPose } from "@/scene/world-preview";
+import { phaseNow } from "@/state/part-tabs";
+import { worldStore } from "@/state/world";
+
+export type ToolCommit = {
+  ops: EditOp[];
+  part?: string;
+  label: string;
+  /** Run path of the previewed instance, put back on Stay. */
+  previewPath?: string;
+};
+
+type WorldToolStore = WorldToolState & {
+  pending: ToolCommit | null;
+  /** Counts Stay choices, so a card field drops the value that was refused. */
+  stays: number;
+};
+
+export const worldToolStore = createStore<WorldToolStore>()(() => ({
+  ...WORLD_TOOL_START,
+  pending: null,
+  stays: 0,
+}));
+
+export function useWorldTool<T>(selector: (state: WorldToolStore) => T): T {
+  return useZustandStore(worldToolStore, selector);
+}
+
+/** Puts the stage back when a gesture is cancelled mid-drag. */
+let cancelGesture: (() => void) | null = null;
+
+function apply(action: Parameters<typeof reduceWorldTool>[1]) {
+  const state = worldToolStore.getState();
+  const next = reduceWorldTool(state, action);
+  if (next.mode === state.mode && next.gesture === state.gesture) return;
+  worldToolStore.setState({ mode: next.mode, gesture: next.gesture });
+}
+
+export function pickWorldTool(mode: WorldToolMode) {
+  if (worldToolStore.getState().gesture) cancelWorldGesture();
+  apply({ type: "pick", mode });
+}
+
+export function beginToolGesture(cancel: () => void) {
+  cancelGesture = cancel;
+  apply({ type: "begin" });
+}
+
+export function endToolGesture() {
+  cancelGesture = null;
+  apply({ type: "end" });
+}
+
+function cancelWorldGesture() {
+  const cancel = cancelGesture;
+  cancelGesture = null;
+  cancel?.();
+  apply({ type: "end" });
+}
+
+/** True when Esc was ours. The selection clear runs only when it was not. */
+export function escapeWorldTool(): boolean {
+  const state = worldToolStore.getState();
+  const { did } = toolEscape(state);
+  if (did === "cancel-gesture") {
+    cancelWorldGesture();
+    return true;
+  }
+  if (did === "leave-tool") {
+    apply({ type: "pick", mode: "select" });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * A tool commit is an ordinary edit. A playing run asks first, because an
+ * edit restarts it; a paused or idle run commits without asking.
+ */
+export function commitToolEdit(commit: ToolCommit) {
+  if (toolCommitGuard(phaseNow()) === "ask") {
+    worldToolStore.setState({ pending: commit });
+    return;
+  }
+  sendToolEdit(commit);
+}
+
+function sendToolEdit(commit: ToolCommit) {
+  sendWorldEdit({ ops: commit.ops, part: commit.part, label: commit.label });
+}
+
+export function stayToolCommit() {
+  const pending = worldToolStore.getState().pending;
+  if (!pending) return;
+  worldToolStore.setState((s) => ({ pending: null, stays: s.stays + 1 }));
+  if (toolCommitOutcome("stay") !== "drop") return;
+  if (pending.previewPath) previewPose(pending.previewPath, null);
+  else clearPreviews();
+}
+
+export function stopToolCommit() {
+  const pending = worldToolStore.getState().pending;
+  if (!pending) return;
+  worldToolStore.setState({ pending: null });
+  if (toolCommitOutcome("stop") !== "stop-and-apply") return;
+  sendWorldCommand("pause");
+  sendToolEdit(pending);
+}
+
+function resetWorldTool() {
+  cancelGesture = null;
+  apply({ type: "reset" });
+  if (worldToolStore.getState().pending) {
+    worldToolStore.setState({ pending: null });
+  }
+  clearPreviews();
+}
+
+let watchedPath = worldStore.getState().path;
+let watchedLoad = worldStore.getState().loadId;
+let watchedError = worldStore.getState().editError;
+worldStore.subscribe((state) => {
+  if (state.path !== watchedPath || state.loadId !== watchedLoad) {
+    const documentChanged = state.path !== watchedPath;
+    watchedPath = state.path;
+    watchedLoad = state.loadId;
+    if (documentChanged) resetWorldTool();
+  }
+  if (state.editError !== watchedError) {
+    watchedError = state.editError;
+    if (state.editError) clearPreviews();
+  }
+});

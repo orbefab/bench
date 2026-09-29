@@ -1,9 +1,40 @@
-import { Home } from "lucide-react";
+import { Home, MousePointer2, Move3d, Rotate3d } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { formatWorldIssues, visibleAssetIssues } from "@/lib/world-issues";
+import { moveTarget } from "@/lib/world-move";
+import { toolLabel, type WorldToolMode } from "@/lib/world-tool";
 import { useWorld } from "@/state/world";
+import {
+  pickWorldTool,
+  stayToolCommit,
+  stopToolCommit,
+  useWorldTool,
+} from "@/state/world-tool";
+
+const TOOL_BUTTONS: readonly {
+  mode: WorldToolMode;
+  icon: typeof MousePointer2;
+}[] = [
+  { mode: "select", icon: MousePointer2 },
+  { mode: "move", icon: Move3d },
+  { mode: "rotate", icon: Rotate3d },
+];
+
+/** Why the selection cannot take a tool, or null when it can. */
+export function useMoveReason(): string | null {
+  const tree = useWorld((s) => s.tree);
+  const path = useWorld((s) => s.selection?.path ?? null);
+  const target = moveTarget(tree, path);
+  return target.ok ? null : target.reason;
+}
 
 export function WorldControls({
   top,
@@ -14,12 +45,15 @@ export function WorldControls({
   left: number;
   onHome: () => void;
 }) {
-  const { connection, notice } = useWorld(
+  const { connection, notice, selected } = useWorld(
     useShallow((s) => ({
       connection: s.connection,
       notice: s.notice,
+      selected: s.selection !== null,
     }))
   );
+  const mode = useWorldTool((s) => s.mode);
+  const reason = useMoveReason();
   const status =
     connection === "reconnecting"
       ? "Reconnecting…"
@@ -43,20 +77,90 @@ export function WorldControls({
         >
           <Home />
         </Button>
+        <div
+          className="mx-0.5 flex items-center gap-0.5"
+          role="toolbar"
+          aria-label="Tools"
+        >
+          {TOOL_BUTTONS.map(({ mode: item, icon: Icon }) => {
+            const blocked = item !== "select" && selected && reason !== null;
+            const label = toolLabel(item);
+            return (
+              <Button
+                key={item}
+                type="button"
+                variant={mode === item ? "default" : "secondary"}
+                size="sm"
+                className="h-9 w-9 p-0"
+                title={blocked ? `${label}: ${reason}` : label}
+                aria-label={label}
+                aria-pressed={mode === item}
+                disabled={blocked}
+                onClick={() => pickWorldTool(item)}
+              >
+                <Icon />
+              </Button>
+            );
+          })}
+        </div>
         {status ? (
           <span className="pr-1.5 text-xs text-muted-foreground">{status}</span>
         ) : null}
       </div>
+      {mode !== "select" && selected && reason ? (
+        <div
+          className="pointer-events-none absolute z-20 rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-lg"
+          style={{ top: top + 52, left }}
+        >
+          {reason}
+        </div>
+      ) : null}
       {notice ? (
         <div
           className="pointer-events-none absolute z-20 rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs shadow-lg"
-          style={{ top: top + 52, left }}
+          style={{
+            top: top + (mode !== "select" && selected && reason ? 92 : 52),
+            left,
+          }}
           aria-live="polite"
         >
           {notice}
         </div>
       ) : null}
     </>
+  );
+}
+
+/** A tool commit restarts the run, so a playing run asks first. */
+export function WorldToolDialog() {
+  const pending = useWorldTool((s) => s.pending);
+  if (!pending) return null;
+  return (
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) stayToolCommit();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogTitle>This run is still playing</AlertDialogTitle>
+        <AlertDialogDescription>
+          {pending.label} restarts the run. The recording stays on the timeline.
+        </AlertDialogDescription>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => stayToolCommit()}
+          >
+            Stay
+          </Button>
+          <Button type="button" onClick={() => stopToolCommit()}>
+            Stop and continue
+          </Button>
+        </div>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

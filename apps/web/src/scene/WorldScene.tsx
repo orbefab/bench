@@ -1,6 +1,6 @@
 import { Html } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import {
   WORLD_TARGET_ROBOT,
   type WorldPose,
@@ -27,18 +27,24 @@ import {
   loadWorldAssets,
   releaseMeshes,
 } from "@/lib/world-assets";
+import { objectFromPose, poseDelta } from "@/lib/world-drag";
+import { moveTarget } from "@/lib/world-move";
 import {
   urdfRpyQuaternion,
   WORLD_TO_SCENE_X,
   worldQuatToThree,
 } from "@/lib/world-pose";
+import { findViewNode } from "@/lib/world-tree";
 import {
   instanceWarningMap,
   warningsFromRun,
   warningText,
 } from "@/lib/world-warnings";
 import { invalidateSceneNow } from "@/scene/invalidate";
+import { WorldToolGizmo } from "@/scene/WorldToolGizmo";
+import { startBodyDrag } from "@/scene/world-body-drag";
 import { setWorldFitTarget } from "@/scene/world-fit";
+import { clearPreviews, registerPreview } from "@/scene/world-preview";
 import {
   useWorld,
   type WorldSelection,
@@ -46,6 +52,7 @@ import {
   worldStore,
 } from "@/state/world";
 import { resetTimeline, worldViewPoses } from "@/state/world-timeline";
+import { worldToolStore } from "@/state/world-tool";
 import { useXrTheme } from "@/xr/ui/theme";
 
 const ROBOT_COLORS = [0xc4b8a5, 0x8fa3b0, 0xb7a0c4, 0xa3b59a, 0xc4a090];
@@ -104,10 +111,72 @@ function WorldGround() {
   );
 }
 
-function Body({ pose, children }: { pose: WorldPose; children: ReactNode }) {
+function Body({
+  pose,
+  path,
+  children,
+}: {
+  pose: WorldPose;
+  /** Run path, when a tool can move this instance. */
+  path?: string;
+  children: ReactNode;
+}) {
   const quaternion = useMemo(() => worldQuatToThree(pose.rotation), [pose]);
+  const ref = useRef<THREE.Group>(null);
+  const rest = useRef(pose);
+  rest.current = pose;
+  useEffect(() => {
+    if (!path) return;
+    return registerPreview(path, {
+      set: (next) => {
+        const group = ref.current;
+        if (!group) return;
+        const object = objectFromPose(next ?? rest.current);
+        group.position.copy(object.position);
+        group.quaternion.copy(object.quaternion);
+      },
+    });
+  }, [path]);
   return (
-    <group position={pose.position} quaternion={quaternion}>
+    <group ref={ref} position={pose.position} quaternion={quaternion}>
+      {children}
+    </group>
+  );
+}
+
+/**
+ * A robot's link poses come from the run in the document frame, so a
+ * preview carries the whole robot by the delta between its stored base
+ * pose and the dragged one.
+ */
+function RobotFrame({
+  robotId,
+  children,
+}: {
+  robotId: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<THREE.Group>(null);
+  useEffect(() => {
+    return registerPreview(robotId, {
+      set: (next) => {
+        const group = ref.current;
+        if (!group) return;
+        const tree = worldStore.getState().tree;
+        const base = tree ? findViewNode(tree.nodes, robotId)?.pose : null;
+        if (!next || !base) {
+          group.position.set(0, 0, 0);
+          group.quaternion.identity();
+          return;
+        }
+        const delta = poseDelta(base, next);
+        group.position.copy(delta.position);
+        group.quaternion.copy(delta.quaternion);
+      },
+    });
+  }, [robotId]);
+  return (
+    <group ref={ref} name={robotId}>
       {children}
     </group>
   );
@@ -321,7 +390,9 @@ export function WorldScene({
   const [loaded, setLoaded] = useState<LoadedWorld | null>(null);
   const heldKeys = useRef<string[]>([]);
   const contentRef = useRef<THREE.Group>(null);
+  const proxyRef = useRef<THREE.Group>(null);
   const linkGroups = useRef(new Map<string, THREE.Group>());
+  const getThree = useThree((s) => s.get);
   const theme = useXrTheme();
 
   useEffect(() => {
@@ -367,6 +438,12 @@ export function WorldScene({
       setWorldFitTarget(null);
     };
   }, []);
+
+  // A reload carries the pose the document now has; a preview is done.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `loaded` is the trigger
+  useEffect(() => {
+    clearPreviews();
+  }, [loaded]);
 
   const robots = useMemo(() => {
     const byRobot = new Map<string, Map<string, LoadedVisual[]>>();
@@ -472,7 +549,28 @@ export function WorldScene({
     });
   }, [loaded, session, linkMaterials, boardMaterials, partMaterials]);
 
-  const bindPick = (pick: NonNullable<WorldSelection>) => {
+  // In Select, a drag that starts on the selected board or box moves it.
+  const startDrag = (
+    pick: NonNullable<WorldSelection>,
+    event: ThreeEvent<PointerEvent>
+  ) => {
+    if (event.button !== 0 || sessionRef.current) return;
+    if (worldToolStore.getState().mode !== "select") return;
+    const state = worldStore.getState();
+    if (state.selection?.path !== pick.path) return;
+    const move = moveTarget(state.tree, pick.path);
+    const content = contentRef.current;
+    if (!move.ok || !content) return;
+    startBodyDrag({
+      event,
+      three: getThree(),
+      content,
+      move,
+      path: pick.path,
+    });
+  };
+
+  const bindPick = (pick: NonNullable<WorldSelection>, draggable = false) => {
     if (session) return {};
     const hover = (event: ThreeEvent<PointerEvent>) => {
       event.stopPropagation();
@@ -483,6 +581,12 @@ export function WorldScene({
       invalidateSceneNow();
     };
     return {
+      ...(draggable
+        ? {
+            onPointerDown: (event: ThreeEvent<PointerEvent>) =>
+              startDrag(pick, event),
+          }
+        : {}),
       onClick: (event: ThreeEvent<MouseEvent>) => {
         event.stopPropagation();
         if (event.delta > 2 || sessionRef.current) return;
@@ -548,8 +652,9 @@ export function WorldScene({
     <>
       {doc.environment.ground.plane ? <WorldGround /> : null}
       <group ref={contentRef} rotation-x={WORLD_TO_SCENE_X} name="world">
+        <group ref={proxyRef} name="tool-proxy" />
         {robots.map(([robotId, links]) => (
-          <group key={robotId} name={robotId}>
+          <RobotFrame key={robotId} robotId={robotId}>
             {[...links.entries()].map(([name, visuals]) => {
               const material = linkMaterials.get(linkKey(robotId, name));
               if (!material) return null;
@@ -605,7 +710,7 @@ export function WorldScene({
                 </group>
               );
             })}
-          </group>
+          </RobotFrame>
         ))}
         {primitives.map((primitive) =>
           primitive.pose ? (
@@ -646,10 +751,10 @@ export function WorldScene({
           }
           const pick = { kind: "instance" as const, path: board.id };
           return (
-            <Body key={board.id} pose={board.pose}>
+            <Body key={board.id} pose={board.pose} path={board.id}>
               <group
                 userData={{ worldPick: pick }}
-                {...bindPick(pick)}
+                {...bindPick(pick, true)}
                 ref={(node) => {
                   const key = selectionKey(pick);
                   if (node) pickRoots.current.set(key, node);
@@ -673,10 +778,10 @@ export function WorldScene({
           if (!box.pose || !finiteVec(box.size, 3) || !material) return null;
           const pick = { kind: "instance" as const, path: box.id };
           return (
-            <Body key={`${box.pick}:${box.id}`} pose={box.pose}>
+            <Body key={`${box.pick}:${box.id}`} pose={box.pose} path={box.id}>
               <group
                 userData={{ worldPick: pick }}
-                {...bindPick(pick)}
+                {...bindPick(pick, true)}
                 ref={(node) => {
                   const key = selectionKey(pick);
                   if (node) pickRoots.current.set(key, node);
@@ -697,6 +802,7 @@ export function WorldScene({
         })}
         <WarningCallouts />
       </group>
+      <WorldToolGizmo proxyRef={proxyRef} />
     </>
   );
 }
