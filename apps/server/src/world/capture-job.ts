@@ -15,6 +15,7 @@ import type {
 import {
   editLabel,
   loadWorldV2,
+  type NeedsConfirm,
   nextCaptureRef,
   partFilePath,
 } from "@sfab-bench/parts";
@@ -30,7 +31,7 @@ import {
 } from "@sfab-bench/sim/capture-recipe";
 
 import { serverCaptureEnv } from "../capture-host";
-import { applyDocumentEdit } from "./edit";
+import { applyDocumentEdit, type DocumentEdit, type EditError } from "./edit";
 import { absolutePath, nodeStore } from "./node-store";
 import { catalogRoot, nodeStampEnv } from "./plan-host";
 
@@ -100,12 +101,10 @@ async function run(
   request: CaptureRequest,
   job: Job,
   emit: (event: WorldServerMessage) => void
-): Promise<WorldServerMessage> {
-  const failed = (message: string): WorldServerMessage => ({
-    type: "capture-failed",
-    nonce: request.nonce,
-    message,
-  });
+): Promise<WorldServerMessage[]> {
+  const failed = (message: string): WorldServerMessage[] => [
+    { type: "capture-failed", nonce: request.nonce, message },
+  ];
   const found = partAtInstance(project, world, request.path);
   if ("error" in found) return failed(found.error);
   const part = found.part;
@@ -188,18 +187,39 @@ async function run(
     editLabel(op),
     inProject ? part.id : undefined
   );
-  if ("needsConfirm" in landed)
+  return landingMessages(
+    landed,
+    {
+      type: "captured",
+      nonce: request.nonce,
+      path: request.path,
+      axis: request.axis,
+      level: op.level,
+      variant,
+      ref,
+    },
+    request.nonce
+  );
+}
+
+/**
+ * What the client hears once the edit answered. `capture-failed` means nothing
+ * was written; a run fault comes after the files landed and are undoable.
+ */
+export function landingMessages(
+  landed: DocumentEdit | NeedsConfirm | EditError,
+  captured: WorldServerMessage,
+  nonce: string
+): WorldServerMessage[] {
+  const failed = (message: string): WorldServerMessage[] => [
+    { type: "capture-failed", nonce, message },
+  ];
+  if ("needsConfirm" in landed) {
     return failed(landed.message ?? "needs confirmation");
-  if ("error" in landed) return failed(landed.error);
-  return {
-    type: "captured",
-    nonce: request.nonce,
-    path: request.path,
-    axis: request.axis,
-    level: op.level,
-    variant,
-    ref,
-  };
+  }
+  if (!("error" in landed)) return [captured];
+  if (!landed.runFault) return failed(landed.error);
+  return [captured, { type: "error", errors: [], message: landed.error }];
 }
 
 /** Starts the job. Every reply, refusal included, goes through `emit`. */
@@ -226,16 +246,16 @@ export function startCapture(
   };
   jobs.set(key, job);
   void run(project, world, request, job, emit)
-    .catch(
-      (err: unknown): WorldServerMessage => ({
+    .catch((err: unknown): WorldServerMessage[] => [
+      {
         type: "capture-failed",
         nonce: request.nonce,
         message: err instanceof Error ? err.message : String(err),
-      })
-    )
-    .then((event) => {
+      },
+    ])
+    .then((events) => {
       jobs.delete(key);
-      emit(event);
+      for (const event of events) emit(event);
     });
 }
 

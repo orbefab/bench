@@ -20,7 +20,11 @@ import { contentHash, loadWorldV2 } from "@sfab-bench/parts";
 
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
-import { abortCapture, startCapture } from "./world/capture-job";
+import {
+  abortCapture,
+  landingMessages,
+  startCapture,
+} from "./world/capture-job";
 import { handleLiveEdit } from "./world/edit";
 import { attachWorld, stopWorld } from "./world/host";
 import { parseWorldClient } from "./world/live-message";
@@ -386,6 +390,51 @@ try {
     treeOf(project),
     railBefore,
     "undo restores every byte of the part, snapshot, counter and lock"
+  );
+
+  // No real path fails the restart after the edit passed its own load check, so
+  // the mapping from the edit's answer to the client's messages is tested directly.
+  const wrote: WorldServerMessage = {
+    type: "captured",
+    nonce: "m",
+    path: "rail",
+    axis: "behaviour",
+    level: 1,
+    variant: "capture-1",
+    ref: "local/rail-behaviour-1@1.0.0",
+  };
+  deepStrictEqual(
+    landingMessages(
+      { error: "world is not running", runFault: true },
+      wrote,
+      "m"
+    ),
+    [wrote, { type: "error", errors: [], message: "world is not running" }],
+    "a landed capture whose run fails is captured, then the run error"
+  );
+  deepStrictEqual(
+    landingMessages(
+      { error: "the document changed outside this session" },
+      wrote,
+      "m"
+    ),
+    [
+      {
+        type: "capture-failed",
+        nonce: "m",
+        message: "the document changed outside this session",
+      },
+    ],
+    "a refused edit wrote nothing and is capture-failed"
+  );
+  deepStrictEqual(
+    landingMessages(
+      { needsConfirm: true, count: 1, ports: [], message: "sure?" },
+      wrote,
+      "m"
+    ),
+    [{ type: "capture-failed", nonce: "m", message: "sure?" }],
+    "a confirmation nobody can give is capture-failed"
   );
 } finally {
   attached.detach();
