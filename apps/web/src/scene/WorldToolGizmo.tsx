@@ -13,6 +13,7 @@ import type * as THREE from "three";
 import { useXrSession } from "@/hooks/useXrSession";
 import { objectFromPose, poseFromObject } from "@/lib/world-drag";
 import { moveTarget, poseCommit } from "@/lib/world-move";
+import { isPoseTool } from "@/lib/world-tool";
 import { previewPose, registerPreview } from "@/scene/world-preview";
 import { useWorld } from "@/state/world";
 import {
@@ -66,7 +67,7 @@ export function WorldToolGizmo({
     orbitWas.current = undefined;
   };
   const pose = move.ok ? move.node.pose : null;
-  const active = mode !== "select" && move.ok && path !== null && !session;
+  const active = isPoseTool(mode) && move.ok && path !== null && !session;
 
   // The handles leaving mid-drag (tool, selection, unmount) give the orbit back.
   // biome-ignore lint/correctness/useExhaustiveDependencies: resumeOrbit only reads the orbit and a ref

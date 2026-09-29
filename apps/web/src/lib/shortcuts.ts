@@ -23,6 +23,7 @@ export type ShortcutId =
   | "composer-mention"
   | "escape"
   | "world-tool-escape"
+  | "world-tool-wire"
   | "ask-user-choose"
   | "timeline-live";
 
@@ -90,6 +91,13 @@ export const SHORTCUTS: readonly Shortcut[] = [
     id: "world-tool-escape",
     keys: ["Esc"],
     label: "Cancel a tool gesture, then leave the tool",
+    scope: "global",
+    ignoreEditable: true,
+  },
+  {
+    id: "world-tool-wire",
+    keys: ["W"],
+    label: "Wire tool: enter it, or leave it again",
     scope: "global",
     ignoreEditable: true,
   },

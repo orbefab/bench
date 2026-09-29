@@ -11,7 +11,13 @@ export type EditorKey = {
   alt?: boolean;
 };
 
-export type EditorAction = "undo" | "redo" | "play" | "delete" | "rename";
+export type EditorAction =
+  | "undo"
+  | "redo"
+  | "play"
+  | "delete"
+  | "rename"
+  | "wire";
 
 export function editorKeyAction(
   event: EditorKey,
@@ -37,5 +43,7 @@ export function editorKeyAction(
     return "delete";
   }
   if (!mod && !event.shift && key === "F2") return "rename";
+  // A bare W. ⌘W and Ctrl+W close the tab and stay the browser's.
+  if (!mod && !event.shift && (key === "w" || key === "W")) return "wire";
   return null;
 }

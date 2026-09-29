@@ -1,5 +1,6 @@
 import { parkGuard, parkOutcome } from "./world-park";
 import {
+  isPoseTool,
   reduceWorldTool,
   toolEscape,
   toolLabel,
@@ -60,7 +61,60 @@ const third = toolEscape(second.state);
 expect(third.did === null, "in Select Esc is left to the selection clear");
 expect(third.state === second.state, "an unclaimed Esc changes nothing");
 
+// Wire is one more mode. W enters it and W again leaves it, whatever the
+// gesture; a held first port is a gesture, so Esc cancels it first.
+const wired = reduceWorldTool(WORLD_TOOL_START, { type: "pick", mode: "wire" });
+expect(wired.mode === "wire" && !wired.gesture, "a button picks Wire");
+expect(
+  reduceWorldTool(moved, { type: "pick", mode: "wire" }).mode === "wire",
+  "Wire replaces Move"
+);
+const keyed = reduceWorldTool(WORLD_TOOL_START, {
+  type: "toggle",
+  mode: "wire",
+});
+expect(keyed.mode === "wire", "W enters Wire from Select");
+expect(
+  reduceWorldTool(keyed, { type: "toggle", mode: "wire" }).mode === "select",
+  "W again leaves Wire"
+);
+expect(
+  reduceWorldTool(moved, { type: "toggle", mode: "wire" }).mode === "wire",
+  "W from Move enters Wire"
+);
+const holding = reduceWorldTool(wired, { type: "begin" });
+expect(holding.gesture && holding.mode === "wire", "a held port is a gesture");
+const leftHeld = reduceWorldTool(holding, { type: "toggle", mode: "wire" });
+expect(
+  leftHeld.mode === "select" && !leftHeld.gesture,
+  "W with a port held leaves Wire and drops the port"
+);
+const cancelHeld = toolEscape(holding);
+expect(cancelHeld.did === "cancel-gesture", "Esc cancels a held port first");
+expect(
+  cancelHeld.state.mode === "wire" && !cancelHeld.state.gesture,
+  "cancelling a held port stays in Wire"
+);
+const leaveWire = toolEscape(cancelHeld.state);
+expect(
+  leaveWire.did === "leave-tool" && leaveWire.state.mode === "select",
+  "the next Esc leaves Wire"
+);
+expect(
+  toolEscape(leaveWire.state).did === null,
+  "then Esc is the selection's again"
+);
+expect(
+  isPoseTool("move") && isPoseTool("rotate"),
+  "Move and Rotate are pose tools"
+);
+expect(
+  !isPoseTool("wire") && !isPoseTool("select"),
+  "Wire and Select take no gizmo"
+);
+
 expect(toolLabel("select") === "Select", "Select label");
+expect(toolLabel("wire") === "Wire", "Wire label");
 expect(toolLabel("move") === "Move", "Move label");
 expect(toolLabel("rotate") === "Rotate", "Rotate label");
 

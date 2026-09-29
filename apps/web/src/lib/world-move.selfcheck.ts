@@ -202,7 +202,8 @@ if (arrow.ok) {
     "a rotation-only edit is a Rotate"
   );
   expect(
-    poseCommit(arrow, "uno", quarter, "Set pose of")?.label === "Set pose of uno",
+    poseCommit(arrow, "uno", quarter, "Set pose of")?.label ===
+      "Set pose of uno",
     "a named verb wins"
   );
 }

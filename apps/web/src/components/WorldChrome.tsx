@@ -1,11 +1,11 @@
-import { Home, MousePointer2, Move3d, Rotate3d } from "lucide-react";
+import { Cable, Home, MousePointer2, Move3d, Rotate3d } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
 import { RunPlayingDialog } from "@/components/RunPlayingDialog";
 import { Button } from "@/components/ui/button";
 import { formatWorldIssues, visibleAssetIssues } from "@/lib/world-issues";
 import { moveTarget } from "@/lib/world-move";
-import { toolLabel, type WorldToolMode } from "@/lib/world-tool";
+import { isPoseTool, toolLabel, type WorldToolMode } from "@/lib/world-tool";
 import { useWorld } from "@/state/world";
 import {
   pickWorldTool,
@@ -21,6 +21,7 @@ const TOOL_BUTTONS: readonly {
   { mode: "select", icon: MousePointer2 },
   { mode: "move", icon: Move3d },
   { mode: "rotate", icon: Rotate3d },
+  { mode: "wire", icon: Cable },
 ];
 
 /** Why the selection cannot take a tool, or null when it can. */
@@ -50,6 +51,7 @@ export function WorldControls({
   );
   const mode = useWorldTool((s) => s.mode);
   const reason = useMoveReason();
+  const showReason = isPoseTool(mode) && selected && reason !== null;
   const status =
     connection === "reconnecting"
       ? "Reconnecting…"
@@ -79,8 +81,9 @@ export function WorldControls({
           aria-label="Tools"
         >
           {TOOL_BUTTONS.map(({ mode: item, icon: Icon }) => {
-            const blocked = item !== "select" && selected && reason !== null;
+            const blocked = isPoseTool(item) && selected && reason !== null;
             const label = toolLabel(item);
+            const title = item === "wire" ? `${label} (W)` : label;
             return (
               <Button
                 key={item}
@@ -88,7 +91,7 @@ export function WorldControls({
                 variant={mode === item ? "default" : "secondary"}
                 size="sm"
                 className="h-9 w-9 p-0"
-                title={blocked ? `${label}: ${reason}` : label}
+                title={blocked ? `${label}: ${reason}` : title}
                 aria-label={label}
                 aria-pressed={mode === item}
                 disabled={blocked}
@@ -103,7 +106,7 @@ export function WorldControls({
           <span className="pr-1.5 text-xs text-muted-foreground">{status}</span>
         ) : null}
       </div>
-      {mode !== "select" && selected && reason ? (
+      {showReason ? (
         <div
           className="pointer-events-none absolute z-20 rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-lg"
           style={{ top: top + 52, left }}
@@ -115,7 +118,7 @@ export function WorldControls({
         <div
           className="pointer-events-none absolute z-20 rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs shadow-lg"
           style={{
-            top: top + (mode !== "select" && selected && reason ? 92 : 52),
+            top: top + (showReason ? 92 : 52),
             left,
           }}
           aria-live="polite"

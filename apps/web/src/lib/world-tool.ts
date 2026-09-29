@@ -1,14 +1,14 @@
 /**
  * The world tool mode. One at a time; Select is the default. A tool is a
  * mode on the stage that commits ordinary edit ops (D1), so nothing here
- * touches the document. Wire and Probe join as more modes.
+ * touches the document. Probe joins as one more mode.
  */
 
-export type WorldToolMode = "select" | "move" | "rotate";
+export type WorldToolMode = "select" | "move" | "rotate" | "wire";
 
 export type WorldToolState = {
   mode: WorldToolMode;
-  /** A drag is in progress. Esc cancels it before it leaves the tool. */
+  /** A drag or a held first port is in progress. Esc cancels it before it leaves the tool. */
   gesture: boolean;
 };
 
@@ -19,6 +19,8 @@ export const WORLD_TOOL_START: WorldToolState = {
 
 export type WorldToolAction =
   | { type: "pick"; mode: WorldToolMode }
+  /** A key that enters a tool, and leaves it when it is already the tool. */
+  | { type: "toggle"; mode: WorldToolMode }
   | { type: "begin" }
   | { type: "end" }
   /** The document closed or reloaded under the gesture. */
@@ -32,6 +34,11 @@ export function reduceWorldTool(
     case "pick":
       if (state.mode === action.mode && !state.gesture) return state;
       return { mode: action.mode, gesture: false };
+    case "toggle":
+      return {
+        mode: state.mode === action.mode ? "select" : action.mode,
+        gesture: false,
+      };
     case "begin":
       return state.gesture ? state : { ...state, gesture: true };
     case "end":
@@ -59,8 +66,14 @@ export function toolEscape(state: WorldToolState): {
   return { state, did: null };
 }
 
+/** Move and Rotate act on the selection through the gizmo; Wire does not. */
+export function isPoseTool(mode: WorldToolMode): boolean {
+  return mode === "move" || mode === "rotate";
+}
+
 export function toolLabel(mode: WorldToolMode): string {
   if (mode === "move") return "Move";
   if (mode === "rotate") return "Rotate";
+  if (mode === "wire") return "Wire";
   return "Select";
 }

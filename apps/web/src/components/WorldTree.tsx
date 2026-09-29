@@ -41,7 +41,11 @@ import {
   warningText,
 } from "@/lib/world-warnings";
 import { useWorld, worldStore } from "@/state/world";
-import { escapeWorldTool } from "@/state/world-tool";
+import {
+  escapeWorldTool,
+  toggleWorldTool,
+  worldToolStore,
+} from "@/state/world-tool";
 import { useTreeFold, writeTreeFold } from "@/state/world-tree-fold";
 
 export function WorldTopBar() {
@@ -108,6 +112,13 @@ export function WorldHotkeys() {
           ? String(target.tagName)
           : "";
       if (action === "play" && (tag === "BUTTON" || tag === "A")) return;
+      if (action === "wire") {
+        // A held key does not flicker the tool, and a question waits for its answer.
+        if (event.repeat || worldToolStore.getState().pending) return;
+        event.preventDefault();
+        toggleWorldTool("wire");
+        return;
+      }
       event.preventDefault();
       const state = worldStore.getState();
       if (action === "undo") sendWorldUndo();
