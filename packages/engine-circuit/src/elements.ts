@@ -1030,9 +1030,6 @@ export function sw(
 ): Switch {
   return new Switch(id, a, b, Ron, Roff, wave);
 }
-export function currentLoad(id: string, p: string, m: string): CurrentLoad {
-  return new CurrentLoad(id, p, m);
-}
 export function thevenin(
   id: string,
   p: string,
@@ -1042,14 +1039,4 @@ export function thevenin(
   Ilim: number
 ): TheveninLimit {
   return new TheveninLimit(id, p, m, V, Rs, Ilim);
-}
-export function bridgeMotor(
-  id: string,
-  rail: string,
-  R: number,
-  L: number,
-  K: number,
-  braking: Braking = "clip"
-): BridgeMotor {
-  return new BridgeMotor(id, rail, R, L, K, braking);
 }

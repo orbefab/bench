@@ -1,12 +1,5 @@
 import { useXRInputSourceState, XRSpace } from "@react-three/xr";
-import {
-  createContext,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useContext,
-  useRef,
-} from "react";
+import { type ReactNode, useCallback } from "react";
 import type { Object3D } from "three";
 
 export type Handedness = "left" | "right";
@@ -23,13 +16,6 @@ export function wristObject(handedness: Handedness): Object3D | null {
   return wrists[handedness];
 }
 
-const WristContext = createContext<RefObject<Object3D | null> | null>(null);
-
-/** Wrist transform for consumers inside a `HandRig` that only need the object. */
-export function useWrist(): RefObject<Object3D | null> | null {
-  return useContext(WristContext);
-}
-
 /**
  * One wrist `XRSpace` per hand. Everything wrist-mounted renders inside this
  * rig, so `@react-three/xr` resolves each wrist pose once per frame instead of
@@ -43,10 +29,8 @@ export function HandRig({
   children: ReactNode;
 }) {
   const state = useXRInputSourceState("hand", handedness);
-  const ref = useRef<Object3D | null>(null);
   const setWrist = useCallback(
     (object: Object3D | null) => {
-      ref.current = object;
       wrists[handedness] = object;
     },
     [handedness]
@@ -55,7 +39,7 @@ export function HandRig({
   if (!wrist) return null;
   return (
     <XRSpace ref={setWrist} space={wrist}>
-      <WristContext.Provider value={ref}>{children}</WristContext.Provider>
+      {children}
     </XRSpace>
   );
 }

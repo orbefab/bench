@@ -10,7 +10,6 @@ import { syncOpenDocument } from "@/lib/document-query";
 import { requestRefreshFiles } from "@/lib/motion";
 import { parkGuard, parkOutcome, runPhase } from "@/lib/world-park";
 import {
-  breadcrumb,
   closePartTab,
   emptyPartTabSnapshot,
   emptyPartTabs,
@@ -81,10 +80,6 @@ function getSession(): PartTabSession {
 
 export function usePartTabs(): PartTabSession {
   return useSyncExternalStore(subscribe, getSession, getSession);
-}
-
-export function partTabsModel(): PartTabsModel {
-  return session.model;
 }
 
 function setSession(next: PartTabSession) {
@@ -356,8 +351,4 @@ export function notePartTabName(file: string, partId: string) {
   const model = renamePartTab(session.model, file, name);
   if (model === session.model) return;
   setSession({ ...session, model });
-}
-
-export function partBreadcrumb() {
-  return breadcrumb(session.model);
 }

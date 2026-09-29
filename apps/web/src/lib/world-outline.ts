@@ -223,26 +223,6 @@ export function buildWorldOutline(
   };
 }
 
-export function outlineItems(outline: WorldOutline): {
-  links: { robot: string; link: string }[];
-  boards: string[];
-  parts: string[];
-  supplies: string[];
-} {
-  const links: { robot: string; link: string }[] = [];
-  for (const robot of outline.robots) {
-    for (const link of robot.links) {
-      links.push({ robot: robot.id, link: link.name });
-    }
-  }
-  return {
-    links,
-    boards: outline.boards.map((board) => board.id),
-    parts: outline.parts.map((part) => part.id),
-    supplies: outline.supplies.map((supply) => supply.id),
-  };
-}
-
 /** Trimmed degrees for a joint limit. */
 export function formatDegrees(degrees: number): string {
   const rounded = Math.round(degrees * 1000) / 1000;

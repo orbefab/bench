@@ -85,26 +85,11 @@ export {
 export {
   BOARD_LOAD_KNEE_V,
   type BoardPathName,
-  chipFacts,
   NANO_BOARD_A,
-  NANO_CH340_A,
-  NANO_MCU_A,
-  NANO_POWER_LED_A,
-  NANO_VRST_MAX,
   type RailFeed,
   railAttachment,
   UNO_BOARD_NODE,
   UNO_DECOUPLE_C,
-  UNO_F1_ALPHA_W,
-  UNO_F1_IHOLD,
-  UNO_F1_ITRIP,
-  UNO_F1_R,
-  UNO_F1_R_HOT,
-  UNO_F1_R1MAX,
-  UNO_F1_T_FIT_8A_S,
-  UNO_F1_TAU_S,
-  UNO_F1_TMAX_8A_S,
-  UNO_F1_U_RESET,
   UNO_PC2_C,
   UNO_PC2_ESR,
   UNO_SW_NODE,
@@ -113,7 +98,6 @@ export {
   UNO_TERM_NODE,
   type UsbPath,
   unoUsbPathFor,
-  usbPathFor,
 } from "./power-path";
 export { type ProbeIndex, probeTracks } from "./probe";
 export {
@@ -124,14 +108,12 @@ export {
   type SharedBoard,
 } from "./rail-circuit";
 export {
-  castRanger,
   RANGER_GEOM_GROUP,
   type RangerLaw,
   type RangerPhysics,
   type RangerRay,
   RangerRuntime,
   type RunRanger,
-  rangerDirections,
 } from "./ranger";
 export {
   motionRank,
@@ -139,7 +121,6 @@ export {
   type RecordSpec,
   RunRecorder,
   recordingFootprint,
-  timelineFromRead,
 } from "./record";
 export {
   blankTrack,

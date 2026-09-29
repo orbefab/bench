@@ -34,9 +34,7 @@ export const BOARD_LOAD_KNEE_V = 1;
  * that window. Ihold 0.50 A, Itrip 1.00 A. Maximum time to trip 0.15 s at 8 A.
  */
 export const UNO_F1_R = 0.15;
-export const UNO_F1_R1MAX = 1;
 export const UNO_F1_IHOLD = 0.5;
-export const UNO_F1_ITRIP = 1;
 /** Datasheet maximum, seconds, at 8 A. */
 export const UNO_F1_TMAX_8A_S = 0.15;
 
@@ -50,11 +48,6 @@ export const UNO_F1_ALPHA_W = 0.12;
  * enough that a tripped fuse collapses a 5 V rail.
  */
 export const UNO_F1_R_HOT = 80;
-/**
- * Trip state falls back to cold below this. Assumed. 1 is the trip.
- * Hysteresis so the step that opens the fuse does not immediately reclose it.
- */
-export const UNO_F1_U_RESET = 0.85;
 /** Fit target at 8 A, under the 0.15 s maximum. */
 export const UNO_F1_T_FIT_8A_S = 0.1;
 const F1_P8 = 8 * 8 * UNO_F1_R;

@@ -56,38 +56,3 @@ export function waveAt(w: Waveform, t: number): number {
     }
   }
 }
-
-/** ngspice source expression, value in volts or amperes. */
-export function waveSpice(w: Waveform): string {
-  const n = (v: number) => v.toExponential(12);
-  switch (w.kind) {
-    case "dc":
-      return `DC ${n(w.value)}`;
-    case "step": {
-      if (w.t0 <= 0) return `PWL(0 ${n(w.v0)} 1e-12 ${n(w.v1)})`;
-      const t1 = w.t0 + 1e-12;
-      return `PWL(0 ${n(w.v0)} ${n(w.t0)} ${n(w.v0)} ${n(t1)} ${n(w.v1)})`;
-    }
-    case "pwm": {
-      // High for the first `duty` of every period, matching waveAt (high at t = 0).
-      // ngspice PULSE holds V1 until TD, so V1 is the high level and TD is the high time.
-      const per = w.period;
-      const highFor = w.duty * per;
-      const td = (w.t0 ?? 0) + highFor;
-      const pwLow = Math.max(per - highFor - 2e-12, 1e-15);
-      return `PULSE(${n(w.high)} ${n(w.low)} ${n(td)} 1e-12 1e-12 ${n(pwLow)} ${n(per)})`;
-    }
-    case "pwl": {
-      const body = w.points.map(([t, v]) => `${n(t)} ${n(v)}`).join(" ");
-      return `PWL(${body})`;
-    }
-    case "sine": {
-      const phaseDeg = ((w.phase ?? 0) * 180) / Math.PI;
-      return `SIN(${n(w.offset)} ${n(w.amp)} ${n(w.freq)} 0 0 ${n(phaseDeg)})`;
-    }
-    default: {
-      const _never: never = w;
-      return _never;
-    }
-  }
-}

@@ -24,11 +24,9 @@ export type { Element } from "./element";
 export {
   type Braking,
   BridgeMotor,
-  bridgeMotor,
   Capacitor,
   CurrentLoad,
   capacitor,
-  currentLoad,
   Diode,
   type DiodeParams,
   diode,
@@ -95,6 +93,5 @@ export {
   PtcFuseElement,
   type PtcFuseParams,
 } from "./ptc-fuse";
-export { type SpiceOpts, toSpice } from "./spice";
 export { segmentIndex, segmentThevenin, tableVoltage } from "./table";
 export { type Waveform, waveAt } from "./wave";

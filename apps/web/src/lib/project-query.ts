@@ -30,10 +30,3 @@ export function syncProjectQuery(path: string, opts?: { clearFile?: boolean }) {
   if (want !== have) window.history.replaceState(null, "", want);
   if (changed) window.dispatchEvent(new Event("sfab-project"));
 }
-
-export function appendProjectQuery(url: URL): URL {
-  const project = projectUrl();
-  if (project && !url.searchParams.has("project"))
-    url.searchParams.set("project", project);
-  return url;
-}
