@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -31,10 +32,6 @@ import type { FromWorker, ToWorker } from "./world/worker";
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function bit(pin: string): number {
   const index = arduinoPinBit(pin);

@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -50,10 +51,6 @@ import { powerFeedsOf } from "./world/wiring";
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 /** Joint stop from the robot URDF. Not a literal in the check. */
 function jointLimitRad(

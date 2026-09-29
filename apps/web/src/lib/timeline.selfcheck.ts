@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   boardTrackId,
   jointTrackId,
@@ -21,10 +22,6 @@ import {
   tracksForSelection,
 } from "./timeline";
 import type { WorldOutline } from "./world-outline";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 expect(timeAtPointer(0, 100, 1, 3) === 1, "pointer at the start");
 expect(timeAtPointer(100, 100, 1, 3) === 3, "pointer at the live edge");

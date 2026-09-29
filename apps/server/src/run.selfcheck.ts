@@ -1,6 +1,7 @@
 /**
  * `sfab-bench run` on the gauge, against the same span the recording reads.
  */
+import { ok as expect } from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,10 +16,6 @@ const gaugeDir = join(root, "examples/gauge");
 const world = "parts/sfab/gauge-usb@1.0.0.json";
 const ms = 3000;
 const bin = fileURLToPath(new URL("../bin/sfab-bench.mjs", import.meta.url));
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 function recordedLines(read: RecordingRead): string[] {
   const pending = new Map<string, string>();

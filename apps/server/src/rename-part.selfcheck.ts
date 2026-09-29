@@ -2,6 +2,7 @@
  * Rename part file, and a leaf opened as the root.
  * Copies only. The examples stay untouched.
  */
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   existsSync,
@@ -50,10 +51,6 @@ const armDir = fileURLToPath(
 const catalogLed = fileURLToPath(
   new URL("../catalog/parts/sfab/led-red@1.0.0.json", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function copyNano(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));

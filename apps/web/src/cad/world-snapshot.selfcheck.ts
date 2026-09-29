@@ -1,11 +1,8 @@
+import { ok as expect } from "node:assert/strict";
 import type { WorldState } from "@sfab-bench/contract";
 
 import { viewerSnapshot, worldViewerSelection } from "@/cad/viewer-snapshot";
 import { setWorldLiveState, worldStore } from "@/state/world";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const live: WorldState = {
   simTime: 12.345,

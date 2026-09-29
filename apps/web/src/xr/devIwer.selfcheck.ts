@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { forceIwerRuntimeIfNative, shouldForceIwerOnThisPage } from "./devIwer";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(shouldForceIwerOnThisPage("127.0.0.1", true), "dev 127.0.0.1");
 expect(shouldForceIwerOnThisPage("localhost", true), "dev localhost");

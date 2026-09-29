@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   commandNotice,
   formatSimTime,
@@ -7,10 +8,6 @@ import {
   isOwnCommandNonce,
   visibleAssetIssues,
 } from "./world-issues";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const lines = formatWorldIssues([
   {

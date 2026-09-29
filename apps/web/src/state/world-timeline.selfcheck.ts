@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import type { WorldClientMessage } from "@sfab-bench/contract";
 
 import {
@@ -11,10 +12,6 @@ import {
 /**
  * The strip catches a paused edge, and a failed seek does not stick.
  */
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 20));

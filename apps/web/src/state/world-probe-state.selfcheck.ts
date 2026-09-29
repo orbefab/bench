@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import type { WorldClientMessage } from "@sfab-bench/contract";
 
 import { bindSceneInvalidate } from "@/scene/invalidate";
@@ -20,10 +21,6 @@ import {
  * The probe list is client state per part tab. A pick asks the server for
  * the port's tracks; a removal asks for nothing; a stopped run is never asked.
  */
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 20));

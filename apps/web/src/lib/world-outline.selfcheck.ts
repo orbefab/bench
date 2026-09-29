@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { extractUrdfJointsAndMeshes } from "@sfab-bench/contract";
 
 import {
@@ -8,10 +9,6 @@ import {
   formatPartWire,
   outlinePartLabel,
 } from "./world-outline";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const arm = extractUrdfJointsAndMeshes(`
 <robot name="arm">

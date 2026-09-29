@@ -4,6 +4,7 @@
  * directly. The run is the circuit; two runs of one world are byte-identical.
  */
 
+import { ok as expect } from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
@@ -18,10 +19,6 @@ const armDir = fileURLToPath(
 );
 const CASES = 2000;
 const SIM_MS = 3000;
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function mulberry32(seed: number): () => number {
   let state = seed >>> 0;

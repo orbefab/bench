@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { ensureProvisioned, installFailureDetail } from "./provisioning";
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(
   installFailureDetail(

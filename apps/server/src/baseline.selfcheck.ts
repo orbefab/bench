@@ -3,6 +3,7 @@
  * Every number is `===`, including the floats JSON kept.
  */
 
+import { ok as expect } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -33,10 +34,6 @@ type Frozen = {
   durationS: number;
   runs: Record<string, { frames: FrozenFrame[] }>;
 };
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function eventsAt(
   events: RecordingEvent[],

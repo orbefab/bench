@@ -5,6 +5,7 @@
  * the same value. The card scroller reserves its scrollbar gutter so
  * that warning cannot change the content width.
  */
+import { ok as expect } from "node:assert/strict";
 import type {
   RunReport,
   WorldViewNode,
@@ -19,10 +20,6 @@ import {
   inspectorBodyClass,
   warningsFromRun,
 } from "./world-warnings";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const pose = {
   position: [0, 0, 0] as [number, number, number],

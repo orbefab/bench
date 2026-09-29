@@ -1,13 +1,6 @@
+import { equal as expect } from "node:assert/strict";
 import { keepWrapSpaces } from "./UikitMarkdown";
 import { xrScrollAtLiveEdge } from "./useXrChatScroll";
-
-function expect(got: unknown, want: unknown, label: string) {
-  if (got !== want) {
-    throw new Error(
-      `${label}: expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`
-    );
-  }
-}
 
 expect(keepWrapSpaces(" VR "), "\u00a0VR\u00a0", "wrap spaces at both ends");
 expect(keepWrapSpaces("  a"), "\u00a0\u00a0a", "leading spaces");

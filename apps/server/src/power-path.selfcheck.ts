@@ -3,6 +3,7 @@
  * stays the reference for the bench supply, which takes no cable.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -74,10 +75,6 @@ const fixedStall = boardA + law.quiescent;
  * fuse cools.
  */
 const RECOVER_A = 0.03;
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function pct(frac: number): string {
   return `${(frac * 100).toFixed(4)}%`;

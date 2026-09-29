@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { editMessageText } from "./world-edit-message";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 // The server's wording of the two Wire refusals, as the edit line received it.
 expect(

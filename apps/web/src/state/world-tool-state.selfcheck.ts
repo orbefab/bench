@@ -1,3 +1,4 @@
+import { ok } from "node:assert/strict";
 import { bindSceneInvalidate } from "@/scene/invalidate";
 import { worldStore } from "./world";
 import {
@@ -8,9 +9,8 @@ import {
   worldToolStore,
 } from "./world-tool";
 
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
+// No narrowing: the checks below compare the same values again after they change.
+const expect: (cond: unknown, label: string) => void = ok;
 
 // A closed or changed document cancels a drag in flight: its window
 // listeners and the paused orbit must not outlive it.

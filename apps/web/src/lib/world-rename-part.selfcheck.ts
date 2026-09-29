@@ -1,6 +1,7 @@
 /**
  * Rename part file: the card target, and tabs following a moved file.
  */
+import { ok as expect } from "node:assert/strict";
 import {
   breadcrumb,
   emptyPartTabs,
@@ -13,10 +14,6 @@ import {
   RENAME_LIBRARY_REASON,
   renamePartTarget,
 } from "./world-rename-part";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const project = renamePartTarget({ source: "project" });
 expect(project.enabled === true, "a project part renames");

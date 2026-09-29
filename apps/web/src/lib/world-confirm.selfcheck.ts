@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { confirmActions, confirmLines } from "./world-confirm";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const prompt = {
   count: 2,

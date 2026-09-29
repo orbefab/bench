@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import type { WorldViewTree } from "@sfab-bench/contract";
 
 import {
@@ -5,10 +6,6 @@ import {
   stageEditTarget,
   wireEditTarget,
 } from "./world-edit-target";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const pose = {
   position: [0, 0, 0] as [number, number, number],

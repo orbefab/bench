@@ -4,6 +4,7 @@
  * except the INFO lines, which print only with BENCH_TIMINGS=1.
  */
 
+import { ok as expect } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,10 +68,6 @@ const POWER_W = 1e-9;
 const fixtureDir = fileURLToPath(
   new URL("../fixtures/circuit/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function pct(frac: number): string {
   return `${(frac * 100).toFixed(4)}%`;

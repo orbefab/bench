@@ -6,6 +6,7 @@
  * on its USB snapshot, and once with the sensor at class 0.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -64,10 +65,6 @@ const nanoDir = fileURLToPath(
 const fixtureDir = fileURLToPath(
   new URL("../fixtures/gauge/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function driveSamples(
   read: RecordingRead

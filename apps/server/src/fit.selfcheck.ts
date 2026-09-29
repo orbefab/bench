@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,10 +27,6 @@ import {
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 /** Frozen at abccd10, the numbers the run used before the catalog tables left. */
 const motor = {

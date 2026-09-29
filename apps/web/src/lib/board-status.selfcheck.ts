@@ -1,13 +1,10 @@
+import { ok as expect } from "node:assert/strict";
 import {
   boardStatusLabel,
   boardWarningLine,
   recordedSoaLine,
   scrubbedBoardStatus,
 } from "./board-status";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(boardStatusLabel(undefined, false) === "", "no board yet");
 expect(

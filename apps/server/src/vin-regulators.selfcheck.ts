@@ -3,6 +3,7 @@
  * on VIN runs the onboard regulator.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -42,10 +43,6 @@ import { catalogRoot, planWorld } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit } from "./world/rail-circuit";
 import { powerFeedsOf, powerIslands, suppliesOnPort } from "./world/wiring";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function partParams(id: string): LdoParams {
   const file = JSON.parse(

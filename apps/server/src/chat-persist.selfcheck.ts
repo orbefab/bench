@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import type { UIMessage } from "ai";
 import {
   failedAssistant,
@@ -5,10 +6,6 @@ import {
   messagesToPersist,
   withTurnError,
 } from "./chat-persist";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const user: UIMessage = {
   id: "u",

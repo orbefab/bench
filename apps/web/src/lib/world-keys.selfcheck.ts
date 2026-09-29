@@ -1,10 +1,7 @@
+import { ok as expect } from "node:assert/strict";
 import { matchesShortcut, SHORTCUTS } from "./shortcuts";
 import { editorKeyAction } from "./world-keys";
 import { toolEscape, WORLD_TOOL_START } from "./world-tool";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(
   editorKeyAction({ key: "z", meta: true }, false) === "undo",

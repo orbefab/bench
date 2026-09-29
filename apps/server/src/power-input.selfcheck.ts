@@ -3,6 +3,7 @@
  * and its snapshot is a plain branch the board can run in their place.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -34,10 +35,6 @@ const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };
 const FLAT_REST = 4.7132641361241063;
 const FLAT_STALL = 4.2645668254013147;
 const VCC_SCALE = 1_125_300;
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function nodeAt(fraction: number, connected: boolean): number {
   const stamp = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {

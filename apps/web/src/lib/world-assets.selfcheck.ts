@@ -1,8 +1,8 @@
+import { ok } from "node:assert/strict";
 import { createMeshCache, meshCacheKey } from "./world-assets";
 
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
+// No narrowing: the checks below compare the same values again after they change.
+const expect: (cond: unknown, label: string) => void = ok;
 
 const loads: string[] = [];
 const disposed: number[] = [];

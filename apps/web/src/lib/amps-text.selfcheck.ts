@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { ampsText } from "./amps-text";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const cases: [number, string][] = [
   [0.00019, "0.19 mA"],

@@ -5,6 +5,7 @@
  * window, grows the coupling lag until the seam is flagged.
  */
 
+import { ok as expect } from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,10 +27,6 @@ const armDir = fileURLToPath(
 const ledDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function simHost(onReport: (report: RunReport) => void) {
   return {

@@ -1,10 +1,7 @@
+import { ok as expect } from "node:assert/strict";
 import { WORLD_NONCE_MAX } from "@sfab-bench/contract";
 
 import { worldCommandNonce } from "./world-nonce";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const fromUuid = worldCommandNonce({ randomUUID: () => "tab-a" });
 expect(fromUuid === "tab-a", "randomUUID is used when it returns");

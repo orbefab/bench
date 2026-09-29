@@ -3,6 +3,7 @@
  * same world with the broken parts removed.
  */
 
+import { ok as expect } from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,10 +18,6 @@ import { packageVersion } from "./world/package-version";
 import { planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
 import { createRailCircuit } from "./world/rail-circuit";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 const nanoExample = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)

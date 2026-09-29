@@ -1,11 +1,8 @@
+import { ok as expect } from "node:assert/strict";
 import {
   messageCopyVisible,
   splitChatWorkedParts,
 } from "../components/chat/chat-message-parts";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 function kinds(parts: Array<{ type: string; toolName?: string }>) {
   return splitChatWorkedParts(parts).map((segment) => {

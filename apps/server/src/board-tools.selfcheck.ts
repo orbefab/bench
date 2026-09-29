@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,10 +15,6 @@ import {
   stopWorld,
   type WorldHandle,
 } from "./world/host";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function waitUntil(
   pred: () => boolean,

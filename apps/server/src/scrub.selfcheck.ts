@@ -1,12 +1,9 @@
+import { ok as expect } from "node:assert/strict";
 import { parseWorldClient, scrubReadError } from "./world/live";
 
 /**
  * A bad scrub is not a world failure, and negative times are refused.
  */
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 const negativeFrom = parseWorldClient(
   JSON.stringify({ type: "timeline", from: -0.01, to: 1, maxPoints: 8 })

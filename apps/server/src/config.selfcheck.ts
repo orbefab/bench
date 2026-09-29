@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -8,10 +9,6 @@ import {
   loginPathExtras,
   parseEnvFile,
 } from "./config";
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const otherHome = "/tmp/sfab-other-home";
 const extras = loginPathExtras(otherHome);

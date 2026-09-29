@@ -3,6 +3,7 @@
  * is the sketch's own `1125300 / count` on that node.
  */
 
+import { ok as expect } from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,10 +32,6 @@ const vccHex = join(nanoDir, "firmware/vcc/vcc.hex");
 
 /** R2's class-2 rest node, servo limp. A holding servo sits below it. */
 const LIMP_V = 4.7133;
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function serialOf(read: RecordingRead, board: string): string {
   let text = "";

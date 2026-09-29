@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 
 import { DEFAULT_PUBLIC_PORT, publicPort } from "./config";
@@ -10,10 +11,6 @@ import {
   redeemFragment,
 } from "./pairing";
 import { forwardedClientAddress, isLoopbackAddress } from "./principal";
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(isLoopbackAddress("127.0.0.1"), "127.0.0.1 is loopback");
 expect(isLoopbackAddress("::1"), "::1 is loopback");

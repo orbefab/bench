@@ -3,6 +3,7 @@
  * The example holds D9 high. No sketch in the tree PWMs that pin.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -21,10 +22,6 @@ import { closeRootWatches } from "./projects";
 import { assemblyStampOf } from "./world/circuit-stamp";
 import { attachWorld, stopWorld } from "./world/host";
 import { planWorld } from "./world/plan";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

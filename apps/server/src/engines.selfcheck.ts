@@ -2,6 +2,7 @@
  * Each L2 engine through the Engine face alone. Each line names a
  * number an existing self-check already prints.
  */
+import { ok as expect } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,10 +11,6 @@ import { BodyEngine, collapse } from "@sfab-bench/engine-body";
 import { CircuitEngine } from "@sfab-bench/engine-circuit";
 import { McuEngine, parseIntelHex } from "@sfab-bench/engine-mcu";
 import { catalogRoot } from "./world/plan";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 const STEP = 0.001;
 

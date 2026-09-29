@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   applyHarnessFetchResult,
   decideHarnessRefetch,
@@ -15,10 +16,6 @@ import {
   shouldAcceptHarnessCatalog,
   toggleModelFavorite,
 } from "./model-picker";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(
   loginCommandFromStatus({

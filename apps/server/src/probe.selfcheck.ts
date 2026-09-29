@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -22,10 +23,6 @@ const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
 const world = "parts/sfab/arm-bench@1.0.0.json";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 const id = portProbeId("fleet.rig2.servo", "V+");
 expect(id === "port:fleet.rig2.servo.V+", "probe id");

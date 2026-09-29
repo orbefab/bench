@@ -2,6 +2,7 @@
  * Supply presets and `battery@1`. Printed lines are the proof.
  * The 1 ms step is the rail's master step.
  */
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -30,10 +31,6 @@ import { RunRecorder } from "./world/record";
 
 const MASTER_S = 0.001;
 const LOAD_A = 0.2;
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function num(n: number): string {
   return n.toExponential(16);

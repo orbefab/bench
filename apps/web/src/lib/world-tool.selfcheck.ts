@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { parkGuard, parkOutcome } from "./world-park";
 import {
   isPortTool,
@@ -7,10 +8,6 @@ import {
   toolLabel,
   WORLD_TOOL_START,
 } from "./world-tool";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(WORLD_TOOL_START.mode === "select", "Select is the default");
 expect(!WORLD_TOOL_START.gesture, "no gesture at the start");

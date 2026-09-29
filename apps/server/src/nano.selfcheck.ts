@@ -4,6 +4,7 @@
  * ATmega328P stays in avr8js.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -60,10 +61,6 @@ const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
 const D13 = 1 << (arduinoPinBit("D13") ?? 13);
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function driveSamples(
   read: RecordingRead

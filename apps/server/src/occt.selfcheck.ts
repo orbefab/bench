@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,10 +16,6 @@ import { checkPackage } from "./occt/invariants";
  * needs a file whose right answer we know: the tree we built, the names we wrote,
  * the colours we assigned and where we placed things.
  */
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const fixture = fileURLToPath(
   new URL("../fixtures/bracket_assembly.step", import.meta.url)

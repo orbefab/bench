@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   applyTextSize,
   formatDebugReport,
@@ -5,10 +6,6 @@ import {
   parseTextSize,
   textSizeScale,
 } from "./settings";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(parseTextSize("small") === "small", "small size");
 expect(parseTextSize("large") === "large", "large size");

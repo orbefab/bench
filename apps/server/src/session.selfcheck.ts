@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   clientOf,
   endSessionRun,
@@ -7,10 +8,6 @@ import {
   startSessionRun,
   subscribeSession,
 } from "./session";
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 hydrateSession();
 expect(

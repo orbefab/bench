@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   jointLimitWarning,
   pastLimitAmount,
@@ -8,10 +9,6 @@ import {
  * A hinge overshoots in degrees. A slide stays in metres and warns
  * above 1 mm. The inputs are the joint coordinate.
  */
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 const deg = (degrees: number) => (degrees * Math.PI) / 180;
 

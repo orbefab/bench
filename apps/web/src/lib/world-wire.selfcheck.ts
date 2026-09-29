@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { isDimmed, pointerOwner, wireCommit, wireStep } from "./world-wire";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const FILE = "parts/sfab/arm-scene@1.0.0.json";
 

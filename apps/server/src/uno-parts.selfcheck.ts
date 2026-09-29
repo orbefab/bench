@@ -4,6 +4,7 @@
  * the MOSFET's gate are per instance, in any stamped circuit.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -59,10 +60,6 @@ import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 import { branchDc } from "./world/snapshot-dc";
 import { UnoReferenceRail } from "./world/uno-reference";
 import { powerFeedsOf } from "./world/wiring";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function readPart(id: string): PartFile {
   const file = join(catalogRoot(), "parts", "sfab", `${id}.json`);

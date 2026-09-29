@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,10 +15,6 @@ import {
   resolveRequestRoot,
   shouldSkipDir,
 } from "./projects";
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(shouldSkipDir("node_modules"), "node_modules skipped");
 expect(shouldSkipDir(".git"), "dot dirs skipped");

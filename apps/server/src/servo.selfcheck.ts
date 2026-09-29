@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -37,10 +38,6 @@ import { servoSignalDrives } from "./world/wiring";
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function deg(rad: number): number {
   return (rad * 180) / Math.PI;

@@ -3,6 +3,7 @@
  * hinge form on the behaviour axis is rejected.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -32,10 +33,6 @@ import { writeHingeSnapshot } from "./world/body/hinge-capture";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { applyLevelEdit } from "./world/level-edit";
 import { catalogRoot, planWorld } from "./world/plan";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 const catalog = catalogRoot();
 const sg90 = JSON.parse(

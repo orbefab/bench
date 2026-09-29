@@ -5,6 +5,7 @@
  * recordings are compared to each other.
  */
 
+import { ok as expect } from "node:assert/strict";
 import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,10 +25,6 @@ const fixtureDir = fileURLToPath(
   new URL("../fixtures/mg90s/", import.meta.url)
 );
 const worldName = "mg90s.world.json";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function num(value: unknown, label: string): number {
   expect(typeof value === "number", label);

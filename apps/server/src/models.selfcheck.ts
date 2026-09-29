@@ -1,11 +1,8 @@
+import { ok as expect } from "node:assert/strict";
 import { join } from "node:path";
 
 import { harnessHome } from "./local-sandbox";
 import { opencodeBinCandidates } from "./models";
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const otherHome = "/tmp/sfab-other-home";
 const withProject = opencodeBinCandidates("/tmp/cad", otherHome);

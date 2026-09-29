@@ -2,6 +2,7 @@
  * Typed edits, undo, and the agent and socket paths.
  * Copies only. Catalog files and the examples stay untouched.
  */
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   existsSync,
@@ -58,10 +59,6 @@ const nanoDir = fileURLToPath(
 const catalogLed = fileURLToPath(
   new URL("../catalog/parts/sfab/led-red@1.0.0.json", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function copyNano(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));

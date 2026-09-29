@@ -1,10 +1,7 @@
+import { ok as expect } from "node:assert/strict";
 import type { WorldViewNode, WorldViewTree } from "@sfab-bench/contract";
 
 import { reduceWorldSelection, worldStore } from "./world";
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const nano = { kind: "instance" as const, path: "scene.nano" };
 const link = { kind: "instance" as const, path: "arm", link: "upper_arm" };

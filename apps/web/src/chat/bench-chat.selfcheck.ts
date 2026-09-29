@@ -4,11 +4,8 @@
  * Fill is an explicit `sendMessage()` after `addToolOutput` (ADR 0007).
  * Mapped error copy is covered by composer-recovery.selfcheck.ts.
  */
+import { ok as expect } from "node:assert/strict";
 import { harnessSendAutomaticallyWhen } from "./bench-chat";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 function continues(messages: readonly { role?: string; parts?: unknown[] }[]) {
   return harnessSendAutomaticallyWhen({ messages });

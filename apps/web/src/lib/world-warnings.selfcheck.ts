@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   documentWarnings,
   instanceWarningMap,
@@ -6,10 +7,6 @@ import {
   warningsByPath,
   warningText,
 } from "./world-warnings";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const map = warningsByPath({
   warnings: [

@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, normalize } from "node:path";
@@ -11,10 +12,6 @@ import {
   projectCwd,
   sandboxEnv,
 } from "./local-sandbox";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const root = mkdtempSync(join(tmpdir(), "sfab-sandbox-cwd-"));
 const appHome = mkdtempSync(join(tmpdir(), "sfab-app-home-"));

@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { maskHasPin } from "@sfab-bench/contract";
 import { AVR_PIN } from "@sfab-bench/engine-circuit";
 import { AvrBoard, FLASH_BYTES } from "@sfab-bench/engine-mcu";
@@ -93,10 +94,6 @@ function gpioPlan(
  *   in r17, 0x09       ; PIND
  *   rjmp loop
  */
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 const source = `
 ldi r16, 0x04

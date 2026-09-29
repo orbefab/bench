@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { applyOpenDocument, readOpenDocument } from "./document-query";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const fileOnly = new URLSearchParams("project=/abs/path&file=cad/a.step");
 applyOpenDocument(fileOnly, {

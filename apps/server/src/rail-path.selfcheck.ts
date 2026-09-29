@@ -7,6 +7,7 @@
  * a part between two boards is one branch, and an open node is a degraded row.
  */
 
+import { ok as expect } from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,10 +27,6 @@ import { nodePlanEnv } from "./world/plan-host";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 import { powerIslands } from "./world/wiring";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function benchSim(): Sim {
   return new Sim({

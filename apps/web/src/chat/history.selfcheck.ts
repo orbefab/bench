@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   currentThreadIsEmpty,
   decideNewChatAction,
@@ -10,10 +11,6 @@ import {
   threadRowPip,
   titleRefSegments,
 } from "./history";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(isEmptyHistoryTitle("New chat"), "default title is empty");
 expect(isEmptyHistoryTitle("  New chat  "), "trimmed default title is empty");

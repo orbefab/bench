@@ -3,6 +3,7 @@
  * A wire names the instance path, then the port.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -40,10 +41,6 @@ const SETTLE = 80;
 const nanoExample = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function writeJson(file: string, value: unknown): void {
   mkdirSync(join(file, ".."), { recursive: true });

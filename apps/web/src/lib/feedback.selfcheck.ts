@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   connectionDotLabel,
   connectionDotVisible,
@@ -9,10 +10,6 @@ import {
   reduceConnection,
   suppressNetworkFailureToast,
 } from "./feedback";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 let conn = INITIAL_CONNECTION_STATE;
 expect(conn.phase === "connecting", "starts connecting");

@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { worldSocketKey } from "./world-socket";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const open = {
   project: "/abs/proj",

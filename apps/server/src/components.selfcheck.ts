@@ -1,6 +1,7 @@
 /**
  * Circuit parts, the Nano board netlist, and a breadboard LED.
  */
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -58,10 +59,6 @@ const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
 const BAND = 0.005;
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function ledDeck(board: number): number {
   const diode = new Diode("led", "a", "0", LED_RED);

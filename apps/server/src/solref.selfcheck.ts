@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   clampSolrefTimeconst,
   urdfSolrefLimits,
@@ -8,10 +9,6 @@ import {
  * positive value under 2× timestep become 0.002. The attribute counts
  * only inside that joint's `<mujoco>` element.
  */
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 const minTimeconst = 0.002;
 expect(clampSolrefTimeconst(-1, minTimeconst) === -1, "negative was clamped");

@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import * as THREE from "three";
 
 import {
@@ -9,10 +10,6 @@ import {
   slidePose,
 } from "./world-drag";
 import { WORLD_TO_SCENE_X, worldPointInScene } from "./world-pose";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const near = (got: number, want: number, label: string, eps = 1e-6) => {
   if (!(Math.abs(got - want) <= eps)) {

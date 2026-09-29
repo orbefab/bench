@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   findPendingGetViewer,
   getViewerFillReady,
@@ -5,10 +6,6 @@ import {
   shownFromPart,
   viewerIsReady,
 } from "./get-viewer";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const shownTool = shownFromPart(
   {

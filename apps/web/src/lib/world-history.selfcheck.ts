@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   applyHistory,
   emptyHistory,
@@ -5,10 +6,6 @@ import {
   refuseHistory,
   syncHistories,
 } from "./world-history";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const scene = "sfab/nano-servo-scene@1.0.0";
 const flags = new Map<string, { canUndo: boolean; canRedo: boolean }>();

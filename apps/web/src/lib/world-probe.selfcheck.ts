@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import type { TimelineTrack } from "@sfab-bench/contract";
 
 import {
@@ -10,10 +11,6 @@ import {
   trackLabel,
   valueAt,
 } from "./world-probe";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 // The list: a click adds, the same click removes, order is pick order.
 let list: string[] = [];

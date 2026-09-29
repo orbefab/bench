@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -23,10 +24,6 @@ import {
 } from "./world/host";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import { worldTools } from "./world-tools";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function msOf(simTime: number): number {
   return Math.round(simTime * 1000);

@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   firstSetupCopy,
   inFlightHarness,
@@ -11,10 +12,6 @@ import {
   userPromptText,
   WORKSPACE_BUSY_MESSAGE,
 } from "./composer-recovery";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const user = (id: string, text: string) => ({
   id,

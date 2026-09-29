@@ -2,6 +2,7 @@
  * Fixed ports, Stay / Break, and dirtying upward.
  * Copies only. Catalog files and the examples stay untouched.
  */
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   existsSync,
@@ -59,10 +60,6 @@ const POWER_ID = "sfab/nano-power-input@1.0.0";
 const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function copyNano(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));

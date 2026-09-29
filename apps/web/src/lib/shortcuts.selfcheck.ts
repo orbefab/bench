@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   CHAT_DEFAULT_WIDTH,
   CHAT_MIN_WIDTH,
@@ -21,10 +22,6 @@ import {
   shortcut,
   shortcutTooltip,
 } from "./shortcuts";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(isMacPlatform("MacIntel"), "mac platform");
 expect(isMacPlatform("Win32", "Mozilla/5.0") === false, "windows is not mac");

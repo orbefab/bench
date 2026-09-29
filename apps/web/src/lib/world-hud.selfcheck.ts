@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { decideHudSample } from "./world-hud";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const INTERVAL = 200;
 

@@ -1,5 +1,6 @@
 /** Ported from layered-sim E7 (318b899). */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -34,10 +35,6 @@ const opts: LoadOptions = {
   catalogDir,
   assetRoot: repoRoot,
 };
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function line(ok: boolean, text: string): void {
   if (!ok) throw new Error(text);

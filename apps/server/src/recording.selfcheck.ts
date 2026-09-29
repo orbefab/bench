@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -45,10 +46,6 @@ import { readDraft, writeDraft } from "./world/selfcheck-draft";
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function msOf(t: number): number {
   return Math.round(t * 1000);

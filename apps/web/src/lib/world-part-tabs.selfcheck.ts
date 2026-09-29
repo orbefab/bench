@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { LIBRARY_PART_REASON, openPartTarget } from "./world-open-part";
 import { parkGuard, parkOutcome, runPhase } from "./world-park";
 import {
@@ -10,10 +11,6 @@ import {
   partTabSnapshot,
   savePartTab,
 } from "./world-part-tabs";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const usb = "parts/sfab/nano-servo-usb@1.0.0.json";
 const scene = "parts/sfab/nano-servo-scene@1.0.0.json";

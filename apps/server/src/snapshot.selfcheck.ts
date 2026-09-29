@@ -2,6 +2,7 @@
  * Power-input snapshot: lint, capture byte-identity, class-1 comparisons, selection, report.
  * Ported from layered-sim E4 (fd10742). The feed snapshot is retired.
  */
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -44,10 +45,6 @@ const nanoDir = fileURLToPath(
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
-
-function expect(cond: boolean, message: string): void {
-  if (!cond) throw new Error(message);
-}
 
 function snapFile(): string {
   return join(

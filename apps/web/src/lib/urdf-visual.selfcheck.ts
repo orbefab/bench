@@ -1,3 +1,4 @@
+import { ok } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,9 +7,8 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 
 import { parseUrdfVisuals } from "./urdf-visual";
 
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
+// No narrowing: the checks below read the same values again after they change.
+const expect: (cond: unknown, label: string) => void = ok;
 
 const near = (got: number, want: number, eps = 1e-6) =>
   Math.abs(got - want) <= eps;

@@ -1,12 +1,9 @@
+import { ok as expect } from "node:assert/strict";
 import {
   type BoardConsoleEntry,
   boundConsoleEntries,
   CONSOLE_TEXT_CAP,
 } from "./board-console";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 function chars(entries: readonly BoardConsoleEntry[]): number {
   return boundConsoleEntries(entries, Number.POSITIVE_INFINITY).reduce(

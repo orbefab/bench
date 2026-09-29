@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import type { Pose, WorldViewNode, WorldViewTree } from "@sfab-bench/contract";
 
 import {
@@ -8,10 +9,6 @@ import {
   REASON_ORIGIN,
   REASON_RUN,
 } from "./world-move";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const pose = {
   position: [0, 0, 0] as [number, number, number],

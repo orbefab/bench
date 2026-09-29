@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import type { Pose } from "@sfab-bench/contract";
 
 import {
@@ -6,10 +7,6 @@ import {
   POSE_FIELD_KEYS,
   poseToFields,
 } from "./world-pose-fields";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const near = (got: number, want: number, label: string, eps = 1e-6) => {
   if (!(Math.abs(got - want) <= eps)) {

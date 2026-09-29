@@ -2,6 +2,7 @@
  * Level cards, world_set_level, and part visual boxes.
  */
 
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -28,10 +29,6 @@ import { replaceLevels } from "./world/level-edit";
 import { planWorld } from "./world/plan";
 import { viewOf } from "./world/view";
 import { worldTools } from "./world-tools";
-
-function expect(cond: unknown, label: string): asserts cond {
-  if (!cond) throw new Error(label);
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

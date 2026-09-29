@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import type {
   Domain,
   WorldViewNode,
@@ -13,10 +14,6 @@ import {
   type Vec3,
   wireMarkers,
 } from "./world-ports";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-12;
 const nearVec = (a: readonly number[], b: readonly number[]) =>

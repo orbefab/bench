@@ -1,10 +1,7 @@
+import { ok as expect } from "node:assert/strict";
 import type { WorldViewNode } from "@sfab-bench/contract";
 
 import { instanceCard } from "./world-card";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const node: WorldViewNode = {
   id: "servo",

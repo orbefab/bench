@@ -3,6 +3,7 @@
  * Frames and serial stay byte-identical. The report names the document.
  * apps/server/fixtures/v2-worlds/ is git show b6fa416 of each example world.
  */
+import { ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdirSync,
@@ -85,10 +86,6 @@ const examples: { dir: string; world: string; part: string }[] = [
     part: "parts/sfab/nano-vcc-usb@1.0.0.json",
   },
 ];
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 function worldFixture(name: string): Buffer {
   return readFileSync(join(repo, "apps/server/fixtures/v2-worlds", name));

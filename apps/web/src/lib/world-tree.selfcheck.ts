@@ -1,10 +1,7 @@
+import { ok as expect } from "node:assert/strict";
 import type { WorldViewNode } from "@sfab-bench/contract";
 
 import { initialCollapsed, revealCollapsed, treeRows } from "./world-tree";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const pose = {
   position: [0, 0, 0] as [number, number, number],

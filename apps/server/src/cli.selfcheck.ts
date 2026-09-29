@@ -1,13 +1,10 @@
+import { ok as expect } from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseCli } from "./cli-parse";
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(parseCli([]).kind === "serve", "default is serve");
 expect(parseCli(["serve"]).kind === "serve", "serve");
