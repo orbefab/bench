@@ -32,9 +32,9 @@ import { applyLevelEdit } from "./level-edit";
 import { makeDiag, parsePartRef, splitPortRef } from "./si";
 
 /** A refused edit: the diagnostic, and the detail its sentence was built from. */
-export type EditFailure = Diagnostic & {
+export type EditFailure = Omit<Diagnostic, "code"> & {
   detail: string;
-  code?: EditRefusalCode;
+  code?: EditRefusalCode | undefined;
 };
 
 export function refusalOf(failure: EditFailure): EditRefusal {
@@ -1252,7 +1252,7 @@ function fail(
         detail,
       }),
       detail,
-      ...(code ? { code } : {}),
+      code,
     },
   };
 }
