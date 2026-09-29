@@ -95,6 +95,8 @@ The document is a root part ([ADR 0011](decisions/0011-one-document-kind.md)):
 `parts/<publisher>/<name>@<version>.json`, with a `play` block for gravity,
 seed, and time step. A `.world.json` still opens as an import. Edit
 operations and fixed ports are A3b and A3c in [`product.md`](product.md).
+A tool (Select, Move, Rotate) is a mode of the stage that commits ordinary
+edit operations, so undo, the agent, and scripts see what a drag did.
 
 ## Simulation principles (ADR 0010)
 
