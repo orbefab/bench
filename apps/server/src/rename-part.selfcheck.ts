@@ -540,6 +540,57 @@ async function proveMoved() {
   }
 }
 
+async function proveUndoOrder() {
+  const project = copyNano("sfab-rename-order-");
+  try {
+    const sceneEdit = parseWorldClient(
+      JSON.stringify({
+        type: "edit",
+        part: SCENE_ID,
+        ops: [{ kind: "rename-part", document: SCENE_ID, to: "servo-scene" }],
+      })
+    );
+    if ("error" in sceneEdit || sceneEdit.type !== "edit") {
+      throw new Error("scene edit did not parse");
+    }
+    const sceneApplied = await handleLiveEdit(project, USB, sceneEdit);
+    expect(sceneApplied.type === "edited", JSON.stringify(sceneApplied));
+    const rootEdit = parseWorldClient(
+      JSON.stringify({
+        type: "edit",
+        ops: [{ kind: "rename-part", document: USB, to: "usb-rig" }],
+      })
+    );
+    if ("error" in rootEdit || rootEdit.type !== "edit") {
+      throw new Error("root edit did not parse");
+    }
+    const renamed = await handleLiveEdit(project, USB, rootEdit);
+    expect(renamed.type === "edited", JSON.stringify(renamed));
+    const onRig = historiesForConnect(project, USB_NEXT);
+    expect(
+      onRig.some((row) => row.part === SCENE_ID && row.canUndo),
+      `rig histories ${JSON.stringify(onRig)}`
+    );
+    const undo = parseWorldClient(JSON.stringify({ type: "undo" }));
+    if ("error" in undo || undo.type !== "undo") {
+      throw new Error("undo did not parse");
+    }
+    const undone = await handleLiveEdit(project, USB_NEXT, undo);
+    expect(undone.type === "edited", JSON.stringify(undone));
+    const onUsb = historiesForConnect(project, USB);
+    expect(
+      onUsb.some((row) => row.part === SCENE_ID && row.canUndo) &&
+        onUsb.some((row) => row.part === undefined && !row.canUndo),
+      `usb histories ${JSON.stringify(onUsb)}`
+    );
+  } finally {
+    await stopWorld(project, USB);
+    await stopWorld(project, USB_NEXT);
+    closeRootWatches();
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
 proveScene();
 proveRootLock();
 proveRefusals();
@@ -548,5 +599,6 @@ proveLeaf(nanoDir, "parts/sfab/flag@1.0.0.json", "flag");
 proveLeaf(armDir, "parts/sfab/arm@1.0.0.json", "arm");
 proveIdle();
 await proveMoved();
+await proveUndoOrder();
 expect(worldWorkerCount() === 0, "a world worker was left behind");
 console.log("rename-part.selfcheck ok");

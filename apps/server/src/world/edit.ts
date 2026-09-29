@@ -242,12 +242,13 @@ function announce(
   project: string,
   world: string,
   part: string | undefined,
-  result: DocumentEdit
+  result: DocumentEdit,
+  historyWorld?: string
 ): void {
   publishWorldEvent(
     project,
     world,
-    editedPayload(result, part, project, world)
+    editedPayload(result, part, project, historyWorld ?? world)
   );
 }
 
@@ -319,7 +320,10 @@ async function finishEdit(
 ): Promise<DocumentEdit | { error: string }> {
   rekey(project, session, beforeKey, result);
   if (result.moved && sameRel(result.moved.from, world)) {
-    announce(project, world, part, result);
+    // The tab reconnects at the new path. Nested histories opened from
+    // this document follow it, so undo still names them there.
+    followMovedDocument(project, world, result.moved.to);
+    announce(project, world, part, result, result.moved.to);
     await stopWorld(project, world);
     return result;
   }
@@ -357,6 +361,18 @@ function rekey(
   const meta = sessionMeta.get(beforeKey);
   sessionMeta.delete(beforeKey);
   if (meta) sessionMeta.set(nextFile, meta);
+}
+
+/** Point every history of `from` at `to`. The file keys stay put. */
+function followMovedDocument(project: string, from: string, to: string): void {
+  const fromKey = worldKey(project, from);
+  const toKey = worldKey(project, to);
+  if (fromKey === toKey) return;
+  for (const meta of sessionMeta.values()) {
+    if (!meta.worlds.has(fromKey)) continue;
+    meta.worlds.delete(fromKey);
+    meta.worlds.add(toKey);
+  }
 }
 
 function sameRel(a: string, b: string): boolean {

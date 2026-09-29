@@ -97,4 +97,42 @@ expect(
   "a histories reply keeps a part the server can still redo"
 );
 
+let renamed = applyHistory(emptyHistory(), {
+  part: scene,
+  canUndo: true,
+  canRedo: false,
+  histories: [{ part: scene, canUndo: true, canRedo: false }],
+});
+renamed = applyHistory(renamed, {
+  canUndo: true,
+  canRedo: false,
+  histories: [
+    { canUndo: true, canRedo: false },
+    { part: scene, canUndo: true, canRedo: false },
+  ],
+});
+renamed = applyHistory(renamed, {
+  canUndo: false,
+  canRedo: true,
+  histories: [
+    { canUndo: false, canRedo: true },
+    { part: scene, canUndo: true, canRedo: false },
+  ],
+});
+const afterRootUndo = historyButtons(renamed);
+expect(
+  afterRootUndo.canUndo === true && afterRootUndo.undoPart === scene,
+  "undo of a root rename leaves the nested rename"
+);
+const reconnected = historyButtons(
+  syncHistories(renamed, [
+    { canUndo: false, canRedo: true },
+    { part: scene, canUndo: true, canRedo: false },
+  ])
+);
+expect(
+  reconnected.canUndo === true && reconnected.undoPart === scene,
+  "a reconnect after the move keeps the nested rename"
+);
+
 console.log("world-history.selfcheck ok");
