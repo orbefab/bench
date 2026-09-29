@@ -135,7 +135,9 @@ export function planAddCapture(
   }
   const files: PlannedFile[] = [];
   const snapshotFile = snapshotPath(input.projectDir, op.ref);
-  if (!(restoring && op.snapshot === "")) {
+  // A restore with no text: remove-capture left the shared snapshot file on disk.
+  const fileStays = restoring && op.snapshot === "";
+  if (!fileStays) {
     let snap: { format?: unknown };
     try {
       snap = JSON.parse(op.snapshot) as { format?: unknown };

@@ -29,6 +29,8 @@ export type HingeCaptureEntry = {
   baseline: { level: string; value: number };
   heldOut: "fixture";
   sourceLevel: "0" | "1" | "2" | "3";
+  /** Level id that takes the new variant. */
+  into?: string;
 };
 
 export type HingeCaptureInput = {

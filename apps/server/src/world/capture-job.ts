@@ -20,8 +20,8 @@ import {
   partFilePath,
 } from "@sfab-bench/parts";
 import {
+  type AnyCaptureEntry,
   CaptureAborted,
-  type CaptureEntry,
   type CaptureFile,
   captureFromConfig,
 } from "@sfab-bench/sim/capture";
@@ -69,15 +69,29 @@ function partAtInstance(
   return { part: inst.part };
 }
 
-/** The catalog config's stamp, so a card capture and the CLI write the same provenance. */
-function captureFileFor(recipe: CaptureEntry, catalog: string): CaptureFile {
+/**
+ * The catalog config's `created` and `tool`, so a card capture and the CLI
+ * write the same provenance. The runner takes `created` from a config and
+ * never from the clock, so there is no stamp without one. A config with no
+ * `tool` is stamped with this bench's own version.
+ */
+function captureFileFor(
+  recipe: AnyCaptureEntry,
+  catalog: string
+): CaptureFile<AnyCaptureEntry> | { error: string } {
   const file = join(catalog, "fixtures", "capture.config.json");
   const base = nodeStore.exists(file)
     ? (JSON.parse(nodeStore.readText(file)) as Partial<CaptureFile>)
     : {};
+  if (!base.created) {
+    return { error: "the catalog has no capture.config.json to stamp from" };
+  }
   return {
-    created: base.created ?? "2026-09-27T00:00:00.000Z",
-    tool: base.tool ?? { name: "sfab-bench-capture", version: "1" },
+    created: base.created,
+    tool: base.tool ?? {
+      name: "sfab-bench-capture",
+      version: serverCaptureEnv.bench().version,
+    },
     entries: [recipe],
   };
 }
@@ -121,13 +135,11 @@ async function run(
     return failed(`${part.id} has no ${request.axis} capture recipe`);
   const level = captureLevelFor(part, request.axis, recipe);
   if ("error" in level) return failed(level.error);
-  const ref = nextCaptureRef(nodeStore, root, part.id, request.axis);
-  const number = ref?.match(/-(\d+)@/)?.[1];
-  if (!ref || !number) return failed(`${part.id} is not a part id`);
-  const variant = `capture-${number}`;
-
-  const projectFixture = recipe.sweep.fixture
-    ? join(root, "fixtures", `${recipe.sweep.fixture}.fixture.json`)
+  const config = captureFileFor(recipe, catalog);
+  if ("error" in config) return failed(config.error);
+  const fixtureId = "sweep" in recipe ? recipe.sweep.fixture : undefined;
+  const projectFixture = fixtureId
+    ? join(root, "fixtures", `${fixtureId}.fixture.json`)
     : null;
   const tmp = serverCaptureEnv.makeTemp("sfab-capture-out-");
   let snapshot: string;
@@ -136,7 +148,7 @@ async function run(
     let last = 0;
     await captureFromConfig(
       {
-        config: captureFileFor(recipe, catalog),
+        config,
         catalogDir: catalog,
         ...(inProject ? { libraryDir: root } : {}),
         ...(projectFixture && nodeStore.exists(projectFixture)
@@ -169,6 +181,12 @@ async function run(
   }
   if (job.controller.signal.aborted) return failed("aborted");
 
+  // The number is taken now, not before the fit: another world may have
+  // captured the same part while this one ran.
+  const ref = nextCaptureRef(nodeStore, root, part.id, request.axis);
+  const number = ref?.match(/-(\d+)@/)?.[1];
+  if (!ref || !number) return failed(`${part.id} is not a part id`);
+  const variant = `capture-${number}`;
   const op: EditOp = {
     kind: "add-capture",
     document: inProject ? part.id : world,
@@ -259,14 +277,15 @@ export function startCapture(
     });
 }
 
-/** False when no running job has this nonce. */
+/** False when no running job has this nonce and this owner. */
 export function abortCapture(
   project: string,
   world: string,
-  nonce: string
+  nonce: string,
+  owner: unknown
 ): boolean {
   const job = jobs.get(jobKey(project, world));
-  if (!job || job.nonce !== nonce) return false;
+  if (!job || job.nonce !== nonce || job.owner !== owner) return false;
   job.controller.abort();
   return true;
 }

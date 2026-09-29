@@ -120,7 +120,14 @@ try {
 
   // Abort: nothing is written and no temp directory stays behind.
   launch("gone");
-  expect(abortCapture(project, WORLD, "gone"), "the running job is found");
+  expect(
+    !abortCapture(project, WORLD, "gone", {}),
+    "another socket cannot abort by nonce"
+  );
+  expect(
+    abortCapture(project, WORLD, "gone", events),
+    "the owner finds the running job"
+  );
   const aborted = await settled("gone");
   deepStrictEqual(aborted, {
     type: "capture-failed",
@@ -129,7 +136,10 @@ try {
   });
   deepStrictEqual(treeOf(project), before, "an aborted capture writes nothing");
   deepStrictEqual(captureTemps(), tempsBefore, "temp directories are removed");
-  expect(!abortCapture(project, WORLD, "gone"), "no job is left to abort");
+  expect(
+    !abortCapture(project, WORLD, "gone", events),
+    "no job is left to abort"
+  );
 
   // Capture, and a second request while it runs is refused.
   launch("c1");

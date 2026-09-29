@@ -452,7 +452,7 @@ type LevelOverlay = {
 
 The loader adds the overlay's variants to the part before it plans. An overlay never removes a variant and never changes a default, except that a level the library lacks takes its first variant, by name, as the default. A variant name the library already has is an error, not an override. The library file is unchanged and keeps its own `sha256`. The lock pins the overlay in `overlays`, keyed by the part id, and a changed overlay is reported like a changed part. A part in the project needs no overlay: its own file holds the variants.
 
-Captures made from the world socket are numbered per part and axis. The next ref is `snapshots/<publisher>/<name>-<axis>-<n>@<version>.json`, the variant is `capture-<n>`, and `snapshots/.captures.json` keeps the counter so a removed capture's number is not reused.
+Captures made from the world socket are numbered per part and axis. The next ref is `snapshots/<publisher>/<name>-<axis>-<n>@<version>.json`, the variant is `capture-<n>`, and `snapshots/.captures.json` keeps the counter so a removed capture's number is not reused. The counter file is not pinned in the lock, so copy it with the project. Without it the next number comes from the snapshot files on disk, and the number of a removed capture can be reused.
 
 ## 6. Snapshot
 

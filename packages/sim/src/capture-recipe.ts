@@ -1,10 +1,15 @@
 /** Which recipe captures a part's axis, and which level takes the result. */
-import type { PartFile } from "@sfab-bench/contract";
+import type {
+  CaptureAxisName,
+  CaptureRecipe,
+  PartFile,
+} from "@sfab-bench/contract";
 import type { Store } from "@sfab-bench/parts";
 
-import type { CaptureEntry, CaptureFile } from "./capture";
+import type { HingeCaptureEntry } from "./body/hinge-capture";
+import type { AnyCaptureEntry, CaptureEntry, CaptureFile } from "./capture";
 
-export type CaptureAxis = "behaviour" | "body";
+export type CaptureAxis = CaptureAxisName;
 
 export type CaptureRecipeSource = {
   catalogDir: string;
@@ -12,34 +17,52 @@ export type CaptureRecipeSource = {
   join(...parts: string[]): string;
 };
 
-function isHinge(entry: { form?: string }): boolean {
-  return entry.form === "hinge@1";
+function axisOf(entry: AnyCaptureEntry | CaptureRecipe): CaptureAxis {
+  return "form" in entry ? "body" : "behaviour";
+}
+
+function entryOf(id: string, recipe: CaptureRecipe): AnyCaptureEntry {
+  return { id, part: id, ...recipe };
 }
 
 /**
  * The part document's own recipe wins; else the catalog entry for this
- * part id. A hinge entry is the body axis, every other entry behaviour.
+ * part id. A hinge entry is the body axis, every other entry behaviour;
+ * a recipe filed under the other axis is ignored.
  */
+export function captureRecipeFor(
+  part: PartFile,
+  axis: "behaviour",
+  source: CaptureRecipeSource
+): CaptureEntry | null;
+export function captureRecipeFor(
+  part: PartFile,
+  axis: "body",
+  source: CaptureRecipeSource
+): HingeCaptureEntry | null;
 export function captureRecipeFor(
   part: PartFile,
   axis: CaptureAxis,
   source: CaptureRecipeSource
-): CaptureEntry | null {
+): AnyCaptureEntry | null;
+export function captureRecipeFor(
+  part: PartFile,
+  axis: CaptureAxis,
+  source: CaptureRecipeSource
+): AnyCaptureEntry | null {
   const own = part.capture?.[axis];
-  if (own) {
-    return { id: part.id, part: part.id, ...own } as unknown as CaptureEntry;
-  }
+  if (own && axisOf(own) === axis) return entryOf(part.id, own);
   const file = source.join(
     source.catalogDir,
     "fixtures",
     "capture.config.json"
   );
   if (!source.store.exists(file)) return null;
-  const config = JSON.parse(source.store.readText(file)) as CaptureFile;
+  const config = JSON.parse(
+    source.store.readText(file)
+  ) as CaptureFile<AnyCaptureEntry>;
   const entry = config.entries.find(
-    (row) =>
-      row.part === part.id &&
-      (isHinge(row as { form?: string }) ? "body" : "behaviour") === axis
+    (row) => row.part === part.id && axisOf(row) === axis
   );
   return entry ?? null;
 }
@@ -48,7 +71,7 @@ export function captureRecipeFor(
 export function captureLevelFor(
   part: PartFile,
   axis: CaptureAxis,
-  recipe: Pick<CaptureEntry, "into">
+  recipe: { into?: string }
 ): { level: string } | { error: string } {
   const slots = part.axes?.[axis] ?? {};
   if (recipe.into !== undefined) {

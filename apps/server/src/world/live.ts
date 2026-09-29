@@ -134,7 +134,7 @@ wss.on(
         } else if (parsed.type === "capture") {
           startCapture(project, world, parsed, ws, (event) => send(ws, event));
         } else if (parsed.type === "capture-abort") {
-          abortCapture(project, world, parsed.nonce);
+          abortCapture(project, world, parsed.nonce, ws);
         } else if (
           parsed.type === "edit" ||
           parsed.type === "undo" ||

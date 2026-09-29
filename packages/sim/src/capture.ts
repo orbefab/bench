@@ -42,11 +42,13 @@ export type FreeCase = {
   load: string;
 };
 
-export type CaptureFile = {
+export type CaptureFile<E = CaptureEntry> = {
   created: string;
   tool: { name: string; version: string };
-  entries: CaptureEntry[];
+  entries: E[];
 };
+
+export type AnyCaptureEntry = CaptureEntry | HingeCaptureEntry;
 
 export type FreeRunSpec = {
   project: string;
@@ -140,7 +142,7 @@ export type CaptureEnv = {
 export type CaptureRun = {
   /** Overrides the fixture path in the config. The committed Nano capture uses this. */
   fixtureFile?: string;
-  config?: CaptureFile | CaptureEntry;
+  config?: CaptureFile<AnyCaptureEntry> | AnyCaptureEntry;
   catalogDir?: string;
   libraryDir?: string;
   /** Where to write. Absent, the fixture id names the catalog snapshot. */
@@ -209,7 +211,7 @@ function readCaptureFile(
   catalog: string,
   inline: CaptureRun["config"],
   env: CaptureEnv
-): CaptureFile {
+): CaptureFile<AnyCaptureEntry> {
   if (inline && "entries" in inline) return inline;
   if (inline) {
     return {
@@ -220,24 +222,24 @@ function readCaptureFile(
   }
   return JSON.parse(
     env.readText(env.join(catalog, "fixtures", "capture.config.json"))
-  ) as CaptureFile;
+  ) as CaptureFile<AnyCaptureEntry>;
 }
 
 async function captureEntry(
-  config: CaptureEntry,
-  file: CaptureFile,
+  config: AnyCaptureEntry,
+  file: CaptureFile<AnyCaptureEntry>,
   catalog: string,
   opts: CaptureRun,
   env: CaptureEnv,
   stampEnv: StampEnv
 ): Promise<CaptureStats> {
-  if ((config as { form?: string }).form === "hinge@1") {
+  if ("form" in config) {
     const hinge = progressOf(opts, 1);
     hinge.check();
     await writeHingeSnapshot(
       {
         catalog,
-        entry: config as unknown as HingeCaptureEntry,
+        entry: config,
         created: file.created,
         tool: file.tool,
         bench: benchVersions(env),
@@ -484,7 +486,7 @@ function snapshotOf(input: {
   fixture: FixtureFile;
   fixtureRef: string;
   config: CaptureEntry;
-  file: CaptureFile;
+  file: Pick<CaptureFile, "created" | "tool">;
   partType: string;
   hash: string;
   bench: { version: string; mujoco: string; avr8js: string };
