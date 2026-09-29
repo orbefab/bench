@@ -548,6 +548,8 @@ A plain-branch capture drives an ideal current source through `p` into `m` on th
 
 Rebuild with `pnpm --filter @sfab-bench/server capture`. The timestamp comes from the config, not the wall clock.
 
+A capture from the world socket picks the recipe the same way: the part's own `capture` field first, else the catalog entry for that part and axis. A project part is stamped from the project (`parts/<publisher>/<name>@<version>.json`) and its capture lands in that part's own document, whether or not the part is the open document. The recipe's `sweep.fixture` is read from `<project>/fixtures/<sweep.fixture>.fixture.json` when that file exists, else from the catalog's `fixtures/`. A part-document recipe has no free-run `cases`, so it writes the table and the static row only.
+
 ### Worked examples
 
 **Branch, Nano power input.** `sfab/nano-power-input@1.0.0` is the SS14 from `VBUS` to `5V` and the 10 µF capacitor, as one group. Class 2 is that composite. Class 1 is the snapshot, a branch between two of the part's own ports: `across` `["VBUS", "5V"]`, current into `VBUS`, swept 0 to 0.9 A. The envelope bounds `VBUS.current`. The supply is not in the table. The Nano class-2 netlist instances the group as `power` and wires through `power.5V` and `power.GND`. A path rule can run that child at the snapshot while the rest of the board stays the circuit. The class-1 Nano board netlist instances the same group with `level: { behaviour: 1 }`, so the branch runs even when a type rule would pick class 2. `baseline.level` is the level the error was measured against, and `value` is that level's own error on the same metric, which is 0 for the capture source. The static-max-abs row is the table's interpolation error against that class-2 group.

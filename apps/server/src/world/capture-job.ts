@@ -111,11 +111,7 @@ async function run(
   const part = found.part;
   const root = absolutePath(project);
   const own = partFilePath(root, part.id);
-  if (own && nodeStore.exists(own)) {
-    return failed(
-      `${part.id} lives in this project; capture reads library parts`
-    );
-  }
+  const inProject = Boolean(own && nodeStore.exists(own));
   const catalog = absolutePath(catalogRoot());
   const recipe = captureRecipeFor(part, request.axis, {
     catalogDir: catalog,
@@ -131,6 +127,9 @@ async function run(
   if (!ref || !number) return failed(`${part.id} is not a part id`);
   const variant = `capture-${number}`;
 
+  const projectFixture = recipe.sweep.fixture
+    ? join(root, "fixtures", `${recipe.sweep.fixture}.fixture.json`)
+    : null;
   const tmp = serverCaptureEnv.makeTemp("sfab-capture-out-");
   let snapshot: string;
   try {
@@ -140,6 +139,10 @@ async function run(
       {
         config: captureFileFor(recipe, catalog),
         catalogDir: catalog,
+        ...(inProject ? { libraryDir: root } : {}),
+        ...(projectFixture && nodeStore.exists(projectFixture)
+          ? { fixtureFile: projectFixture }
+          : {}),
         outFile: out,
         signal: job.controller.signal,
         onStep(done, total, label) {
@@ -169,7 +172,7 @@ async function run(
 
   const op: EditOp = {
     kind: "add-capture",
-    document: world,
+    document: inProject ? part.id : world,
     part: part.id,
     axis: request.axis,
     level: Number(level.level) as 0 | 1 | 2 | 3,
@@ -178,7 +181,13 @@ async function run(
     snapshot,
     omits: omitsAt(part, request.axis, level.level),
   };
-  const landed = await applyDocumentEdit(project, world, [op], editLabel(op));
+  const landed = await applyDocumentEdit(
+    project,
+    world,
+    [op],
+    editLabel(op),
+    inProject ? part.id : undefined
+  );
   if ("needsConfirm" in landed)
     return failed(landed.message ?? "needs confirmation");
   if ("error" in landed) return failed(landed.error);

@@ -3,18 +3,20 @@ import { deepStrictEqual, ok as expect } from "node:assert/strict";
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { PartFile, WorldServerMessage } from "@sfab-bench/contract";
-import { loadWorldV2 } from "@sfab-bench/parts";
+import { contentHash, loadWorldV2 } from "@sfab-bench/parts";
 
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
@@ -65,14 +67,17 @@ const loaded = loadWorldV2(absolutePath(`${project}/${WORLD}`), {
 const path = loaded.resolved.find((inst) => inst.part.id === POWER)?.path;
 expect(path, "the world holds a nano-power-input");
 
-function request(nonce: string): ReturnType<typeof parseWorldClient> {
+function request(
+  nonce: string,
+  at: string | undefined
+): ReturnType<typeof parseWorldClient> {
   return parseWorldClient(
-    JSON.stringify({ type: "capture", nonce, path, axis: "behaviour" })
+    JSON.stringify({ type: "capture", nonce, path: at, axis: "behaviour" })
   );
 }
 
-function launch(nonce: string): void {
-  const parsed = request(nonce);
+function launch(nonce: string, at: string | undefined = path): void {
+  const parsed = request(nonce, at);
   expect(
     "type" in parsed && parsed.type === "capture",
     "the capture message parses"
@@ -253,6 +258,135 @@ try {
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+
+  // A project part with its own recipe and fixture, selected inside a parent
+  // world that is not that part: the variant lands in the part's own file.
+  const RAIL = "local/rail@1.0.0";
+  const railFile = join(project, "parts/local/rail@1.0.0.json");
+  const catalog = absolutePath(catalogRoot());
+  const source = JSON.parse(
+    readFileSync(
+      join(catalog, "parts", "sfab", "nano-power-input@1.0.0.json"),
+      "utf8"
+    )
+  ) as PartFile & { capture?: unknown };
+  if (!entry) throw new Error("no catalog entry to copy");
+  const recipe = Object.fromEntries(
+    Object.entries(entry).filter(([key]) => key !== "id" && key !== "part")
+  );
+  mkdirSync(join(project, "parts/local"), { recursive: true });
+  mkdirSync(join(project, "fixtures/local"), { recursive: true });
+  writeFileSync(
+    railFile,
+    `${JSON.stringify(
+      {
+        ...source,
+        id: RAIL,
+        capture: {
+          behaviour: {
+            ...recipe,
+            sweep: { ...entry.sweep, fixture: "local/rail" },
+            into: "1",
+          },
+        },
+      },
+      null,
+      2
+    )}\n`
+  );
+  cpSync(
+    join(catalog, "fixtures", "sfab", "nano-power-input.fixture.json"),
+    join(project, "fixtures/local/rail.fixture.json")
+  );
+  const added = parseWorldClient(
+    JSON.stringify({
+      type: "edit",
+      ops: [{ kind: "add-instance", document: WORLD, id: "rail", part: RAIL }],
+    })
+  );
+  if (!("type" in added) || added.type !== "edit") {
+    throw new Error(`add-instance does not parse: ${JSON.stringify(added)}`);
+  }
+  const placed = await handleLiveEdit(project, WORLD, added);
+  expect(
+    placed.type === "edited",
+    `the part is placed: ${JSON.stringify(placed)}`
+  );
+  const railPath = loadWorldV2(absolutePath(`${project}/${WORLD}`), {
+    store: nodeStore,
+    catalogDir: catalog,
+    assetRoot: project,
+  }).resolved.find((inst) => inst.part.id === RAIL)?.path;
+  expect(railPath, "the world holds the project part");
+  const lockFile = join(project, WORLD.replace(/\.json$/, ".lock.json"));
+  const railBefore = treeOf(project);
+  const railLockBefore = readFileSync(lockFile, "utf8");
+  const railText = readFileSync(railFile, "utf8");
+  expect(
+    !JSON.stringify(JSON.parse(railText).axes).includes("capture-1"),
+    "the part starts without a capture"
+  );
+
+  launch("p1", railPath);
+  const projectDone = await settled("p1");
+  expect(
+    projectDone.type === "captured",
+    `the project part captured: ${JSON.stringify(projectDone)}`
+  );
+  if (projectDone.type !== "captured") throw new Error("unreachable");
+  deepStrictEqual(
+    { ...projectDone, path: undefined },
+    {
+      type: "captured",
+      nonce: "p1",
+      path: undefined,
+      axis: "behaviour",
+      level: 1,
+      variant: "capture-1",
+      ref: "local/rail-behaviour-1@1.0.0",
+    }
+  );
+  const railNow = JSON.parse(readFileSync(railFile, "utf8")) as PartFile;
+  expect(
+    railNow.axes?.behaviour?.["1"]?.variants["capture-1"]?.kind === "snapshot",
+    "the variant is in the part's own document"
+  );
+  expect(
+    railNow.axes?.behaviour?.["1"]?.default ===
+      source.axes?.behaviour?.["1"]?.default,
+    "the default is untouched"
+  );
+  expect(
+    existsSync(join(project, "snapshots/local/rail-behaviour-1@1.0.0.json")),
+    "the snapshot is in the project's snapshots"
+  );
+  expect(
+    !existsSync(join(project, "overlays/local")),
+    "a project part needs no overlay"
+  );
+  const lockNow = readFileSync(lockFile, "utf8");
+  expect(lockNow !== railLockBefore, "the parent's lock is re-pinned");
+  const pinned = (
+    JSON.parse(lockNow) as { parts: { id: string; sha256: string }[] }
+  ).parts.find((row) => row.id === RAIL);
+  deepStrictEqual(
+    pinned?.sha256,
+    contentHash(JSON.parse(readFileSync(railFile, "utf8"))),
+    "the lock pins the part's new bytes"
+  );
+  const undoRail = await handleLiveEdit(project, WORLD, {
+    type: "undo",
+    part: RAIL,
+  });
+  expect(
+    undoRail.type === "edited",
+    `undo of the capture: ${JSON.stringify(undoRail)}`
+  );
+  deepStrictEqual(
+    treeOf(project),
+    railBefore,
+    "undo restores every byte of the part, snapshot, counter and lock"
+  );
 } finally {
   attached.detach();
   await stopWorld(project, WORLD);
