@@ -60,6 +60,22 @@ export function historiesFor(
   return rows;
 }
 
+/**
+ * Undo flags when a part tab connects. Includes this document's own
+ * session even when it was first opened as a nested part of another file.
+ */
+export function historiesForConnect(
+  project: string,
+  world: string
+): { part?: string; canUndo: boolean; canRedo: boolean }[] {
+  const rows = historiesFor(project, world);
+  const root = canonical(absolutePath(join(absolutePath(project), world)));
+  const session = sessions.get(root);
+  if (!session) return rows;
+  if (rows.some((row) => row.part === undefined)) return rows;
+  return [{ canUndo: session.canUndo, canRedo: session.canRedo }, ...rows];
+}
+
 export type DocumentEdit = {
   label: string;
   canUndo: boolean;

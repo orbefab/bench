@@ -121,6 +121,40 @@ export function refuseHistory(
   });
 }
 
+/**
+ * Replace flags with the server's list and keep the local order for
+ * parts that can still undo or redo. A reconnect has no "just edited"
+ * part, so nothing is moved to the front.
+ */
+export function syncHistories(
+  model: HistoryModel,
+  rows: readonly PartHistory[]
+): HistoryModel {
+  const parts = rows.map((row) => ({ ...row }));
+  const undoAllowed = new Set(
+    parts.filter((row) => row.canUndo).map((row) => partKey(row.part))
+  );
+  const redoAllowed = new Set(
+    parts.filter((row) => row.canRedo).map((row) => partKey(row.part))
+  );
+  return {
+    parts,
+    undoOrder: mergeOrder(model.undoOrder, undoAllowed),
+    redoOrder: mergeOrder(model.redoOrder, redoAllowed),
+  };
+}
+
+function mergeOrder(
+  previous: readonly string[],
+  allowed: Set<string>
+): string[] {
+  const next = previous.filter((key) => allowed.has(key));
+  for (const key of allowed) {
+    if (!next.includes(key)) next.push(key);
+  }
+  return next;
+}
+
 export function historyButtons(model: HistoryModel): HistoryButtons {
   const undoKey = model.undoOrder[0];
   const redoKey = model.redoOrder[0];

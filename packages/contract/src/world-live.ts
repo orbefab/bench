@@ -332,7 +332,9 @@ export type WorldClientMessage =
       confirm?: "break";
     }
   | { type: "undo"; part?: string }
-  | { type: "redo"; part?: string };
+  | { type: "redo"; part?: string }
+  /** Undo flags for this document. Sent when a part tab connects. */
+  | { type: "histories" };
 
 export type WorldServerMessage =
   | { type: "state"; state: WorldState; report?: RunReport }
@@ -406,6 +408,14 @@ export type WorldServerMessage =
       histories?: { part?: string; canUndo: boolean; canRedo: boolean }[];
       /** Ports a break disconnected. Absent when the edit broke none. */
       warnings?: string[];
+    }
+  /**
+   * Undo flags for this document, with no edit attached. A part tab
+   * asks on connect so the buttons match this file's history.
+   */
+  | {
+      type: "histories";
+      histories: { part?: string; canUndo: boolean; canRedo: boolean }[];
     }
   /**
    * The edit would remove or rename a fixed port. Nothing was written.

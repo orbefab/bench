@@ -3,6 +3,7 @@ import {
   emptyHistory,
   historyButtons,
   refuseHistory,
+  syncHistories,
 } from "./world-history";
 
 function expect(cond: boolean, label: string) {
@@ -80,6 +81,20 @@ expect(
   historyButtons(remote).canUndo === true &&
     historyButtons(remote).undoPart === scene,
   "another tab's edit enables undo on that part"
+);
+
+const synced = syncHistories(remote, [
+  { canUndo: true, canRedo: false },
+  { part: scene, canUndo: false, canRedo: true },
+]);
+const syncedButtons = historyButtons(synced);
+expect(
+  syncedButtons.canUndo === true && syncedButtons.undoPart === undefined,
+  "a histories reply follows the server for this document"
+);
+expect(
+  syncedButtons.canRedo === true && syncedButtons.redoPart === scene,
+  "a histories reply keeps a part the server can still redo"
 );
 
 console.log("world-history.selfcheck ok");

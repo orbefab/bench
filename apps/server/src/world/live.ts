@@ -15,7 +15,7 @@ import { WebSocketServer } from "ws";
 import type { ClientPrincipal } from "../principal";
 import { resolveUpgradePrincipal, runWithPrincipal } from "../principal";
 import { resolveRequestRoot } from "../projects";
-import { handleLiveEdit } from "./edit";
+import { handleLiveEdit, historiesForConnect } from "./edit";
 import { attachWorld, type WorldHandle } from "./host";
 
 /**
@@ -168,6 +168,7 @@ export function parseWorldClient(raw: string): ParsedClient {
     }
     return { type, ...(typeof part === "string" ? { part } : {}) };
   }
+  if (type === "histories") return { type: "histories" };
   if (type === "edit") {
     const ops = (value as { ops?: unknown }).ops;
     const label = (value as { label?: unknown }).label;
@@ -284,6 +285,11 @@ wss.on(
               return;
             }
             send(ws, result);
+          });
+        } else if (parsed.type === "histories") {
+          send(ws, {
+            type: "histories",
+            histories: historiesForConnect(project, world),
           });
         } else if (
           parsed.type === "edit" ||
