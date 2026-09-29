@@ -14,6 +14,7 @@ import {
   seriesRange,
   seriesValues,
   sparkline,
+  timelineTrackLabel,
   tracksForSelection,
 } from "@/lib/timeline";
 import { formatSimTime } from "@/lib/world-issues";
@@ -31,6 +32,10 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
   const connection = useWorld((s) => s.connection);
   const blocked = useWorld((s) => s.runErrors.length > 0);
   const outline = useWorld((s) => s.outline);
+  const tree = useWorld((s) => s.tree);
+  const root = tree?.nodes.find((node) => node.id === "$root");
+  const rootName =
+    root && root.name !== "root" && root.name !== "$root" ? root.name : null;
   const mac = isMacPlatform(
     typeof navigator === "undefined" ? "" : navigator.platform,
     typeof navigator === "undefined" ? "" : navigator.userAgent
@@ -188,8 +193,10 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
         <div className="flex justify-between px-0.5 text-[10px] tabular-nums text-muted-foreground">
           <span>{formatSimTime(from)}</span>
           <span className="truncate px-2">
-            {trackLabel(chosen.primary)}
-            {chosen.secondary ? ` · ${trackLabel(chosen.secondary)}` : ""}
+            {trackLabel(chosen.primary, rootName)}
+            {chosen.secondary
+              ? ` · ${trackLabel(chosen.secondary, rootName)}`
+              : ""}
           </span>
           <span>{formatSimTime(to)}</span>
         </div>
@@ -271,12 +278,12 @@ function Marker({
   );
 }
 
-function trackLabel(track: TimelineTrack | null): string {
+function trackLabel(
+  track: TimelineTrack | null,
+  rootName: string | null
+): string {
   if (!track) return "";
-  const name = track.id.includes(":")
-    ? track.id.slice(track.id.indexOf(":") + 1)
-    : track.id;
-  return `${name} (${track.unit})`;
+  return timelineTrackLabel(track.id, track.unit, rootName);
 }
 
 function timeFromPointer(

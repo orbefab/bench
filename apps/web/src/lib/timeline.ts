@@ -85,6 +85,26 @@ export function faultUntil(
   return fault;
 }
 
+/**
+ * The strip's label. A leaf opened as the root is recorded as `$root`;
+ * the label uses the part's short name, the same name as the tree row.
+ * The track id itself is unchanged.
+ */
+export function timelineTrackLabel(
+  id: string,
+  unit: string,
+  rootName?: string | null
+): string {
+  let name = id.includes(":") ? id.slice(id.indexOf(":") + 1) : id;
+  if (
+    rootName &&
+    (name === "$root" || name.startsWith("$root/") || name.startsWith("$root."))
+  ) {
+    name = rootName + name.slice("$root".length);
+  }
+  return `${name} (${unit})`;
+}
+
 function byId(
   tracks: readonly TimelineTrack[],
   id: string

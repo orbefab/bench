@@ -17,6 +17,7 @@ import {
   seriesValues,
   sparkline,
   timeAtPointer,
+  timelineTrackLabel,
   tracksForSelection,
 } from "./timeline";
 import type { WorldOutline } from "./world-outline";
@@ -267,5 +268,21 @@ function ys(path: string): number[] {
   }
   return out;
 }
+
+expect(
+  timelineTrackLabel("joint:$root/shoulder", "deg", "arm") ===
+    "arm/shoulder (deg)",
+  "a leaf root shows its short name"
+);
+expect(
+  timelineTrackLabel("joint:arm/shoulder", "deg", "arm") ===
+    "arm/shoulder (deg)",
+  "a named robot is unchanged"
+);
+expect(
+  timelineTrackLabel("joint:$root/shoulder", "deg", null) ===
+    "$root/shoulder (deg)",
+  "without a short name the id stays"
+);
 
 console.log("timeline.selfcheck ok");
