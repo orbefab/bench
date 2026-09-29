@@ -28,7 +28,7 @@ import { lockAfterEdit, replaceLevels } from "./level-edit";
 import { type LibraryOptions, loadPartById, loadTypeById } from "./library";
 import { loadWorldV2 } from "./load";
 import { lockPathFor } from "./lock";
-import { normalize } from "./path";
+import { normalize, relative } from "./path";
 import {
   bindDependents,
   collectPartPorts,
@@ -38,6 +38,7 @@ import {
   portDependents,
   portNames,
 } from "./ports";
+import { type PlannedFile, planPartRename } from "./rename";
 import { sha256Hex } from "./sha256";
 import { canonicalJson } from "./si";
 import type { Store } from "./store";
@@ -54,6 +55,8 @@ type SessionStep = HistoryStep & {
   lockBefore: string | null;
   lockAfter: string | null;
   files: SavedFile[];
+  /** Absolute paths of the open document, when this step moved it. */
+  relocated?: { before: string; after: string };
 };
 
 export type EditSessionOptions = {
@@ -74,6 +77,10 @@ export type AppliedEdit = {
   report: RunReport;
   /** Ports a break disconnected. Absent when the edit broke none. */
   warnings?: string[];
+  /** Project-relative. Set when this step moved the open document. */
+  moved?: { from: string; to: string };
+  /** Part ids before and after this step. The server keeps aliases. */
+  renamed?: { from: string; to: string };
 };
 
 export type NeedsConfirm = {
@@ -85,8 +92,8 @@ export type NeedsConfirm = {
 export type EditResult = AppliedEdit | { error: string } | NeedsConfirm;
 
 export class EditSession {
-  readonly file: string;
-  private readonly names: readonly string[];
+  private filePath: string;
+  private names: readonly string[];
   private readonly store: Store;
   private readonly catalogDir: string;
   private readonly assetRoot: string;
@@ -99,8 +106,13 @@ export class EditSession {
   /** Hashes of files the last edit wrote, so an outside change clears history. */
   private watched: { path: string; hash: string | null }[] = [];
 
+  /** Absolute path of the part file. A rename moves it. */
+  get file(): string {
+    return this.filePath;
+  }
+
   private constructor(opts: EditSessionOptions, text: string, part: PartFile) {
-    this.file = opts.file;
+    this.filePath = opts.file;
     this.names = opts.names;
     this.store = opts.store;
     this.catalogDir = opts.catalogDir;
@@ -141,6 +153,12 @@ export class EditSession {
     return this.redoStack.length > 0;
   }
 
+  /** Point this session at the file it now edits. The server re-keys the map. */
+  adopt(file: string, names: readonly string[]): void {
+    this.filePath = file;
+    this.names = names;
+  }
+
   apply(op: EditOp, label?: string): EditResult {
     const noted = this.noteDisk();
     if (noted === "bad") return { error: "world file is not a document" };
@@ -150,6 +168,13 @@ export class EditSession {
       this.watched = [];
     }
     if (this.readOnly()) return { error: "catalog part is read-only" };
+    if (op.kind === "rename-part") {
+      if (noted === "drifted") return { error: EXTERNAL_EDIT };
+      if (this.under(this.libraryDir)) {
+        return { error: "library part is read-only" };
+      }
+      return this.commitRename(op);
+    }
     return this.commit(op, label ?? editLabel(op));
   }
 
@@ -166,6 +191,8 @@ export class EditSession {
       canUndo: this.canUndo,
       canRedo: this.canRedo,
       report: applied.report,
+      ...(applied.moved ? { moved: applied.moved } : {}),
+      ...(applied.renamed ? { renamed: applied.renamed } : {}),
     };
   }
 
@@ -182,6 +209,86 @@ export class EditSession {
       canUndo: this.canUndo,
       canRedo: this.canRedo,
       report: applied.report,
+      ...(applied.moved ? { moved: applied.moved } : {}),
+      ...(applied.renamed ? { renamed: applied.renamed } : {}),
+    };
+  }
+
+  private commitRename(
+    op: Extract<EditOp, { kind: "rename-part" }>
+  ): EditResult {
+    const project = assetDir(this.file);
+    const planned = planPartRename({
+      store: this.store,
+      projectDir: project,
+      catalogDir: this.catalogDir,
+      ...(this.libraryDir ? { libraryDir: this.libraryDir } : {}),
+      file: this.file,
+      text: this.text,
+      part: this.part,
+      to: op.to,
+      document: op.document,
+    });
+    if ("error" in planned) return planned;
+    const loaded = this.validateAt(planned.nextFile, planned.files);
+    if ("error" in loaded) return loaded;
+    const written = this.writeFiles(
+      planned.files.map((file) => ({ path: file.path, text: file.text }))
+    );
+    if (written) return written;
+    const fromFile = this.file;
+    const lockBefore = this.lockText;
+    const previousText =
+      planned.files.find((file) => file.path === fromFile)?.before ?? "";
+    const saved = planned.files.map((file) => ({
+      path: file.path,
+      before: file.before,
+      after: file.text,
+    }));
+    const short = planned.fromId.split("/")[1]?.split("@")[0] ?? planned.fromId;
+    const label = `renamed ${short} to ${op.to.trim()}`;
+    this.filePath = planned.nextFile;
+    this.text = planned.text;
+    this.part = planned.part;
+    const nextLock = planned.files.find(
+      (file) => file.path === lockPathFor(planned.nextFile)
+    );
+    this.lockText = nextLock?.text ?? null;
+    this.names = [
+      ...new Set([
+        ...this.names,
+        planned.nextFile,
+        planned.fromId,
+        planned.toId,
+        planned.fromRel,
+        planned.toRel,
+      ]),
+    ].filter((name) => name !== fromFile);
+    this.watched = saved.map((file) => ({
+      path: file.path,
+      hash: file.after === null ? null : sha256Hex(file.after),
+    }));
+    this.redoStack = [];
+    this.undoStack.push({
+      label,
+      op,
+      inverse: planned.inverse,
+      before: sha256Hex(previousText),
+      after: sha256Hex(planned.text),
+      lockBefore,
+      lockAfter: this.lockText,
+      files: saved,
+      relocated: { before: fromFile, after: planned.nextFile },
+    });
+    if (this.undoStack.length > HISTORY_DEPTH) this.undoStack.shift();
+    if (!loaded.report) return { error: "world file did not load" };
+    return {
+      label,
+      canUndo: this.canUndo,
+      canRedo: this.canRedo,
+      report: loaded.report,
+      moved: { from: planned.fromRel, to: planned.toRel },
+      renamed: { from: planned.fromId, to: planned.toId },
     };
   }
 
@@ -449,7 +556,8 @@ export class EditSession {
     }));
     const written = this.writeFiles(files);
     if (written) return written;
-    const partFile = step.files.find((file) => file.path === this.file);
+    const home = step.relocated ? step.relocated[which] : this.file;
+    const partFile = step.files.find((file) => file.path === home);
     const partText = partFile ? partFile[which] : this.text;
     if (partText === null) return { error: "world file is not a document" };
     let part: PartFile;
@@ -459,12 +567,21 @@ export class EditSession {
       return { error: "world file is not JSON" };
     }
     if (!isPartFile(part)) return { error: "world file is not a document" };
-    const lockFile = step.files.find(
-      (file) => file.path === lockPathFor(this.file)
-    );
+    this.filePath = home;
+    const lockFile = step.files.find((file) => file.path === lockPathFor(home));
     this.text = partText;
     this.part = part;
     if (lockFile) this.lockText = lockFile[which];
+    else if (step.relocated) this.lockText = null;
+    if (step.relocated) {
+      const away =
+        which === "before" ? step.relocated.after : step.relocated.before;
+      this.names = [
+        ...new Set(
+          [...this.names, home, part.id].filter((name) => name !== away)
+        ),
+      ];
+    }
     this.watched = step.files.map((file) => ({
       path: file.path,
       hash: file[which] === null ? null : sha256Hex(file[which] as string),
@@ -472,11 +589,14 @@ export class EditSession {
     const loaded = this.validate(partText);
     if ("error" in loaded) return loaded;
     if (!loaded.report) return { error: "world file did not load" };
+    const relocated = movedOf(step, which, part.id);
     return {
       label: step.label,
       canUndo: this.canUndo,
       canRedo: this.canRedo,
       report: loaded.report,
+      ...(relocated.moved ? { moved: relocated.moved } : {}),
+      ...(relocated.renamed ? { renamed: relocated.renamed } : {}),
     };
   }
 
@@ -512,6 +632,24 @@ export class EditSession {
       );
     }
     return writeEditSet(this.store, files);
+  }
+
+  private validateAt(
+    file: string,
+    files: PlannedFile[]
+  ): { lock: LockFile; report: RunReport | null } | { error: string } {
+    const loaded = loadWorldV2(file, {
+      ...this.options(),
+      store: multiOverlay(this.store, files),
+    });
+    const blocked = loaded.diagnostics.filter(
+      (diag) => diag.severity === "error"
+    );
+    if (blocked.length > 0 || !loaded.run || !loaded.lock) {
+      const message = blocked.map((diag) => diag.message).join("; ");
+      return { error: message || "world file did not load" };
+    }
+    return { lock: loaded.lock, report: loaded.report };
   }
 
   private validate(
@@ -658,9 +796,14 @@ export class EditSession {
   }
 
   private readOnly(): boolean {
+    return this.under(this.catalogDir);
+  }
+
+  private under(root: string | undefined): boolean {
+    if (!root) return false;
     const doc = normalize(this.file);
-    const root = normalize(this.catalogDir).replace(/\/$/, "");
-    return doc === root || doc.startsWith(`${root}/`);
+    const base = normalize(root).replace(/\/$/, "");
+    return doc === base || doc.startsWith(`${base}/`);
   }
 
   private context(): EditContext {
@@ -860,6 +1003,69 @@ function finishEditSet(store: Store, file: string): { error?: string } | null {
     };
   }
   return {};
+}
+
+function movedOf(
+  step: SessionStep,
+  which: "before" | "after",
+  toId: string
+): {
+  moved?: { from: string; to: string };
+  renamed?: { from: string; to: string };
+} {
+  if (!step.relocated) return {};
+  const fromAbs =
+    which === "before" ? step.relocated.after : step.relocated.before;
+  const toAbs = step.relocated[which];
+  const project = assetDir(toAbs);
+  const rel = (file: string) =>
+    relative(normalize(project), normalize(file)).split("\\").join("/");
+  const fromText = step.files.find((file) => file.path === fromAbs)?.[
+    which === "before" ? "after" : "before"
+  ];
+  let fromId = "";
+  if (fromText) {
+    try {
+      const parsed = JSON.parse(fromText) as { id?: string };
+      if (typeof parsed.id === "string") fromId = parsed.id;
+    } catch {
+      fromId = "";
+    }
+  }
+  return {
+    moved: { from: rel(fromAbs), to: rel(toAbs) },
+    ...(fromId ? { renamed: { from: fromId, to: toId } } : {}),
+  };
+}
+
+function multiOverlay(inner: Store, files: readonly PlannedFile[]): Store {
+  const text = new Map<string, string | null>();
+  for (const file of files) text.set(normalize(file.path), file.text);
+  const refuse = (): never => {
+    throw new Error("an overlay store does not write");
+  };
+  return {
+    readText(path) {
+      const key = normalize(path);
+      if (!text.has(key)) return inner.readText(path);
+      const body = text.get(key);
+      if (body === null || body === undefined) {
+        throw new Error("missing");
+      }
+      return body;
+    },
+    exists(path) {
+      const key = normalize(path);
+      if (text.has(key)) return text.get(key) !== null;
+      return inner.exists(path);
+    },
+    writeText: refuse,
+    rename: refuse,
+    remove: refuse,
+    list(path) {
+      return inner.list(path);
+    },
+  };
 }
 
 function overlayStore(

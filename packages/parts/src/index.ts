@@ -107,6 +107,7 @@ export {
   portDependents,
   portNames,
 } from "./ports";
+export { type PlannedRename, planPartRename } from "./rename";
 export { buildReport } from "./report";
 export { sha256Bytes, sha256Hex } from "./sha256";
 export {

@@ -27,7 +27,7 @@ import {
 
 import { environmentKind } from "./document";
 import { applyLevelEdit } from "./level-edit";
-import { makeDiag, splitPortRef } from "./si";
+import { makeDiag, parsePartRef, splitPortRef } from "./si";
 
 export type EditContext = {
   /** Paths that name this open document. */
@@ -77,6 +77,8 @@ export function editLabel(op: EditOp): string {
       return `removed the wire from ${op.a} to ${op.b}`;
     case "rename-instance":
       return `renamed ${op.id} to ${op.to}`;
+    case "rename-part":
+      return `renamed the part to ${op.to}`;
     case "set-play":
       return "set play";
     case "batch":
@@ -195,6 +197,11 @@ function readEditOpRaw(value: unknown): EditOp | { error: string } {
         return { error: "rename-instance needs an id and a new name" };
       }
       return { kind: "rename-instance", document, id: row.id, to: row.to };
+    case "rename-part":
+      if (typeof row.to !== "string" || row.to.length === 0) {
+        return { error: "rename-part needs a new name" };
+      }
+      return { kind: "rename-part", document, to: row.to };
     case "set-play":
       return {
         kind: "set-play",
@@ -244,6 +251,8 @@ function applyTo(
       return applyUnwire(part, op);
     case "rename-instance":
       return applyRename(part, op);
+    case "rename-part":
+      return applyRenamePart(part, op, ctx);
     case "set-play":
       return applyPlay(part, op);
     case "pin-expose":
@@ -285,6 +294,16 @@ function applyBatch(
       "empty",
       "operations",
       "batch has no operations"
+    );
+  }
+  if (op.ops.some(containsRename)) {
+    return fail(
+      op.document,
+      "edit",
+      "Edit",
+      "rename-part",
+      "its own step",
+      "rename-part is its own step"
     );
   }
   const inverses: EditOp[] = [];
@@ -815,6 +834,59 @@ function applyRename(
       to: op.id,
     },
   };
+}
+
+function applyRenamePart(
+  part: PartFile,
+  op: Extract<EditOp, { kind: "rename-part" }>,
+  ctx: EditContext
+): { inverse: EditOp } | { error: Diagnostic } {
+  const parsed = parsePartRef(part.id);
+  if (!parsed) {
+    return fail(
+      part.id,
+      "id",
+      "Part",
+      part.id,
+      "name",
+      "this part has no name"
+    );
+  }
+  const to = op.to.trim();
+  if (!/^[a-z0-9-]+$/.test(to)) {
+    return fail(
+      part.id,
+      "id",
+      "Part",
+      to,
+      "name",
+      "the name is not a part name"
+    );
+  }
+  if (to === parsed.name) {
+    return fail(
+      part.id,
+      "id",
+      "Part",
+      to,
+      parsed.name,
+      "the name is unchanged"
+    );
+  }
+  const toId = `${parsed.publisher}/${to}@${parsed.version}`;
+  if (ctx.partById(toId)) {
+    return fail(part.id, "id", "Part", toId, "free", `${toId} already exists`);
+  }
+  part.id = toId;
+  return {
+    inverse: { kind: "rename-part", document: op.document, to: parsed.name },
+  };
+}
+
+function containsRename(op: EditOp): boolean {
+  if (op.kind === "rename-part") return true;
+  if (op.kind === "batch") return op.ops.some(containsRename);
+  return false;
 }
 
 function applyPlay(

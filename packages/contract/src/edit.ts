@@ -26,6 +26,7 @@ export type EditOp = (
   | WireOp
   | UnwireOp
   | RenameInstanceOp
+  | RenamePartOp
   | SetPlayOp
   | BatchOp
   | PinExposeOp
@@ -118,6 +119,18 @@ export type RenameInstanceOp = {
   kind: "rename-instance";
   document: string;
   id: string;
+  to: string;
+};
+
+/**
+ * Rename the part file this document is. Publisher and version stay.
+ * The inverse is a `rename-part` back to the previous name. The session
+ * writes every project file that names this part, as one step.
+ */
+export type RenamePartOp = {
+  kind: "rename-part";
+  document: string;
+  /** New short name. Not a full id. */
   to: string;
 };
 
