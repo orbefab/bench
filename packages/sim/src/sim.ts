@@ -49,7 +49,11 @@ import {
   FIRMWARE_RELOADED,
   parseIntelHex,
 } from "@sfab-bench/engine-mcu";
-import { type BatteryParams, boundOutside } from "@sfab-bench/parts";
+import {
+  type BatteryParams,
+  boundOutside,
+  splitPortRef,
+} from "@sfab-bench/parts";
 
 import { analogRead } from "./analog-pin";
 import type { PlanEnv } from "./env";
@@ -79,6 +83,7 @@ import {
   servoSignalDrives,
   suppliesOnPort,
   supplyPositiveNode,
+  wireGraph,
 } from "./wiring";
 
 export type SimHost = {
@@ -1042,32 +1047,18 @@ function createSession(host: SimHost) {
   function powerBoardOf(plan: RunPlan, partId: string): string | null {
     const part = plan.parts.find((item) => item.id === partId);
     if (!part) return null;
-    const adjacent = new Map<string, string[]>();
-    const link = (from: string, to: string) => {
-      const list = adjacent.get(from);
-      if (list) list.push(to);
-      else adjacent.set(from, [to]);
-    };
-    for (const wire of plan.wires) {
-      link(wire[0], wire[1]);
-      link(wire[1], wire[0]);
-    }
-    const split = (full: string): { id: string; pin: string } | null => {
-      const dot = full.lastIndexOf(".");
-      if (dot <= 0 || dot >= full.length - 1) return null;
-      return { id: full.slice(0, dot), pin: full.slice(dot + 1) };
-    };
+    const adjacent = wireGraph(plan);
     const isGround = (full: string): boolean => {
-      const end = split(full);
+      const end = splitPortRef(full);
       if (!end) return false;
-      const owner = plan.parts.find((item) => item.id === end.id);
-      if (owner?.pins[end.pin]?.kind === "ground") return true;
+      const owner = plan.parts.find((item) => item.id === end.inst);
+      if (owner?.pins[end.port]?.kind === "ground") return true;
       const board = plan.boards.find(
-        (item) => end.id === item.id || end.id.startsWith(`${item.id}.`)
+        (item) => end.inst === item.id || end.inst.startsWith(`${item.id}.`)
       );
-      if (board && end.pin === board.groundPin) return true;
-      const supply = plan.supplies.find((item) => item.id === end.id);
-      if (supply && end.pin === supply.groundPin) return true;
+      if (board && end.port === board.groundPin) return true;
+      const supply = plan.supplies.find((item) => item.id === end.inst);
+      if (supply && end.port === supply.groundPin) return true;
       return false;
     };
     const found = new Set<string>();
@@ -1079,16 +1070,16 @@ function createSession(host: SimHost) {
       const full = queue.shift();
       if (!full || seen.has(full) || isGround(full)) continue;
       seen.add(full);
-      const end = split(full);
+      const end = splitPortRef(full);
       if (end) {
         for (const board of plan.boards) {
           const onBoard =
-            end.id === board.id || end.id.startsWith(`${board.id}.`);
+            end.inst === board.id || end.inst.startsWith(`${board.id}.`);
           if (
             onBoard &&
-            (end.pin === board.voltagePin ||
-              end.pin === "VIN" ||
-              end.pin === "VBUS")
+            (end.port === board.voltagePin ||
+              end.port === "VIN" ||
+              end.port === "VBUS")
           ) {
             found.add(board.id);
           }

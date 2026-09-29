@@ -1,4 +1,5 @@
 import { arduinoPinBit, type PowerFeeds } from "@sfab-bench/contract";
+import { splitPortRef, UnionFind } from "@sfab-bench/parts";
 
 import type { RunPin, RunPlan } from "./plan";
 
@@ -14,11 +15,11 @@ export type ServoSignalDrive = {
   pin: string;
 };
 
-function splitEndpoint(endpoint: string): { id: string; pin: string } | null {
-  const dot = endpoint.lastIndexOf(".");
-  if (dot <= 0 || dot >= endpoint.length - 1) return null;
-  return { id: endpoint.slice(0, dot), pin: endpoint.slice(dot + 1) };
-}
+/** What the power walks read: the electrical wires and the ends they land on. */
+export type PowerWiring = Pick<
+  RunPlan,
+  "boards" | "parts" | "rangers" | "supplies" | "wires"
+>;
 
 /**
  * Each servo whose signal pin has a direct wire to a board digital GPIO.
@@ -32,20 +33,20 @@ export function servoSignalDrives(plan: RunPlan): ServoSignalDrive[] {
     const signal = part.drive.pin;
     let found: ServoSignalDrive | null = null;
     for (const wire of plan.wires) {
-      const left = splitEndpoint(wire[0]);
-      const right = splitEndpoint(wire[1]);
+      const left = splitPortRef(wire[0]);
+      const right = splitPortRef(wire[1]);
       if (!left || !right) continue;
       const other =
-        left.id === part.id && left.pin === signal
+        left.inst === part.id && left.port === signal
           ? right
-          : right.id === part.id && right.pin === signal
+          : right.inst === part.id && right.port === signal
             ? left
             : null;
       if (!other) continue;
-      const board = plan.boards.find((item) => item.id === other.id);
-      const spec = board?.pins[other.pin];
+      const board = plan.boards.find((item) => item.id === other.inst);
+      const spec = board?.pins[other.port];
       if (!board || !spec?.digital) continue;
-      found = { partId: part.id, boardId: board.id, pin: other.pin };
+      found = { partId: part.id, boardId: board.id, pin: other.port };
       break;
     }
     if (found) drives.push(found);
@@ -71,22 +72,22 @@ export type GpioLevelBoard = {
   setDriven(bit: number, level: boolean | null): void;
 };
 
-function endpointPin(plan: RunPlan, endpoint: string): RunPin | null {
-  const split = splitEndpoint(endpoint);
+function endpointPin(plan: PowerWiring, endpoint: string): RunPin | null {
+  const split = splitPortRef(endpoint);
   if (!split) return null;
-  const board = plan.boards.find((item) => item.id === split.id);
-  if (board) return board.pins[split.pin] ?? null;
-  const part = plan.parts.find((item) => item.id === split.id);
-  if (part) return part.pins[split.pin] ?? null;
-  const ranger = plan.rangers?.find((item) => item.id === split.id);
-  if (ranger && split.pin === "VCC") {
+  const board = plan.boards.find((item) => item.id === split.inst);
+  if (board) return board.pins[split.port] ?? null;
+  const part = plan.parts.find((item) => item.id === split.inst);
+  if (part) return part.pins[split.port] ?? null;
+  const ranger = plan.rangers?.find((item) => item.id === split.inst);
+  if (ranger && split.port === "VCC") {
     return { kind: "power", output: false, digital: false, pwm: false };
   }
-  if (ranger && split.pin === "GND") {
+  if (ranger && split.port === "GND") {
     return { kind: "ground", output: false, digital: false, pwm: false };
   }
-  const supply = plan.supplies.find((item) => item.id === split.id);
-  if (supply) return supply.pins[split.pin] ?? null;
+  const supply = plan.supplies.find((item) => item.id === split.inst);
+  if (supply) return supply.pins[split.port] ?? null;
   return null;
 }
 
@@ -98,7 +99,6 @@ function endpointPin(plan: RunPlan, endpoint: string): RunPin | null {
  * GPIO: it is an output at runtime when the firmware sets DDR.
  */
 export function gpioInputNets(plan: RunPlan): GpioInputNet[] {
-  const wires = plan.wires;
   const gpio = new Map<string, { boardId: string; bit: number }>();
   for (const board of plan.boards) {
     for (const pin of Object.keys(board.pins)) {
@@ -108,16 +108,7 @@ export function gpioInputNets(plan: RunPlan): GpioInputNet[] {
       gpio.set(`${board.id}.${pin}`, { boardId: board.id, bit });
     }
   }
-  const adjacent = new Map<string, string[]>();
-  const link = (from: string, to: string) => {
-    const list = adjacent.get(from);
-    if (list) list.push(to);
-    else adjacent.set(from, [to]);
-  };
-  for (const wire of wires) {
-    link(wire[0], wire[1]);
-    link(wire[1], wire[0]);
-  }
+  const adjacent = wireGraph(plan);
   const out: GpioInputNet[] = [];
   for (const [endpoint, self] of gpio) {
     const seen = new Set<string>();
@@ -158,7 +149,11 @@ export function gpioInputNets(plan: RunPlan): GpioInputNet[] {
   return out;
 }
 
-function powerAdjacent(plan: RunPlan): Map<string, string[]> {
+/** Every wire, both ways. With `kind`, only wires whose two ends are that kind. */
+export function wireGraph(
+  plan: PowerWiring,
+  kind?: RunPin["kind"]
+): Map<string, string[]> {
   const map = new Map<string, string[]>();
   const link = (from: string, to: string) => {
     const list = map.get(from);
@@ -166,9 +161,13 @@ function powerAdjacent(plan: RunPlan): Map<string, string[]> {
     else map.set(from, [to]);
   };
   for (const wire of plan.wires) {
-    const left = endpointPin(plan, wire[0]);
-    const right = endpointPin(plan, wire[1]);
-    if (left?.kind !== "power" || right?.kind !== "power") continue;
+    if (
+      kind &&
+      (endpointPin(plan, wire[0])?.kind !== kind ||
+        endpointPin(plan, wire[1])?.kind !== kind)
+    ) {
+      continue;
+    }
     link(wire[0], wire[1]);
     link(wire[1], wire[0]);
   }
@@ -192,7 +191,7 @@ function reachedFrom(
   return seen;
 }
 
-function supplyOn(plan: RunPlan, reached: Set<string>): string | null {
+function supplyOn(plan: PowerWiring, reached: Set<string>): string | null {
   for (const supply of plan.supplies) {
     if (reached.has(`${supply.id}.${supply.positivePin}`)) return supply.id;
   }
@@ -222,7 +221,7 @@ function regulatedSupply(
 
 /** Which supply reaches each board and each part. Same walk as the v1 feeds. */
 export function powerFeedsOf(plan: RunPlan): PowerFeeds {
-  const adjacent = powerAdjacent(plan);
+  const adjacent = wireGraph(plan, "power");
   const boards: Record<string, string | null> = {};
   for (const board of plan.boards) {
     let feed: string | null = null;
@@ -269,25 +268,9 @@ export type PowerIsland = {
  * would short two grounds. That island is left split.
  */
 export function powerIslands(plan: RunPlan): PowerIsland[] {
-  const parent = new Map<string, string>();
-  const find = (id: string): string => {
-    let root = id;
-    while (parent.get(root) !== root) {
-      const up = parent.get(root);
-      if (!up) break;
-      root = up;
-    }
-    parent.set(id, root);
-    return root;
-  };
-  const union = (a: string, b: string) => {
-    const left = find(a);
-    const right = find(b);
-    if (left === right) return;
-    parent.set(left < right ? right : left, left < right ? left : right);
-  };
-  for (const supply of plan.supplies) parent.set(supply.id, supply.id);
-  const grounds = groundAdjacent(plan);
+  const islandsOf = new UnionFind();
+  for (const supply of plan.supplies) islandsOf.add(supply.id);
+  const grounds = wireGraph(plan, "ground");
   const shareGround = (a: string, b: string): boolean => {
     const left = plan.supplies.find((item) => item.id === a);
     const right = plan.supplies.find((item) => item.id === b);
@@ -301,12 +284,12 @@ export function powerIslands(plan: RunPlan): PowerIsland[] {
       const left = ids[i];
       const right = ids[j];
       if (!left || !right || !shareGround(left, right)) continue;
-      union(left, right);
+      islandsOf.union(left, right);
     }
   }
   const groups = new Map<string, string[]>();
   for (const supply of plan.supplies) {
-    const root = find(supply.id);
+    const root = islandsOf.find(supply.id);
     const list = groups.get(root) ?? [];
     list.push(supply.id);
     groups.set(root, list);
@@ -314,7 +297,7 @@ export function powerIslands(plan: RunPlan): PowerIsland[] {
   const islands: PowerIsland[] = [];
   const seen = new Set<string>();
   for (const supply of plan.supplies) {
-    const root = find(supply.id);
+    const root = islandsOf.find(supply.id);
     if (seen.has(root)) continue;
     seen.add(root);
     const supplyIds = [...(groups.get(root) ?? [])].sort();
@@ -334,17 +317,7 @@ export function supplyPositiveNode(plan: RunPlan, supplyId: string): string {
   const supply = plan.supplies.find((item) => item.id === supplyId);
   if (!supply) return "rail";
   const start = `${supply.id}.${supply.positivePin}`;
-  const adjacent = new Map<string, string[]>();
-  const link = (from: string, to: string) => {
-    const list = adjacent.get(from);
-    if (list) list.push(to);
-    else adjacent.set(from, [to]);
-  };
-  for (const wire of plan.wires) {
-    link(wire[0], wire[1]);
-    link(wire[1], wire[0]);
-  }
-  const hit = reachedFrom(start, adjacent);
+  const hit = reachedFrom(start, wireGraph(plan));
   for (const name of hit) {
     if (endpointPin(plan, name)?.kind === "ground") return "0";
   }
@@ -352,35 +325,22 @@ export function supplyPositiveNode(plan: RunPlan, supplyId: string): string {
   return names[0] ?? start;
 }
 
-/** Supply positive pins that reach `path.port` by a power wire. */
+/**
+ * Supply positive pins that reach `path.port` by a power wire. The one
+ * "which supply feeds this port" answer: the plan builder and the rail
+ * binding both read it.
+ */
 export function suppliesOnPort(
-  plan: RunPlan,
+  plan: PowerWiring,
   path: string,
   port: string
 ): string[] {
-  const hit = reachedFrom(`${path}.${port}`, powerAdjacent(plan));
+  const hit = reachedFrom(`${path}.${port}`, wireGraph(plan, "power"));
   const ids: string[] = [];
   for (const supply of plan.supplies) {
     if (hit.has(`${supply.id}.${supply.positivePin}`)) ids.push(supply.id);
   }
   return ids;
-}
-
-function groundAdjacent(plan: RunPlan): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  const link = (from: string, to: string) => {
-    const list = map.get(from);
-    if (list) list.push(to);
-    else map.set(from, [to]);
-  };
-  for (const wire of plan.wires) {
-    const left = endpointPin(plan, wire[0]);
-    const right = endpointPin(plan, wire[1]);
-    if (left?.kind !== "ground" || right?.kind !== "ground") continue;
-    link(wire[0], wire[1]);
-    link(wire[1], wire[0]);
-  }
-  return map;
 }
 
 /**

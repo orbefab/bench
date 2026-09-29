@@ -1,4 +1,5 @@
 import type { AvrPinParams, PinMode } from "@sfab-bench/engine-circuit";
+import { splitPortRef } from "@sfab-bench/parts";
 import type { RunPlan } from "./plan";
 
 export type AnalogMode = PinMode | "analog";
@@ -92,10 +93,10 @@ function classify(
   | "foreign"
   | { kind: "board"; id: string }
   | { kind: "supply"; id: string } {
-  const dot = endpoint.indexOf(".");
-  if (dot <= 0) return "foreign";
-  const id = endpoint.slice(0, dot);
-  const pin = endpoint.slice(dot + 1);
+  const split = splitPortRef(endpoint);
+  if (!split) return "foreign";
+  const id = split.inst;
+  const pin = split.port;
   const board = plan.boards.find((item) => item.id === id);
   if (board) {
     if (pin === board.groundPin) return "ground";

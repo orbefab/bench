@@ -143,3 +143,4 @@ export {
 export { FIXTURE_SUPPLY, lintSnapshot } from "./snapshot-lint";
 export { type LoadedSnapshot, loadSnapshot } from "./snapshot-load";
 export type { Store } from "./store";
+export { UnionFind } from "./union-find";

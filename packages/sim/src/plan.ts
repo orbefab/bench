@@ -60,6 +60,7 @@ import { chipFacts } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
 import { readTargets } from "./targets";
 import { runTree } from "./tree";
+import { type PowerWiring, suppliesOnPort } from "./wiring";
 
 /** Shown where a world fails to load, in the UI and in the agent tools. */
 export const WORLD_V1_MESSAGE = "World v1 is no longer supported";
@@ -835,38 +836,6 @@ function suppliesReached(
   return [...ids].sort();
 }
 
-function supplyOnPort(
-  boardId: string,
-  port: string,
-  supplies: RunSupply[],
-  nets: { ports: { path: string; port: string }[] }[]
-): string | null {
-  for (const net of nets) {
-    const onBoard = net.ports.some(
-      (item) => item.path === boardId && item.port === port
-    );
-    if (!onBoard) continue;
-    for (const supply of supplies) {
-      const hit = net.ports.some(
-        (item) => item.path === supply.id && item.port === supply.positivePin
-      );
-      if (hit) return supply.id;
-    }
-  }
-  return null;
-}
-
-function boardSupplyId(
-  board: RunBoard,
-  supplies: RunSupply[],
-  nets: { ports: { path: string; port: string }[] }[]
-): string | null {
-  return (
-    supplyOnPort(board.id, board.voltagePin, supplies, nets) ??
-    supplyOnPort(board.id, "VIN", supplies, nets)
-  );
-}
-
 /** A supply with circuit parts and no firmware board. Ground is `"0"`. */
 function stampSupply(
   supply: RunSupply,
@@ -1265,16 +1234,26 @@ function build(
       loose.set(reached[0], list);
     }
   }
+  const wiring: PowerWiring = {
+    boards,
+    parts,
+    rangers,
+    supplies,
+    wires: electricalWires(loaded.nets),
+  };
+  const supplyOnPort = (board: RunBoard, port: string): string | null =>
+    suppliesOnPort(wiring, board.id, port)[0] ?? null;
   for (const board of boards) {
-    const onRail = supplyOnPort(board.id, board.voltagePin, supplies, nets);
-    const onVin = supplyOnPort(board.id, "VIN", supplies, nets);
+    const onRail = supplyOnPort(board, board.voltagePin);
+    const onVin = supplyOnPort(board, "VIN");
     // VIN feeds the regulator. Parts on the regulated port take this
     // supply in the feed walk; their load sits on the 5V node.
     board.vinFeed = onRail === null && onVin !== null;
   }
   const boardsOn = new Map<string, RunBoard[]>();
   for (const board of boards) {
-    const supplyId = boardSupplyId(board, supplies, nets);
+    const supplyId =
+      supplyOnPort(board, board.voltagePin) ?? supplyOnPort(board, "VIN");
     if (!supplyId) continue;
     const list = boardsOn.get(supplyId) ?? [];
     list.push(board);

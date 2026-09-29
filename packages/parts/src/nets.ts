@@ -14,6 +14,7 @@ import {
 import { behaviourNetlist, type LiveInstance } from "./levels";
 import { collectPartPorts, type PortWorld } from "./ports";
 import { makeDiag, splitPortRef } from "./si";
+import { UnionFind } from "./union-find";
 
 export type LivePort = {
   full: string;
@@ -73,35 +74,6 @@ export function collectPorts(instances: LiveInstance[]): Map<string, LivePort> {
     }
   }
   return ports;
-}
-
-class UnionFind {
-  private parent = new Map<string, string>();
-
-  add(id: string): void {
-    if (!this.parent.has(id)) this.parent.set(id, id);
-  }
-
-  find(id: string): string {
-    const p = this.parent.get(id);
-    if (p === undefined) throw new Error(`unknown port ${id}`);
-    if (p !== id) {
-      const root = this.find(p);
-      this.parent.set(id, root);
-      return root;
-    }
-    return id;
-  }
-
-  union(a: string, b: string): void {
-    this.add(a);
-    this.add(b);
-    const pa = this.find(a);
-    const pb = this.find(b);
-    if (pa === pb) return;
-    if (pa < pb) this.parent.set(pb, pa);
-    else this.parent.set(pa, pb);
-  }
 }
 
 function behaviourOf(inst: LiveInstance): BehaviourImpl | null {
