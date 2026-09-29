@@ -109,6 +109,7 @@ export {
   portDomain,
   portNames,
 } from "./ports";
+export { nextCaptureRef } from "./capture-edit";
 export {
   type PlannedRename,
   planPartRename,

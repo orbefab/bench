@@ -21,12 +21,15 @@ import { UnionFind } from "./union-find";
 
 export type PortSource = "type" | "expose" | "auto";
 
-/** A wire, an expose entry, or a snapshot that names this port. */
+/**
+ * A wire, an expose entry, or a snapshot that names this port. `level`
+ * is a level rule that selects a captured variant.
+ */
 export type PortDependent = {
-  kind: "wire" | "expose" | "snapshot";
+  kind: "wire" | "expose" | "snapshot" | "level";
   /** Part id of the parent, or the snapshot id. */
   owner: string;
-  /** `a—b`, the expose ref, or the snapshot file path. */
+  /** `a—b`, the expose ref, the snapshot file path, or the level rule. */
   ref: string;
 };
 
@@ -476,7 +479,7 @@ function variantOf(
   return slot.variants[slot.default] ?? Object.values(slot.variants)[0];
 }
 
-function netlistsOf(part: PartFile): Netlist[] {
+export function netlistsOf(part: PartFile): Netlist[] {
   const behaviour = part.axes?.behaviour;
   if (!behaviour) return [];
   const out: Netlist[] = [];
@@ -528,7 +531,8 @@ export function lockedRootsUsing(
   projectDir: string,
   opts: { catalogDir: string; libraryDir?: string },
   partId: string,
-  skipFile: string
+  skipFile: string,
+  requireLock = true
 ): { id: string; file: string }[] {
   const files = walkJson(store, join(projectDir, "parts"));
   const byId = new Map<string, PartFile>();
@@ -582,7 +586,7 @@ export function lockedRootsUsing(
   for (const [id, file] of fileOf) {
     if (normalizePath(file) === normalizePath(skipFile)) continue;
     const lock = file.replace(/\.json$/, ".lock.json");
-    if (!store.exists(lock)) continue;
+    if (requireLock && !store.exists(lock)) continue;
     if (!uses(id, new Set())) continue;
     roots.push({ id, file });
   }

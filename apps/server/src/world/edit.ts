@@ -261,7 +261,7 @@ function editedMessage(
             : `${dep.kind} ${dep.owner} ${dep.ref}`
         ),
       })),
-      message: confirmSentence(result.ports),
+      message: result.message ?? confirmSentence(result.ports),
     };
   }
   if ("error" in result) {

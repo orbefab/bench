@@ -14,6 +14,11 @@ import type {
   RunReport,
 } from "@sfab-bench/contract";
 
+import {
+  captureConfirmSentence,
+  planAddCapture,
+  planRemoveCapture,
+} from "./capture-edit";
 import { assetDir, isPartFile } from "./document";
 import {
   applyEdit,
@@ -41,8 +46,7 @@ import {
   portDomain,
   portNames,
 } from "./ports";
-import { type PlannedFile, planPartRename, type SkippedFile } from "./rename";
-import { sha256Hex } from "./sha256";
+import { type PlannedFile, planPartRename, type SkippedFile } from "./rename";import { sha256Hex } from "./sha256";
 import { canonicalJson } from "./si";
 import type { Store } from "./store";
 
@@ -92,6 +96,8 @@ export type NeedsConfirm = {
   needsConfirm: true;
   count: number;
   ports: { name: string; dependents: PortDependent[] }[];
+  /** Set when the port wording does not fit. */
+  message?: string;
 };
 
 /** `refusal` is set when the pure edit refused, so a client need not read the sentence. */
@@ -183,6 +189,9 @@ export class EditSession {
         return { error: "library part is read-only" };
       }
       return this.commitRename(op);
+    }
+    if (op.kind === "add-capture" || op.kind === "remove-capture") {
+      return this.commitCapture(op, label);
     }
     return this.commit(op, label ?? editLabel(op));
   }
@@ -300,6 +309,133 @@ export class EditSession {
       renamed: { from: planned.fromId, to: planned.toId },
       ...(planned.skipped.length > 0 ? { skipped: planned.skipped } : {}),
     };
+  }
+
+  private commitCapture(
+    op: Extract<EditOp, { kind: "add-capture" | "remove-capture" }>,
+    label?: string
+  ): EditResult {
+    const input = {
+      store: this.store,
+      projectDir: assetDir(this.file),
+      catalogDir: this.catalogDir,
+      ...(this.libraryDir ? { libraryDir: this.libraryDir } : {}),
+      file: this.file,
+      text: this.text,
+      part: this.part,
+    };
+    const planned =
+      op.kind === "add-capture"
+        ? planAddCapture(input, op)
+        : planRemoveCapture(input, op, op.confirm === "break");
+    if ("error" in planned) return planned;
+    if ("needsConfirm" in planned) {
+      return {
+        needsConfirm: true,
+        count: planned.dependents.length,
+        ports: [{ name: planned.variant, dependents: planned.dependents }],
+        message: captureConfirmSentence(planned.variant, planned.dependents),
+      };
+    }
+    const pinned = this.repin(planned.files, planned.refresh);
+    if ("error" in pinned) return pinned;
+    const files = [...planned.files, ...pinned.rows];
+    const loaded = this.validateAt(this.file, files);
+    if ("error" in loaded) return loaded;
+    const written = this.writeFiles(
+      files.map((file) => ({ path: file.path, text: file.text }))
+    );
+    if (written) return written;
+    const before = sha256Hex(this.text);
+    const lockBefore = this.lockText;
+    const saved = files.map((file) => ({
+      path: file.path,
+      before: file.before,
+      after: file.text,
+    }));
+    const own = files.find((file) => file.path === this.file);
+    if (own?.text) {
+      this.text = own.text;
+      this.part = JSON.parse(own.text) as PartFile;
+    }
+    const lock = files.find((file) => file.path === lockPathFor(this.file));
+    if (lock) this.lockText = lock.text;
+    this.watched = saved.map((file) => ({
+      path: file.path,
+      hash: file.after === null ? null : sha256Hex(file.after),
+    }));
+    const stepLabel = label ?? planned.label;
+    this.redoStack = [];
+    this.undoStack.push({
+      label: stepLabel,
+      op,
+      inverse: planned.inverse,
+      before,
+      after: sha256Hex(this.text),
+      lockBefore,
+      lockAfter: this.lockText,
+      files: saved,
+    });
+    if (this.undoStack.length > HISTORY_DEPTH) this.undoStack.shift();
+    if (!loaded.report) return { error: "world file did not load" };
+    return {
+      label: stepLabel,
+      canUndo: this.canUndo,
+      canRedo: this.canRedo,
+      report: loaded.report,
+    };
+  }
+
+  /** Every root lock that depends on the refreshed parts, re-pinned against the planned files. */
+  private repin(
+    planned: PlannedFile[],
+    refresh: string[]
+  ): { rows: PlannedFile[] } | { error: string } {
+    const project = assetDir(this.file);
+    const target = refresh[0] as string;
+    const roots = lockedRootsUsing(
+      this.store,
+      project,
+      {
+        catalogDir: this.catalogDir,
+        ...(this.libraryDir ? { libraryDir: this.libraryDir } : {}),
+      },
+      target,
+      ""
+    );
+    const rows: PlannedFile[] = [];
+    for (const root of roots) {
+      const lockPath = lockPathFor(root.file);
+      let before: string;
+      let pinned: LockFile;
+      try {
+        before = this.store.readText(lockPath);
+        pinned = JSON.parse(before) as LockFile;
+      } catch (err: unknown) {
+        return {
+          error: err instanceof Error ? err.message : "lock file did not load",
+        };
+      }
+      const loaded = loadWorldV2(root.file, {
+        ...this.options(),
+        store: multiOverlay(this.store, [
+          ...planned,
+          { path: lockPath, text: null, before },
+        ]),
+      });
+      const blocked = loaded.diagnostics.filter(
+        (diag) => diag.severity === "error"
+      );
+      if (blocked.length > 0 || !loaded.lock) {
+        const message = blocked.map((diag) => diag.message).join("; ");
+        return { error: message || `${root.id} did not load` };
+      }
+      const decided = lockAfterEdit(pinned, loaded.lock, refresh);
+      if ("error" in decided) return decided;
+      const after = formatLock(decided.lock, before);
+      if (after !== before) rows.push({ path: lockPath, text: after, before });
+    }
+    return { rows };
   }
 
   private commit(op: EditOp, label: string): EditResult {

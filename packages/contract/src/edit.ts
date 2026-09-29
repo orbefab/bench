@@ -27,6 +27,8 @@ export type EditOp = (
   | UnwireOp
   | RenameInstanceOp
   | RenamePartOp
+  | AddCaptureOp
+  | RemoveCaptureOp
   | SetPlayOp
   | BatchOp
   | PinExposeOp
@@ -132,6 +134,47 @@ export type RenamePartOp = {
   document: string;
   /** New short name. Not a full id. */
   to: string;
+};
+
+/**
+ * Land a captured snapshot as a new variant on one level of the part this
+ * document is. A project part gets the variant in its own file; a library
+ * part gets it in the project's level overlay. The session writes the
+ * snapshot, the variant, and every root lock it re-pins as one step. It
+ * never changes `default`: "use it" is a `set-level` with the variant.
+ * The inverse is `remove-capture`.
+ */
+export type AddCaptureOp = {
+  kind: "add-capture";
+  /** Project-relative path of the open document, or its absolute path. */
+  document: string;
+  /** Part id that gets the variant. Absent: the part this document is. */
+  part?: string;
+  axis: AxisName;
+  level: LevelClass;
+  /** Variant name on the level. */
+  variant: string;
+  /** Snapshot id. Must be the next `<name>-<axis>-<n>` for this part. */
+  ref: string;
+  /** Text of the snapshot file, with `id` equal to `ref`. */
+  snapshot: string;
+  omits?: string[];
+  /** Inverse of remove-capture. Take `ref` as given and leave the counter. */
+  restore?: boolean;
+};
+
+/**
+ * Take a captured variant and its snapshot file off the part. If a
+ * `play.levels` rule in the project selects the variant this answers
+ * `needs-confirm`; `confirm: "break"` goes ahead and leaves the rule.
+ */
+export type RemoveCaptureOp = {
+  kind: "remove-capture";
+  document: string;
+  part?: string;
+  axis: AxisName;
+  level: LevelClass;
+  variant: string;
 };
 
 export type SetPlayOp = {

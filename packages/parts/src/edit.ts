@@ -102,6 +102,10 @@ export function editLabel(op: EditOp): string {
       return `renamed ${op.id} to ${op.to}`;
     case "rename-part":
       return `renamed the part to ${op.to}`;
+    case "add-capture":
+      return `captured ${op.axis} level ${op.level} as ${op.variant}`;
+    case "remove-capture":
+      return `removed the capture ${op.variant} from ${op.axis} level ${op.level}`;
     case "set-play":
       return "set play";
     case "batch":
@@ -225,6 +229,29 @@ function readEditOpRaw(value: unknown): EditOp | { error: string } {
         return { error: "rename-part needs a new name" };
       }
       return { kind: "rename-part", document, to: row.to };
+    case "add-capture":
+      return { error: "add-capture comes from a capture job, not an edit" };
+    case "remove-capture": {
+      const axis = row.axis;
+      const level = row.level;
+      if (axis !== "behaviour" && axis !== "body" && axis !== "visual") {
+        return { error: "remove-capture needs an axis" };
+      }
+      if (level !== 0 && level !== 1 && level !== 2 && level !== 3) {
+        return { error: "remove-capture needs a level" };
+      }
+      if (typeof row.variant !== "string" || row.variant.length === 0) {
+        return { error: "remove-capture needs a variant" };
+      }
+      return {
+        kind: "remove-capture",
+        document,
+        ...(typeof row.part === "string" ? { part: row.part } : {}),
+        axis,
+        level,
+        variant: row.variant,
+      };
+    }
     case "set-play":
       return {
         kind: "set-play",
@@ -276,6 +303,16 @@ function applyTo(
       return applyRename(part, op);
     case "rename-part":
       return applyRenamePart(part, op, ctx);
+    case "add-capture":
+    case "remove-capture":
+      return fail(
+        op.document,
+        "edit",
+        "Edit",
+        op.kind,
+        "its own step",
+        `${op.kind} is its own step`
+      );
     case "set-play":
       return applyPlay(part, op);
     case "pin-expose":
@@ -319,14 +356,15 @@ function applyBatch(
       "batch has no operations"
     );
   }
-  if (op.ops.some(containsRename)) {
+  const alone = op.ops.map(ownStep).find((kind) => kind !== null);
+  if (alone) {
     return fail(
       op.document,
       "edit",
       "Edit",
-      "rename-part",
+      alone,
       "its own step",
-      "rename-part is its own step"
+      `${alone} is its own step`
     );
   }
   const inverses: EditOp[] = [];
@@ -933,10 +971,18 @@ function applyRenamePart(
   };
 }
 
-function containsRename(op: EditOp): boolean {
-  if (op.kind === "rename-part") return true;
-  if (op.kind === "batch") return op.ops.some(containsRename);
-  return false;
+function ownStep(op: EditOp): string | null {
+  if (
+    op.kind === "rename-part" ||
+    op.kind === "add-capture" ||
+    op.kind === "remove-capture"
+  ) {
+    return op.kind;
+  }
+  if (op.kind === "batch") {
+    return op.ops.map(ownStep).find((kind) => kind !== null) ?? null;
+  }
+  return null;
 }
 
 function applyPlay(
