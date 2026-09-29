@@ -43,14 +43,26 @@ expect(
 
 // Stay drops the edit and counts, so a card field drops what was typed.
 const stays = worldEditStore.getState().stays;
+worldStore.getState().setEditError("an earlier refusal");
 stayPendingEdit();
 expect(pending() === null, "Stay drops the edit");
+expect(
+  worldStore.getState().editError === "an earlier refusal",
+  "Stay sends nothing"
+);
 expect(worldEditStore.getState().stays === stays + 1, "Stay is counted");
 
-// Stop and continue pauses and sends: the ask is gone either way.
+// Stop and continue pauses and sends. `sendWorldEdit` clears the edit line
+// before it writes to the socket, so a stale line going away shows the send.
 expect(commitEdit([card]) === "asked", "asks again after Stay");
+worldStore.getState().setEditError("an earlier refusal");
+expect(
+  worldStore.getState().editError === "an earlier refusal",
+  "the earlier refusal waits while the edit is asked about"
+);
 stopPendingEdit();
 expect(pending() === null, "Stop clears the ask");
+expect(worldStore.getState().editError === null, "Stop sends the edit");
 expect(worldEditStore.getState().stays === stays + 1, "Stop is not a Stay");
 
 // A confirmed edit was already asked about, so it goes out at once.

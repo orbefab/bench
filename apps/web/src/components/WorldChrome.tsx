@@ -138,8 +138,8 @@ export function WorldControls({
   );
 }
 
-/** An edit restarts the run, so a playing run asks first. */
-export function WorldToolDialog() {
+/** Every document edit restarts the run, so a playing run asks first. */
+export function WorldEditDialog() {
   const pending = useWorldEdit((s) => s.pending);
   if (!pending) return null;
   return (

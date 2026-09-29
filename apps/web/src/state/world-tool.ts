@@ -136,7 +136,8 @@ export function escapeWorldTool(): boolean {
 
 /** A tool commit is an ordinary edit: `commitEdit` decides whether to ask. */
 export function commitToolEdit(commit: ToolCommit) {
-  commitEdit(commit.ops, commit);
+  const { ops, ...request } = commit;
+  commitEdit(ops, request);
 }
 
 function resetWorldTool() {
