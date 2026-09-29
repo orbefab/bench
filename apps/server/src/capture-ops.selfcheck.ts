@@ -47,10 +47,8 @@ const powerSnapshot = readFileSync(
 );
 const libraryFile = join(catalog, "parts/sfab/nano-power-input@1.0.0.json");
 
-function snapshotAs(id: string): string {
-  const value = JSON.parse(powerSnapshot) as Record<string, unknown>;
-  value.id = id;
-  return `${JSON.stringify(value, null, 2)}\n`;
+function snapshotAs(_ref: string): string {
+  return powerSnapshot;
 }
 
 function treeOf(dir: string): Map<string, string> {

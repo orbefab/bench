@@ -136,14 +136,14 @@ export function planAddCapture(
   const files: PlannedFile[] = [];
   const snapshotFile = snapshotPath(input.projectDir, op.ref);
   if (!(restoring && op.snapshot === "")) {
-    let snap: { format?: unknown; id?: unknown };
+    let snap: { format?: unknown };
     try {
-      snap = JSON.parse(op.snapshot) as { format?: unknown; id?: unknown };
+      snap = JSON.parse(op.snapshot) as { format?: unknown };
     } catch {
       return { error: "the snapshot is not JSON" };
     }
-    if (snap.format !== SNAPSHOT_FORMAT || snap.id !== op.ref) {
-      return { error: `the snapshot is not ${op.ref}` };
+    if (snap.format !== SNAPSHOT_FORMAT) {
+      return { error: `the snapshot is not ${SNAPSHOT_FORMAT}` };
     }
     if (input.store.exists(snapshotFile)) {
       return { error: `${op.ref} already exists` };
