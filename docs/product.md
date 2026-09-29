@@ -107,7 +107,7 @@ Shipped rows stay. Next is the world.
 | 27b | **done** | A4b — part tabs, breadcrumb, Open part, parking a tab. Proof: web self-checks; browser QA is the manager's. |
 | 27c | **done** | A4c — Rename part file, and a leaf part opened as the root. Proof: self-checks; browser QA is the manager's. |
 | 28a | **done** | A5a — tool framework, Move / rotate (toolbar modes, handles, drag in Select, pose fields on the card, ask-first while playing), and Wire (toolbar button and W, port markers, two clicks make a wire; a wire across domains or to itself is refused). Proof: web self-checks; browser QA; edit-operation undo tests. |
-| 28b | planned | A5b — Probe. Proof: browser QA. |
+| 28b | **done** | A5b — Probe (toolbar button, no key; port markers, a click adds or removes that port's traces in the timeline strip; per part tab, works while playing and on a stopped run's recording). Read from what the recorder already keeps: the `timeline` message takes optional port ids and the answer is unchanged without them; a port with nothing recorded says so. Proof: server and web self-checks; browser QA. |
 | 28c | planned | A5c — Mount and snap. Proof: browser QA; edit-operation undo tests. |
 | 29 | planned | A6 — Capture from the card: sidecar snapshots and project level overlays, the fixture tool, progress and abort. Proof: a UI capture matches the CLI capture. |
 
