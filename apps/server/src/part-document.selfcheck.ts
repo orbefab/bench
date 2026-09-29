@@ -671,6 +671,29 @@ function nodeIds(nodes: readonly WorldViewNode[], into = new Set<string>()) {
   return into;
 }
 
+function fileSummary(view: WorldView): string {
+  const project: string[] = [];
+  let library = 0;
+  let catalog = 0;
+  let bare = 0;
+  const walk = (nodes: readonly WorldViewNode[]) => {
+    for (const node of nodes) {
+      if (node.source === "project") {
+        project.push(`${node.name}=${node.file ?? ""}`);
+      } else if (node.source === "library") library += 1;
+      else if (node.source === "catalog") catalog += 1;
+      else bare += 1;
+      walk(node.children);
+    }
+  };
+  walk(view.tree.nodes);
+  const tail = bare > 0 ? `; bare ${bare}` : "";
+  return (
+    `project ${project.join(" ")}; library ${library}; catalog ${catalog}` +
+    tail
+  );
+}
+
 function editorSummary(view: WorldView): string {
   let wires = 0;
   let options = 0;
@@ -739,6 +762,7 @@ for (const example of examples) {
   }
   console.log(`tree ${stem}: ${treeSummary(view)}, every view id is a node`);
   console.log(`tree ${stem} editor: ${editorSummary(view)}`);
+  console.log(`tree ${stem} files: ${fileSummary(view)}`);
 }
 
 {
@@ -757,6 +781,7 @@ for (const example of examples) {
     `tree fleet: fleet.rig2.servo nested, ${paths.size} report paths are nodes`
   );
   console.log(`tree fleet editor: ${editorSummary(view)}`);
+  console.log(`tree fleet files: ${fileSummary(view)}`);
 }
 
 {

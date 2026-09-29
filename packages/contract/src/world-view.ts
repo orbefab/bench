@@ -69,6 +69,12 @@ export type WorldViewRole =
   | "target"
   | "assembly";
 
+/**
+ * Where the part file was resolved. The loader's project layer is
+ * `project` here. `file` is set only for that layer.
+ */
+export type WorldViewPartSource = "project" | "library" | "catalog";
+
 /** A port on a tree node. The run's port model, without dependents. */
 export type WorldViewPort = {
   name: string;
@@ -127,6 +133,16 @@ export type WorldViewNode = {
   wires?: WorldViewWire[];
   /** One picker per axis the part has. Empty when it has none. */
   levels: WorldViewLevelAxis[];
+  /**
+   * Where this instance's part file was found. Absent when the lookup
+   * could not be repeated.
+   */
+  source?: WorldViewPartSource;
+  /**
+   * Project-relative document path. Present only when `source` is
+   * `project`.
+   */
+  file?: string;
   children: WorldViewNode[];
 };
 

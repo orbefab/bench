@@ -12,6 +12,7 @@ import {
   type WorldViewLevelAxis,
   type WorldViewLevelOption,
   type WorldViewNode,
+  type WorldViewPartSource,
   type WorldViewPlay,
   type WorldViewRole,
   type WorldViewTree,
@@ -89,9 +90,16 @@ export function runTree(input: {
   const partsById = new Map(
     input.resolved.map((inst) => [inst.part.id, inst.part])
   );
-  const partFile = (id: string): PartFile | null => {
-    const hit = partsById.get(id);
-    if (hit) return hit;
+  const places = new Map<string, PartPlace | null>();
+  const located = (
+    id: string
+  ): { part: PartFile | null; place: PartPlace | null } => {
+    if (places.has(id)) {
+      return {
+        part: partsById.get(id) ?? null,
+        place: places.get(id) ?? null,
+      };
+    }
     const loaded = loadPartById(
       input.projectDir,
       {
@@ -101,9 +109,23 @@ export function runTree(input: {
       },
       id
     );
-    if (!("part" in loaded)) return null;
+    if (!("part" in loaded)) {
+      places.set(id, null);
+      return { part: partsById.get(id) ?? null, place: null };
+    }
     partsById.set(id, loaded.part);
-    return loaded.part;
+    const place = partPlace(loaded.source, loaded.path);
+    places.set(id, place);
+    return { part: loaded.part, place };
+  };
+  const partFile = (id: string): PartFile | null => {
+    const hit = partsById.get(id);
+    if (hit && places.has(id)) return hit;
+    return located(id).part;
+  };
+  const placeOf = (id: string): PartPlace | null => {
+    if (places.has(id)) return places.get(id) ?? null;
+    return located(id).place;
   };
 
   const nodes = new Map<string, WorldViewNode>();
@@ -124,6 +146,7 @@ export function runTree(input: {
       params: { ...inst.params },
       ...(netlist ? { wires: netlist.wires.map(([a, b]) => ({ a, b })) } : {}),
       levels: levelAxes(inst.part, chosenOf(inst), inst.declaredOnly),
+      ...originFields(placeOf(inst.part.id)),
       children: [],
     });
   }
@@ -143,7 +166,7 @@ export function runTree(input: {
       if (inst.path !== "$root" || input.run.unwrapped) continue;
       const slot = input.run.slots.find((row) => row.id === id);
       if (!slot || (slot.kind !== "ground" && slot.kind !== "target")) continue;
-      parent.children.push(envNode(slot, path, partFile));
+      parent.children.push(envNode(slot, path, partFile, placeOf(slot.part)));
     }
   }
 
@@ -154,7 +177,7 @@ export function runTree(input: {
   for (const slot of input.run.slots) {
     if (slot.kind === "scene") top.push(root);
     else if (slot.kind === "ground" || slot.kind === "target") {
-      top.push(envNode(slot, slot.id, partFile));
+      top.push(envNode(slot, slot.id, partFile, placeOf(slot.part)));
     }
   }
   if (!top.includes(root)) top.unshift(root);
@@ -219,10 +242,42 @@ function portWorld(resolved: readonly LiveInstance[]): PortWorld {
   };
 }
 
+type PartPlace = {
+  source: WorldViewPartSource;
+  file?: string;
+};
+
+/**
+ * The loader calls the project layer "world". A part pinned from the
+ * open bytes is "inline"; the file on disk is what Open part uses, and
+ * `loadPartById` reports that as "world" when the file is in the project.
+ */
+function partPlace(
+  source: "world" | "library" | "catalog" | "inline",
+  path: string
+): PartPlace {
+  if (source === "library") return { source: "library" };
+  if (source === "catalog") return { source: "catalog" };
+  if (source === "world") return { source: "project", file: path };
+  return { source: "project" };
+}
+
+function originFields(place: PartPlace | null): {
+  source?: WorldViewPartSource;
+  file?: string;
+} {
+  if (!place) return {};
+  return {
+    source: place.source,
+    ...(place.file ? { file: place.file } : {}),
+  };
+}
+
 function envNode(
   slot: RunSlot,
   id: string,
-  partFile: (partId: string) => PartFile | null
+  partFile: (partId: string) => PartFile | null,
+  place: PartPlace | null
 ): WorldViewNode {
   const part = partFile(slot.part);
   return {
@@ -237,6 +292,7 @@ function envNode(
     levels: part
       ? levelAxes(part, defaultsOf(part), part.declaredOnly === true)
       : [],
+    ...originFields(place),
     children: [],
   };
 }
