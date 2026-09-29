@@ -341,7 +341,7 @@ async function finishEdit(
   session: EditSession,
   beforeKey: string,
   result: DocumentEdit
-): Promise<DocumentEdit | { error: string }> {
+): Promise<DocumentEdit | EditError> {
   rekey(project, session, beforeKey, result);
   if (result.moved && sameRel(result.moved.from, world)) {
     // The tab reconnects at the new path. Nested histories opened from
@@ -352,7 +352,7 @@ async function finishEdit(
     return result;
   }
   const restarted = await restartWorld(project, world);
-  if ("error" in restarted) return restarted;
+  if ("error" in restarted) return { error: restarted.error, runFault: true };
   announce(project, world, part, result);
   return result;
 }

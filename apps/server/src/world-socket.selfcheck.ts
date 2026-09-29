@@ -4,7 +4,13 @@
  * socket uses. Copies only.
  */
 import { ok as expect } from "node:assert/strict";
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,10 +81,39 @@ const unknown = line(
 );
 expect(unknown.startsWith("edit-refused: "), unknown);
 
-const undo = line("nothing to undo", await reply('{"type":"undo"}'));
+const nothingToUndo = await reply('{"type":"undo"}');
+const undo = line("nothing to undo", nothingToUndo);
 expect(undo.startsWith("edit-refused: nothing to undo"), undo);
-const redo = line("nothing to redo", await reply('{"type":"redo"}'));
+expect(
+  nothingToUndo.type === "edit-refused" && nothingToUndo.kind === "undo",
+  "undo refusal kind"
+);
+const nothingToRedo = await reply('{"type":"redo"}');
+const redo = line("nothing to redo", nothingToRedo);
 expect(redo.startsWith("edit-refused: nothing to redo"), redo);
+expect(
+  nothingToRedo.type === "edit-refused" && nothingToRedo.kind === "redo",
+  "redo refusal kind"
+);
+
+// The edit lands and the file is written, then the run cannot build the
+// world. The body file is read only by the run, so the edit itself is valid.
+writeFileSync(join(project, "robot/flag.urdf"), "this is not a urdf");
+const landed = line(
+  "edit written, run fails to restart",
+  await reply(
+    JSON.stringify({
+      type: "edit",
+      ops: [{ kind: "set-play", document: SCENE, seed: 7 }],
+    })
+  )
+);
+expect(landed.startsWith("error: "), landed);
+expect(
+  readFileSync(join(project, SCENE), "utf8") !==
+    readFileSync(join(nanoDir, SCENE), "utf8"),
+  "the edit did not reach the file"
+);
 
 const events: WorldServerMessage[] = [];
 const attached = await attachWorld(project, BROKEN, {
