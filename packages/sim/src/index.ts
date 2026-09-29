@@ -8,6 +8,7 @@ export {
   type HingeCaptureInput,
   writeHingeSnapshot,
 } from "./body/hinge-capture";
+export { branchDc } from "./branch-dc";
 export {
   type CaptureCase,
   type CaptureEntry,

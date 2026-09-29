@@ -1,5 +1,3 @@
 /** DC of a stamped assembly. */
 
-import { branchDc } from "./nano-usb-dc";
-
-export { branchDc };
+export { branchDc } from "@sfab-bench/sim";

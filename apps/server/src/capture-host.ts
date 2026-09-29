@@ -22,7 +22,6 @@ import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { nodeStore } from "./world/node-store";
 import { catalogRoot } from "./world/plan-host";
-import { branchDc } from "./world/snapshot-dc";
 
 function benchVersions(): { version: string; mujoco: string; avr8js: string } {
   const pkg = JSON.parse(
@@ -109,7 +108,6 @@ export const nodeCaptureEnv: CaptureEnv = {
   removeTree: (dir) => {
     rmSync(dir, { recursive: true, force: true });
   },
-  branchDc,
   runWorld,
   bench: benchVersions,
 };

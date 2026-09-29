@@ -25,10 +25,10 @@ import { tableLawOf } from "@sfab-bench/parts";
 import { closeRootWatches } from "./projects";
 import { assemblyStampOf, boardStampOf } from "./world/circuit-stamp";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
-import { branchDc } from "./world/nano-usb-dc";
 import { catalogRoot } from "./world/plan";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit } from "./world/rail-circuit";
+import { branchDc } from "./world/snapshot-dc";
 
 const law = { k: 0.458, resistance: 7.1, quiescent: 0.01 };
 const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };

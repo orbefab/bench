@@ -26,6 +26,7 @@ import {
   type HingeCaptureEntry,
   writeHingeSnapshot,
 } from "./body/hinge-capture";
+import { branchDc } from "./branch-dc";
 import {
   assemblyStampOf,
   type BoardStamp,
@@ -126,7 +127,6 @@ export type CaptureEnv = {
   copyFile(from: string, to: string): void;
   makeTemp(prefix: string): string;
   removeTree(dir: string): void;
-  branchDc(stamp: BoardStamp, p: string, m: string, amps: number): number;
   runWorld(
     project: string,
     world: string,
@@ -248,7 +248,7 @@ async function captureEntry(
       throw new Error(`${config.part} has no ${name} node`);
     }
   }
-  const dc = (amps: number) => env.branchDc(stamp, across[0], across[1], amps);
+  const dc = (amps: number) => branchDc(stamp, across[0], across[1], amps);
   const fixture = config.sweep.fixture
     ? readFixture(
         opts.fixtureFile ??
