@@ -803,17 +803,20 @@ async function factor(enabled: boolean): Promise<number> {
   }
 }
 
-const withRecorder = await factor(true);
-const without = await factor(false);
-const ratio = without > 0 ? withRecorder / without : 0;
-if (process.env.BENCH_TIMINGS === "1")
+// Wall-clock speed is measured and asserted only on request: no default
+// check may fail on how fast this machine is.
+if (process.env.BENCH_TIMINGS === "1") {
+  const withRecorder = await factor(true);
+  const without = await factor(false);
+  const ratio = without > 0 ? withRecorder / without : 0;
   console.log(
     `real-time factor with recorder ${withRecorder.toFixed(2)}×, without ${without.toFixed(2)}× (${(ratio * 100).toFixed(0)}%)`
   );
-expect(
-  ratio >= 0.8,
-  `recorder factor ${withRecorder.toFixed(2)} is below 80% of ${without.toFixed(2)}`
-);
+  expect(
+    ratio >= 0.8,
+    `recorder factor ${withRecorder.toFixed(2)} is below 80% of ${without.toFixed(2)}`
+  );
+}
 
 const boundTrace = openTrace(armDir, "parts/sfab/arm-bench@1.0.0.json");
 const boundHandle = await boundTrace.attached;
