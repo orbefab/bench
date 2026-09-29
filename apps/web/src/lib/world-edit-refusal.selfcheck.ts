@@ -1,14 +1,8 @@
 import { ok as expect } from "node:assert/strict";
 
-import type { EditRefusal } from "@sfab-bench/contract";
+import type { EditRefusal, EditRefusalCode } from "@sfab-bench/contract";
 
 import { editRefusalText, historyRefusalTitle } from "./world-edit-refusal";
-
-// What the edit line showed before the server sent the parts: the message
-// cut by a pattern. The new text must equal it for every case below.
-const TODAY =
-  /^.* port \S+ quantity Port: (\S+ cannot be wired to itself|\S+ is \S+ and \S+ is \S+; a wire joins ports of one domain) \(.*\)$/s;
-const todayText = (message: string) => TODAY.exec(message)?.[1] ?? message;
 
 /** The server's wording, rebuilt from the same parts it sends. */
 function refused(
@@ -16,10 +10,19 @@ function refused(
   quantity: string,
   detail: string,
   left: string,
-  right: string
+  right: string,
+  code?: EditRefusalCode
 ) {
   const path = "sfab/arm-scene@1.0.0";
-  const refusal: EditRefusal = { path, port, quantity, left, right, detail };
+  const refusal: EditRefusal = {
+    path,
+    port,
+    quantity,
+    left,
+    right,
+    detail,
+    ...(code ? { code } : {}),
+  };
   return {
     message: `${path} port ${port} quantity ${quantity}: ${detail} (${left} vs ${right})`,
     refusal,
@@ -32,14 +35,16 @@ const wire = [
     "Port",
     "uno.A5 is electrical and servo.shaft is rotational; a wire joins ports of one domain",
     "uno.A5 electrical",
-    "servo.shaft rotational"
+    "servo.shaft rotational",
+    "wire-domain"
   ),
   refused(
     "uno.A5",
     "Port",
     "uno.A5 cannot be wired to itself",
     "uno.A5",
-    "uno.A5"
+    "uno.A5",
+    "wire-self"
   ),
 ];
 expect(
@@ -52,6 +57,7 @@ expect(
   "a self wire shows the sentence only"
 );
 
+// No code, no cut: the wording alone never makes a refusal a Wire one.
 const other = [
   refused(
     "uno.A5",
@@ -61,10 +67,9 @@ const other = [
     "servo.signal"
   ),
   refused("uno.A5", "Port", "port uno.A5 does not exist", "uno.A5", "none"),
-  // The detail reads like a Wire refusal but the quantity is not the port's.
   refused(
-    "servo",
-    "Param",
+    "uno.A5",
+    "Port",
     "uno.A5 cannot be wired to itself",
     "uno.A5",
     "uno.A5"
@@ -84,13 +89,6 @@ for (const message of [
   "",
 ]) {
   expect(editRefusalText({ message }) === message, `no parts: ${message}`);
-}
-
-for (const row of [...wire, ...other]) {
-  expect(
-    editRefusalText(row) === todayText(row.message),
-    `same as today: ${row.message}`
-  );
 }
 
 expect(historyRefusalTitle("undo") === "Nothing to undo.", "undo title");

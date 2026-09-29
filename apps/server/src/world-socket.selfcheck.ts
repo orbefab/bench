@@ -66,11 +66,17 @@ const wire = (a: string, b: string) =>
     ops: [{ kind: "wire", document: SCENE, a, b }],
   });
 
-const wired = line("wire refused", await reply(wire("nano.D9", "nano.D9")));
+const wireRefused = await reply(wire("nano.D9", "nano.D9"));
+const wired = line("wire refused", wireRefused);
 expect(
   wired.startsWith("edit-refused: ") &&
     wired.includes("nano.D9 cannot be wired to itself"),
   wired
+);
+expect(
+  wireRefused.type === "edit-refused" &&
+    wireRefused.refusal?.code === "wire-self",
+  "the wire refusal carries its code"
 );
 
 const unknown = line(

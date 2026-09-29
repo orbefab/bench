@@ -790,20 +790,27 @@ try {
         "the web wire is not in the scene file"
       );
       const afterWire = pairOf(tools, SCENE);
-      for (const [a, b, text] of [
+      for (const [a, b, text, code] of [
         [
           "nano.D10",
           "servo.shaft",
           "nano.D10 is electrical and servo.shaft is rotational; a wire joins ports of one domain",
+          "wire-domain",
         ],
-        ["nano.D9", "nano.D9", "nano.D9 cannot be wired to itself"],
+        [
+          "nano.D9",
+          "nano.D9",
+          "nano.D9 cannot be wired to itself",
+          "wire-self",
+        ],
       ] as const) {
         const refused = await handleLiveEdit(tools, SCENE, wireMsg(a, b));
         expect(
           refused.type === "edit-refused" &&
             refused.kind === "edit" &&
             !!refused.message.includes(text) &&
-            refused.refusal?.detail === text,
+            refused.refusal?.detail === text &&
+            refused.refusal.code === code,
           JSON.stringify(refused)
         );
         expect(

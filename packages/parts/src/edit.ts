@@ -10,6 +10,7 @@ import type {
   Diagnostic,
   EditOp,
   EditRefusal,
+  EditRefusalCode,
   LevelClass,
   LevelSpec,
   Netlist,
@@ -31,11 +32,22 @@ import { applyLevelEdit } from "./level-edit";
 import { makeDiag, parsePartRef, splitPortRef } from "./si";
 
 /** A refused edit: the diagnostic, and the detail its sentence was built from. */
-export type EditFailure = Diagnostic & { detail: string };
+export type EditFailure = Diagnostic & {
+  detail: string;
+  code?: EditRefusalCode;
+};
 
 export function refusalOf(failure: EditFailure): EditRefusal {
-  const { path, port, quantity, left, right, detail } = failure;
-  return { path, port, quantity, left, right, detail };
+  const { path, port, quantity, left, right, detail, code } = failure;
+  return {
+    path,
+    port,
+    quantity,
+    left,
+    right,
+    detail,
+    ...(code ? { code } : {}),
+  };
 }
 
 export type EditContext = {
@@ -742,7 +754,8 @@ function applyWire(
       "Port",
       op.a,
       op.b,
-      `${op.a} cannot be wired to itself`
+      `${op.a} cannot be wired to itself`,
+      "wire-self"
     );
   }
   const [domainA, domainB] = ends.map((ref) => {
@@ -757,7 +770,8 @@ function applyWire(
       "Port",
       `${op.a} ${domainA}`,
       `${op.b} ${domainB}`,
-      `${op.a} is ${domainA} and ${op.b} is ${domainB}; a wire joins ports of one domain`
+      `${op.a} is ${domainA} and ${op.b} is ${domainB}; a wire joins ports of one domain`,
+      "wire-domain"
     );
   }
   const pair: [PortRef, PortRef] = [op.a, op.b];
@@ -1223,7 +1237,8 @@ function fail(
   quantity: string,
   left: string,
   right: string,
-  detail: string
+  detail: string,
+  code?: EditRefusalCode
 ): { error: EditFailure } {
   return {
     error: {
@@ -1237,6 +1252,7 @@ function fail(
         detail,
       }),
       detail,
+      ...(code ? { code } : {}),
     },
   };
 }

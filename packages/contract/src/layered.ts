@@ -720,7 +720,12 @@ export type EditRefusal = {
   left: string;
   right: string;
   detail: string;
+  /** Set on the refusals whose `detail` is the whole sentence to show. */
+  code?: EditRefusalCode;
 };
+
+/** A wire joining a port to itself, or ports of two domains. */
+export type EditRefusalCode = "wire-self" | "wire-domain";
 
 /** Circuit-to-body cut of a `dc-motor@1` servo. */
 export type SeamKind = "motor";
