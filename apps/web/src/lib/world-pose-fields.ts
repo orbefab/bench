@@ -9,7 +9,7 @@ import type { Pose } from "@sfab-bench/contract";
 import * as THREE from "three";
 
 import { poseFromObject } from "@/lib/world-drag";
-import { worldQuatToThree } from "@/lib/world-pose";
+import { urdfRpyQuaternion, worldQuatToThree } from "@/lib/world-pose";
 
 export type PoseFieldKey = "x" | "y" | "z" | "rx" | "ry" | "rz";
 
@@ -50,9 +50,11 @@ export function poseToFields(pose: Pose): PoseFields {
 }
 
 export function fieldsToPose(fields: PoseFields): Pose {
-  const q = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(fields.rx / DEG, fields.ry / DEG, fields.rz / DEG, "ZYX")
-  );
+  const q = urdfRpyQuaternion([
+    fields.rx / DEG,
+    fields.ry / DEG,
+    fields.rz / DEG,
+  ]);
   return poseFromObject(
     { x: fields.x / MM, y: fields.y / MM, z: fields.z / MM },
     q

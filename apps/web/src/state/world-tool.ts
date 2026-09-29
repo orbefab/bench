@@ -9,6 +9,7 @@ import { useStore as useZustandStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import { sendWorldCommand, sendWorldEdit } from "@/hooks/useWorldRun";
+import type { ParkChoice } from "@/lib/world-park";
 import {
   reduceWorldTool,
   toolCommitGuard,
@@ -109,26 +110,33 @@ function sendToolEdit(commit: ToolCommit) {
   sendWorldEdit({ ops: commit.ops, part: commit.part, label: commit.label });
 }
 
-export function stayToolCommit() {
+function answerToolCommit(choice: ParkChoice) {
   const pending = worldToolStore.getState().pending;
   if (!pending) return;
-  worldToolStore.setState((s) => ({ pending: null, stays: s.stays + 1 }));
-  if (toolCommitOutcome("stay") !== "drop") return;
-  if (pending.previewPath) previewPose(pending.previewPath, null);
-  else clearPreviews();
-}
-
-export function stopToolCommit() {
-  const pending = worldToolStore.getState().pending;
-  if (!pending) return;
+  if (toolCommitOutcome(choice) === "drop") {
+    worldToolStore.setState((s) => ({ pending: null, stays: s.stays + 1 }));
+    if (pending.previewPath) previewPose(pending.previewPath, null);
+    else clearPreviews();
+    return;
+  }
   worldToolStore.setState({ pending: null });
-  if (toolCommitOutcome("stop") !== "stop-and-apply") return;
   sendWorldCommand("pause");
   sendToolEdit(pending);
 }
 
+export function stayToolCommit() {
+  answerToolCommit("stay");
+}
+
+export function stopToolCommit() {
+  answerToolCommit("stop");
+}
+
 function resetWorldTool() {
+  // A drag in flight must let go of its window listeners and the orbit.
+  const cancel = cancelGesture;
   cancelGesture = null;
+  cancel?.();
   apply({ type: "reset" });
   if (worldToolStore.getState().pending) {
     worldToolStore.setState({ pending: null });
