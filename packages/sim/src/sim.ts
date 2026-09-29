@@ -10,8 +10,10 @@
  */
 import {
   ATMEGA328P_16MHZ_MIN_V,
+  ATMEGA328P_BROWNOUT_V,
   arduinoPinBit,
   atmega328pSoaWarning,
+  DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type JointLimitKind,
   pastLimitAmount,
@@ -572,7 +574,10 @@ function createSession(host: SimHost) {
         !board.brownout &&
         !board.fault &&
         !unpowered
-          ? atmega328pSoaWarning(node, power?.brownoutVoltage ?? 2.7)
+          ? atmega328pSoaWarning(
+              node,
+              power?.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V
+            )
           : null;
       boardState[board.id] = {
         ...(board.fault
@@ -895,7 +900,7 @@ function createSession(host: SimHost) {
   }
 
   function manifestOf(): RecordingManifest {
-    const timestep = sim?.model.opt.timestep ?? 0.001;
+    const timestep = sim?.model.opt.timestep ?? DEFAULT_TIMESTEP_S;
     const which = sim?.model.opt.integrator ?? 3;
     const parts: RecordingManifest["parts"] = {};
     for (const part of runPlan?.parts ?? []) {
@@ -1816,7 +1821,7 @@ function createSession(host: SimHost) {
         mode: mode.get(bit) ?? ("input" as const),
       }));
     for (const edge of edges) {
-      const when = ((edge.cycle - avr.stepOrigin) / span) * 0.001;
+      const when = ((edge.cycle - avr.stepOrigin) / span) * DEFAULT_TIMESTEP_S;
       const dt = when - t;
       if (dt > 1e-12) pieces.push({ dt, drive: driveOf() });
       const prev = mode.get(edge.bit);
@@ -1830,7 +1835,7 @@ function createSession(host: SimHost) {
       if (when > t) t = when;
     }
     if (!changed) return null;
-    const rest = 0.001 - t;
+    const rest = DEFAULT_TIMESTEP_S - t;
     if (rest > 1e-12) pieces.push({ dt: rest, drive: driveOf() });
     return pieces.length > 0 ? pieces : null;
   }
@@ -1864,7 +1869,7 @@ function createSession(host: SimHost) {
         edges.push({
           boardId: spec.id,
           bit: edge.bit,
-          when: ((edge.cycle - avr.stepOrigin) / span) * 0.001,
+          when: ((edge.cycle - avr.stepOrigin) / span) * DEFAULT_TIMESTEP_S,
           high: edge.high,
         });
       }
@@ -1918,7 +1923,7 @@ function createSession(host: SimHost) {
       if (edge.when > t) t = edge.when;
     }
     if (!changed) return null;
-    const rest = 0.001 - t;
+    const rest = DEFAULT_TIMESTEP_S - t;
     if (rest > 1e-12) pieces.push({ dt: rest, drive: driveOf() });
     return pieces.length > 0 ? pieces : null;
   }

@@ -29,6 +29,10 @@ export function viewerFileUrl(path: string) {
   return { shown: shownUrl(resolved) };
 }
 
+/** How the world tools name their `world` argument. */
+export const WORLD_ARG =
+  "world is the project-relative path of the open root part from get_viewer.";
+
 export const viewerTools = {
   // No execute: the asking client snapshots after tessellation and continues
   // the turn. A server execute would freeze the send-time (often empty) view.

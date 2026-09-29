@@ -1,5 +1,9 @@
 // L2 face over AvrBoard. avr8js stays behind this package.
-import { arduinoPinBit, type Engine } from "@sfab-bench/contract";
+import {
+  ATMEGA328P_BROWNOUT_V,
+  arduinoPinBit,
+  type Engine,
+} from "@sfab-bench/contract";
 import { AvrBoard } from "./board";
 
 /** Flash image and the brownout threshold. Supply starts at 5 V. */
@@ -21,7 +25,7 @@ export class McuEngine implements Engine {
   readonly id: string;
   private board: AvrBoard | null = null;
   private supply = 5;
-  private brownoutVoltage = 2.7;
+  private brownoutVoltage = ATMEGA328P_BROWNOUT_V;
   private ms = 0;
   private pendingTx = "";
   private readonly pinVolts = new Map<number, number>();
@@ -32,7 +36,7 @@ export class McuEngine implements Engine {
 
   init(spec: unknown): void {
     const parsed = mcuSpec(spec);
-    this.brownoutVoltage = parsed.brownoutVoltage ?? 2.7;
+    this.brownoutVoltage = parsed.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V;
     this.supply = 5;
     this.ms = 0;
     this.pendingTx = "";

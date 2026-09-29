@@ -1,4 +1,8 @@
-import type { UrdfInfo, WorldViewFeeds } from "@sfab-bench/contract";
+import {
+  ATMEGA328P_BROWNOUT_V,
+  type UrdfInfo,
+  type WorldViewFeeds,
+} from "@sfab-bench/contract";
 
 export type WorldOutlineJoint = {
   name: string;
@@ -216,7 +220,7 @@ export function buildWorldOutline(
       chip: board.chip,
       firmware: board.firmware,
       ...(board.source ? { source: board.source } : {}),
-      brownoutVoltage: board.brownoutVoltage ?? 2.7,
+      brownoutVoltage: board.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V,
     })),
     supplies: supplyFeeds(world),
     targets: (world.targets ?? []).map((target) => target.id),

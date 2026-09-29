@@ -180,6 +180,9 @@ export type WorldBoardState = {
 /** 16 MHz ATmega328P is specified only above this supply voltage. */
 export const ATMEGA328P_16MHZ_MIN_V = 3.78;
 
+/** ATmega328P brownout level in volts when a board does not set one. */
+export const ATMEGA328P_BROWNOUT_V = 2.7;
+
 export type WorldBoardWarning = {
   code: "below-16mhz-soa" | "degraded";
   message: string;

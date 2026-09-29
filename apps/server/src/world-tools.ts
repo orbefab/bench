@@ -1,6 +1,7 @@
 import {
   ARDUINO_PINS,
   ATMEGA328P_16MHZ_MIN_V,
+  ATMEGA328P_BROWNOUT_V,
   atmega328pSoaWarning,
   boardTrackId,
   type EditOp,
@@ -22,7 +23,7 @@ import {
 import { confirmSentence, readEditOp } from "@sfab-bench/parts";
 import { tool } from "ai";
 import { z } from "zod";
-import { viewerProjectRoot } from "./viewer-context";
+import { viewerProjectRoot, WORLD_ARG } from "./viewer-context";
 import { applyDocumentEdit, redoDocument, undoDocument } from "./world/edit";
 import { readerFor } from "./world/files";
 import {
@@ -256,7 +257,7 @@ function rangeWarnings(
       soaSeen.add(id);
       const brownout =
         loaded.plan.boards.find((board) => board.id === id)?.brownoutVoltage ??
-        2.7;
+        ATMEGA328P_BROWNOUT_V;
       const row = frame.boards[id];
       if (!row) continue;
       const candidate =
@@ -280,7 +281,7 @@ function rangeWarnings(
     const voltage = soaVoltage.get(id);
     const brownout =
       loaded.plan.boards.find((board) => board.id === id)?.brownoutVoltage ??
-      2.7;
+      ATMEGA328P_BROWNOUT_V;
     const warning =
       voltage === undefined ? null : atmega328pSoaWarning(voltage, brownout);
     out.push(
@@ -952,8 +953,7 @@ function commandAck(view: {
 
 export const worldTools = {
   world_status: tool({
-    description:
-      'Read a world\'s shared run. world is the project-relative .world.json path from get_viewer. Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.',
+    description: `Read a world's shared run. ${WORLD_ARG} Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.`,
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);
@@ -962,8 +962,7 @@ export const worldTools = {
     },
   }),
   world_play: tool({
-    description:
-      "Play a world's shared run. world is the project-relative .world.json path from get_viewer. The sender is the agent, so every client shows agent. The last play or pause wins.",
+    description: `Play a world's shared run. ${WORLD_ARG} The sender is the agent, so every client shows agent. The last play or pause wins.`,
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);
@@ -976,8 +975,7 @@ export const worldTools = {
     },
   }),
   world_pause: tool({
-    description:
-      "Pause a world's shared run. world is the project-relative .world.json path from get_viewer. The sender is the agent, so every client shows agent. The last play or pause wins.",
+    description: `Pause a world's shared run. ${WORLD_ARG} The sender is the agent, so every client shows agent. The last play or pause wins.`,
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);
@@ -990,8 +988,7 @@ export const worldTools = {
     },
   }),
   world_step: tool({
-    description:
-      "Pause the run if it is playing, then advance exactly ms of sim time (a whole number from 1 to 10000). world is the project-relative .world.json path from get_viewer. The sender is the agent. Returns world_status at the sim time that this step produced.",
+    description: `Pause the run if it is playing, then advance exactly ms of sim time (a whole number from 1 to 10000). ${WORLD_ARG} The sender is the agent. Returns world_status at the sim time that this step produced.`,
     inputSchema: z.object({
       world: z.string(),
       ms: z.number(),
@@ -1007,8 +1004,7 @@ export const worldTools = {
     },
   }),
   read_recording: tool({
-    description:
-      "Read a world's recording for an agent. world is the project-relative .world.json path from get_viewer. Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, supply:usb.voltage (the terminal), and board:uno.voltage (the 5V node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets, reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose 5V node was in the 16 MHz out-of-SOA band, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.",
+    description: `Read a world's recording for an agent. ${WORLD_ARG} Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, supply:usb.voltage (the terminal), and board:uno.voltage (the 5V node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets, reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose 5V node was in the 16 MHz out-of-SOA band, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.`,
     inputSchema: z.object({
       world: z.string(),
       from: z.number().optional(),
@@ -1039,8 +1035,7 @@ export const worldTools = {
     },
   }),
   read_pulses: tool({
-    description:
-      "Read one servo's pulse widths from the recording. world is the project-relative .world.json path from get_viewer. part is the part id. Defaults to the last 5 seconds. Collapses runs of equal width within 1 µs and returns each run's pulseUs, mapped commandDeg, and first and last sim time, plus the board and pin. At most 200 runs; truncated is set when older runs were dropped.",
+    description: `Read one servo's pulse widths from the recording. ${WORLD_ARG} part is the part id. Defaults to the last 5 seconds. Collapses runs of equal width within 1 µs and returns each run's pulseUs, mapped commandDeg, and first and last sim time, plus the board and pin. At most 200 runs; truncated is set when older runs were dropped.`,
     inputSchema: z.object({
       world: z.string(),
       part: z.string(),
@@ -1078,8 +1073,7 @@ export const worldTools = {
     },
   }),
   world_move_target: tool({
-    description:
-      "Move an environment target to position (metres) from the next master step. world is the project-relative .world.json path from get_viewer. id is the target's id. The move is recorded. A target with only a path is unchanged until this is called. Dragging in the view is not this tool.",
+    description: `Move an environment target to position (metres) from the next master step. ${WORLD_ARG} id is the target's id. The move is recorded. A target with only a path is unchanged until this is called. Dragging in the view is not this tool.`,
     inputSchema: z.object({
       world: z.string(),
       id: z.string(),
@@ -1101,8 +1095,7 @@ export const worldTools = {
     },
   }),
   world_edit: tool({
-    description:
-      "Change one part through typed edit operations, as one undo step, then restart the run. world is the project-relative part path from get_viewer. part is a part id inside that world; the root is the default. ops is add-instance, remove-instance, set-pose, set-param, set-level, wire, unwire, rename-instance, rename-part, set-play, or a batch of those. Each op's document is the part's path. A catalog part is read-only. break: true applies an edit that drops fixed ports. Without it, removing a fixed port changes nothing and the sentence says to send it again. Returns what changed and whether undo is available.",
+    description: `Change one part through typed edit operations, as one undo step, then restart the run. ${WORLD_ARG} part is a part id inside that world; the root is the default. ops is add-instance, remove-instance, set-pose, set-param, set-level, wire, unwire, rename-instance, rename-part, set-play, or a batch of those. Each op's document is the part's path. A catalog part is read-only. break: true applies an edit that drops fixed ports. Without it, removing a fixed port changes nothing and the sentence says to send it again. Returns what changed and whether undo is available.`,
     inputSchema: z.object({
       world: z.string(),
       ops: z.array(z.record(z.string(), z.unknown())).min(1),
@@ -1139,8 +1132,7 @@ export const worldTools = {
     },
   }),
   world_undo: tool({
-    description:
-      "Undo the last edit of one part, then restart the run. world is the project-relative part path from get_viewer. part is a part id; the root is the default. Refuses when a file in the step changed outside this session.",
+    description: `Undo the last edit of one part, then restart the run. ${WORLD_ARG} part is a part id; the root is the default. Refuses when a file in the step changed outside this session.`,
     inputSchema: z.object({
       world: z.string(),
       part: z.string().optional(),
@@ -1154,8 +1146,7 @@ export const worldTools = {
     },
   }),
   world_redo: tool({
-    description:
-      "Redo the last undone edit of one part, then restart the run. world is the project-relative part path from get_viewer. part is a part id; the root is the default.",
+    description: `Redo the last undone edit of one part, then restart the run. ${WORLD_ARG} part is a part id; the root is the default.`,
     inputSchema: z.object({
       world: z.string(),
       part: z.string().optional(),
@@ -1169,8 +1160,7 @@ export const worldTools = {
     },
   }),
   world_set_level: tool({
-    description:
-      "Set or remove one level rule in the open world file, then restart the run. world is the project-relative .world.json path from get_viewer. scope is default, type, or path. key is the part type or the instance path (nano, fleet.rig2.servo); default takes no key. axis is behaviour, body, or visual; omit it and the class applies to all three. class is 0, 1, 2, 3, or null. null removes that rule. variant, with an axis, writes { class, variant } on that axis. The default cannot be removed. A type or path that is not in the loaded world is an error and the file is left unchanged. Returns the new level rows for the instances that rule covers, including a snapshot when one ran.",
+    description: `Set or remove one level rule in the open world file, then restart the run. ${WORLD_ARG} scope is default, type, or path. key is the part type or the instance path (nano, fleet.rig2.servo); default takes no key. axis is behaviour, body, or visual; omit it and the class applies to all three. class is 0, 1, 2, 3, or null. null removes that rule. variant, with an axis, writes { class, variant } on that axis. The default cannot be removed. A type or path that is not in the loaded world is an error and the file is left unchanged. Returns the new level rows for the instances that rule covers, including a snapshot when one ran.`,
     inputSchema: z.object({
       world: z.string(),
       scope: z.enum(["default", "type", "path"]),
@@ -1221,8 +1211,7 @@ export const worldTools = {
     },
   }),
   world_restart: tool({
-    description:
-      "Start a world's run over from sim time 0, paused, with a new recording. world is the project-relative .world.json path from get_viewer. Reloads the document the way a file edit does, without writing it. Returns world_status.",
+    description: `Start a world's run over from sim time 0, paused, with a new recording. ${WORLD_ARG} Reloads the document the way a file edit does, without writing it. Returns world_status.`,
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);

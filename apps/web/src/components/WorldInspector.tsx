@@ -1,5 +1,6 @@
 import {
   ARDUINO_PINS,
+  DEFAULT_TIMESTEP_S,
   maskHasPin,
   type WorldPinState,
   type WorldViewNode,
@@ -841,7 +842,7 @@ function commitPlay(
   if (next.seed !== undefined && next.seed === current.seed) return;
   if (
     next.timestep !== undefined &&
-    next.timestep === (current.timestep ?? 0.001)
+    next.timestep === (current.timestep ?? DEFAULT_TIMESTEP_S)
   ) {
     return;
   }
@@ -941,7 +942,7 @@ function PlayFields({ play }: { play: WorldViewPlay }) {
       />
       <NumberField
         label="Time step"
-        value={play.timestep ?? 0.001}
+        value={play.timestep ?? DEFAULT_TIMESTEP_S}
         onCommit={(value) => commitPlay(play, { timestep: value })}
       />
     </Section>

@@ -1,5 +1,6 @@
 import {
   ATMEGA328P_16MHZ_MIN_V,
+  ATMEGA328P_BROWNOUT_V,
   atmega328pSoaWarning,
 } from "@sfab-bench/contract";
 
@@ -51,7 +52,7 @@ export function boardWarningLine(
 export function recordedSoaLine(
   belowSoa: boolean | undefined,
   board: { voltage: number; minVoltage: number } | undefined,
-  brownoutVoltage = 2.7
+  brownoutVoltage = ATMEGA328P_BROWNOUT_V
 ): string {
   if (!belowSoa) return "";
   const brownout = brownoutVoltage;
