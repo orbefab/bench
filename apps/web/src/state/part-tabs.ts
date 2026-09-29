@@ -7,6 +7,7 @@ import { useSyncExternalStore } from "react";
 
 import { sendWorldCommand } from "@/hooks/useWorldRun";
 import { syncOpenDocument } from "@/lib/document-query";
+import { requestRefreshFiles } from "@/lib/motion";
 import { parkGuard, parkOutcome, runPhase } from "@/lib/world-park";
 import {
   breadcrumb,
@@ -19,7 +20,9 @@ import {
   type PartTabsModel,
   partTabLabel,
   renamePartTab,
+  retargetPartFile,
   savePartTab,
+  worldPathAfterMove,
 } from "@/lib/world-part-tabs";
 import { captureWorldCamera, restoreWorldCamera } from "@/scene/world-camera";
 import { viewerStore } from "@/state/viewer";
@@ -262,6 +265,20 @@ function commitClose(file: string) {
 
 function needsAsk(): boolean {
   return parkGuard(phaseNow(), captureInFlight()) === "ask";
+}
+
+/** Follow a renamed part file. The focused tab reconnects at `to`. */
+export function retargetOpenPart(from: string, to: string) {
+  const before = session.model;
+  const model = retargetPartFile(before, from, to);
+  if (model === before) return;
+  setSession({ ...session, model });
+  requestRefreshFiles();
+  const world = worldStore.getState().path;
+  const next = worldPathAfterMove(world, from, to);
+  if (next === world) return;
+  worldStore.getState().retargetDocument(next);
+  syncOpenDocument({ kind: "world", path: next }, "replace");
 }
 
 export function showPartFile(

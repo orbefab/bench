@@ -48,6 +48,11 @@ import {
   type WorldOutlinePart,
   type WorldOutlineSupply,
 } from "@/lib/world-outline";
+import {
+  partFileName,
+  RENAME_LIBRARY_REASON,
+  renamePartTarget,
+} from "@/lib/world-rename-part";
 import { findViewNode } from "@/lib/world-tree";
 import {
   documentWarnings,
@@ -61,6 +66,7 @@ import {
   clearBoardReject,
   useBoardConsole,
 } from "@/state/board-console";
+import { usePartTabs } from "@/state/part-tabs";
 import { useWorld, worldStore } from "@/state/world";
 import { useWorldTimeline } from "@/state/world-timeline";
 
@@ -884,6 +890,96 @@ function PlayFields({ play }: { play: WorldViewPlay }) {
   );
 }
 
+function RenamePartFile({
+  name,
+  source,
+  rootPart,
+  nodePart,
+}: {
+  name: string;
+  source?: WorldViewNode["source"];
+  rootPart?: string;
+  nodePart?: string;
+}) {
+  const world = useWorld((s) => s.path);
+  const own = !nodePart || nodePart === rootPart;
+  const document = own ? world : (nodePart ?? world);
+  const part = own ? undefined : nodePart;
+  const target = renamePartTarget({ source });
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(name);
+  useEffect(() => setDraft(name), [name]);
+  const commit = () => {
+    const next = draft.trim();
+    setOpen(false);
+    if (!next || next === name) return;
+    sendWorldEdit({
+      ops: [{ kind: "rename-part", document, to: next }],
+      ...(part ? { part } : {}),
+    });
+  };
+  return (
+    <div className="mb-3">
+      {open && target.enabled ? (
+        <div className="flex flex-col gap-1.5">
+          <input
+            className="w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-[12px]"
+            aria-label="Part file name"
+            autoFocus
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              commit();
+            }}
+          />
+          <div className="flex gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={commit}
+            >
+              Rename
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          disabled={!target.enabled}
+          title={target.enabled ? "Rename this part file" : target.reason}
+          onClick={() => {
+            if (!target.enabled) return;
+            setDraft(name);
+            setOpen(true);
+          }}
+        >
+          Rename part file
+        </Button>
+      )}
+      {!target.enabled ? (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {target.reason || RENAME_LIBRARY_REASON}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function OpenPart({ node }: { node: WorldViewNode }) {
   const target = openPartTarget(node);
   return (
@@ -916,11 +1012,13 @@ function InstanceBody({
   link,
   outline,
   warnings,
+  rootPart,
 }: {
   node: WorldViewNode;
   link?: string;
   outline: WorldOutline | null;
   warnings: readonly PathWarning[];
+  rootPart?: string;
 }) {
   const card = instanceCard(node);
   return (
@@ -1030,13 +1128,29 @@ function InstanceBody({
         </Section>
       ))}
       <OpenPart node={node} />
+      <RenamePartFile
+        name={partFileName(node.part)}
+        source={node.source}
+        rootPart={rootPart}
+        nodePart={node.part}
+      />
       <WarningList rows={warnings} />
     </>
   );
 }
 
+function leafRoot(
+  tree: { nodes: WorldViewNode[] } | null
+): WorldViewNode | null {
+  const node = tree?.nodes.length === 1 ? tree.nodes[0] : undefined;
+  if (!node || node.children.length > 0) return null;
+  if (node.role === "leaf" || node.role === "robot") return node;
+  return null;
+}
+
 export function WorldInspector() {
   useWorldSelectionEsc();
+  const tabs = usePartTabs();
   const selection = useWorld((s) => s.selection);
   const wire = useWorld((s) => s.wire);
   const tree = useWorld((s) => s.tree);
@@ -1054,6 +1168,13 @@ export function WorldInspector() {
   const wireNode = wire && tree ? findViewNode(tree.nodes, wire.owner) : null;
   const ends = wire ? wireNode?.wires?.[wire.index] : undefined;
   const title = wire ? "Wire" : node ? node.name : (tree?.part ?? "Part");
+  const focused = tabs.model.tabs.find(
+    (tab) => tab.file === tabs.model.focused
+  );
+  const openSource = focused?.readOnly
+    ? ("library" as const)
+    : ("project" as const);
+  const lone = leafRoot(tree);
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-card">
       <header className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
@@ -1093,6 +1214,7 @@ export function WorldInspector() {
             link={selection?.link}
             outline={outline}
             warnings={instanceWarnings(warnings, node.id)}
+            rootPart={tree?.part}
           />
         ) : (
           <>
@@ -1103,7 +1225,23 @@ export function WorldInspector() {
                 Reading the world…
               </p>
             )}
-            <WarningList rows={documentWarnings(warnings)} />
+            {tree ? (
+              <RenamePartFile
+                name={partFileName(tree.part)}
+                source={openSource}
+                rootPart={tree.part}
+              />
+            ) : null}
+            <WarningList
+              rows={
+                lone
+                  ? [
+                      ...documentWarnings(warnings),
+                      ...instanceWarnings(warnings, lone.id),
+                    ]
+                  : documentWarnings(warnings)
+              }
+            />
           </>
         )}
       </div>

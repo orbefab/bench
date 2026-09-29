@@ -137,6 +137,8 @@ export type WorldHudState = {
   /** Bumped when F2 asks the tree to rename the selection. */
   renameTick: number;
   open: (path: string, opts?: { force?: boolean }) => void;
+  /** The open file moved. Reconnects without clearing this tab's history. */
+  retargetDocument: (path: string) => void;
   close: () => void;
   select: (selection: WorldSelection) => void;
   selectWire: (wire: WorldWirePick | null) => void;
@@ -232,6 +234,12 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
   editError: null,
   confirm: null,
   renameTick: 0,
+
+  retargetDocument: (next) => {
+    const current = get();
+    if (!next || current.path === next) return;
+    set({ path: next, loadId: current.loadId + 1 });
+  },
 
   open: (next, opts) => {
     const current = get();

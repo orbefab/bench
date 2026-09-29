@@ -237,3 +237,47 @@ export function renamePartTab(
   });
   return changed ? { ...model, tabs } : model;
 }
+
+/**
+ * A rename moved `from` to `to`. Every tab and crumb of that file
+ * follows, and takes the new file's name. The focused tab follows too.
+ */
+export function retargetPartFile(
+  model: PartTabsModel,
+  from: string,
+  to: string
+): PartTabsModel {
+  if (!from || !to || from === to) return model;
+  const name = partTabLabel(to);
+  let changed = false;
+  const tabs = model.tabs.map((tab) => {
+    const file = tab.file === from ? to : tab.file;
+    const tabName = tab.file === from ? name : tab.name;
+    let chainChanged = false;
+    const chain = tab.chain.map((crumb) => {
+      if (crumb.file !== from) return crumb;
+      chainChanged = true;
+      return { ...crumb, file: to, name };
+    });
+    if (file === tab.file && tabName === tab.name && !chainChanged) return tab;
+    changed = true;
+    return {
+      ...tab,
+      file,
+      name: tabName,
+      chain: chainChanged ? chain : tab.chain,
+    };
+  });
+  const focused = model.focused === from ? to : model.focused;
+  if (!changed && focused === model.focused) return model;
+  return { tabs, focused };
+}
+
+/** `?world=` changes only when the focused file is the one that moved. */
+export function worldPathAfterMove(
+  world: string,
+  from: string,
+  to: string
+): string {
+  return world === from ? to : world;
+}

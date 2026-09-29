@@ -22,6 +22,7 @@ import {
   noteBoardSent,
   resetBoardConsole,
 } from "@/state/board-console";
+import { retargetOpenPart } from "@/state/part-tabs";
 import {
   setWorldLiveState,
   useWorld,
@@ -352,6 +353,9 @@ export function useWorldRun(project: string, world: string) {
           },
           message.label
         );
+        if (message.moved) {
+          retargetOpenPart(message.moved.from, message.moved.to);
+        }
         showNotice(message.label);
         return;
       }
