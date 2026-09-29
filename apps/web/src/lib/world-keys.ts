@@ -3,6 +3,8 @@
  * Undo is ⌘/Ctrl+Z. Redo is ⇧⌘/Ctrl+Shift+Z, and also Ctrl+Y.
  */
 
+import { toolForKey, type WorldToolMode } from "@/lib/world-tool";
+
 export type EditorKey = {
   key: string;
   meta?: boolean;
@@ -17,7 +19,8 @@ export type EditorAction =
   | "play"
   | "delete"
   | "rename"
-  | "wire";
+  /** A tool's own key, from the tool table. */
+  | { tool: WorldToolMode };
 
 export function editorKeyAction(
   event: EditorKey,
@@ -43,7 +46,10 @@ export function editorKeyAction(
     return "delete";
   }
   if (!mod && !event.shift && key === "F2") return "rename";
-  // A bare W. ⌘W and Ctrl+W close the tab and stay the browser's.
-  if (!mod && !event.shift && (key === "w" || key === "W")) return "wire";
+  // A bare tool key. ⌘W and Ctrl+W close the tab and stay the browser's.
+  if (!mod && !event.shift) {
+    const tool = toolForKey(key);
+    if (tool) return { tool };
+  }
   return null;
 }

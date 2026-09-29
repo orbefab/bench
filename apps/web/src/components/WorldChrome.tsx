@@ -1,18 +1,11 @@
-import {
-  Activity,
-  Cable,
-  Home,
-  MousePointer2,
-  Move3d,
-  Rotate3d,
-} from "lucide-react";
+import { Home } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
 import { RunPlayingDialog } from "@/components/RunPlayingDialog";
 import { Button } from "@/components/ui/button";
 import { formatWorldIssues, visibleAssetIssues } from "@/lib/world-issues";
 import { moveTarget } from "@/lib/world-move";
-import { isPoseTool, toolLabel, type WorldToolMode } from "@/lib/world-tool";
+import { isPoseTool, toolTitle, WORLD_TOOLS } from "@/lib/world-tool";
 import { useWorld } from "@/state/world";
 import {
   stayPendingEdit,
@@ -20,17 +13,6 @@ import {
   useWorldEdit,
 } from "@/state/world-edit";
 import { pickWorldTool, useWorldTool } from "@/state/world-tool";
-
-const TOOL_BUTTONS: readonly {
-  mode: WorldToolMode;
-  icon: typeof MousePointer2;
-}[] = [
-  { mode: "select", icon: MousePointer2 },
-  { mode: "move", icon: Move3d },
-  { mode: "rotate", icon: Rotate3d },
-  { mode: "wire", icon: Cable },
-  { mode: "probe", icon: Activity },
-];
 
 /** Why the selection cannot take a tool, or null when it can. */
 export function useMoveReason(): string | null {
@@ -88,10 +70,8 @@ export function WorldControls({
           role="toolbar"
           aria-label="Tools"
         >
-          {TOOL_BUTTONS.map(({ mode: item, icon: Icon }) => {
+          {WORLD_TOOLS.map(({ mode: item, label, icon: Icon }) => {
             const blocked = isPoseTool(item) && selected && reason !== null;
-            const label = toolLabel(item);
-            const title = item === "wire" ? `${label} (W)` : label;
             return (
               <Button
                 key={item}
@@ -99,7 +79,7 @@ export function WorldControls({
                 variant={mode === item ? "default" : "secondary"}
                 size="sm"
                 className="h-9 w-9 p-0"
-                title={blocked ? `${label}: ${reason}` : title}
+                title={blocked ? `${label}: ${reason}` : toolTitle(item)}
                 aria-label={label}
                 aria-pressed={mode === item}
                 disabled={blocked}

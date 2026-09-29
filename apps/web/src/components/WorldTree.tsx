@@ -108,11 +108,11 @@ export function WorldHotkeys() {
           ? String(target.tagName)
           : "";
       if (action === "play" && (tag === "BUTTON" || tag === "A")) return;
-      if (action === "wire") {
+      if (typeof action === "object") {
         // A held key does not flicker the tool, and a question waits for its answer.
         if (event.repeat || worldEditStore.getState().pending) return;
         event.preventDefault();
-        toggleWorldTool("wire");
+        toggleWorldTool(action.tool);
         return;
       }
       event.preventDefault();

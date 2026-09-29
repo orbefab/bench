@@ -1,10 +1,58 @@
 /**
  * The world tool mode. One at a time; Select is the default. A tool is a
  * mode on the stage that commits ordinary edit ops (D1), so nothing here
- * touches the document. Probe joins as one more mode.
+ * touches the document.
+ *
+ * `WORLD_TOOLS` is the one list of tools (ADR 0012, Tools seam). The mode
+ * type, the toolbar, the tool keys and the group helpers all read it. A new
+ * tool is one entry here, plus its own layer and state. It is a compile-time
+ * table, not a registry.
  */
 
-export type WorldToolMode = "select" | "move" | "rotate" | "wire" | "probe";
+import {
+  Activity,
+  Cable,
+  type LucideIcon,
+  MousePointer2,
+  Move3d,
+  Rotate3d,
+} from "lucide-react";
+
+/**
+ * `select` is the default. `pose` tools act on the selection through the
+ * gizmo. `port` tools draw the port markers, and a marker wins over a body.
+ */
+export type WorldToolGroup = "select" | "pose" | "port";
+
+type WorldToolDef = {
+  mode: string;
+  label: string;
+  group: WorldToolGroup;
+  /** A bare key that toggles the tool. Lower case; shown upper case. */
+  hotkey?: string;
+  icon: LucideIcon;
+};
+
+/** Toolbar order. */
+export const WORLD_TOOLS = [
+  { mode: "select", label: "Select", group: "select", icon: MousePointer2 },
+  { mode: "move", label: "Move", group: "pose", icon: Move3d },
+  { mode: "rotate", label: "Rotate", group: "pose", icon: Rotate3d },
+  { mode: "wire", label: "Wire", group: "port", hotkey: "w", icon: Cable },
+  { mode: "probe", label: "Probe", group: "port", icon: Activity },
+] as const satisfies readonly WorldToolDef[];
+
+export type WorldToolMode = (typeof WORLD_TOOLS)[number]["mode"];
+
+const TOOL_BY_MODE: ReadonlyMap<WorldToolMode, WorldToolDef> = new Map(
+  WORLD_TOOLS.map((tool) => [tool.mode, tool])
+);
+
+function toolDef(mode: WorldToolMode): WorldToolDef {
+  const tool = TOOL_BY_MODE.get(mode);
+  if (!tool) throw new Error(`unknown tool mode: ${mode}`);
+  return tool;
+}
 
 export type WorldToolState = {
   mode: WorldToolMode;
@@ -68,18 +116,29 @@ export function toolEscape(state: WorldToolState): {
 
 /** Move and Rotate act on the selection through the gizmo; Wire does not. */
 export function isPoseTool(mode: WorldToolMode): boolean {
-  return mode === "move" || mode === "rotate";
+  return toolDef(mode).group === "pose";
 }
 
 /** Wire and Probe draw the port markers, and a marker wins over a body there. */
 export function isPortTool(mode: WorldToolMode): boolean {
-  return mode === "wire" || mode === "probe";
+  return toolDef(mode).group === "port";
 }
 
 export function toolLabel(mode: WorldToolMode): string {
-  if (mode === "move") return "Move";
-  if (mode === "rotate") return "Rotate";
-  if (mode === "wire") return "Wire";
-  if (mode === "probe") return "Probe";
-  return "Select";
+  return toolDef(mode).label;
+}
+
+/** The toolbar tooltip: the label, and the key when the tool has one. */
+export function toolTitle(mode: WorldToolMode): string {
+  const { label, hotkey } = toolDef(mode);
+  return hotkey ? `${label} (${hotkey.toUpperCase()})` : label;
+}
+
+/** The tool a bare key toggles, or null. Case does not matter. */
+export function toolForKey(key: string): WorldToolMode | null {
+  const lower = key.toLowerCase();
+  const tool = WORLD_TOOLS.find(
+    (item) => "hotkey" in item && item.hotkey === lower
+  );
+  return tool ? tool.mode : null;
 }

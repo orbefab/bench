@@ -1,7 +1,7 @@
 import { ok as expect } from "node:assert/strict";
 import { matchesShortcut, SHORTCUTS } from "./shortcuts";
 import { editorKeyAction } from "./world-keys";
-import { toolEscape, WORLD_TOOL_START } from "./world-tool";
+import { toolEscape, WORLD_TOOL_START, WORLD_TOOLS } from "./world-tool";
 
 expect(
   editorKeyAction({ key: "z", meta: true }, false) === "undo",
@@ -69,11 +69,20 @@ for (const key of ["m", "r", "v"]) {
     `${key} is not claimed by a tool yet`
   );
 }
-expect(editorKeyAction({ key: "w" }, false) === "wire", "W enters Wire");
-expect(
-  editorKeyAction({ key: "W" }, false) === "wire",
-  "W with caps lock is still Wire"
-);
+const toolOf = (key: string) => {
+  const action = editorKeyAction({ key }, false);
+  return typeof action === "object" && action ? action.tool : null;
+};
+expect(toolOf("w") === "wire", "W enters Wire");
+expect(toolOf("W") === "wire", "W with caps lock is still Wire");
+// The key map is the table's: each hotkey in it, and no other key, is a tool key.
+for (const tool of WORLD_TOOLS) {
+  const key = "hotkey" in tool ? tool.hotkey : null;
+  expect(
+    key ? toolOf(key) === tool.mode : toolOf(tool.label[0]) === null,
+    `${tool.mode} key comes from the table`
+  );
+}
 expect(
   editorKeyAction({ key: "w", meta: true }, false) === null,
   "⌘W stays the browser's"

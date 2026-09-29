@@ -5,8 +5,12 @@ import {
   isPoseTool,
   reduceWorldTool,
   toolEscape,
+  toolForKey,
   toolLabel,
+  toolTitle,
   WORLD_TOOL_START,
+  WORLD_TOOLS,
+  type WorldToolMode,
 } from "./world-tool";
 
 expect(WORLD_TOOL_START.mode === "select", "Select is the default");
@@ -150,6 +154,59 @@ expect(toolLabel("select") === "Select", "Select label");
 expect(toolLabel("wire") === "Wire", "Wire label");
 expect(toolLabel("move") === "Move", "Move label");
 expect(toolLabel("rotate") === "Rotate", "Rotate label");
+
+// One table lists the tools. The answers below are what the hand-written
+// lists gave before it: they must not move.
+const MODES: readonly WorldToolMode[] = [
+  "select",
+  "move",
+  "rotate",
+  "wire",
+  "probe",
+];
+expect(
+  WORLD_TOOLS.map((tool) => tool.mode).join() === MODES.join(),
+  "the table keeps the toolbar order"
+);
+expect(
+  new Set(WORLD_TOOLS.map((tool) => tool.mode)).size === WORLD_TOOLS.length,
+  "a mode is listed once"
+);
+for (const tool of WORLD_TOOLS) {
+  expect(tool.label.length > 0, `${tool.mode} has a label`);
+  expect(
+    tool.group === "select" || tool.group === "pose" || tool.group === "port",
+    `${tool.mode} has a group`
+  );
+  expect(Boolean(tool.icon), `${tool.mode} has an icon`);
+}
+expect(
+  MODES.filter(isPoseTool).join() === "move,rotate",
+  "isPoseTool answers as before for all five modes"
+);
+expect(
+  MODES.filter(isPortTool).join() === "wire,probe",
+  "isPortTool answers as before for all five modes"
+);
+expect(
+  WORLD_TOOLS.filter((tool) => "hotkey" in tool)
+    .map((tool) => tool.mode)
+    .join() === "wire",
+  "only Wire has a hotkey"
+);
+expect(toolTitle("wire") === "Wire (W)", "the Wire tooltip names its key");
+expect(
+  MODES.filter((mode) => mode !== "wire").every(
+    (mode) => toolTitle(mode) === toolLabel(mode)
+  ),
+  "a tool without a key has its label for a tooltip"
+);
+expect(toolForKey("w") === "wire", "the table maps w to Wire");
+expect(toolForKey("W") === "wire", "the table maps W to Wire");
+expect(
+  toolForKey("m") === null && toolForKey("F2") === null && toolForKey(" ") === null,
+  "a key no tool owns maps to nothing"
+);
 
 // A tool commit restarts the run, so it asks with the park guard: a
 // playing run asks, Stay drops the gesture, Stop pauses and applies it.
