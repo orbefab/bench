@@ -13,6 +13,7 @@ import * as THREE from "three";
 import { useXrSession } from "@/hooks/useXrSession";
 import { type PortBody, type PortMarker, wireMarkers } from "@/lib/world-ports";
 import { isDimmed } from "@/lib/world-wire";
+import { PORT_MARKER_TAG } from "@/scene/world-pointer";
 import { useWorld } from "@/state/world";
 import { tapWirePort, useWorldTool } from "@/state/world-tool";
 
@@ -78,6 +79,7 @@ export function PortMarkers({
             </mesh>
             <mesh
               renderOrder={21}
+              userData={{ [PORT_MARKER_TAG]: true }}
               onClick={(event) => {
                 event.stopPropagation();
                 if (event.delta > 2) return;

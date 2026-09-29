@@ -7,6 +7,7 @@
 import type { EditOp } from "@sfab-bench/contract";
 
 import type { PortMarker } from "@/lib/world-ports";
+import type { WorldToolMode } from "@/lib/world-tool";
 
 export type WireTap = { type: "port"; ref: string } | { type: "empty" };
 
@@ -40,6 +41,24 @@ export function isDimmed(
   if (!held || marker.ref === held.ref) return false;
   if (!marker.domain || !held.domain) return false;
   return marker.domain !== held.domain;
+}
+
+export type PointerHit = "marker" | "body";
+export type PointerOwner = PointerHit | "empty";
+
+/**
+ * Who owns the pointer, given what a ray hit (any order) and the tool. In
+ * Wire what is drawn on top is what is picked: a marker on the ray wins over
+ * any body, and a body alone is empty space, so a click on it lets go of a
+ * held port. In every other tool a body owns the pointer; markers are not
+ * drawn there.
+ */
+export function pointerOwner(
+  mode: WorldToolMode,
+  hits: readonly PointerHit[]
+): PointerOwner {
+  if (mode === "wire") return hits.includes("marker") ? "marker" : "empty";
+  return hits.includes("body") ? "body" : "empty";
 }
 
 export type WireCommit = { ops: EditOp[]; label: string };

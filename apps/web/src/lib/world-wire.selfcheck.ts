@@ -1,4 +1,4 @@
-import { isDimmed, wireCommit, wireStep } from "./world-wire";
+import { isDimmed, pointerOwner, wireCommit, wireStep } from "./world-wire";
 
 function expect(cond: boolean, label: string) {
   if (!cond) throw new Error(label);
@@ -84,5 +84,30 @@ expect(
   commit.label === "Wire uno.D10 to servo.signal",
   "the undo step is named"
 );
+
+// Who owns the pointer: in Wire, what is drawn on top is what is picked.
+expect(
+  pointerOwner("wire", ["body", "marker"]) === "marker",
+  "a marker behind a nearer body still wins in Wire"
+);
+expect(
+  pointerOwner("wire", ["marker", "body"]) === "marker",
+  "a marker in front of a body wins in Wire"
+);
+expect(
+  pointerOwner("wire", ["body", "body"]) === "empty",
+  "a body alone is empty space in Wire"
+);
+expect(pointerOwner("wire", []) === "empty", "no hit is empty space in Wire");
+for (const mode of ["select", "move", "rotate"] as const) {
+  expect(
+    pointerOwner(mode, ["body"]) === "body",
+    `a body owns the pointer in ${mode}`
+  );
+  expect(
+    pointerOwner(mode, []) === "empty",
+    `no hit is empty space in ${mode}`
+  );
+}
 
 console.log("world-wire.selfcheck ok");

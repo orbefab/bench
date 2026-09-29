@@ -46,6 +46,7 @@ import { WireLayer } from "@/scene/WorldPortMarkers";
 import { WorldToolGizmo } from "@/scene/WorldToolGizmo";
 import { startBodyDrag } from "@/scene/world-body-drag";
 import { setWorldFitTarget } from "@/scene/world-fit";
+import { rayOwner } from "@/scene/world-pointer";
 import { clearPreviews, registerPreview } from "@/scene/world-preview";
 import {
   useWorld,
@@ -346,7 +347,13 @@ function WarningCallouts() {
           <Body key={marker.id} pose={marker.pose}>
             <mesh
               onClick={(event) => {
+                const owner = rayOwner(event);
+                if (owner === "marker") return;
                 event.stopPropagation();
+                if (owner === "empty") {
+                  if (event.delta <= 2) tapWireEmpty();
+                  return;
+                }
                 worldStore.getState().select({
                   kind: "instance",
                   path: marker.id,
@@ -356,6 +363,7 @@ function WarningCallouts() {
                 setHover((current) => (current === marker.id ? null : current))
               }
               onPointerOver={(event) => {
+                if (rayOwner(event) !== "body") return;
                 event.stopPropagation();
                 setHover(marker.id);
               }}
@@ -594,6 +602,7 @@ export function WorldScene({
   const bindPick = (pick: NonNullable<WorldSelection>, draggable = false) => {
     if (session) return {};
     const hover = (event: ThreeEvent<PointerEvent>) => {
+      if (rayOwner(event) !== "body") return;
       event.stopPropagation();
       const root = pickRoots.current.get(selectionKey(pick)) ?? null;
       if (hoveredRoot.current === root) return;
@@ -609,10 +618,12 @@ export function WorldScene({
           }
         : {}),
       onClick: (event: ThreeEvent<MouseEvent>) => {
+        const owner = rayOwner(event);
+        if (owner === "marker") return;
         event.stopPropagation();
         if (event.delta > 2 || sessionRef.current) return;
         tapWireEmpty();
-        worldStore.getState().select(pick);
+        if (owner === "body") worldStore.getState().select(pick);
       },
       onPointerMove: hover,
       onPointerOut: () => {
@@ -629,12 +640,14 @@ export function WorldScene({
     ? {}
     : {
         onClick: (event: ThreeEvent<MouseEvent>) => {
+          if (rayOwner(event) === "marker") return;
           event.stopPropagation();
           if (event.delta > 2) return;
           tapWireEmpty();
           worldStore.getState().select(null);
         },
         onPointerMove: (event: ThreeEvent<PointerEvent>) => {
+          if (rayOwner(event) === "marker") return;
           event.stopPropagation();
           if (!hoveredRoot.current) return;
           hoveredRoot.current = null;
