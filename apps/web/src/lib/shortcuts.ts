@@ -7,6 +7,9 @@
  * mention list → open popover/select → command palette/dialogs →
  * voice recording cancel → compact chat sheet.
  * Esc never hides docked chat or clears the CAD selection.
+ * In a world, with none of those layers open, Esc cancels a tool gesture,
+ * then leaves the tool (`world-tool-escape`), and only then clears the
+ * selection.
  */
 
 export type ShortcutScope = "global" | "composer" | "ask-user";
@@ -19,6 +22,7 @@ export type ShortcutId =
   | "composer-newline"
   | "composer-mention"
   | "escape"
+  | "world-tool-escape"
   | "ask-user-choose"
   | "timeline-live";
 
@@ -81,6 +85,13 @@ export const SHORTCUTS: readonly Shortcut[] = [
     keys: ["Esc"],
     label: "Cancel voice, close mention, or close a dialog",
     scope: "global",
+  },
+  {
+    id: "world-tool-escape",
+    keys: ["Esc"],
+    label: "Cancel a tool gesture, then leave the tool",
+    scope: "global",
+    ignoreEditable: true,
   },
   {
     id: "timeline-live",

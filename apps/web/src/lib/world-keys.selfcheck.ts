@@ -1,4 +1,6 @@
+import { matchesShortcut, SHORTCUTS } from "./shortcuts";
 import { editorKeyAction } from "./world-keys";
+import { toolEscape, WORLD_TOOL_START } from "./world-tool";
 
 function expect(cond: boolean, label: string) {
   if (!cond) throw new Error(label);
@@ -56,6 +58,44 @@ expect(
 expect(
   editorKeyAction({ key: "z", meta: true, alt: true }, false) === null,
   "⌥⌘Z is not undo"
+);
+
+// Esc belongs to the tool layer, not to the editor actions, and no tool
+// takes a letter key in this unit.
+expect(
+  editorKeyAction({ key: "Escape" }, false) === null,
+  "Esc is not an editor action"
+);
+for (const key of ["m", "r", "v", "w"]) {
+  expect(
+    editorKeyAction({ key }, false) === null,
+    `${key} is not claimed by a tool yet`
+  );
+}
+expect(
+  SHORTCUTS.some(
+    (row) =>
+      row.id === "world-tool-escape" &&
+      row.scope === "global" &&
+      row.keys.join() === "Esc"
+  ),
+  "the tool Esc is in the registry"
+);
+expect(
+  matchesShortcut({ key: "Escape" }, "world-tool-escape", { mac: true }),
+  "Escape matches the tool Esc"
+);
+expect(
+  !matchesShortcut(
+    { key: "Escape", target: { tagName: "INPUT" } },
+    "world-tool-escape",
+    { mac: true }
+  ),
+  "the tool Esc yields to a field"
+);
+expect(
+  toolEscape(WORLD_TOOL_START).did === null,
+  "Esc in Select is left to the selection clear"
 );
 
 console.log("world-keys.selfcheck ok");
