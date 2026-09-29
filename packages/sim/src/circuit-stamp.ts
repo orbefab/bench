@@ -10,6 +10,7 @@ import {
   PART_TYPE_FORMAT,
   type PartFile,
   type PortDecl,
+  ROOT_PATH,
 } from "@sfab-bench/contract";
 import {
   AVR_PIN,
@@ -899,7 +900,7 @@ function stampOf(
   const built = buildNets(instances, undefined);
   if (slot.kind === "composite") {
     for (const inst of instances) {
-      if (inst.path === "$root" || inst.path === boardId) continue;
+      if (inst.path === ROOT_PATH || inst.path === boardId) continue;
       const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
       if (behaviour?.kind === "composite") continue;
       if (circuitParts.some((part) => part.path === inst.path)) continue;

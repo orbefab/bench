@@ -87,7 +87,7 @@ export function startBodyDrag(input: {
     if (!started) return;
     started = false;
     endToolGesture();
-    const commit = latest ? poseCommit(move, path, latest) : null;
+    const commit = latest ? poseCommit(move, path, latest, "Move") : null;
     if (commit) commitToolEdit(commit);
     else restore();
   }

@@ -1,4 +1,4 @@
-import type { WorldViewNode } from "@sfab-bench/contract";
+import { ROOT_PATH, type WorldViewNode } from "@sfab-bench/contract";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
@@ -187,7 +187,7 @@ function deleteSelection() {
     });
     return;
   }
-  if (!state.selection || state.selection.path === "$root") return;
+  if (!state.selection || state.selection.path === ROOT_PATH) return;
   const target = instanceEditTarget(tree, state.selection.path, state.path);
   if (!target) return;
   sendWorldEdit({
@@ -287,7 +287,7 @@ export function WorldTree() {
   useEffect(() => {
     if (renameTick === 0) return;
     const path = worldStore.getState().selection?.path;
-    if (!path || path === "$root") return;
+    if (!path || path === ROOT_PATH) return;
     setRenaming(path);
   }, [renameTick]);
 
@@ -368,7 +368,7 @@ export function WorldTree() {
                       });
                     }}
                     onDoubleClick={() => {
-                      if (row.kind !== "instance" || row.path === "$root")
+                      if (row.kind !== "instance" || row.path === ROOT_PATH)
                         return;
                       setRenaming(row.path);
                     }}

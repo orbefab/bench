@@ -1,6 +1,7 @@
 import {
   boardTrackId,
   jointTrackId,
+  nameRootPath,
   partTrackId,
   RECORD_FRAME_MS,
   supplyTrackId,
@@ -95,14 +96,8 @@ export function timelineTrackLabel(
   unit: string,
   rootName?: string | null
 ): string {
-  let name = id.includes(":") ? id.slice(id.indexOf(":") + 1) : id;
-  if (
-    rootName &&
-    (name === "$root" || name.startsWith("$root/") || name.startsWith("$root."))
-  ) {
-    name = rootName + name.slice("$root".length);
-  }
-  return `${name} (${unit})`;
+  const name = id.includes(":") ? id.slice(id.indexOf(":") + 1) : id;
+  return `${nameRootPath(name, rootName)} (${unit})`;
 }
 
 function byId(

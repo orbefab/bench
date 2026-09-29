@@ -3,7 +3,7 @@
  * stage callout, and the card all read this.
  */
 
-import type { RunReport } from "@sfab-bench/contract";
+import { ROOT_PATH, type RunReport } from "@sfab-bench/contract";
 
 export type PathWarning = {
   path: string;
@@ -119,7 +119,7 @@ export function isDocumentWarning(row: {
 }): boolean {
   if (row.path === "") return true;
   if (row.code === "timestep-unsupported") return true;
-  return row.path === "$root" && row.port === "play";
+  return row.path === ROOT_PATH && row.port === "play";
 }
 
 export function documentWarnings(

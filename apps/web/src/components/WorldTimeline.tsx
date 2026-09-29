@@ -1,4 +1,8 @@
-import type { TimelineMarker, TimelineTrack } from "@sfab-bench/contract";
+import {
+  ROOT_PATH,
+  type TimelineMarker,
+  type TimelineTrack,
+} from "@sfab-bench/contract";
 import { Pause, Play, X } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, useEffect } from "react";
 
@@ -44,9 +48,9 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
   const blocked = useWorld((s) => s.runErrors.length > 0);
   const outline = useWorld((s) => s.outline);
   const tree = useWorld((s) => s.tree);
-  const root = tree?.nodes.find((node) => node.id === "$root");
+  const root = tree?.nodes.find((node) => node.id === ROOT_PATH);
   const rootName =
-    root && root.name !== "root" && root.name !== "$root" ? root.name : null;
+    root && root.name !== "root" && root.name !== ROOT_PATH ? root.name : null;
   const mac = isMacPlatform(
     typeof navigator === "undefined" ? "" : navigator.platform,
     typeof navigator === "undefined" ? "" : navigator.userAgent
@@ -134,7 +138,7 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
           );
   const head = playhead ?? to;
   const span = Math.max(to - from, 1e-9);
-  const headX = ((head - from) / span) * 100;
+  const headX = playheadX(head, from, to);
   const markers = (data?.markers ?? []).filter(
     (marker) => marker.kind !== "serial"
   );
@@ -170,15 +174,7 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
           aria-valuenow={Math.round(head * 1000)}
           aria-valuetext={formatSimTime(head)}
           tabIndex={0}
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            event.currentTarget.setPointerCapture(event.pointerId);
-            scrubTo(timeFromPointer(event, from, to));
-          }}
-          onPointerMove={(event) => {
-            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-            scrubTo(timeFromPointer(event, from, to));
-          }}
+          {...scrubHandlers(from, to)}
         >
           <svg
             viewBox="0 0 100 100"
@@ -214,15 +210,7 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
                 span={span}
               />
             ))}
-            <line
-              x1={headX}
-              x2={headX}
-              y1="0"
-              y2="100"
-              className={live ? "stroke-foreground/40" : "stroke-brand"}
-              strokeWidth="0.6"
-              vectorEffect="non-scaling-stroke"
-            />
+            <Playhead x={headX} live={live} />
           </svg>
           <div className="flex justify-between px-0.5 text-[10px] tabular-nums text-muted-foreground">
             <span>{formatSimTime(from)}</span>
@@ -253,6 +241,24 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+function playheadX(head: number, from: number, to: number): number {
+  return ((head - from) / Math.max(to - from, 1e-9)) * 100;
+}
+
+function Playhead({ x, live }: { x: number; live: boolean }) {
+  return (
+    <line
+      x1={x}
+      x2={x}
+      y1="0"
+      y2="100"
+      className={live ? "stroke-foreground/40" : "stroke-brand"}
+      strokeWidth="0.6"
+      vectorEffect="non-scaling-stroke"
+    />
   );
 }
 
@@ -288,7 +294,7 @@ function ProbeRowView({
   rootName: string | null;
 }) {
   const note = rowNote(row, previous);
-  const headX = ((head - from) / Math.max(to - from, 1e-9)) * 100;
+  const headX = playheadX(head, from, to);
   const remove = (
     <button
       type="button"
@@ -340,15 +346,7 @@ function ProbeRowView({
                   className="stroke-sky-500"
                 />
               ) : null}
-              <line
-                x1={headX}
-                x2={headX}
-                y1="0"
-                y2="100"
-                className={live ? "stroke-foreground/40" : "stroke-brand"}
-                strokeWidth="0.6"
-                vectorEffect="non-scaling-stroke"
-              />
+              <Playhead x={headX} live={live} />
             </svg>
             <span className="w-20 shrink-0 text-right tabular-nums">
               {formatProbeValue(valueAt(track, head), track.unit)}

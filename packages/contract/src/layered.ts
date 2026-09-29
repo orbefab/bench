@@ -552,6 +552,22 @@ export type Citation = { title: string; ref: string };
  */
 export const DEFAULT_TIMESTEP_S = 0.001;
 
+/** Instance path of the document opened as the root part. */
+export const ROOT_PATH = "$root";
+
+/** Swap the `$root` prefix of an instance path for the root part's name. */
+export function nameRootPath(path: string, rootName?: string | null): string {
+  if (
+    rootName &&
+    (path === ROOT_PATH ||
+      path.startsWith(`${ROOT_PATH}/`) ||
+      path.startsWith(`${ROOT_PATH}.`))
+  ) {
+    return rootName + path.slice(ROOT_PATH.length);
+  }
+  return path;
+}
+
 /** Catalog part instanced wherever a run stands on a plane. */
 export const GROUND_PART_ID = "sfab/ground-plane@1.0.0";
 

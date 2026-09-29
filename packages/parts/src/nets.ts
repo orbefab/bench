@@ -8,6 +8,7 @@ import {
   type PartFile,
   type PortDecl,
   type Ratings,
+  ROOT_PATH,
 } from "@sfab-bench/contract";
 
 import { behaviourNetlist, type LiveInstance } from "./levels";
@@ -130,7 +131,7 @@ export function buildNets(
     const split = splitPortRef(ref);
     if (!split) return null;
     const instPath =
-      parent === "$root" ? split.inst : `${parent}.${split.inst}`;
+      parent === ROOT_PATH ? split.inst : `${parent}.${split.inst}`;
     return {
       path: instPath,
       port: split.port,

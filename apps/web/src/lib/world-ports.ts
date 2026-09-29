@@ -8,11 +8,12 @@
  * instance is wired from its own part.
  */
 
-import type {
-  Domain,
-  Pose,
-  WorldViewNode,
-  WorldViewTree,
+import {
+  type Domain,
+  type Pose,
+  ROOT_PATH,
+  type WorldViewNode,
+  type WorldViewTree,
 } from "@sfab-bench/contract";
 
 import { instanceEditTarget } from "@/lib/world-edit-target";
@@ -118,7 +119,7 @@ export function wireMarkers(
   const half = new Map(bodies.map((body) => [body.id, body.half]));
   const markers: PortMarker[] = [];
   for (const node of collect(tree.nodes)) {
-    if (node.id === "$root") continue;
+    if (node.id === ROOT_PATH) continue;
     if (node.role === "ground" || node.role === "target") continue;
     const size = half.get(node.id);
     if (!size || node.ports.length === 0) continue;

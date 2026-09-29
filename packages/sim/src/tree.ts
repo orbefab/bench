@@ -8,6 +8,7 @@ import {
   type LevelClass,
   type PartFile,
   type Pose,
+  ROOT_PATH,
   type VisualImpl,
   type WorldViewLevelAxis,
   type WorldViewLevelOption,
@@ -61,7 +62,7 @@ export function runTree(input: {
     stage,
     play: playOf(input.run),
   };
-  const rootInst = input.resolved.find((inst) => inst.path === "$root");
+  const rootInst = input.resolved.find((inst) => inst.path === ROOT_PATH);
   if (!rootInst) return { ...header, nodes: [] };
 
   const partIds = new Set(input.parts.map((part) => part.id));
@@ -136,7 +137,7 @@ export function runTree(input: {
     nodes.set(inst.path, {
       id: inst.path,
       name:
-        inst.path === "$root"
+        inst.path === ROOT_PATH
           ? input.run.stage.id
           : inst.path.slice(inst.path.lastIndexOf(".") + 1),
       part: inst.part.id,
@@ -159,20 +160,20 @@ export function runTree(input: {
     if (!parent || !netlist) continue;
     markWired(nodes, inst.path, netlist.wires);
     for (const id of Object.keys(netlist.instances)) {
-      const path = inst.path === "$root" ? id : `${inst.path}.${id}`;
+      const path = inst.path === ROOT_PATH ? id : `${inst.path}.${id}`;
       const child = nodes.get(path);
       if (child) {
         parent.children.push(child);
         continue;
       }
-      if (inst.path !== "$root" || input.run.unwrapped) continue;
+      if (inst.path !== ROOT_PATH || input.run.unwrapped) continue;
       const slot = input.run.slots.find((row) => row.id === id);
       if (!slot || (slot.kind !== "ground" && slot.kind !== "target")) continue;
       parent.children.push(envNode(slot, path, partFile, placeOf(slot.part)));
     }
   }
 
-  const root = nodes.get("$root");
+  const root = nodes.get(ROOT_PATH);
   if (!root) return { ...header, nodes: [] };
   if (!input.run.unwrapped) return { ...header, nodes: [root] };
   const top: WorldViewNode[] = [];
@@ -247,7 +248,7 @@ function markWired(
       const end = splitPortRef(ref);
       if (!end) continue;
       const path =
-        parentPath === "$root" ? end.inst : `${parentPath}.${end.inst}`;
+        parentPath === ROOT_PATH ? end.inst : `${parentPath}.${end.inst}`;
       const port = nodes
         .get(path)
         ?.ports.find((item) => item.name === end.port);

@@ -8,6 +8,7 @@ import {
   type Diagnostic,
   type PortDecl,
   type Pose,
+  ROOT_PATH,
   type RunReport,
   SUPPLY_FORMS,
   type VisualImpl,
@@ -489,7 +490,7 @@ function poseOf(inst: LiveInstance): Pose {
 
 function cannot(inst: LiveInstance, detail: string, code = "idle"): Diagnostic {
   const named =
-    inst.path === "$root"
+    inst.path === ROOT_PATH
       ? `${shortName(inst.part.id)} sits idle: ${detail}`
       : detail;
   return {
@@ -942,7 +943,7 @@ function build(
     // A composite root is a shell. A leaf opened as the root is the
     // instance: its body is planned, or it sits idle with a diagnostic.
     if (
-      inst.path === "$root" &&
+      inst.path === ROOT_PATH &&
       selectedBehaviour(inst)?.kind === "composite"
     ) {
       continue;

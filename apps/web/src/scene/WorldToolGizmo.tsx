@@ -132,7 +132,14 @@ export function WorldToolGizmo({
           endToolGesture();
           resumeOrbit();
           const next = current();
-          const commit = next ? poseCommit(move, path, next) : null;
+          const commit = next
+            ? poseCommit(
+                move,
+                path,
+                next,
+                mode === "rotate" ? "Rotate" : "Move"
+              )
+            : null;
           if (commit) commitToolEdit(commit);
           else cancel();
         }}

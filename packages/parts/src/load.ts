@@ -10,6 +10,7 @@ import {
   type LockFile,
   type LockSnapshot,
   type PartFile,
+  ROOT_PATH,
   type RunReport,
   type SnapshotFile,
   SUPPLY_FORMS,
@@ -264,7 +265,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
   const bad = new Set(lintErrors.map((diag) => diag.path));
   const idle = resolved.instances.filter(
     (inst) =>
-      inst.path !== "$root" && (bad.has(inst.part.id) || bad.has(inst.path))
+      inst.path !== ROOT_PATH && (bad.has(inst.part.id) || bad.has(inst.path))
   );
   const idlePaths = new Set(idle.map((inst) => inst.path));
   const dropped = (path: string) =>
@@ -434,7 +435,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     diagnostics.push({
       severity: "warning",
       code: "timestep-unsupported",
-      path: "$root",
+      path: ROOT_PATH,
       port: "play",
       quantity: "Time",
       left: String(step),

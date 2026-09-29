@@ -134,10 +134,15 @@ if (armScene.ok) {
       armScene.target.part === undefined,
     "the scene is edited as the bench's instance, by the tab's file"
   );
-  const scenePose = poseCommit(armScene, "$root", {
-    position: [0.1, 0, 0],
-    rotation: [1, 0, 0, 0],
-  });
+  const scenePose = poseCommit(
+    armScene,
+    "$root",
+    {
+      position: [0.1, 0, 0],
+      rotation: [1, 0, 0, 0],
+    },
+    "Move"
+  );
   expect(
     scenePose?.ops[0]?.kind === "set-pose" &&
       scenePose.ops[0].id === "scene" &&
@@ -168,10 +173,15 @@ expect(
 // One gesture is one set-pose; a pose the document already has sends nothing.
 const arrow = moveTarget(scene, "uno", SCENE_FILE);
 if (arrow.ok) {
-  const moved = poseCommit(arrow, "uno", {
-    position: [0.1, 0, 0.006],
-    rotation: [1, 0, 0, 0],
-  });
+  const moved = poseCommit(
+    arrow,
+    "uno",
+    {
+      position: [0.1, 0, 0.006],
+      rotation: [1, 0, 0, 0],
+    },
+    "Move"
+  );
   expect(moved !== null && moved.ops.length === 1, "a move is one op");
   const op = moved?.ops[0];
   expect(
@@ -187,7 +197,7 @@ if (arrow.ok) {
   );
   expect(moved?.label === "Move uno", "the undo step is named");
   expect(
-    poseCommit(arrow, "uno", pose) === null,
+    poseCommit(arrow, "uno", pose, "Move") === null,
     "an unchanged pose sends nothing"
   );
   const quarter: Pose = {
@@ -195,8 +205,8 @@ if (arrow.ok) {
     rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
   };
   expect(
-    poseCommit(arrow, "uno", quarter)?.label === "Rotate uno",
-    "a rotation-only edit is a Rotate"
+    poseCommit(arrow, "uno", quarter, "Rotate")?.label === "Rotate uno",
+    "the rotate tool names its undo step Rotate"
   );
   expect(
     poseCommit(arrow, "uno", quarter, "Set pose of")?.label ===

@@ -10,6 +10,7 @@ import {
   type PartFile,
   type PartTypeFile,
   type Pose,
+  ROOT_PATH,
 } from "@sfab-bench/contract";
 
 import { environmentKind, type RunRoot } from "./document";
@@ -335,7 +336,7 @@ export function class2BoardNetlist(part: PartFile): Netlist | null {
 }
 
 function childPath(parent: string, id: string): string {
-  if (parent === "$root") return id;
+  if (parent === ROOT_PATH) return id;
   return `${parent}.${id}`;
 }
 
@@ -417,7 +418,7 @@ export function resolveLevels(
       // pass that class down either: the default still applies underneath.
       const nextParent = aliasNetlist
         ? (2 as LevelClass)
-        : instancePath !== "$root" &&
+        : instancePath !== ROOT_PATH &&
             axes.behaviour.class !== null &&
             axes.behaviour.source !== "fallback"
           ? axes.behaviour.class
@@ -451,7 +452,7 @@ export function resolveLevels(
       ? lib.parts.get(stage.part)?.part
       : stage.part;
   if (!rootPart) throw new Error("root part did not resolve");
-  visit(rootPart, "$root", { ...(stage.params ?? {}) }, stage.pose);
+  visit(rootPart, ROOT_PATH, { ...(stage.params ?? {}) }, stage.pose);
   instances.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { instances, appliedPaths, missing };
 }

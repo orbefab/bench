@@ -5,6 +5,7 @@
  */
 
 import {
+  nameRootPath,
   parsePortProbeId,
   probeOfTrack,
   type TimelineTrack,
@@ -22,16 +23,7 @@ export function toggleProbe(list: readonly string[], id: string): string[] {
 export function probeLabel(id: string, rootName?: string | null): string {
   const parsed = parsePortProbeId(id);
   if (!parsed) return id;
-  let instance = parsed.instance;
-  if (
-    rootName &&
-    (instance === "$root" ||
-      instance.startsWith("$root/") ||
-      instance.startsWith("$root."))
-  ) {
-    instance = rootName + instance.slice("$root".length);
-  }
-  return `${instance}.${parsed.port}`;
+  return `${nameRootPath(parsed.instance, rootName)}.${parsed.port}`;
 }
 
 export function trackLabel(

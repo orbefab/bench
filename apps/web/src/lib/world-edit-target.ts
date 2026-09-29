@@ -7,7 +7,11 @@
  * and that one comes with `part`.
  */
 
-import type { WorldViewNode, WorldViewTree } from "@sfab-bench/contract";
+import {
+  ROOT_PATH,
+  type WorldViewNode,
+  type WorldViewTree,
+} from "@sfab-bench/contract";
 
 import { findViewNode } from "@/lib/world-tree";
 
@@ -32,7 +36,7 @@ export function instanceEditTarget(
   path: string,
   openDocument: string
 ): InstanceTarget | null {
-  if (path === "$root") return null;
+  if (path === ROOT_PATH) return null;
   const found = findParent(tree.nodes, path, null);
   if (!found) return null;
   const owner = found.parent ? found.parent.part : tree.part;
@@ -49,7 +53,7 @@ export function stageEditTarget(
   openDocument: string
 ): InstanceTarget | null {
   if (tree.stage === tree.part) return null;
-  const root = findViewNode(tree.nodes, "$root");
+  const root = findViewNode(tree.nodes, ROOT_PATH);
   if (!root) return null;
   return address(tree, tree.part, root.name, openDocument);
 }

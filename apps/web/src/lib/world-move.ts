@@ -4,11 +4,12 @@
  * directly is drawn where its pose says. Anything else says why not.
  */
 
-import type {
-  EditOp,
-  Pose,
-  WorldViewNode,
-  WorldViewTree,
+import {
+  type EditOp,
+  type Pose,
+  ROOT_PATH,
+  type WorldViewNode,
+  type WorldViewTree,
 } from "@sfab-bench/contract";
 
 import {
@@ -40,7 +41,7 @@ export function moveTarget(
   if (!tree || !path) return { ok: false, reason: "Select a part" };
   const node = findViewNode(tree.nodes, path);
   if (!node) return { ok: false, reason: "Select a part" };
-  if (path === "$root") {
+  if (path === ROOT_PATH) {
     const stage = stageEditTarget(tree, openDocument);
     if (!stage) return { ok: false, reason: REASON_ORIGIN };
     return { ok: true, node, target: stage };
@@ -75,12 +76,9 @@ export function poseCommit(
   move: Extract<MoveTarget, { ok: true }>,
   path: string,
   pose: Pose,
-  verb?: string
+  verb: string
 ): PoseCommit | null {
   if (samePose(move.node.pose, pose)) return null;
-  const turned = move.node.pose.position.every(
-    (value, i) => value === pose.position[i]
-  );
   return {
     ops: [
       {
@@ -91,7 +89,7 @@ export function poseCommit(
       },
     ],
     part: move.target.part,
-    label: `${verb ?? (turned ? "Rotate" : "Move")} ${move.node.name}`,
+    label: `${verb} ${move.node.name}`,
     previewPath: path,
   };
 }
