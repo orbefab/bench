@@ -9,7 +9,11 @@
  * The wall is not a reverse diode. A datasheet path from `OUT` back to
  * `IN` stays in the part's omits unless that sheet gives a DC law.
  */
-import type { DropoutKnot, LdoParams } from "@sfab-bench/contract";
+import {
+  type DropoutKnot,
+  type LdoParams,
+  ldoError,
+} from "@sfab-bench/contract";
 
 import { gStamp, type PowerSplit, type StampCtx, volt } from "./context";
 import type { Element } from "./element";
@@ -28,45 +32,6 @@ const WALL_V = 1;
  */
 const BIAS_ON_V = 1.5;
 const BIAS_W_V = 0.2;
-
-function ldoError(params: LdoParams): string | null {
-  if (!Number.isFinite(params.vOut))
-    return "ldo-regulator@1 vOut must be finite";
-  if (!(params.iLimit > 0) || !Number.isFinite(params.iLimit)) {
-    return "ldo-regulator@1 iLimit must be positive";
-  }
-  if (!(params.iGround >= 0) || !Number.isFinite(params.iGround)) {
-    return "ldo-regulator@1 iGround must be >= 0";
-  }
-  if (!(params.rOut >= 0) || !Number.isFinite(params.rOut)) {
-    return "ldo-regulator@1 rOut must be >= 0";
-  }
-  const knots = params.dropout;
-  const first = knots[0];
-  if (!first) return "ldo-regulator@1 dropout needs a knot";
-  if (
-    !Number.isFinite(first[0]) ||
-    !Number.isFinite(first[1]) ||
-    first[1] < 0
-  ) {
-    return "ldo-regulator@1 dropout knots must be finite, volts >= 0";
-  }
-  for (let i = 1; i < knots.length; i++) {
-    const prev = knots[i - 1];
-    const knot = knots[i];
-    if (!prev || !knot) return "ldo-regulator@1 dropout needs a knot";
-    if (!(knot[0] > prev[0])) {
-      return "ldo-regulator@1 dropout current must increase";
-    }
-    if (!(knot[1] >= prev[1])) {
-      return "ldo-regulator@1 dropout voltage must not fall as current rises";
-    }
-    if (!Number.isFinite(knot[1]) || knot[1] < 0) {
-      return "ldo-regulator@1 dropout knots must be finite, volts >= 0";
-    }
-  }
-  return null;
-}
 
 /** Dropout voltage at `amps`, flat outside the first and last knots. */
 export function dropoutAt(

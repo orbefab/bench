@@ -1,55 +1,11 @@
 /** `battery@1` param parsing. The element lives in the circuit engine. */
 import type { BatteryParams, FormParam, OcvKnot } from "@sfab-bench/contract";
-import { ocvAt } from "@sfab-bench/contract";
+import { batteryError, ocvAt } from "@sfab-bench/contract";
 
 import { isScalarParam } from "./si";
 
 export type { BatteryParams };
 export { ocvAt };
-
-function batteryError(params: BatteryParams): string | null {
-  const knots = params.ocv;
-  const first = knots[0];
-  const last = knots[knots.length - 1];
-  if (!first || !last || knots.length < 2) {
-    return "battery@1 ocv needs at least two knots";
-  }
-  if (first[0] !== 0 || last[0] !== 1) {
-    return "battery@1 ocv must run from soc 0 to soc 1";
-  }
-  if (!Number.isFinite(first[1]) || first[1] < 0) {
-    return "battery@1 ocv voltage must be finite and >= 0";
-  }
-  for (let i = 1; i < knots.length; i++) {
-    const prev = knots[i - 1];
-    const knot = knots[i];
-    if (!prev || !knot) return "battery@1 ocv needs at least two knots";
-    if (!(knot[0] > prev[0])) return "battery@1 ocv soc must increase";
-    if (!(knot[1] >= prev[1])) {
-      return "battery@1 ocv voltage must not fall as soc rises";
-    }
-    if (!Number.isFinite(knot[1]) || knot[1] < 0) {
-      return "battery@1 ocv voltage must be finite and >= 0";
-    }
-  }
-  if (!(params.rInternal >= 0) || !Number.isFinite(params.rInternal)) {
-    return "battery@1 rInternal must be >= 0";
-  }
-  if (!(params.capacity > 0) || !Number.isFinite(params.capacity)) {
-    return "battery@1 capacity must be positive";
-  }
-  if (
-    !(params.soc0 >= 0) ||
-    !(params.soc0 <= 1) ||
-    !Number.isFinite(params.soc0)
-  ) {
-    return "battery@1 soc0 must be from 0 to 1";
-  }
-  if (params.vCutoff !== undefined && !Number.isFinite(params.vCutoff)) {
-    return "battery@1 vCutoff must be finite";
-  }
-  return null;
-}
 
 function readOcv(value: FormParam | undefined): readonly OcvKnot[] | null {
   if (!Array.isArray(value) || value.length < 2) return null;

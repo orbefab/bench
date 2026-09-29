@@ -1,5 +1,10 @@
 /** `ldo-regulator@1` param parsing. The element lives in the circuit engine. */
-import type { DropoutKnot, FormParam, LdoParams } from "@sfab-bench/contract";
+import {
+  type DropoutKnot,
+  type FormParam,
+  type LdoParams,
+  ldoError,
+} from "@sfab-bench/contract";
 
 import { isScalarParam } from "./si";
 
@@ -32,45 +37,6 @@ function readDropout(
     knots.push([amps, volts]);
   }
   return knots;
-}
-
-function ldoError(params: LdoParams): string | null {
-  if (!Number.isFinite(params.vOut))
-    return "ldo-regulator@1 vOut must be finite";
-  if (!(params.iLimit > 0) || !Number.isFinite(params.iLimit)) {
-    return "ldo-regulator@1 iLimit must be positive";
-  }
-  if (!(params.iGround >= 0) || !Number.isFinite(params.iGround)) {
-    return "ldo-regulator@1 iGround must be >= 0";
-  }
-  if (!(params.rOut >= 0) || !Number.isFinite(params.rOut)) {
-    return "ldo-regulator@1 rOut must be >= 0";
-  }
-  const knots = params.dropout;
-  const first = knots[0];
-  if (!first) return "ldo-regulator@1 dropout needs a knot";
-  if (
-    !Number.isFinite(first[0]) ||
-    !Number.isFinite(first[1]) ||
-    first[1] < 0
-  ) {
-    return "ldo-regulator@1 dropout knots must be finite, volts >= 0";
-  }
-  for (let i = 1; i < knots.length; i++) {
-    const prev = knots[i - 1];
-    const knot = knots[i];
-    if (!prev || !knot) return "ldo-regulator@1 dropout needs a knot";
-    if (!(knot[0] > prev[0])) {
-      return "ldo-regulator@1 dropout current must increase";
-    }
-    if (!(knot[1] >= prev[1])) {
-      return "ldo-regulator@1 dropout voltage must not fall as current rises";
-    }
-    if (!Number.isFinite(knot[1]) || knot[1] < 0) {
-      return "ldo-regulator@1 dropout knots must be finite, volts >= 0";
-    }
-  }
-  return null;
 }
 
 /** Catalog params plus instance number overrides. `dropout` is not overridden. */
