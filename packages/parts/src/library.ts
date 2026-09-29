@@ -255,7 +255,8 @@ function mergeOverlay(
   if (overlay.part !== id) {
     return bad(String(overlay.part), "level overlay names another part");
   }
-  const axes = (part.axes ??= {}) as Record<
+  part.axes = part.axes ?? {};
+  const axes = part.axes as Record<
     string,
     Record<string, { default: string; variants: Record<string, unknown> }>
   >;
@@ -265,7 +266,8 @@ function mergeOverlay(
     for (const [level, add] of Object.entries(levels)) {
       const names = Object.keys(add.variants ?? {}).sort();
       if (names.length === 0) continue;
-      const map = (axes[axis] ??= {});
+      const map = axes[axis] ?? {};
+      axes[axis] = map;
       const slot = map[level];
       if (!slot) {
         const first = names[0] as string;

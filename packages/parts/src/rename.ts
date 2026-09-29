@@ -230,7 +230,8 @@ function lockRewrites(
       const from = fromId.slice(fromId.indexOf("/") + 1);
       const to = toId.slice(toId.indexOf("/") + 1);
       for (const row of lock.overlays) {
-        const path = row.id === fromId ? row.path.split(from).join(to) : row.path;
+        const path =
+          row.id === fromId ? row.path.split(from).join(to) : row.path;
         const sha = snapshotSha.get(path);
         if (path !== row.path) {
           row.path = path;

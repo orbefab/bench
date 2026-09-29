@@ -117,9 +117,7 @@ try {
     omits: ["dynamic response"],
   });
   applied(scene.apply(add(ref1 as string, "capture-1")), "add");
-  const part = JSON.parse(
-    readFileSync(join(one, SCENE), "utf8")
-  ) as PartFile;
+  const part = JSON.parse(readFileSync(join(one, SCENE), "utf8")) as PartFile;
   const slot = part.axes?.behaviour?.["2"];
   deepStrictEqual(slot?.default, "netlist");
   deepStrictEqual(slot?.variants["capture-1"], {
@@ -128,7 +126,9 @@ try {
     omits: ["dynamic response"],
   });
   expect(
-    existsSync(join(one, "snapshots/sfab/nano-servo-scene-behaviour-1@1.0.0.json")),
+    existsSync(
+      join(one, "snapshots/sfab/nano-servo-scene-behaviour-1@1.0.0.json")
+    ),
     "the snapshot file is written"
   );
   const counterFile = join(one, "snapshots/.captures.json");
@@ -154,7 +154,8 @@ try {
   expect("error" in reused, "a taken number is refused");
   deepStrictEqual(treeOf(one), withOne, "a refused add writes nothing");
   expect(
-    "error" in scene.apply(add("sfab/nano-servo-scene-behaviour-2@1.0.0", "capture-1")),
+    "error" in
+      scene.apply(add("sfab/nano-servo-scene-behaviour-2@1.0.0", "capture-1")),
     "a variant name clash is refused"
   );
 
@@ -174,7 +175,9 @@ try {
   applied(scene.apply(remove), "remove");
   const removed = treeOf(one);
   expect(
-    !existsSync(join(one, "snapshots/sfab/nano-servo-scene-behaviour-1@1.0.0.json")),
+    !existsSync(
+      join(one, "snapshots/sfab/nano-servo-scene-behaviour-1@1.0.0.json")
+    ),
     "the snapshot file is gone"
   );
   const gone = JSON.parse(readFileSync(join(one, SCENE), "utf8")) as PartFile;
@@ -195,7 +198,9 @@ try {
   deepStrictEqual(treeOf(one), removed);
   applied(scene.apply(add(ref2 as string, "capture-2")), "add after delete");
   expect(
-    existsSync(join(one, "snapshots/sfab/nano-servo-scene-behaviour-2@1.0.0.json")),
+    existsSync(
+      join(one, "snapshots/sfab/nano-servo-scene-behaviour-2@1.0.0.json")
+    ),
     "the second capture takes number 2"
   );
 
@@ -218,14 +223,21 @@ try {
     omits: ["dynamic response"],
   };
   applied(vcc.apply(overlayAdd), "add to a library part");
-  const overlayPath = join(two, "overlays/sfab/nano-power-input@1.0.0.levels.json");
+  const overlayPath = join(
+    two,
+    "overlays/sfab/nano-power-input@1.0.0.levels.json"
+  );
   const overlay = JSON.parse(readFileSync(overlayPath, "utf8")) as {
     axes: { behaviour: Record<string, { variants: Record<string, unknown> }> };
   };
   deepStrictEqual(Object.keys(overlay.axes.behaviour["1"]?.variants ?? {}), [
     "capture-1",
   ]);
-  deepStrictEqual(readFileSync(libraryFile, "utf8"), libraryBytes, "the library file is untouched");
+  deepStrictEqual(
+    readFileSync(libraryFile, "utf8"),
+    libraryBytes,
+    "the library file is untouched"
+  );
   const lockOf = () =>
     JSON.parse(
       readFileSync(join(two, VCC.replace(".json", ".lock.json")), "utf8")
@@ -238,7 +250,11 @@ try {
   const withOverlay = treeOf(two);
 
   applied(vcc.undo(), "undo overlay add");
-  deepStrictEqual(treeOf(two), vccBefore, "undo removes the overlay and restores the lock");
+  deepStrictEqual(
+    treeOf(two),
+    vccBefore,
+    "undo removes the overlay and restores the lock"
+  );
   applied(vcc.redo(), "redo overlay add");
   deepStrictEqual(treeOf(two), withOverlay);
 
@@ -293,7 +309,11 @@ try {
     "the lock drops the overlay and the snapshot"
   );
   applied(vcc.undo(), "undo the break");
-  deepStrictEqual(treeOf(two), using, "undo restores the rule, overlay, snapshot and lock");
+  deepStrictEqual(
+    treeOf(two),
+    using,
+    "undo restores the rule, overlay, snapshot and lock"
+  );
   deepStrictEqual(readFileSync(libraryFile, "utf8"), libraryBytes);
 } finally {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });

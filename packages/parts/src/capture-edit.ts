@@ -115,9 +115,9 @@ export function planAddCapture(
   if (!parsed || !ref || ref.publisher !== parsed.publisher) {
     return { error: `${op.ref} is not a snapshot of ${target.id}` };
   }
-  const shape = new RegExp(
-    `^${escapeRe(parsed.name)}-${op.axis}-(\\d+)$`
-  ).exec(ref.name);
+  const shape = new RegExp(`^${escapeRe(parsed.name)}-${op.axis}-(\\d+)$`).exec(
+    ref.name
+  );
   if (!shape || ref.version !== parsed.version) {
     return { error: `${op.ref} is not a capture of ${target.id} ${op.axis}` };
   }
@@ -166,9 +166,8 @@ export function planAddCapture(
       string,
       { variants: Record<string, unknown> }
     >;
-    (map[level] as { variants: Record<string, unknown> }).variants[
-      op.variant
-    ] = impl;
+    (map[level] as { variants: Record<string, unknown> }).variants[op.variant] =
+      impl;
     files.push({
       path: input.file,
       text: formatPart(next, partStyle(input.text)),
@@ -180,8 +179,11 @@ export function planAddCapture(
       string,
       Record<string, { variants: Record<string, unknown> }>
     >;
-    const map = (axes[op.axis] ??= {});
-    (map[level] ??= { variants: {} }).variants[op.variant] = impl;
+    const map = axes[op.axis] ?? {};
+    axes[op.axis] = map;
+    const slot = map[level] ?? { variants: {} };
+    map[level] = slot;
+    slot.variants[op.variant] = impl;
     files.push({
       path: target.overlay.file,
       text: `${JSON.stringify(doc, null, 2)}\n`,
@@ -235,7 +237,9 @@ export function planRemoveCapture(
       )[op.axis]?.[level]?.variants
     : slot.variants;
   if (!held || !(op.variant in held)) {
-    return { error: `${op.variant} is a library variant; the library is read-only` };
+    return {
+      error: `${op.variant} is a library variant; the library is read-only`,
+    };
   }
 
   const scanned = scanRules(input, target.id, op);
@@ -265,9 +269,10 @@ export function planRemoveCapture(
     if (!doc.changed) continue;
     files.push({
       path: doc.file,
-      text: doc.play && !doc.structure
-        ? replaceLevels(doc.text, doc.part.play?.levels as never)
-        : formatPart(doc.part, partStyle(doc.text)),
+      text:
+        doc.play && !doc.structure
+          ? replaceLevels(doc.text, doc.part.play?.levels as never)
+          : formatPart(doc.part, partStyle(doc.text)),
       before: doc.text,
     });
   }
@@ -284,7 +289,9 @@ export function planRemoveCapture(
     delete (map[level] as { variants: Record<string, unknown> }).variants[
       op.variant
     ];
-    if (Object.keys((map[level] as { variants: object }).variants).length === 0) {
+    if (
+      Object.keys((map[level] as { variants: object }).variants).length === 0
+    ) {
       delete map[level];
     }
     if (Object.keys(map).length === 0) delete axes[op.axis];
@@ -349,7 +356,11 @@ type Target = {
   /** The part with any overlay merged in. */
   view: PartFile;
   /** Null when the variant lives in the part's own file. */
-  overlay: { file: string; doc: LevelOverlayFile; before: string | null } | null;
+  overlay: {
+    file: string;
+    doc: LevelOverlayFile;
+    before: string | null;
+  } | null;
 };
 
 function resolveTarget(
@@ -418,7 +429,11 @@ function scanRules(
   targetId: string,
   op: RemoveOp
 ):
-  | { dependents: PortDependent[]; docs: Map<string, ScannedDoc>; touched: string[] }
+  | {
+      dependents: PortDependent[];
+      docs: Map<string, ScannedDoc>;
+      touched: string[];
+    }
   | { error: string } {
   const opts = {
     catalogDir: input.catalogDir,
@@ -496,7 +511,8 @@ function scanRules(
     if (doc.changed) touched.push(doc.part.id);
   }
   for (const doc of docs.values()) {
-    if (!doc.structure || normalize(doc.file) === normalize(input.file)) continue;
+    if (!doc.structure || normalize(doc.file) === normalize(input.file))
+      continue;
     if (formatPart(JSON.parse(doc.text), partStyle(doc.text)) !== doc.text) {
       return {
         error: `cannot rewrite ${relative(normalize(input.projectDir), normalize(doc.file))}; change its level rule first`,

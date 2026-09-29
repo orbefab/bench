@@ -35,10 +35,7 @@ const libraryFile = join(
   "parts/sfab/nano-power-input@1.0.0.json"
 );
 
-function overlayOf(
-  name: string,
-  level: "1" | "2" = "1"
-): LevelOverlayFile {
+function overlayOf(name: string, level: "1" | "2" = "1"): LevelOverlayFile {
   return {
     format: LEVEL_OVERLAY_FORMAT,
     part: PART,
@@ -88,7 +85,8 @@ try {
     d.message.includes("level overlay")
   );
   expect(
-    stale.length === 1 && /missing a resolved level overlay/.test(stale[0]?.message ?? ""),
+    stale.length === 1 &&
+      /missing a resolved level overlay/.test(stale[0]?.message ?? ""),
     `a lock without the overlay row is reported: ${withOverlay.diagnostics.map((d) => d.message).join("; ")}`
   );
   const instances = withOverlay.resolved.filter(
@@ -97,7 +95,10 @@ try {
   expect(instances.length > 0, "the example instances the library part");
   for (const inst of instances) {
     const slot = (inst.part as PartFile).axes?.behaviour?.["1"];
-    expect(slot?.variants["capture-1"], `${inst.path} sees the overlay variant`);
+    expect(
+      slot?.variants["capture-1"],
+      `${inst.path} sees the overlay variant`
+    );
     deepStrictEqual(slot?.default, "table");
     expect(slot?.variants.table, "library variants stay");
   }
@@ -111,7 +112,11 @@ try {
     originalSha
   );
 
-  writeLock(nodeStore, absolutePath(lockPathFor(join(project, WORLD))), pinned!);
+  writeLock(
+    nodeStore,
+    absolutePath(lockPathFor(join(project, WORLD))),
+    pinned!
+  );
   const settled = load(project);
   deepStrictEqual(settled.diagnostics, []);
 
@@ -120,7 +125,8 @@ try {
     d.message.includes("level overlay")
   );
   expect(
-    changed.length === 1 && /hash mismatch on a level overlay/.test(changed[0]?.message ?? ""),
+    changed.length === 1 &&
+      /hash mismatch on a level overlay/.test(changed[0]?.message ?? ""),
     "a changed overlay is reported like a changed snapshot"
   );
 
@@ -133,7 +139,10 @@ try {
   );
   deepStrictEqual(readFileSync(libraryFile, "utf8"), libraryBytes);
 
-  put(project, OVERLAY, { ...overlayOf("capture-1"), part: "sfab/other@1.0.0" });
+  put(project, OVERLAY, {
+    ...overlayOf("capture-1"),
+    part: "sfab/other@1.0.0",
+  });
   expect(
     load(project).diagnostics.some((d) => /names another part/.test(d.message)),
     "an overlay for another part is refused"
@@ -160,7 +169,10 @@ try {
   const moved = planned.files.filter((item) => item.path.includes("overlays"));
   expect(
     moved.length === 2 &&
-      moved.some((item) => item.text === null && item.path.endsWith("flag@1.0.0.levels.json")) &&
+      moved.some(
+        (item) =>
+          item.text === null && item.path.endsWith("flag@1.0.0.levels.json")
+      ) &&
       moved.some(
         (item) =>
           item.path.endsWith("flag2@1.0.0.levels.json") &&

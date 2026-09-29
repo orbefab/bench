@@ -46,7 +46,8 @@ import {
   portDomain,
   portNames,
 } from "./ports";
-import { type PlannedFile, planPartRename, type SkippedFile } from "./rename";import { sha256Hex } from "./sha256";
+import { type PlannedFile, planPartRename, type SkippedFile } from "./rename";
+import { sha256Hex } from "./sha256";
 import { canonicalJson } from "./si";
 import type { Store } from "./store";
 

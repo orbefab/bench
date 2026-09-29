@@ -321,7 +321,9 @@ async function captureEntry(
   const outPath = opts.outFile ?? snapshotPath(catalog, config.id, env);
   if (!fixture) throw new Error(`${config.part} capture needs a fixture`);
   const progress = progressOf(opts, 2 + (runFree ? scenes.length * 2 : 0));
-  progress.step(`fitted ${knots.length} knots over ${sweep.current.length} sweep points`);
+  progress.step(
+    `fitted ${knots.length} knots over ${sweep.current.length} sweep points`
+  );
   const shared = {
     law,
     fixture,

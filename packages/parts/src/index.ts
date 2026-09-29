@@ -1,4 +1,5 @@
 export { type BatteryParams, batteryFrom, ocvAt } from "./battery";
+export { nextCaptureRef } from "./capture-edit";
 export { comparatorFrom } from "./comparator";
 export { type ConvertedDocument, convertWorldFile } from "./convert";
 export {
@@ -109,7 +110,6 @@ export {
   portDomain,
   portNames,
 } from "./ports";
-export { nextCaptureRef } from "./capture-edit";
 export {
   type PlannedRename,
   planPartRename,

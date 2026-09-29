@@ -73,7 +73,10 @@ function request(nonce: string): ReturnType<typeof parseWorldClient> {
 
 function launch(nonce: string): void {
   const parsed = request(nonce);
-  expect("type" in parsed && parsed.type === "capture", "the capture message parses");
+  expect(
+    "type" in parsed && parsed.type === "capture",
+    "the capture message parses"
+  );
   if (!("type" in parsed) || parsed.type !== "capture") return;
   startCapture(project, WORLD, parsed, events, (event) => events.push(event));
 }
@@ -97,7 +100,11 @@ try {
     parseWorldClient(
       JSON.stringify({ type: "capture", nonce: "x", path, axis: "visual" })
     ),
-    { error: "capture axis must be behaviour or body", kind: "capture", nonce: "x" }
+    {
+      error: "capture axis must be behaviour or body",
+      kind: "capture",
+      nonce: "x",
+    }
   );
   const before = treeOf(project);
   const tempsBefore = captureTemps();
@@ -122,7 +129,8 @@ try {
     (event) => event.type === "capture-failed" && event.nonce === "c2"
   );
   expect(
-    refused?.type === "capture-failed" && /already running/.test(refused.message),
+    refused?.type === "capture-failed" &&
+      /already running/.test(refused.message),
     "a second capture is refused with a reason"
   );
   const done = await settled("c1");
@@ -158,7 +166,9 @@ try {
   );
   expect(existsSync(join(project, SNAPSHOT)), "the snapshot file exists");
   expect(
-    existsSync(join(project, "overlays/sfab/nano-power-input@1.0.0.levels.json")),
+    existsSync(
+      join(project, "overlays/sfab/nano-power-input@1.0.0.levels.json")
+    ),
     "the level overlay exists"
   );
   expect(
@@ -202,10 +212,18 @@ try {
   );
   const undoUse = await handleLiveEdit(project, WORLD, { type: "undo" });
   expect(undoUse.type === "edited", "undo of use it");
-  deepStrictEqual(treeOf(project), captured, "undo of use it keeps the capture");
+  deepStrictEqual(
+    treeOf(project),
+    captured,
+    "undo of use it keeps the capture"
+  );
   const undoCapture = await handleLiveEdit(project, WORLD, { type: "undo" });
   expect(undoCapture.type === "edited", "undo of the capture");
-  deepStrictEqual(treeOf(project), before, "undo of the capture restores every byte");
+  deepStrictEqual(
+    treeOf(project),
+    before,
+    "undo of the capture restores every byte"
+  );
 
   // Card equals CLI: the runner with an output file writes the same bytes.
   const config = JSON.parse(
@@ -228,7 +246,10 @@ try {
       cli === captured.get(`/${SNAPSHOT}`),
       "the card's snapshot is byte-identical to the CLI's"
     );
-    expect(cli.includes('"created": "2026-09-27T00:00:00.000Z"'), "created is the config's");
+    expect(
+      cli.includes('"created": "2026-09-27T00:00:00.000Z"'),
+      "created is the config's"
+    );
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

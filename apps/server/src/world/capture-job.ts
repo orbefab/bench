@@ -112,7 +112,9 @@ async function run(
   const root = absolutePath(project);
   const own = partFilePath(root, part.id);
   if (own && nodeStore.exists(own)) {
-    return failed(`${part.id} lives in this project; capture reads library parts`);
+    return failed(
+      `${part.id} lives in this project; capture reads library parts`
+    );
   }
   const catalog = absolutePath(catalogRoot());
   const recipe = captureRecipeFor(part, request.axis, {
@@ -120,7 +122,8 @@ async function run(
     store: nodeStore,
     join,
   });
-  if (!recipe) return failed(`${part.id} has no ${request.axis} capture recipe`);
+  if (!recipe)
+    return failed(`${part.id} has no ${request.axis} capture recipe`);
   const level = captureLevelFor(part, request.axis, recipe);
   if ("error" in level) return failed(level.error);
   const ref = nextCaptureRef(nodeStore, root, part.id, request.axis);
@@ -175,13 +178,9 @@ async function run(
     snapshot,
     omits: omitsAt(part, request.axis, level.level),
   };
-  const landed = await applyDocumentEdit(
-    project,
-    world,
-    [op],
-    editLabel(op)
-  );
-  if ("needsConfirm" in landed) return failed(landed.message ?? "needs confirmation");
+  const landed = await applyDocumentEdit(project, world, [op], editLabel(op));
+  if ("needsConfirm" in landed)
+    return failed(landed.message ?? "needs confirmation");
   if ("error" in landed) return failed(landed.error);
   return {
     type: "captured",
