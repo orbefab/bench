@@ -9,6 +9,7 @@ import { useEffect } from "react";
 
 import { showToast } from "@/components/ui/toast";
 import { getDeviceToken } from "@/lib/api";
+import { editMessageText } from "@/lib/world-edit-message";
 import { historyButtons } from "@/lib/world-history";
 import { decideHudSample } from "@/lib/world-hud";
 import { commandNotice, isOwnCommandNonce } from "@/lib/world-issues";
@@ -384,7 +385,9 @@ export function useWorldRun(project: string, world: string) {
           } else {
             worldStore
               .getState()
-              .setEditError(message.message ?? "The edit was refused.");
+              .setEditError(
+                editMessageText(message.message ?? "The edit was refused.")
+              );
           }
           return;
         }
