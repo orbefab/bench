@@ -13,7 +13,7 @@
     "icon": "node scripts/make_icon.mjs",
     "start": "node run.mjs .",
     "typecheck": "tsc --noEmit",
-    "test": "node package.selfcheck.mjs",
+    "test": "node ../../scripts/checks.mjs package.selfcheck.mjs",
     "package": "node package.mjs"
   },
   "dependencies": {
