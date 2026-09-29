@@ -24,7 +24,9 @@ import { SNAPSHOT_FORMAT } from "@sfab-bench/contract";
 import {
   EditSession,
   EXTERNAL_EDIT,
+  formatPart,
   loadWorldV2,
+  partStyle,
   planPartRename,
 } from "@sfab-bench/parts";
 import { viewOf } from "@sfab-bench/sim/view";
@@ -614,6 +616,59 @@ async function proveUndoOrder() {
   }
 }
 
+function proveSplice() {
+  const module = "parts/sfab/nano-led-module@1.0.0.json";
+  const child = "parts/sfab/nano-led-module-scene@1.0.0.json";
+  const childId = "sfab/nano-led-module-scene@1.0.0";
+  const nextId = "sfab/led-scene@1.0.0";
+  const nextChild = "parts/sfab/led-scene@1.0.0.json";
+  const project = copyNano("sfab-rename-splice-");
+  try {
+    const roundTrips = (text: string) =>
+      formatPart(JSON.parse(text), partStyle(text)) === text;
+    const childText = textOf(project, child);
+    expect(!roundTrips(childText), "the child layout round-trips");
+    const fourSpace = `${JSON.stringify(JSON.parse(textOf(project, module)), null, 4)}\n`;
+    writeFileSync(join(project, module), fourSpace);
+    expect(!roundTrips(fourSpace), "the parent layout round-trips");
+
+    const applied = open(project, child).apply({
+      kind: "rename-part",
+      document: child,
+      to: "led-scene",
+    });
+    if ("error" in applied || "needsConfirm" in applied) {
+      throw new Error("error" in applied ? applied.error : "needs confirm");
+    }
+    const swap = (text: string) =>
+      text.split(`"${childId}"`).join(`"${nextId}"`);
+    for (const [file, was] of [
+      [nextChild, childText],
+      [module, fourSpace],
+    ] as const) {
+      const now = textOf(project, file);
+      expect(now === swap(was), `${file} changed more than the quoted id`);
+      const value = JSON.parse(now);
+      expect(
+        !now.includes(childId) && now.includes(nextId),
+        `${file} kept the old id or lost the new one`
+      );
+      expect(
+        JSON.stringify(value) ===
+          JSON.stringify(JSON.parse(was), (_key, item) =>
+            item === childId ? nextId : item
+          ),
+        `${file} does not parse to the swapped value`
+      );
+    }
+    console.log(
+      "rename splice: files that formatPart does not print back keep their layout"
+    );
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
 async function proveUnreadable() {
   const project = copyNano("sfab-rename-broken-");
   try {
@@ -717,6 +772,7 @@ async function proveUnreadable() {
 }
 
 proveScene();
+proveSplice();
 proveRootLock();
 proveRefusals();
 proveTorn();
