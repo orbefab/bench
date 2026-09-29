@@ -18,6 +18,7 @@ import {
   type WorldToolState,
 } from "@/lib/world-tool";
 import { type WireTap, wireCommit, wireStep } from "@/lib/world-wire";
+import { invalidateSceneNow } from "@/scene/invalidate";
 import { clearPreviews, previewPose } from "@/scene/world-preview";
 import { phaseNow } from "@/state/part-tabs";
 import { worldStore } from "@/state/world";
@@ -185,6 +186,14 @@ function resetWorldTool() {
   }
   clearPreviews();
 }
+
+// The canvas draws on demand: a new tool, or a held port let go, must ask
+// for a frame, or the markers and the rubber band stay on screen.
+worldToolStore.subscribe((state, prev) => {
+  if (state.mode !== prev.mode || state.wireFrom !== prev.wireFrom) {
+    invalidateSceneNow();
+  }
+});
 
 let watchedPath = worldStore.getState().path;
 let watchedLoad = worldStore.getState().loadId;
