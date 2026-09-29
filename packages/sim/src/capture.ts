@@ -503,7 +503,7 @@ function writeSnapshot(
   snap: SnapshotFile,
   env: CaptureEnv
 ): string {
-  const json = `${JSON.stringify(sortValue(snap), null, 2)}\n`;
+  const json = jsonText(sortValue(snap));
   env.writeText(file, json);
   return json;
 }
@@ -811,20 +811,57 @@ function writeStop(dir: string, env: CaptureEnv): void {
   );
   env.writeText(
     env.join(dir, "parts", "sfab", "flag-stop@1.0.0.json"),
-    `{
-  "format": "sfab.part@1",
-  "id": "sfab/flag-stop@1.0.0",
-  "type": "flag-hinge",
-  "foreign": false,
-  "sources": [{ "title": "stall stop", "ref": "upper limit 0.05 rad" }],
-  "axes": {
-    "behaviour": { "1": { "default": "rigid", "variants": { "rigid": { "kind": "form", "form": "multibody@1", "params": {}, "omits": ["joint flexibility"] } } } },
-    "body": { "1": { "default": "urdf", "variants": { "urdf": { "kind": "urdf", "file": "robot/flag-stop.urdf", "omits": ["link flex"] } } } },
-    "visual": { "0": { "default": "box", "variants": { "box": { "kind": "box", "size": [0.08, 0.04, 0.02], "omits": ["link meshes"] } } } }
-  }
-}
-`
+    jsonText({
+      format: "sfab.part@1",
+      id: "sfab/flag-stop@1.0.0",
+      type: "flag-hinge",
+      foreign: false,
+      sources: [{ title: "stall stop", ref: "upper limit 0.05 rad" }],
+      axes: {
+        behaviour: {
+          "1": {
+            default: "rigid",
+            variants: {
+              rigid: {
+                kind: "form",
+                form: "multibody@1",
+                params: {},
+                omits: ["joint flexibility"],
+              },
+            },
+          },
+        },
+        body: {
+          "1": {
+            default: "urdf",
+            variants: {
+              urdf: {
+                kind: "urdf",
+                file: "robot/flag-stop.urdf",
+                omits: ["link flex"],
+              },
+            },
+          },
+        },
+        visual: {
+          "0": {
+            default: "box",
+            variants: {
+              box: {
+                kind: "box",
+                size: [0.08, 0.04, 0.02],
+                omits: ["link meshes"],
+              },
+            },
+          },
+        },
+      },
+    })
   );
+}
+
+function jsonText(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 /** Free-run scene from the entry. Names and wires are the entry's data. */
@@ -838,56 +875,56 @@ function writeScene(
 ): void {
   const levels =
     behaviour === 2
-      ? `"default": 1, "paths": { "${scene.board}": { "behaviour": 2 } }`
-      : `"default": 1`;
-  const wires = scene.wires
-    .map((pair) => JSON.stringify(pair))
-    .join(",\n                ");
+      ? { default: 1, paths: { [scene.board]: { behaviour: 2 } } }
+      : { default: 1 };
+  const none = (what: string) => ({
+    default: "none",
+    variants: { none: { kind: "none", omits: [what] } },
+  });
   env.writeText(
     env.join(dir, "parts", "sfab", `${name}-scene@1.0.0.json`),
-    `{
-  "format": "sfab.part@1",
-  "id": "sfab/${name}-scene@1.0.0",
-  "type": "assembly",
-  "foreign": false,
-  "axes": {
-    "behaviour": {
-      "2": {
-        "default": "netlist",
-        "variants": {
-          "netlist": {
-            "kind": "composite",
-            "omits": ["no snapshot of this assembly"],
-            "netlist": {
-              "instances": {
-                "${scene.flagInstance}": { "part": "${spec.flag}" },
-                "${scene.board}": { "part": "${scene.boardPart}", "params": { "firmware": "${spec.firmware}", "source": "${spec.source}" } },
-                "${scene.supplyInstance}": { "part": "${scene.supplyPart}" },
-                "${scene.currentPart}": { "part": "${spec.load}" }
+    jsonText({
+      format: "sfab.part@1",
+      id: `sfab/${name}-scene@1.0.0`,
+      type: "assembly",
+      foreign: false,
+      axes: {
+        behaviour: {
+          "2": {
+            default: "netlist",
+            variants: {
+              netlist: {
+                kind: "composite",
+                omits: ["no snapshot of this assembly"],
+                netlist: {
+                  instances: {
+                    [scene.flagInstance]: { part: spec.flag },
+                    [scene.board]: {
+                      part: scene.boardPart,
+                      params: { firmware: spec.firmware, source: spec.source },
+                    },
+                    [scene.supplyInstance]: { part: scene.supplyPart },
+                    [scene.currentPart]: { part: spec.load },
+                  },
+                  wires: scene.wires,
+                  expose: {},
+                },
               },
-              "wires": [
-                ${wires}
-              ],
-              "expose": {}
-            }
-          }
-        }
-      }
-    },
-    "body": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["assembly adds no body"] } } } },
-    "visual": { "0": { "default": "none", "variants": { "none": { "kind": "none", "omits": ["assembly adds no visual"] } } } }
-  }
-}
-`
+            },
+          },
+        },
+        body: { "0": none("assembly adds no body") },
+        visual: { "0": none("assembly adds no visual") },
+      },
+    })
   );
   env.writeText(
     env.join(dir, `${name}.world.json`),
-    `{
-  "version": 2,
-  "environment": { "ground": { "plane": true }, "gravity": [0, 0, -9.81] },
-  "run": { "seed": 1, "levels": { ${levels} } },
-  "root": { "id": "scene", "part": "sfab/${name}-scene@1.0.0" }
-}
-`
+    jsonText({
+      version: 2,
+      environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
+      run: { seed: 1, levels },
+      root: { id: "scene", part: `sfab/${name}-scene@1.0.0` },
+    })
   );
 }
