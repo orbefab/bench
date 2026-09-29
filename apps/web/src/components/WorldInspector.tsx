@@ -43,6 +43,7 @@ import {
 import { findViewNode } from "@/lib/world-tree";
 import {
   documentWarnings,
+  inspectorBodyClass,
   instanceWarnings,
   type PathWarning,
   warningsFromRun,
@@ -653,7 +654,7 @@ function WarningList({ rows }: { rows: readonly PathWarning[] }) {
       {rows.map((row) => (
         <p
           key={`${row.code ?? ""}:${row.message}`}
-          className="mb-1.5 break-words text-[12px]"
+          className="mb-1.5 min-w-0 break-words text-[12px]"
         >
           {row.message}
         </p>
@@ -1026,7 +1027,7 @@ export function WorldInspector() {
           </Button>
         ) : null}
       </header>
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div className={inspectorBodyClass}>
         {playhead !== null ? (
           <p className="mb-2 text-[11px] text-muted-foreground">
             Recorded at {formatSimTime(playhead)}

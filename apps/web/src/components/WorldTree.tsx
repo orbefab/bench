@@ -1,6 +1,6 @@
 import type { WorldViewNode } from "@sfab-bench/contract";
 import { CircleAlert } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { fileLabel } from "@/cad/loadCadReview";
 import {
@@ -23,12 +23,7 @@ import { confirmActions, confirmLines } from "@/lib/world-confirm";
 import { instanceEditTarget, wireEditTarget } from "@/lib/world-edit-target";
 import { historyButtons } from "@/lib/world-history";
 import { editorKeyAction } from "@/lib/world-keys";
-import {
-  findViewNode,
-  initialCollapsed,
-  revealCollapsed,
-  treeRows,
-} from "@/lib/world-tree";
+import { findViewNode, nextCollapse, treeRows } from "@/lib/world-tree";
 import {
   instanceWarningMap,
   warnedPaths,
@@ -214,10 +209,6 @@ export function WorldTree() {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [seededPath, setSeededPath] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  if (tree && path && seededPath !== path) {
-    setSeededPath(path);
-    setCollapsed(initialCollapsed(tree.nodes));
-  }
   const grouped = useMemo(
     () => instanceWarningMap(warningsFromRun(report, diagnostics)),
     [report, diagnostics]
@@ -227,14 +218,23 @@ export function WorldTree() {
     () => (tree ? treeRows(tree.nodes, warnings, collapsed) : []),
     [tree, warnings, collapsed]
   );
-  useEffect(() => {
-    if (!tree) return;
-    const target = wire ? wire.owner : selection?.path;
-    if (!target) return;
-    setCollapsed((current) =>
-      revealCollapsed(current, tree.nodes, target, wire ? "wire" : "instance")
-    );
-  }, [tree, selection?.path, wire]);
+  useLayoutEffect(() => {
+    if (!tree || !path) return;
+    const target = wire ? wire.owner : (selection?.path ?? null);
+    const kind = wire ? "wire" : "instance";
+    setCollapsed((current) => {
+      const step = nextCollapse({
+        collapsed: current,
+        nodes: tree.nodes,
+        documentPath: path,
+        seededPath,
+        target,
+        kind,
+      });
+      return step.wrote ? step.collapsed : current;
+    });
+    if (seededPath !== path) setSeededPath(path);
+  }, [tree, path, seededPath, selection?.path, wire]);
   useEffect(() => {
     if (renameTick === 0) return;
     const path = worldStore.getState().selection?.path;

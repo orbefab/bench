@@ -106,13 +106,41 @@ export function revealCollapsed(
   nodes: readonly WorldViewNode[],
   path: string,
   kind: "instance" | "wire"
-): Set<string> {
+): ReadonlySet<string> {
   const ancestors = ancestorIds(nodes, path);
-  if (!ancestors) return new Set(collapsed);
+  if (!ancestors) return collapsed;
+  let changed = false;
   const next = new Set(collapsed);
-  for (const id of ancestors) next.delete(id);
-  if (kind === "wire") next.delete(path);
-  return next;
+  for (const id of ancestors) {
+    if (next.delete(id)) changed = true;
+  }
+  if (kind === "wire" && next.delete(path)) changed = true;
+  return changed ? next : collapsed;
+}
+
+/**
+ * One pass of the part-tree fold. Seeds only when the document path
+ * changes, then opens a selection. Returns the same set when neither
+ * changes, so a set-play reload does not write state.
+ */
+export function nextCollapse(input: {
+  collapsed: ReadonlySet<string>;
+  nodes: readonly WorldViewNode[];
+  documentPath: string;
+  seededPath: string | null;
+  target: string | null;
+  kind: "instance" | "wire";
+}): { collapsed: ReadonlySet<string>; seededPath: string; wrote: boolean } {
+  const seeding = input.seededPath !== input.documentPath;
+  const base = seeding ? initialCollapsed(input.nodes) : input.collapsed;
+  const collapsed = input.target
+    ? revealCollapsed(base, input.nodes, input.target, input.kind)
+    : base;
+  return {
+    collapsed,
+    seededPath: input.documentPath,
+    wrote: collapsed !== input.collapsed,
+  };
 }
 
 function ancestorIds(

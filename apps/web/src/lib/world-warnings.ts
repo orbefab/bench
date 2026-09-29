@@ -155,3 +155,10 @@ export function instanceWarningMap(
 export function warningText(rows: readonly PathWarning[]): string {
   return rows.map((row) => row.message).join("\n");
 }
+
+/**
+ * The open-part card scrolls. The gutter stays reserved so a document
+ * warning cannot show and hide the scrollbar and loop layout.
+ */
+export const inspectorBodyClass =
+  "min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3 [scrollbar-gutter:stable]";

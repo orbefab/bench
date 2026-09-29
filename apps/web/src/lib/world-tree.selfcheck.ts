@@ -102,5 +102,13 @@ expect(
     ),
   "selecting a nested part opens its ancestors"
 );
+expect(
+  revealCollapsed(revealed, tree, "scene.nano.led", "instance") === revealed,
+  "an already open path keeps the same collapsed set"
+);
+expect(
+  revealCollapsed(seeded, tree, "missing", "instance") === seeded,
+  "a missing path keeps the same collapsed set"
+);
 
 console.log("world-tree.selfcheck ok");

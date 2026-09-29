@@ -41,6 +41,36 @@ export function partKey(part?: string): string {
   return part ?? "";
 }
 
+export function sameHistory(a: HistoryModel, b: HistoryModel): boolean {
+  if (a === b) return true;
+  if (
+    a.undoOrder.length !== b.undoOrder.length ||
+    a.redoOrder.length !== b.redoOrder.length ||
+    a.parts.length !== b.parts.length
+  ) {
+    return false;
+  }
+  for (let i = 0; i < a.undoOrder.length; i++) {
+    if (a.undoOrder[i] !== b.undoOrder[i]) return false;
+  }
+  for (let i = 0; i < a.redoOrder.length; i++) {
+    if (a.redoOrder[i] !== b.redoOrder[i]) return false;
+  }
+  for (let i = 0; i < a.parts.length; i++) {
+    const left = a.parts[i];
+    const right = b.parts[i];
+    if (!left || !right) return false;
+    if (
+      partKey(left.part) !== partKey(right.part) ||
+      left.canUndo !== right.canUndo ||
+      left.canRedo !== right.canRedo
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function applyHistory(
   model: HistoryModel,
   answer: HistoryAnswer

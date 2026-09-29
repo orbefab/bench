@@ -21,6 +21,7 @@ import {
   type HistoryAnswer,
   type HistoryModel,
   refuseHistory,
+  sameHistory,
 } from "@/lib/world-history";
 import type { AssetIssue } from "@/lib/world-issues";
 import type { WorldOutline } from "@/lib/world-outline";
@@ -324,6 +325,7 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
   },
   setTree: (tree) => {
     const current = get();
+    if (current.tree === tree) return;
     const paths = tree ? viewPaths(tree.nodes) : null;
     const selection =
       paths === null
@@ -333,6 +335,18 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
     set({ tree, selection, wire });
   },
   setDiagnostics: (diagnostics) => {
+    const current = get().diagnostics;
+    if (
+      current.length === diagnostics.length &&
+      current.every(
+        (row, index) =>
+          row.path === diagnostics[index]?.path &&
+          row.code === diagnostics[index]?.code &&
+          row.message === diagnostics[index]?.message
+      )
+    ) {
+      return;
+    }
     set({ diagnostics });
   },
   setEditError: (message) => {
@@ -346,12 +360,17 @@ export const worldStore = createStore<WorldHudState>()((set, get) => ({
     set((state) => ({ renameTick: state.renameTick + 1 }));
   },
   applyHistory: (answer, label) => {
-    set({
-      history: applyHistory(get().history, answer),
-      editLabel: label,
-      editError: null,
-      confirm: null,
-    });
+    const history = applyHistory(get().history, answer);
+    const current = get();
+    if (
+      sameHistory(current.history, history) &&
+      current.editLabel === label &&
+      current.editError === null &&
+      current.confirm === null
+    ) {
+      return;
+    }
+    set({ history, editLabel: label, editError: null, confirm: null });
   },
   refuseHistory: (kind, part) => {
     set({ history: refuseHistory(get().history, kind, part) });
