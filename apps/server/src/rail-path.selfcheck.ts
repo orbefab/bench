@@ -36,7 +36,6 @@ function benchSim(): Sim {
     clear(handle) {
       clearTimeout(handle as ReturnType<typeof setTimeout>);
     },
-    ledTrace: false,
     sha256: sha256Bytes,
     versions: {
       mujoco: packageVersion("@mujoco/mujoco", import.meta.url),
@@ -267,7 +266,6 @@ function read(circuit: RailCircuit): string {
       clear(handle) {
         clearTimeout(handle as ReturnType<typeof setTimeout>);
       },
-      ledTrace: false,
       sha256: sha256Bytes,
       versions: {
         mujoco: packageVersion("@mujoco/mujoco", import.meta.url),
@@ -405,7 +403,6 @@ function read(circuit: RailCircuit): string {
       clear(handle) {
         clearTimeout(handle as ReturnType<typeof setTimeout>);
       },
-      ledTrace: false,
       sha256: sha256Bytes,
       versions: {
         mujoco: packageVersion("@mujoco/mujoco", import.meta.url),

@@ -84,7 +84,6 @@ export type SimHost = {
   now(): number;
   schedule(fn: () => void, ms: number): unknown;
   clear(handle: unknown): void;
-  ledTrace: boolean;
   sha256(bytes: Uint8Array): string;
   versions: { mujoco: string; avr8js: string };
   projectReal(project: string): string | null;
@@ -788,23 +787,6 @@ function createSession(host: SimHost) {
       rec.ledAmps[k] = frame
         ? (frame.leds[row.path] ?? 0)
         : (group?.circuit.leds[row.path] ?? 0);
-    }
-    if (
-      full &&
-      host.ledTrace &&
-      (worldRel.endsWith("nano-led.world.json") ||
-        worldRel.endsWith("nano-led@1.0.0.json"))
-    ) {
-      const supplyId = boardPower.get("nano")?.supplyId;
-      const frame = supplyId ? ledFrames.get(supplyId) : undefined;
-      const ms = simMs();
-      if (frame && ms <= 90) {
-        const end = frame.end.led ?? 0;
-        const mean = frame.leds.led ?? 0;
-        console.log(
-          `nano-led D9 t=${(ms / 1000).toFixed(3)} end ${(end * 1e3).toFixed(4)} mA mean ${(mean * 1e3).toFixed(4)} mA`
-        );
-      }
     }
   }
 

@@ -151,7 +151,6 @@ async function recorded(project: string, world: string, ms = SPAN_MS) {
     clear(handle) {
       clearTimeout(handle as ReturnType<typeof setTimeout>);
     },
-    ledTrace: false,
     sha256: sha256Bytes,
     versions: {
       mujoco: packageVersion("@mujoco/mujoco", import.meta.url),

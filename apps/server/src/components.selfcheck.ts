@@ -326,8 +326,6 @@ function servoPulseUs(angle: number): number {
 
 {
   const root = mkdtempSync(join(tmpdir(), "sfab-led-mean-"));
-  const previous = process.env.SFAB_LED_TRACE;
-  process.env.SFAB_LED_TRACE = "1";
   try {
     cpSync(nanoDir, root, { recursive: true });
     const read = await runLed(root, "parts/sfab/nano-led@1.0.0.json", 1500);
@@ -382,8 +380,6 @@ function servoPulseUs(angle: number): number {
       `D13 in that window ${(d13Min * 1e3).toFixed(4)}..${(d13Max * 1e3).toFixed(4)} mA`
     );
   } finally {
-    if (previous === undefined) delete process.env.SFAB_LED_TRACE;
-    else process.env.SFAB_LED_TRACE = previous;
     rmSync(root, { recursive: true, force: true });
   }
 }

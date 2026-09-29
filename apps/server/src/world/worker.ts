@@ -22,7 +22,6 @@ const sim = new Sim({
   clear(handle) {
     clearTimeout(handle as ReturnType<typeof setTimeout>);
   },
-  ledTrace: process.env.SFAB_LED_TRACE === "1",
   sha256: sha256Bytes,
   versions: {
     mujoco: packageVersion("@mujoco/mujoco", import.meta.url),
