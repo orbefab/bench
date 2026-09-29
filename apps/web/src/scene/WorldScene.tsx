@@ -42,7 +42,7 @@ import {
   warningText,
 } from "@/lib/world-warnings";
 import { invalidateSceneNow } from "@/scene/invalidate";
-import { WireLayer } from "@/scene/WorldPortMarkers";
+import { ProbeLayer, WireLayer } from "@/scene/WorldPortMarkers";
 import { WorldToolGizmo } from "@/scene/WorldToolGizmo";
 import { startBodyDrag } from "@/scene/world-body-drag";
 import { setWorldFitTarget } from "@/scene/world-fit";
@@ -838,6 +838,7 @@ export function WorldScene({
         })}
         <WarningCallouts />
         <WireLayer bodies={portBodies} />
+        <ProbeLayer bodies={portBodies} />
       </group>
       <WorldToolGizmo proxyRef={proxyRef} />
     </>

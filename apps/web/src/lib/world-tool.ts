@@ -4,7 +4,7 @@
  * touches the document. Probe joins as one more mode.
  */
 
-export type WorldToolMode = "select" | "move" | "rotate" | "wire";
+export type WorldToolMode = "select" | "move" | "rotate" | "wire" | "probe";
 
 export type WorldToolState = {
   mode: WorldToolMode;
@@ -71,9 +71,15 @@ export function isPoseTool(mode: WorldToolMode): boolean {
   return mode === "move" || mode === "rotate";
 }
 
+/** Wire and Probe draw the port markers, and a marker wins over a body there. */
+export function isPortTool(mode: WorldToolMode): boolean {
+  return mode === "wire" || mode === "probe";
+}
+
 export function toolLabel(mode: WorldToolMode): string {
   if (mode === "move") return "Move";
   if (mode === "rotate") return "Rotate";
   if (mode === "wire") return "Wire";
+  if (mode === "probe") return "Probe";
   return "Select";
 }

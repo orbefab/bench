@@ -1,4 +1,11 @@
-import { Cable, Home, MousePointer2, Move3d, Rotate3d } from "lucide-react";
+import {
+  Activity,
+  Cable,
+  Home,
+  MousePointer2,
+  Move3d,
+  Rotate3d,
+} from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
 import { RunPlayingDialog } from "@/components/RunPlayingDialog";
@@ -22,6 +29,7 @@ const TOOL_BUTTONS: readonly {
   { mode: "move", icon: Move3d },
   { mode: "rotate", icon: Rotate3d },
   { mode: "wire", icon: Cable },
+  { mode: "probe", icon: Activity },
 ];
 
 /** Why the selection cannot take a tool, or null when it can. */

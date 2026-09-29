@@ -1,5 +1,6 @@
 import { Html } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
+import { portProbeId } from "@sfab-bench/contract";
 import {
   type RefObject,
   useEffect,
@@ -15,11 +16,13 @@ import { type PortBody, type PortMarker, wireMarkers } from "@/lib/world-ports";
 import { isDimmed } from "@/lib/world-wire";
 import { PORT_MARKER_TAG } from "@/scene/world-pointer";
 import { useWorld } from "@/state/world";
+import { toggleProbePort, useProbes } from "@/state/world-probe";
 import { tapWirePort, useWorldTool } from "@/state/world-tool";
 
 const FREE = "#f59e0b";
 const WIRED = "#7c8b9c";
 const HELD = "#22c55e";
+const PROBED = "#0ea5e9";
 const HIT_MIN = 0.006;
 
 function markerLabel(marker: PortMarker): string {
@@ -40,11 +43,14 @@ function markerLabel(marker: PortMarker): string {
 export function PortMarkers({
   markers,
   held = null,
+  marked,
   dimmed,
   onPick,
 }: {
   markers: readonly PortMarker[];
   held?: string | null;
+  /** Refs drawn as probed. */
+  marked?: ReadonlySet<string>;
   dimmed?: (marker: PortMarker) => boolean;
   onPick: (ref: string) => void;
 }) {
@@ -60,8 +66,15 @@ export function PortMarkers({
       {markers.map((marker) => {
         const isHeld = held === marker.ref;
         const faded = dimmed?.(marker) ?? false;
-        const scale = isHeld ? 1.4 : marker.wired ? 0.7 : 1;
-        const color = isHeld ? HELD : marker.wired ? WIRED : FREE;
+        const probed = marked?.has(marker.ref) ?? false;
+        const scale = isHeld || probed ? 1.4 : marker.wired ? 0.7 : 1;
+        const color = isHeld
+          ? HELD
+          : probed
+            ? PROBED
+            : marker.wired
+              ? WIRED
+              : FREE;
         return (
           <group key={marker.ref} position={marker.position}>
             <mesh
@@ -111,6 +124,7 @@ export function PortMarkers({
               >
                 <div className="whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 text-[11px] text-card-foreground shadow">
                   {markerLabel(marker)}
+                  {probed ? " · probed" : ""}
                 </div>
               </Html>
             ) : null}
@@ -230,6 +244,47 @@ export function WireLayer({ bodies }: { bodies: readonly PortBody[] }) {
       {heldMarker ? (
         <RubberBand from={heldMarker.position} frame={frame} />
       ) : null}
+    </group>
+  );
+}
+
+/**
+ * The Probe tool's layer: the same markers, a click toggles the port on the
+ * timeline. Present only in Probe, and not in an XR session.
+ */
+export function ProbeLayer({ bodies }: { bodies: readonly PortBody[] }) {
+  const session = useXrSession();
+  const mode = useWorldTool((s) => s.mode);
+  const probes = useProbes();
+  const tree = useWorld((s) => s.tree);
+  const openDocument = useWorld((s) => s.path);
+  const markers = useMemo(
+    () => wireMarkers(tree, bodies, openDocument),
+    [tree, bodies, openDocument]
+  );
+  const marked = useMemo(
+    () =>
+      new Set(
+        markers
+          .filter((marker) =>
+            probes.includes(portProbeId(marker.instance, marker.name))
+          )
+          .map((marker) => marker.ref)
+      ),
+    [markers, probes]
+  );
+  if (session || mode !== "probe") return null;
+  return (
+    <group name="probe-layer">
+      <PortMarkers
+        markers={markers}
+        marked={marked}
+        onPick={(ref) => {
+          const marker = markers.find((item) => item.ref === ref);
+          if (marker)
+            toggleProbePort(portProbeId(marker.instance, marker.name));
+        }}
+      />
     </group>
   );
 }
