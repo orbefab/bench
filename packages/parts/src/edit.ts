@@ -29,6 +29,7 @@ import {
 
 import { environmentKind } from "./document";
 import { applyLevelEdit } from "./level-edit";
+import { class2BoardNetlist } from "./levels";
 import { makeDiag, parsePartRef, splitPortRef } from "./si";
 
 /** A refused edit: the diagnostic, and the detail its sentence was built from. */
@@ -1142,6 +1143,11 @@ function variantOn(
   );
 }
 
+/** What a path walks: the document netlist, else the class-2 firmware board's. */
+function pathNetlist(part: PartFile): Netlist | null {
+  return documentNetlist(part) ?? class2BoardNetlist(part);
+}
+
 /** The part a path rule names, after the loader's single-scene unwrap. */
 function partAtPath(
   root: PartFile,
@@ -1151,7 +1157,7 @@ function partAtPath(
   let current = scenePart(root, ctx);
   for (const seg of path.split(".")) {
     if (!seg) return { error: `no path "${path}"` };
-    const netlist = documentNetlist(current);
+    const netlist = pathNetlist(current);
     const inst = netlist?.instances[seg];
     if (!inst) return { error: `no path "${path}"` };
     const child = ctx.partById(inst.part);
@@ -1176,7 +1182,7 @@ function expandedParts(root: PartFile, ctx: EditContext): PartFile[] {
     if (seen.has(part.id)) return;
     seen.add(part.id);
     out.push(part);
-    const netlist = documentNetlist(part);
+    const netlist = pathNetlist(part);
     if (!netlist) return;
     for (const inst of Object.values(netlist.instances)) {
       const child = ctx.partById(inst.part);

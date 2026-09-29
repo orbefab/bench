@@ -88,6 +88,17 @@ const schemas = {
   undo: z.object({ type: z.literal("undo"), part: part.optional() }),
   redo: z.object({ type: z.literal("redo"), part: part.optional() }),
   histories: z.object({ type: z.literal("histories") }),
+  capture: z.object({
+    type: z.literal("capture"),
+    nonce,
+    path: z
+      .string({ error: "capture needs an instance path" })
+      .max(256, "capture needs an instance path"),
+    axis: z.enum(["behaviour", "body"], {
+      error: "capture axis must be behaviour or body",
+    }),
+  }),
+  "capture-abort": z.object({ type: z.literal("capture-abort"), nonce }),
   edit: z
     .object({
       type: z.literal("edit"),
@@ -146,7 +157,8 @@ function firstIssue(
 export type ParseFailure =
   | { error: string }
   | { error: string; refuses: "edit" | "undo" | "redo"; part?: string }
-  | { error: string; kind: "board"; board: string; nonce?: string };
+  | { error: string; kind: "board"; board: string; nonce?: string }
+  | { error: string; kind: "capture"; nonce: string };
 
 export function parseWorldClient(
   raw: string
@@ -178,6 +190,9 @@ export function parseWorldClient(
         : {}),
     };
   }
+  if (row.type === "capture" && nonce.safeParse(row.nonce).success) {
+    return { error, kind: "capture", nonce: row.nonce as string };
+  }
   if (row.type === "edit" || row.type === "undo" || row.type === "redo") {
     const partId = (value as { part?: unknown }).part;
     return {
@@ -205,6 +220,13 @@ export function editRefused(
 
 /** The reply to a message that did not parse. */
 export function parseFailureReply(failure: ParseFailure): WorldServerMessage {
+  if ("kind" in failure && failure.kind === "capture") {
+    return {
+      type: "capture-failed",
+      nonce: failure.nonce,
+      message: failure.error,
+    };
+  }
   if ("kind" in failure) {
     return {
       type: "board-error",

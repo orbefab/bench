@@ -347,7 +347,16 @@ export type WorldClientMessage =
   | { type: "undo"; part?: string }
   | { type: "redo"; part?: string }
   /** Undo flags for this document. Sent when a part tab connects. */
-  | { type: "histories" };
+  | { type: "histories" }
+  /**
+   * Capture the part at instance `path` on `axis`. Answered with
+   * `capture-progress`, then `captured` or `capture-failed`. One job per world.
+   */
+  | { type: "capture"; nonce: string; path: string; axis: CaptureAxisName }
+  | { type: "capture-abort"; nonce: string };
+
+/** The axes a capture recipe can fill. */
+export type CaptureAxisName = "behaviour" | "body";
 
 export type WorldServerMessage =
   | { type: "state"; state: WorldState; report?: RunReport }
@@ -462,7 +471,30 @@ export type WorldServerMessage =
       count: number;
       ports: { name: string; dependents: string[] }[];
       message: string;
-    };
+    }
+  /** A capture job is running. Only the client that asked hears it. */
+  | {
+      type: "capture-progress";
+      nonce: string;
+      done: number;
+      total: number;
+      label: string;
+    }
+  /**
+   * The capture landed as one edit (already announced as `edited`, so undo
+   * removes it). `ref` is the snapshot id; `variant` is the name on `level`.
+   */
+  | {
+      type: "captured";
+      nonce: string;
+      path: string;
+      axis: CaptureAxisName;
+      level: number;
+      variant: string;
+      ref: string;
+    }
+  /** Nothing was written. `message` is "aborted" when the client stopped it. */
+  | { type: "capture-failed"; nonce: string; message: string };
 
 /** One frame every 10 ms of sim time. The name is the unit. */
 export const RECORD_FRAME_MS = 10;

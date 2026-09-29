@@ -278,8 +278,9 @@ export function subscribeRootWatch(
  * Node 22 builds a recursive watch from one child watcher per subdirectory,
  * and `unref()` on the parent does not reach them.
  */
-export function closeRootWatches(): void {
-  for (const slot of live.values()) {
+export function closeRootWatches(only?: (root: string) => boolean): void {
+  for (const [root, slot] of live) {
+    if (only && !only(root)) continue;
     if (slot.watchTimer) clearTimeout(slot.watchTimer);
     slot.watchTimer = null;
     slot.watcher?.close();

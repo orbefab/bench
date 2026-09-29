@@ -147,7 +147,31 @@ export type CaptureRun = {
   outFile?: string;
   /** Default true when `config.cases` has scenes. */
   freeRun?: boolean;
+  /** Checked between steps; an aborted run throws `CaptureAborted`. */
+  signal?: { readonly aborted: boolean };
+  onStep?: (done: number, total: number, label: string) => void;
 };
+
+export class CaptureAborted extends Error {
+  constructor() {
+    super("aborted");
+  }
+}
+
+type Progress = { check(): void; step(label: string): void };
+
+function progressOf(opts: CaptureRun, total: number): Progress {
+  let done = 0;
+  return {
+    check() {
+      if (opts.signal?.aborted) throw new CaptureAborted();
+    },
+    step(label) {
+      done += 1;
+      opts.onStep?.(done, total, label);
+    },
+  };
+}
 
 export async function captureCatalog(
   env: CaptureEnv,
@@ -208,6 +232,8 @@ async function captureEntry(
   stampEnv: StampEnv
 ): Promise<CaptureStats> {
   if ((config as { form?: string }).form === "hinge@1") {
+    const hinge = progressOf(opts, 1);
+    hinge.check();
     await writeHingeSnapshot(
       {
         catalog,
@@ -219,6 +245,7 @@ async function captureEntry(
       },
       env
     );
+    hinge.step("hinge snapshot");
     return {
       staticMaxAbsMv: 0,
       lineMaxAbsMv: 0,
@@ -293,6 +320,8 @@ async function captureEntry(
   const runFree = opts.freeRun ?? scenes.length > 0;
   const outPath = opts.outFile ?? snapshotPath(catalog, config.id, env);
   if (!fixture) throw new Error(`${config.part} capture needs a fixture`);
+  const progress = progressOf(opts, 2 + (runFree ? scenes.length * 2 : 0));
+  progress.step(`fitted ${knots.length} knots over ${sweep.current.length} sweep points`);
   const shared = {
     law,
     fixture,
@@ -328,7 +357,9 @@ async function captureEntry(
       );
     }
     base.quality = lint.quality;
+    progress.check();
     const json = writeSnapshot(outPath, base, env);
+    progress.step("snapshot written");
     return {
       staticMaxAbsMv: staticMax * 1000,
       lineMaxAbsMv,
@@ -346,7 +377,7 @@ async function captureEntry(
     env
   );
   if (!config.freeRun) throw new Error(`${config.id} has no free-run scene`);
-  const free = await runScenes(scenes, config.freeRun, env);
+  const free = await runScenes(scenes, config.freeRun, env, progress);
   const worstAbs = Math.max(...free.cases.map((row) => row.maxAbsMv)) / 1000;
   const worstRms = Math.max(...free.cases.map((row) => row.rmsMv)) / 1000;
   const quantity = `${config.through}.voltage`;
@@ -388,7 +419,9 @@ async function captureEntry(
     throw new Error(`snapshot lint ${lint.quality}: ${text}`);
   }
   done.quality = lint.quality;
+  progress.check();
   const json = writeSnapshot(outPath, done, env);
+  progress.step("snapshot written");
   return {
     staticMaxAbsMv: staticMax * 1000,
     lineMaxAbsMv,
@@ -655,7 +688,8 @@ export function runClassScenes(
 async function runScenes(
   specs: readonly FreeScene[],
   scene: FreeRunSpec,
-  env: CaptureEnv
+  env: CaptureEnv,
+  progress?: Progress
 ): Promise<{
   cases: CaptureFreeRun[];
   moveUsPerMs: { class1: number; class2: number };
@@ -684,6 +718,7 @@ async function runScenes(
     for (const spec of specs) {
       writeScene(root, `${spec.name}-c1`, spec, 1, scene, env);
       writeScene(root, `${spec.name}-c2`, spec, 2, scene, env);
+      progress?.check();
       const t1 = host.now();
       const low = await runWorld(
         root,
@@ -692,6 +727,8 @@ async function runScenes(
         env
       );
       const wall1 = host.now() - t1;
+      progress?.step(`${spec.name}, class 1`);
+      progress?.check();
       const t2 = host.now();
       const high = await runWorld(
         root,
@@ -700,6 +737,7 @@ async function runScenes(
         env
       );
       const wall2 = host.now() - t2;
+      progress?.step(`${spec.name}, class 2`);
       if (spec.name === "move") {
         moveUsPerMs.class1 = (wall1 * 1000) / spec.ms;
         moveUsPerMs.class2 = (wall2 * 1000) / spec.ms;

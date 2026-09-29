@@ -10,6 +10,7 @@ import { WebSocketServer } from "ws";
 
 import { resolveUpgradePrincipal, runWithPrincipal } from "../principal";
 import { resolveRequestRoot } from "../projects";
+import { abortCapture, abortCaptureOf, startCapture } from "./capture-job";
 import { handleLiveEdit, historiesForConnect } from "./edit";
 import { attachWorld, type WorldHandle } from "./host";
 import { parseFailureReply, parseWorldClient } from "./live-message";
@@ -66,10 +67,12 @@ wss.on(
     let closed = false;
     ws.on("close", () => {
       closed = true;
+      abortCaptureOf(ws);
       handle?.detach();
     });
     ws.on("error", () => {
       closed = true;
+      abortCaptureOf(ws);
       handle?.detach();
     });
     // A rejected attach must not become an unhandled rejection: that would
@@ -128,6 +131,10 @@ wss.on(
             type: "histories",
             histories: historiesForConnect(project, world),
           });
+        } else if (parsed.type === "capture") {
+          startCapture(project, world, parsed, ws, (event) => send(ws, event));
+        } else if (parsed.type === "capture-abort") {
+          abortCapture(project, world, parsed.nonce);
         } else if (
           parsed.type === "edit" ||
           parsed.type === "undo" ||

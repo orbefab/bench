@@ -34,10 +34,23 @@ function benchVersions(): { version: string; mujoco: string; avr8js: string } {
   };
 }
 
+const isCaptureTemp = (root: string) => root.includes("sfab-capture-");
+
+/** `tempOnly`: a running server keeps the watches of the user's projects. */
+function runWorldIn(tempOnly: boolean) {
+  return (
+    project: string,
+    world: string,
+    ms: number
+  ): Promise<{ state: WorldState; read: RecordingRead }> =>
+    runWorld(project, world, ms, tempOnly);
+}
+
 async function runWorld(
   project: string,
   world: string,
-  ms: number
+  ms: number,
+  tempOnly = false
 ): Promise<{ state: WorldState; read: RecordingRead }> {
   const seen: { state: WorldState | null; failed: string | null } = {
     state: null,
@@ -78,7 +91,7 @@ async function runWorld(
   } finally {
     attached.detach();
     await stopWorld(project, world);
-    closeRootWatches();
+    closeRootWatches(tempOnly ? isCaptureTemp : undefined);
   }
 }
 
@@ -108,6 +121,11 @@ export const nodeCaptureEnv: CaptureEnv = {
   removeTree: (dir) => {
     rmSync(dir, { recursive: true, force: true });
   },
-  runWorld,
+  runWorld: runWorldIn(false),
   bench: benchVersions,
+};
+
+export const serverCaptureEnv: CaptureEnv = {
+  ...nodeCaptureEnv,
+  runWorld: runWorldIn(true),
 };
