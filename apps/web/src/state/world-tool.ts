@@ -15,15 +15,10 @@ import {
   type WorldToolMode,
   type WorldToolState,
 } from "@/lib/world-tool";
-import { type WireTap, wireCommit, wireStep } from "@/lib/world-wire";
 import { invalidateSceneNow } from "@/scene/invalidate";
 import { clearPreviews } from "@/scene/world-preview";
 import { worldStore } from "@/state/world";
-import {
-  commitEdit,
-  dropPendingEdit,
-  worldEditStore,
-} from "@/state/world-edit";
+import { commitEdit, dropPendingEdit } from "@/state/world-edit";
 
 export type ToolCommit = {
   ops: EditOp[];
@@ -33,17 +28,11 @@ export type ToolCommit = {
   previewPath?: string;
 };
 
-type WorldToolStore = WorldToolState & {
-  /** The first port of a wire, held until the second is picked. */
-  wireFrom: string | null;
-};
-
-export const worldToolStore = createStore<WorldToolStore>()(() => ({
+export const worldToolStore = createStore<WorldToolState>()(() => ({
   ...WORLD_TOOL_START,
-  wireFrom: null,
 }));
 
-export function useWorldTool<T>(selector: (state: WorldToolStore) => T): T {
+export function useWorldTool<T>(selector: (state: WorldToolState) => T): T {
   return useZustandStore(worldToolStore, selector);
 }
 
@@ -85,40 +74,6 @@ function cancelWorldGesture() {
   apply({ type: "end" });
 }
 
-function holdWire(ref: string) {
-  worldToolStore.setState({ wireFrom: ref });
-  beginToolGesture(() => worldToolStore.setState({ wireFrom: null }));
-}
-
-function dropWire() {
-  worldToolStore.setState({ wireFrom: null });
-  endToolGesture();
-}
-
-function stepWire(tap: WireTap) {
-  const state = worldToolStore.getState();
-  if (state.mode !== "wire" || worldEditStore.getState().pending) return;
-  const next = wireStep(state.wireFrom, tap);
-  if (next.hold !== state.wireFrom) {
-    if (next.hold === null) dropWire();
-    else holdWire(next.hold);
-  }
-  if (next.commit) {
-    commitToolEdit(wireCommit(next.commit, worldStore.getState().path));
-  }
-}
-
-/** A click on a port marker: the first port holds, the second commits. */
-export function tapWirePort(ref: string) {
-  stepWire({ type: "port", ref });
-}
-
-/** A click on anything that is not a port lets go of a held first port. */
-export function tapWireEmpty() {
-  if (worldToolStore.getState().wireFrom === null) return;
-  stepWire({ type: "empty" });
-}
-
 /** True when Esc was ours. The selection clear runs only when it was not. */
 export function escapeWorldTool(): boolean {
   const state = worldToolStore.getState();
@@ -150,12 +105,10 @@ function resetWorldTool() {
   clearPreviews();
 }
 
-// The canvas draws on demand: a new tool, or a held port let go, must ask
-// for a frame, or the markers and the rubber band stay on screen.
+// The canvas draws on demand: a new tool must ask for a frame, or the
+// previous tool's markers stay on screen.
 worldToolStore.subscribe((state, prev) => {
-  if (state.mode !== prev.mode || state.wireFrom !== prev.wireFrom) {
-    invalidateSceneNow();
-  }
+  if (state.mode !== prev.mode) invalidateSceneNow();
 });
 
 let watchedPath = worldStore.getState().path;

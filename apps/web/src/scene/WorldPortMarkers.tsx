@@ -17,7 +17,8 @@ import { isDimmed } from "@/lib/world-wire";
 import { PORT_MARKER_TAG } from "@/scene/world-pointer";
 import { useWorld } from "@/state/world";
 import { toggleProbePort, useProbes } from "@/state/world-probe";
-import { tapWirePort, useWorldTool } from "@/state/world-tool";
+import { useWorldTool } from "@/state/world-tool";
+import { tapWirePort, useWireHeld } from "@/state/world-wire";
 
 const FREE = "#f59e0b";
 const WIRED = "#7c8b9c";
@@ -219,7 +220,7 @@ function RubberBand({
 export function WireLayer({ bodies }: { bodies: readonly PortBody[] }) {
   const session = useXrSession();
   const mode = useWorldTool((s) => s.mode);
-  const held = useWorldTool((s) => s.wireFrom);
+  const held = useWireHeld();
   const tree = useWorld((s) => s.tree);
   const openDocument = useWorld((s) => s.path);
   const frame = useRef<THREE.Group>(null);

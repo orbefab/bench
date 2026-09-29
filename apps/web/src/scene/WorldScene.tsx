@@ -55,7 +55,8 @@ import {
   worldStore,
 } from "@/state/world";
 import { resetTimeline, worldViewPoses } from "@/state/world-timeline";
-import { tapWireEmpty, worldToolStore } from "@/state/world-tool";
+import { worldToolStore } from "@/state/world-tool";
+import { tapEmpty } from "@/state/world-tool-tap";
 import { useXrTheme } from "@/xr/ui/theme";
 
 const ROBOT_COLORS = [0xc4b8a5, 0x8fa3b0, 0xb7a0c4, 0xa3b59a, 0xc4a090];
@@ -351,7 +352,7 @@ function WarningCallouts() {
                 if (owner === "marker") return;
                 event.stopPropagation();
                 if (owner === "empty") {
-                  if (event.delta <= 2) tapWireEmpty();
+                  if (event.delta <= 2) tapEmpty();
                   return;
                 }
                 worldStore.getState().select({
@@ -622,7 +623,7 @@ export function WorldScene({
         if (owner === "marker") return;
         event.stopPropagation();
         if (event.delta > 2 || sessionRef.current) return;
-        tapWireEmpty();
+        tapEmpty();
         if (owner === "body") worldStore.getState().select(pick);
       },
       onPointerMove: hover,
@@ -643,7 +644,7 @@ export function WorldScene({
           if (rayOwner(event) === "marker") return;
           event.stopPropagation();
           if (event.delta > 2) return;
-          tapWireEmpty();
+          tapEmpty();
           worldStore.getState().select(null);
         },
         onPointerMove: (event: ThreeEvent<PointerEvent>) => {

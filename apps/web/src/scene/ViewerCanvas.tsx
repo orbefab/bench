@@ -24,7 +24,7 @@ import { prefsStore } from "@/state/prefs";
 import { sceneStore, useScene } from "@/state/scene";
 import { useViewer, viewerStore } from "@/state/viewer";
 import { useWorld, worldStore } from "@/state/world";
-import { tapWireEmpty } from "@/state/world-tool";
+import { tapEmpty } from "@/state/world-tool-tap";
 import { xrUiStore } from "@/state/xr";
 import { HandRig } from "@/xr/hands/HandRig";
 import { HandSkeletons } from "@/xr/hands/HandSkeleton";
@@ -193,7 +193,7 @@ export function ViewerCanvas() {
       onPointerMissed={() => {
         if (xrStore.getState().session) return;
         if (!worldStore.getState().path) return;
-        tapWireEmpty();
+        tapEmpty();
         if (!worldStore.getState().selection) return;
         worldStore.getState().select(null);
       }}
