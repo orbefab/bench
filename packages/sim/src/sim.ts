@@ -61,6 +61,7 @@ import {
   stepBrownout,
 } from "./power";
 import { type BoardPathName, chipFacts, railAttachment } from "./power-path";
+import { probeTracks } from "./probe";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
 import { motionRank, RunRecorder, timelineFromRead } from "./record";
@@ -131,7 +132,13 @@ export type RecordQuery =
       maxFrames?: number;
     }
   | { op: "frame"; t: number }
-  | { op: "timeline"; from: number; to: number; maxPoints: number }
+  | {
+      op: "timeline";
+      from: number;
+      to: number;
+      maxPoints: number;
+      tracks?: string[];
+    }
   | { op: "config"; boundMs?: number; enabled?: boolean }
   | { op: "adc" };
 
@@ -146,6 +153,7 @@ export type RecordBody =
       to: number;
       tracks: TimelineTrack[];
       markers: TimelineMarker[];
+      unrecorded?: string[];
     }
   | { op: "ack" }
   | { op: "adc"; trace: AdcTrace }
@@ -2937,13 +2945,29 @@ function createSession(host: SimHost) {
         maxFrames: query.maxPoints,
       });
       const built = timelineFromRead(read);
+      if (query.tracks === undefined) {
+        return {
+          op: "timeline",
+          id: info.id,
+          from: query.from,
+          to: query.to,
+          tracks: built.tracks,
+          markers: built.markers,
+        };
+      }
+      const shafts: Record<string, string> = {};
+      for (const load of loads) {
+        if (load.drive) shafts[load.partId] = load.drive.jointName;
+      }
+      const probed = probeTracks(read, query.tracks, { shafts });
       return {
         op: "timeline",
         id: info.id,
         from: query.from,
         to: query.to,
-        tracks: built.tracks,
+        tracks: [...built.tracks, ...probed.tracks],
         markers: built.markers,
+        unrecorded: probed.unrecorded,
       };
     }
     return {

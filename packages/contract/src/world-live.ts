@@ -317,7 +317,17 @@ export type WorldClientMessage =
   | { type: "step"; n: number }
   | { type: "serial-send"; board: string; text: string; nonce?: string }
   /** Overview series for this client's strip. Does not move the run. */
-  | { type: "timeline"; from: number; to: number; maxPoints: number }
+  | {
+      type: "timeline";
+      from: number;
+      to: number;
+      maxPoints: number;
+      /**
+       * Probed ports (`portProbeId`). The answer then also carries their
+       * port-level tracks. Absent means the answer is what it always was.
+       */
+      tracks?: string[];
+    }
   /** This client wants the recorded frame at `t`. Does not move the run. */
   | { type: "seek"; t: number; nonce: string }
   /**
@@ -374,6 +384,11 @@ export type WorldServerMessage =
       to: number;
       tracks: TimelineTrack[];
       markers: TimelineMarker[];
+      /**
+       * Present only when the request named ports: the probed ports with
+       * no recorded quantity at this level, as `portProbeId`s.
+       */
+      unrecorded?: string[];
     }
   /** The recorded frame for the client that sought. `frame` is null when `t` is gone. */
   | {
@@ -518,6 +533,36 @@ export function boardTrackId(id: string): string {
 }
 
 /**
+ * A probed port: the instance's run path and the port name. Run paths use
+ * dots, port names do not, so the last dot splits them.
+ */
+export function portProbeId(instance: string, port: string): string {
+  return `port:${instance}.${port}`;
+}
+
+export function parsePortProbeId(
+  id: string
+): { instance: string; port: string } | null {
+  if (!id.startsWith("port:")) return null;
+  const rest = id.slice("port:".length);
+  const dot = rest.lastIndexOf(".");
+  if (dot <= 0 || dot === rest.length - 1) return null;
+  return { instance: rest.slice(0, dot), port: rest.slice(dot + 1) };
+}
+
+/** One quantity of a probed port, for example `port:servo.V+~A`. */
+export function portTrackId(probe: string, unit: TimelineUnit): string {
+  return `${probe}~${unit}`;
+}
+
+/** The probe a port-level track id belongs to. */
+export function probeOfTrack(id: string): string | null {
+  const cut = id.lastIndexOf("~");
+  if (!id.startsWith("port:") || cut < 0) return null;
+  return id.slice(0, cut);
+}
+
+/**
  * One recorded instant. Joints are radians, like `WorldState`.
  * `minVoltage`, `maxCurrent`, `worst`, and `brownoutAny` cover the
  * window (t − frame, t], so a 1 ms dip is not lost between frames.
@@ -639,11 +684,16 @@ export type RecordingRead = {
   events: RecordingEvent[];
 };
 
+export type TimelineUnit = "deg" | "V" | "A" | "ms";
+
 /** One numeric series for the strip. `t` and `v` are the same length. */
 export type TimelineTrack = {
   id: string;
-  /** `deg` for a joint or a servo command, `V` for a supply terminal or a board's 5V node. */
-  unit: "deg" | "V";
+  /**
+   * `deg` for a joint or a servo command, `V` for a supply terminal, a board's
+   * 5V node or a pin level, `A` for a current, `ms` for a pulse or echo width.
+   */
+  unit: TimelineUnit;
   t: number[];
   /** Picked frame: joint degrees, volts at that port, or the command in degrees. */
   v: (number | null)[];

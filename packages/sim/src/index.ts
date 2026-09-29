@@ -115,6 +115,7 @@ export {
   unoUsbPathFor,
   usbPathFor,
 } from "./power-path";
+export { type ProbeIndex, probeTracks } from "./probe";
 export {
   createRailCircuit,
   type RailCircuit,

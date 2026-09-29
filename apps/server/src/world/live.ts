@@ -144,7 +144,16 @@ export function parseWorldClient(raw: string): ParsedClient {
     ) {
       return { error: "timeline needs a point count" };
     }
-    return { type: "timeline", from, to, maxPoints };
+    const tracks = (value as { tracks?: unknown }).tracks;
+    if (tracks === undefined) return { type: "timeline", from, to, maxPoints };
+    if (
+      !Array.isArray(tracks) ||
+      tracks.length > 64 ||
+      tracks.some((id) => typeof id !== "string" || id.length > 256)
+    ) {
+      return { error: "timeline tracks must be a short list of port ids" };
+    }
+    return { type: "timeline", from, to, maxPoints, tracks };
   }
   if (type === "seek") {
     const t = (value as { t?: unknown }).t;

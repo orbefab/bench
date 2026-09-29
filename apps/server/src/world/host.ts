@@ -94,6 +94,7 @@ export type WorldHandle = {
     from: number;
     to: number;
     maxPoints: number;
+    tracks?: string[];
   }) => Promise<
     Extract<WorldServerMessage, { type: "timeline-data" }> | { error: string }
   >;
@@ -1048,7 +1049,7 @@ async function seekDoc(
 
 async function timelineDoc(
   doc: Doc,
-  query: { from: number; to: number; maxPoints: number }
+  query: { from: number; to: number; maxPoints: number; tracks?: string[] }
 ): Promise<
   Extract<WorldServerMessage, { type: "timeline-data" }> | { error: string }
 > {
@@ -1058,6 +1059,7 @@ async function timelineDoc(
     from: query.from,
     to: query.to,
     maxPoints,
+    ...(query.tracks ? { tracks: query.tracks } : {}),
   });
   if (body.op === "error") return { error: body.message };
   if (body.op !== "timeline") return { error: "recording did not answer" };
@@ -1068,6 +1070,7 @@ async function timelineDoc(
     to: body.to,
     tracks: body.tracks,
     markers: body.markers,
+    ...(body.unrecorded ? { unrecorded: body.unrecorded } : {}),
   };
 }
 
