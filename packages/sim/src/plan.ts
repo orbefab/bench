@@ -488,6 +488,10 @@ function poseOf(inst: LiveInstance): Pose {
 }
 
 function cannot(inst: LiveInstance, detail: string, code = "idle"): Diagnostic {
+  const named =
+    inst.path === "$root"
+      ? `${shortName(inst.part.id)} sits idle: ${detail}`
+      : detail;
   return {
     severity: "degraded",
     code,
@@ -496,7 +500,7 @@ function cannot(inst: LiveInstance, detail: string, code = "idle"): Diagnostic {
     quantity: "Level",
     left: inst.axes.behaviour.label,
     right: "runnable",
-    message: `${inst.path} port behaviour quantity Level: ${detail} (${inst.axes.behaviour.label} vs runnable)`,
+    message: `${inst.path} port behaviour quantity Level: ${named} (${inst.axes.behaviour.label} vs runnable)`,
   };
 }
 
@@ -935,7 +939,14 @@ function build(
   // collapse of a gear train; form ranger@1. Anything else is a plan
   // error that names the path.
   for (const inst of loaded.resolved) {
-    if (inst.path === "$root") continue;
+    // A composite root is a shell. A leaf opened as the root is the
+    // instance: its body is planned, or it sits idle with a diagnostic.
+    if (
+      inst.path === "$root" &&
+      selectedBehaviour(inst)?.kind === "composite"
+    ) {
+      continue;
+    }
     const behaviour = selectedBehaviour(inst);
     if (behaviour?.kind === "composite") continue;
     const circuit = circuitInstOf(inst);

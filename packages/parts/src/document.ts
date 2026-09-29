@@ -326,7 +326,12 @@ export function runRootOf(
       slots.push({ id, part: inst.part, kind: "other", ...pose });
     }
   }
-  let stage: RunRoot["stage"] = { id: "root", part: part.id };
+  // A leaf opened as the root is that one instance. Its stage id is
+  // the part's short name, so the tree row is not called "root".
+  let stage: RunRoot["stage"] = {
+    id: netlist ? "root" : (parsePartRef(part.id)?.name ?? "root"),
+    part: part.id,
+  };
   let unwrapped = false;
   const only = rest.length === 1 ? rest[0] : undefined;
   if (only) {
