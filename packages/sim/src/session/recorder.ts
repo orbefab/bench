@@ -71,16 +71,19 @@ export function sample(s: SessionState): WorldState | null {
     const power = s.boardPower.get(board.id);
     const unpowered = !power?.supplyId;
     const node = power?.supplyId ? boardVolts(s, board.id) : 0;
-    const chip = s.specs.find((item) => item.id === board.id)?.chip;
+    const minVoltage = s.specs.find(
+      (item) => item.id === board.id
+    )?.minOperatingVoltage;
     const soa =
-      chip === "atmega328p" &&
+      minVoltage != null &&
       board.running &&
       !board.brownout &&
       !board.fault &&
       !unpowered
         ? atmega328pSoaWarning(
             node,
-            power?.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V
+            power?.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V,
+            minVoltage
           )
         : null;
     boardState[board.id] = {

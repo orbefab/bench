@@ -373,7 +373,9 @@ function resolveParams(
       ? parent[value.$param]
       : undefined;
     if (forwarded === undefined) {
-      unresolved.push({ path, param: name, ref: value.$param });
+      if (value.optional !== true) {
+        unresolved.push({ path, param: name, ref: value.$param });
+      }
       continue;
     }
     out[name] = forwarded;

@@ -194,14 +194,15 @@ export type WorldBoardWarning = {
  */
 export function atmega328pSoaWarning(
   voltage: number,
-  brownoutVoltage: number
+  brownoutVoltage: number,
+  minVoltage: number = ATMEGA328P_16MHZ_MIN_V
 ): WorldBoardWarning | null {
-  if (!(voltage > brownoutVoltage) || !(voltage < ATMEGA328P_16MHZ_MIN_V)) {
+  if (!(voltage > brownoutVoltage) || !(voltage < minVoltage)) {
     return null;
   }
   return {
     code: "below-16mhz-soa",
-    message: `supply ${voltage.toFixed(2)} V is below the 3.78 V the ATmega328P needs at 16 MHz; real boards may misbehave`,
+    message: `supply ${voltage.toFixed(2)} V is below the ${minVoltage.toFixed(2)} V the ATmega328P needs at 16 MHz; real boards may misbehave`,
   };
 }
 

@@ -285,21 +285,27 @@ export type Params = Record<string, number | string | boolean>;
 /**
  * A netlist child's param that reads the parent instance's param of that
  * name. The loader resolves it before the child is visited, so nothing
- * downstream of `resolveLevels` ever sees one.
+ * downstream of `resolveLevels` ever sees one. `optional` leaves the child
+ * param out, with no report, when the parent has none: a board that runs
+ * bare forwards its firmware this way.
  */
-export type ParamRef = { $param: string };
+export type ParamRef = { $param: string; optional?: true };
 
 /** `Params` as a netlist child may write them: values, or references. */
 export type NetlistParams = Record<string, Params[string] | ParamRef>;
 
 export function isParamRef(value: unknown): value is ParamRef {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as { $param?: unknown; optional?: unknown };
   const keys = Object.keys(value);
+  const shape =
+    keys.length === 1 ||
+    (keys.length === 2 && keys.includes("optional") && row.optional === true);
   return (
-    keys.length === 1 &&
-    keys[0] === "$param" &&
-    typeof (value as { $param: unknown }).$param === "string" &&
-    (value as { $param: string }).$param.length > 0
+    shape &&
+    typeof row.$param === "string" &&
+    row.$param.length > 0 &&
+    keys.includes("$param")
   );
 }
 
@@ -499,6 +505,18 @@ export type BehaviourImpl = { omits: string[] } & (
       boardCircuit?: string;
       /** Logic port the chip uses as reset. Absent, the rail has no reset node. */
       resetPort?: string;
+      /**
+       * The chip's electrical facts, as data on the chip part. The run reads
+       * them from the firmware variant it resolved. A firmware variant with
+       * no `railVoltage` or `resetFraction` is an unknown chip.
+       * `railVoltage`: volts, picks the board's power input.
+       * `resetFraction`: V_RST / VCC.
+       * `minOperatingVoltage`: volts. A running chip above its brownout level
+       * and below this is outside its specification at the part's clock.
+       */
+      railVoltage?: number;
+      resetFraction?: number;
+      minOperatingVoltage?: number;
       /**
        * Class-2 board. Child parts, wires, and expose from this
        * board's ports onto those children. The chip's pin drivers

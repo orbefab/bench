@@ -1,10 +1,6 @@
 /** Boards: boot, load, reload, flush, fault, serial, the ADC attachment, brownout, and one CPU step. */
 
-import {
-  ATMEGA328P_16MHZ_MIN_V,
-  arduinoPinBit,
-  type WorldSender,
-} from "@sfab-bench/contract";
+import { arduinoPinBit, type WorldSender } from "@sfab-bench/contract";
 import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   type AdcConversion,
@@ -16,7 +12,6 @@ import {
 import { analogRead } from "../analog-pin";
 import type { RunPlan } from "../plan";
 import { runningBrownout } from "../power";
-import { chipFacts } from "../power-path";
 import { applyGpioDrives, gpioInputNets, powerFeedsOf } from "../wiring";
 import { rearmRangers, rearmServos } from "./actuators";
 import { post, simMs, thrownMessage } from "./common";
@@ -33,11 +28,11 @@ import type { BoardSpec, SessionState } from "./state";
 export function boardInSoa(s: SessionState, board: AvrBoard): boolean {
   if (!board.running || board.brownout || board.fault) return false;
   const spec = s.specs.find((item) => item.id === board.id);
-  if (spec?.chip !== "atmega328p") return false;
+  if (spec?.minOperatingVoltage == null) return false;
   const power = s.boardPower.get(board.id);
   if (!power?.supplyId) return false;
   const voltage = boardVolts(s, board.id);
-  return voltage > power.brownoutVoltage && voltage < ATMEGA328P_16MHZ_MIN_V;
+  return voltage > power.brownoutVoltage && voltage < spec.minOperatingVoltage;
 }
 
 function flushBoards(s: SessionState) {
@@ -98,6 +93,7 @@ function boardSpecsOf(plan: RunPlan): BoardSpec[] {
     id: board.id,
     chip: board.chip,
     firmware: board.firmware,
+    minOperatingVoltage: board.minOperatingVoltage,
   }));
 }
 
@@ -107,7 +103,7 @@ function bootBoard(s: SessionState, spec: BoardSpec): AvrBoard {
   attachAnalog(s, board);
   // No supply: the CPU never starts. A later step does not boot it either.
   if (!s.boardPower.get(spec.id)?.supplyId) return board;
-  if (!chip || !chipFacts(spec.chip)) {
+  if (!chip) {
     board.stop(`unsupported chip "${spec.chip}"`);
     return board;
   }

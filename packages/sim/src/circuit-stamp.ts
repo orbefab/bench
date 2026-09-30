@@ -43,10 +43,10 @@ import {
   type TableLaw,
   tableLawOf,
 } from "@sfab-bench/parts";
-
+import { chipFactsOf } from "./chip-host";
 import type { StampEnv } from "./env";
 import { formAdapter, stampDiode } from "./forms";
-import { chipFacts, type RailFeed } from "./power-path";
+import type { RailFeed } from "./power-path";
 
 export const CIRCUIT_FORMS = [
   "resistor@1",
@@ -908,8 +908,7 @@ function stampOf(
     }
   }
   const behaviour = board.axes.behaviour.impl as BehaviourImpl | null;
-  const facts =
-    behaviour?.kind === "firmware" ? chipFacts(behaviour.chip) : null;
+  const facts = behaviour?.kind === "firmware" ? chipFactsOf(behaviour) : null;
   const ground = groundPorts(board.type.ports)[0];
   if (!ground) throw new Error(`${partId} has no ground port`);
   let powerPort: string | undefined;

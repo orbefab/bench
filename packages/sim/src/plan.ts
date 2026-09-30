@@ -39,7 +39,7 @@ import {
   type Wire,
   type WireEnd,
 } from "@sfab-bench/parts";
-
+import { boardHostOf, chipFactsOf } from "./chip-host";
 import {
   type AssignedPart,
   assignNodes,
@@ -57,7 +57,6 @@ import {
 import type { PlanEnv, StampEnv } from "./env";
 import { formAdapter } from "./forms";
 import { provenanceHash } from "./freshness";
-import { chipFacts } from "./power-path";
 import type { RangerLaw, RunRanger } from "./ranger";
 import { readTargets } from "./targets";
 import { runTree } from "./tree";
@@ -136,6 +135,15 @@ export type RunBoard = {
   boardCircuit: string | null;
   /** The selected variant has a board netlist. */
   hasNetlist: boolean;
+  /** Logic port the chip uses as reset. Null when the chip names none. */
+  resetPort: string | null;
+  /** V_RST / VCC, from the chip part. */
+  resetFraction: number;
+  /**
+   * Volts. A running chip above its brownout level and below this is outside
+   * its specification. Null when the chip part gives no such band.
+   */
+  minOperatingVoltage: number | null;
   /**
    * Circuit parts on this board's nets, including its board netlist.
    * Absent when there are none.
@@ -908,6 +916,7 @@ function build(
   // form dc-motor@1 with a lumped joint, a hinge@1 snapshot, or the
   // collapse of a gear train; form ranger@1. Anything else is a plan
   // error that names the path.
+  const byPath = new Map(loaded.resolved.map((item) => [item.path, item]));
   for (const inst of loaded.resolved) {
     // A composite root is a shell. A leaf opened as the root is the
     // instance: its body is planned, or it sits idle with a diagnostic.
@@ -949,23 +958,26 @@ function build(
       continue;
     }
     if (behaviour?.kind === "firmware") {
+      // `inst` is the chip that holds the image. `host` is the board it runs
+      // as: the parent composite when this chip is a child of one, else itself.
+      const host = boardHostOf(inst, byPath, ROOT_PATH);
       const boardCircuit = behaviour.boardCircuit ?? null;
       const pathName = pathRefOf(boardCircuit);
       if (boardCircuit !== null && pathName !== "uno-usb") {
-        diags.push(cannot(inst, `unknown board circuit ${boardCircuit}`));
+        diags.push(cannot(host, `unknown board circuit ${boardCircuit}`));
         continue;
       }
-      const facts = chipFacts(behaviour.chip);
+      const facts = chipFactsOf(behaviour);
       if (!facts) {
         diags.push(
-          cannot(inst, `unknown chip "${behaviour.chip}"`, "unsupported")
+          cannot(host, `unknown chip "${behaviour.chip}"`, "unsupported")
         );
         continue;
       }
       const alias = pathName === "uno-usb" && behaviour.board === undefined;
       if (alias && !class2BoardNetlist(inst.part)) {
         diags.push(
-          cannot(inst, `${inst.part.id} has no board netlist for path:uno-usb`)
+          cannot(host, `${inst.part.id} has no board netlist for path:uno-usb`)
         );
         continue;
       }
@@ -975,48 +987,58 @@ function build(
         : undefined;
       if (typeof image !== "string") {
         diags.push(
-          cannot(inst, "the board has no firmware image", "missing-file")
+          cannot(host, "the board has no firmware image", "missing-file")
         );
         continue;
       }
-      const visual = inst.axes.visual.impl as VisualImpl | null;
+      const visual = host.axes.visual.impl as VisualImpl | null;
       const size =
         visual?.kind === "box"
           ? ([...visual.size] as [number, number, number])
           : ([0, 0, 0] as [number, number, number]);
-      const powerName = chosenPowerPort(inst, loaded, facts.railVoltage);
+      const powerName = chosenPowerPort(host, loaded, facts.railVoltage);
       if (!powerName) {
-        diags.push(cannot(inst, "the board has no power input"));
+        diags.push(cannot(host, "the board has no power input"));
         continue;
       }
-      const groundName = groundPorts(inst.type.ports)[0];
+      const groundName = groundPorts(host.type.ports)[0];
       if (!groundName) {
-        diags.push(cannot(inst, "the board has no ground port"));
+        diags.push(cannot(host, "the board has no ground port"));
         continue;
       }
-      const rail = rangePair(inst.type.ports[powerName]?.ratings?.voltage) ?? [
+      const rail = rangePair(host.type.ports[powerName]?.ratings?.voltage) ?? [
         facts.railVoltage,
         facts.railVoltage,
       ];
       const source = inst.params.source;
+      // The board's own load rides on the chip instance: it counts the parts
+      // the chip part does not carry (the USB bridge, the power LED).
+      const quiescent =
+        typeof inst.params.quiescent === "number"
+          ? inst.params.quiescent
+          : params.quiescent;
       boards.push({
-        id: inst.path,
-        type: typeId,
+        id: host.path,
+        type: host.type.id,
         chip: behaviour.chip,
         firmware: worldRelative(assetRoot, worldDir, image, env),
         ...(typeof source === "string"
           ? { source: worldRelative(assetRoot, worldDir, source, env) }
           : {}),
-        pose: poseOf(inst),
+        pose: poseOf(host),
         size,
-        pins: pinsOf(inst.type.ports),
+        pins: pinsOf(host.type.ports),
         powerInputs: [powerName],
         vinFeed: false,
         voltagePin: powerName,
         groundPin: groundName,
-        current: params.quiescent ?? 0,
+        current: quiescent ?? 0,
         boardCircuit,
-        hasNetlist: behaviour.board !== undefined || alias,
+        hasNetlist:
+          behaviour.board !== undefined || alias || host.path !== inst.path,
+        resetPort: behaviour.resetPort ?? null,
+        resetFraction: facts.resetFraction,
+        minOperatingVoltage: facts.minOperatingVoltage,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
           params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,
@@ -1285,19 +1307,15 @@ function build(
   for (const board of boards) {
     const inst = loaded.resolved.find((item) => item.path === board.id);
     if (!inst) continue;
-    const behaviour = inst ? selectedBehaviour(inst) : null;
-    const facts =
-      behaviour?.kind === "firmware" ? chipFacts(behaviour.chip) : null;
     const stamp = stampBoard({
       boardId: board.id,
       netlist: board.hasNetlist,
       ports: inst.type.ports,
       supplyGround: supplyGround(board, supplies, loaded.nets),
       powerPort: board.voltagePin,
-      resetPort:
-        behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null,
+      resetPort: board.resetPort,
       usbPort: connectorPort(inst.type.ports, "usb"),
-      resetFraction: facts?.resetFraction ?? null,
+      resetFraction: board.resetFraction,
       parts: stampParts.filter((part) => {
         const hit = owners.get(part.path) ?? [];
         if (hit.length >= 2) return false;

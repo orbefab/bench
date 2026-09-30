@@ -39,7 +39,13 @@ import type { RunPlan } from "../plan";
 import type { RunRecorder } from "../record";
 import { SeamLedger } from "../seams";
 
-export type BoardSpec = { id: string; chip: string; firmware: string };
+export type BoardSpec = {
+  id: string;
+  chip: string;
+  firmware: string;
+  /** The chip part's SOA band floor, volts. Null: no band. */
+  minOperatingVoltage: number | null;
+};
 
 export type ServoDrive = {
   /**

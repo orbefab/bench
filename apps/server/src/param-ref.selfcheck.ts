@@ -371,5 +371,11 @@ const partById = (id: string) => byId.get(id) ?? null;
   );
 }
 
+// `optional` is a ref that stays quiet when the parent has no such param.
+expect(isParamRef({ $param: "image", optional: true }), "optional ref");
+expect(!isParamRef({ $param: "image", optional: false }), "optional is true");
+expect(!isParamRef({ $param: "image", extra: 1 }), "no other keys");
+expect(!isParamRef({ optional: true }), "a name is required");
+
 rmSync(dir, { recursive: true, force: true });
 console.log("param-ref: forwards resolve, lint, and survive edits");

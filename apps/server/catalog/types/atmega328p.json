@@ -1,0 +1,111 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "atmega328p",
+  "plausible": {
+    "Voltage": [-1, 25],
+    "Current": [-0.5, 0.5]
+  },
+  "templates": [
+    {
+      "id": "PB{n}",
+      "n": [0, 7],
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "pwm": [1, 2, 3],
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": 1.5,
+          "vih": 3,
+          "vol": 0.9,
+          "voh": 4.2
+        }
+      }
+    },
+    {
+      "id": "PC{n}",
+      "n": [0, 6],
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "adc": true,
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": 1.5,
+          "vih": 3,
+          "vol": 0.9,
+          "voh": 4.2
+        }
+      }
+    },
+    {
+      "id": "PD{n}",
+      "n": [0, 7],
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "pwm": [3, 5, 6],
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": 1.5,
+          "vih": 3,
+          "vol": 0.9,
+          "voh": 4.2
+        }
+      }
+    }
+  ],
+  "ports": {
+    "VCC": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in",
+      "ratings": {
+        "voltage": [3.78, 5.5],
+        "absMaxVoltage": [0, 6]
+      }
+    },
+    "AVCC": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in",
+      "ratings": {
+        "voltage": [3.78, 5.5],
+        "absMaxVoltage": [0, 6]
+      }
+    },
+    "AREF": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "in",
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5]
+      }
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    },
+    "RESET": {
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "in",
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "logic": {
+          "vil": 1.5,
+          "vih": 3,
+          "vol": 0.9,
+          "voh": 4.2
+        }
+      }
+    }
+  }
+}

@@ -40,8 +40,8 @@ import {
   captureLevelFor,
   captureRecipeFor,
 } from "./capture-recipe";
+import { chipFactsOf } from "./chip-host";
 import { formAdapter } from "./forms";
-import { chipFacts } from "./power-path";
 
 const IDENTITY: Pose = {
   position: [0, 0, 0],
@@ -558,7 +558,7 @@ function behaviourRunnable(impl: BehaviourImpl): {
     return { runnable: true };
   }
   if (impl.kind === "firmware") {
-    if (!chipFacts(impl.chip)) {
+    if (!chipFactsOf(impl)) {
       return { runnable: false, reason: `unknown chip ${impl.chip}` };
     }
     return { runnable: true };

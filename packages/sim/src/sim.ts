@@ -9,7 +9,6 @@
  * stay direct so the millisecond loop does not grow a wrapper.
  */
 import {
-  ATMEGA328P_16MHZ_MIN_V,
   ATMEGA328P_BROWNOUT_V,
   arduinoPinBit,
   atmega328pSoaWarning,
@@ -66,7 +65,7 @@ import {
   runningBrownout,
   stepBrownout,
 } from "./power";
-import { type BoardPathName, chipFacts, railAttachment } from "./power-path";
+import { type BoardPathName, railAttachment } from "./power-path";
 import { probeTracks } from "./probe";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";
