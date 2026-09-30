@@ -1,8 +1,4 @@
-import {
-  arduinoPinMask,
-  type PinMode,
-  type WorldPinState,
-} from "@sfab-bench/contract";
+import type { PinMode, WorldPinState } from "@sfab-bench/contract";
 import {
   AVRIOPort,
   type AVRPortConfig,
@@ -64,9 +60,10 @@ export class AvrBoard {
   private usart: AVRUSART | null = null;
   /** Held so the port and timer hooks stay attached for the life of the CPU. */
   private peripherals: unknown[] = [];
-  private portB: AVRIOPort | null = null;
-  private portC: AVRIOPort | null = null;
-  private portD: AVRIOPort | null = null;
+  /** The CPU's GPIO ports by letter. Empty while the CPU is down. */
+  private ports = new Map<string, AVRIOPort>();
+  /** Wire bit to the port and index it reaches. Empty while the CPU is down. */
+  private slots: ({ port: AVRIOPort; index: number } | null)[] = [];
   /**
    * Bits that changed since the last `takePins`. Port listeners OR these
    * in; the state tick is the only place that reads the registers.
@@ -110,13 +107,23 @@ export class AvrBoard {
    */
   private analog: BoardAdcHooks | null = null;
 
+  /** Wire bit to the chip's own pin name, or null for a bit no pin reaches. */
+  private readonly wire: readonly (string | null)[];
+
   /**
    * `chip` comes from `chipSpec`. A chip the emulator does not know is
-   * null: the caller stops the board with its own message.
+   * null: the caller stops the board with its own message. `wire` says which
+   * chip pin each of the 20 wire bits reaches; the planner builds it from the
+   * board's `expose` table. The default is the Uno and Nano header.
    */
-  constructor(id: string, chip: ChipSpec | null) {
+  constructor(
+    id: string,
+    chip: ChipSpec | null,
+    wire: readonly (string | null)[] = ARDUINO_WIRE
+  ) {
     this.id = id;
     this.chip = chip;
+    this.wire = wire;
   }
 
   /** CPU clock, hertz. 0 on a board with no chip. */
@@ -157,9 +164,8 @@ export class AvrBoard {
     this.cpu = null;
     this.usart = null;
     this.peripherals = [];
-    this.portB = null;
-    this.portC = null;
-    this.portD = null;
+    this.ports = new Map();
+    this.slots = [];
     this.toggled = 0;
     this.riseAt.clear();
     this.pulses = [];
@@ -199,22 +205,29 @@ export class AvrBoard {
     }
     const cpu = new CPU(words, chip.sramBytes);
     chip.onCpu?.(cpu);
-    const portB = new AVRIOPort(cpu, portConfigOf(chip, "B"));
-    const portC = new AVRIOPort(cpu, portConfigOf(chip, "C"));
-    const portD = new AVRIOPort(cpu, portConfigOf(chip, "D"));
-    this.watchPort(portD, 0, 8);
-    this.watchPort(portB, 8, 6);
-    this.watchPort(portC, 14, 6);
-    this.portB = portB;
-    this.portC = portC;
-    this.portD = portD;
+    const ports = new Map<string, AVRIOPort>();
+    for (const letter of Object.keys(chip.ports)) {
+      ports.set(letter, new AVRIOPort(cpu, portConfigOf(chip, letter)));
+    }
+    const slots = this.wire.map((name) => {
+      const pin = name === null ? undefined : chip.pins[name];
+      const port = pin ? ports.get(pin.port) : undefined;
+      return pin && port ? { port, index: pin.bit } : null;
+    });
+    for (const port of ports.values()) {
+      const wired = new Map<number, number>();
+      slots.forEach((slot, bit) => {
+        if (slot?.port === port) wired.set(slot.index, bit);
+      });
+      this.watchPort(port, wired);
+    }
+    this.ports = ports;
+    this.slots = slots;
     this.toggled = 0;
     this.riseAt.clear();
     this.pulses = [];
     const peripherals: unknown[] = [
-      portB,
-      portC,
-      portD,
+      ...ports.values(),
       ...chip.timers.map((config) => new AVRTimer(cpu, config)),
     ];
     // The hook runs only when firmware writes ADCSRA, so a program that
@@ -250,9 +263,8 @@ export class AvrBoard {
     this.cpu = null;
     this.usart = null;
     this.peripherals = [];
-    this.portB = null;
-    this.portC = null;
-    this.portD = null;
+    this.ports = new Map();
+    this.slots = [];
     this.toggled = 0;
     this.riseAt.clear();
     this.pulses = [];
@@ -286,20 +298,23 @@ export class AvrBoard {
     const toggled = this.toggled;
     if (clear) this.toggled = 0;
     const cpu = this.cpu;
-    const portB = this.portB;
-    const portC = this.portC;
-    const portD = this.portD;
-    if (!cpu || !portB || !portC || !portD) {
+    if (!cpu || this.slots.length === 0) {
       return { ddr: 0, level: 0, toggled: 0 };
     }
-    const d = portRegs(cpu, portD);
-    const b = portRegs(cpu, portB);
-    const c = portRegs(cpu, portC);
-    return {
-      ddr: arduinoPinMask(d.ddr, b.ddr, c.ddr),
-      level: arduinoPinMask(d.level, b.level, c.level),
-      toggled,
-    };
+    const regs = new Map<AVRIOPort, { ddr: number; level: number }>();
+    let ddr = 0;
+    let level = 0;
+    this.slots.forEach((slot, bit) => {
+      if (!slot) return;
+      let row = regs.get(slot.port);
+      if (!row) {
+        row = portRegs(cpu, slot.port);
+        regs.set(slot.port, row);
+      }
+      if ((row.ddr >> slot.index) & 1) ddr |= 1 << bit;
+      if ((row.level >> slot.index) & 1) level |= 1 << bit;
+    });
+    return { ddr, level, toggled };
   }
 
   /**
@@ -321,22 +336,18 @@ export class AvrBoard {
   }
 
   /** OR changed pin bits. Runs only when avr8js already noticed a port write. */
-  private watchPort(port: AVRIOPort, shift: number, width: number) {
-    const mask = (1 << width) - 1;
+  private watchPort(port: AVRIOPort, wired: ReadonlyMap<number, number>) {
     port.addListener((value, oldValue) => {
       this.liveLevel.set(port, value);
-      const changed = (value ^ oldValue) & mask;
-      if (changed !== 0) {
-        this.toggled |= changed << shift;
-        this.noteEdges(changed, shift, value);
-        const cycles = this.cpu?.cycles;
+      const cycles = this.cpu?.cycles;
+      for (const [index, bit] of wired) {
+        if (((value ^ oldValue) & (1 << index)) === 0) continue;
+        const high = ((value >> index) & 1) === 1;
+        this.toggled |= 1 << bit;
+        this.noteEdge(bit, high);
         if (cycles !== undefined) {
-          for (let index = 0; index < width; index++) {
-            if ((changed & (1 << index)) === 0) continue;
-            const high = ((value >> index) & 1) === 1;
-            this.pinChanges.push({ bit: shift + index, high, cycle: cycles });
-            this.onEdge?.(shift + index, high, cycles);
-          }
+          this.pinChanges.push({ bit, high, cycle: cycles });
+          this.onEdge?.(bit, high, cycles);
         }
       }
       // A wired output is updated first, then this pin's pull-up, so
@@ -352,67 +363,42 @@ export class AvrBoard {
    */
   private applyInputLevels() {
     const cpu = this.cpu;
-    const portB = this.portB;
-    const portC = this.portC;
-    const portD = this.portD;
-    if (!cpu || !portB || !portC || !portD) return;
-    this.applyPort(portD, 0, 8);
-    this.applyPort(portB, 8, 6);
-    this.applyPort(portC, 14, 6);
-  }
-
-  private applyPort(port: AVRIOPort, shift: number, width: number) {
-    const cpu = this.cpu;
-    if (!cpu) return;
-    const ddr = cpu.data[port.portConfig.DDR] ?? 0;
-    const written = cpu.data[port.portConfig.PORT] ?? 0;
-    for (let index = 0; index < width; index++) {
+    if (!cpu || this.slots.length === 0) return;
+    this.slots.forEach((slot, bit) => {
+      if (!slot) return;
+      const { port, index } = slot;
       const mask = 1 << index;
-      if ((ddr & mask) !== 0) continue;
-      const external = this.driven[shift + index] ?? 0;
+      const ddr = cpu.data[port.portConfig.DDR] ?? 0;
+      if ((ddr & mask) !== 0) return;
+      const written = cpu.data[port.portConfig.PORT] ?? 0;
+      const external = this.driven[bit] ?? 0;
       const pullup = (written & mask) !== 0;
       const high = external === 2 ? true : external === 1 ? false : pullup;
       port.setPin(index, high);
-    }
+    });
   }
 
   private pinIndex(bit: number): { port: AVRIOPort; index: number } | null {
-    if (bit >= 0 && bit <= 7 && this.portD) {
-      return { port: this.portD, index: bit };
-    }
-    if (bit >= 8 && bit <= 13 && this.portB) {
-      return { port: this.portB, index: bit - 8 };
-    }
-    if (bit >= 14 && bit <= 19 && this.portC) {
-      return { port: this.portC, index: bit - 14 };
-    }
-    return null;
+    return this.slots[bit] ?? null;
   }
 
   /**
    * Pulse width is (fall − rise) cycles over the cycles in a microsecond
    * (16 at 16 MHz). Both edges use `cpu.cycles` at the port write.
    */
-  private noteEdges(changed: number, shift: number, value: number) {
+  private noteEdge(bit: number, high: boolean) {
     const cpu = this.cpu;
-    if (!cpu || this.edgeMask === 0) return;
-    const cyclesPerUs = this.hz / 1_000_000;
-    for (let index = 0; index < 8; index++) {
-      if ((changed & (1 << index)) === 0) continue;
-      const bit = shift + index;
-      if ((this.edgeMask & (1 << bit)) === 0) continue;
-      const now = (value >> index) & 1;
-      if (now === 1) {
-        this.riseAt.set(bit, cpu.cycles);
-        continue;
-      }
-      const rise = this.riseAt.get(bit);
-      this.riseAt.delete(bit);
-      if (rise === undefined) continue;
-      const us = (cpu.cycles - rise) / cyclesPerUs;
-      if (us < 0) continue;
-      this.pulses.push({ bit, us });
+    if (!cpu || (this.edgeMask & (1 << bit)) === 0) return;
+    if (high) {
+      this.riseAt.set(bit, cpu.cycles);
+      return;
     }
+    const rise = this.riseAt.get(bit);
+    this.riseAt.delete(bit);
+    if (rise === undefined) return;
+    const us = (cpu.cycles - rise) / (this.hz / 1_000_000);
+    if (us < 0) return;
+    this.pulses.push({ bit, us });
   }
 
   takeTx(): string {
@@ -558,6 +544,17 @@ export class AvrBoard {
     }
   }
 }
+
+/**
+ * The wire's 20 bits on an Arduino Uno or Nano: D0 to D7 on port D, D8 to D13
+ * on port B, A0 to A5 on port C. A board built from its `expose` table passes
+ * its own.
+ */
+export const ARDUINO_WIRE: readonly (string | null)[] = [
+  ...Array.from({ length: 8 }, (_, n) => `PD${n}`),
+  ...Array.from({ length: 6 }, (_, n) => `PB${n}`),
+  ...Array.from({ length: 6 }, (_, n) => `PC${n}`),
+];
 
 function portConfigOf(chip: ChipSpec, letter: string): AVRPortConfig {
   const config = chip.ports[letter];

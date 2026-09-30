@@ -70,37 +70,62 @@
         "default": "avr8js",
         "variants": {
           "avr8js": {
-            "kind": "firmware",
-            "chip": "atmega328p",
-            "resetPort": "RESET",
-            "imageParam": "firmware",
-            "params": {
-              "brownoutVoltage": 2.7,
-              "brownoutAssertVoltage": 2.675,
-              "brownoutReleaseVoltage": 2.725,
-              "resetHoldS": 0.066,
-              "quiescent": 0.0252,
-              "roh": 25.066666666666663,
-              "rol": 23.4,
-              "rpu": 35000,
-              "rLeak": 5000000
-            },
-            "fuses": {
-              "extended": "0xFD"
-            },
-            "board": {
+            "kind": "composite",
+            "netlist": {
               "instances": {
                 "power": {
                   "part": "sfab/nano-power-input@1.0.0",
-                  "level": { "behaviour": 1 }
+                  "level": {
+                    "behaviour": 1
+                  }
+                },
+                "mcu": {
+                  "part": "sfab/atmega328p@1.0.0",
+                  "params": {
+                    "firmware": {
+                      "$param": "firmware",
+                      "optional": true
+                    },
+                    "source": {
+                      "$param": "source",
+                      "optional": true
+                    },
+                    "quiescent": 0.0252
+                  }
                 }
               },
-              "wires": [],
+              "wires": [
+                ["power.5V", "mcu.VCC"],
+                ["power.5V", "mcu.AVCC"],
+                ["power.GND", "mcu.GND"]
+              ],
               "expose": {
                 "VBUS": "power.VBUS",
                 "5V": "power.5V",
                 "GND": "power.GND",
-                "VIN": "power.VIN"
+                "VIN": "power.VIN",
+                "D0": "mcu.PD0",
+                "D1": "mcu.PD1",
+                "D2": "mcu.PD2",
+                "D3": "mcu.PD3",
+                "D4": "mcu.PD4",
+                "D5": "mcu.PD5",
+                "D6": "mcu.PD6",
+                "D7": "mcu.PD7",
+                "D8": "mcu.PB0",
+                "D9": "mcu.PB1",
+                "D10": "mcu.PB2",
+                "D11": "mcu.PB3",
+                "D12": "mcu.PB4",
+                "D13": "mcu.PB5",
+                "A0": "mcu.PC0",
+                "A1": "mcu.PC1",
+                "A2": "mcu.PC2",
+                "A3": "mcu.PC3",
+                "A4": "mcu.PC4",
+                "A5": "mcu.PC5",
+                "A6": "mcu.ADC6",
+                "A7": "mcu.ADC7"
               }
             },
             "omits": [
@@ -120,6 +145,9 @@
             "chip": "atmega328p",
             "resetPort": "RESET",
             "imageParam": "firmware",
+            "railVoltage": 5,
+            "resetFraction": 0.9,
+            "minOperatingVoltage": 3.78,
             "params": {
               "brownoutVoltage": 2.7,
               "brownoutAssertVoltage": 2.675,
@@ -154,25 +182,8 @@
         "default": "circuits",
         "variants": {
           "circuits": {
-            "kind": "firmware",
-            "chip": "atmega328p",
-            "resetPort": "RESET",
-            "imageParam": "firmware",
-            "params": {
-              "brownoutVoltage": 2.7,
-              "brownoutAssertVoltage": 2.675,
-              "brownoutReleaseVoltage": 2.725,
-              "resetHoldS": 0.066,
-              "quiescent": 0.0252,
-              "roh": 25.066666666666663,
-              "rol": 23.4,
-              "rpu": 35000,
-              "rLeak": 5000000
-            },
-            "fuses": {
-              "extended": "0xFD"
-            },
-            "board": {
+            "kind": "composite",
+            "netlist": {
               "instances": {
                 "power": {
                   "part": "sfab/nano-power-input@1.0.0"
@@ -209,6 +220,20 @@
                 },
                 "led": {
                   "part": "sfab/led-red@1.0.0"
+                },
+                "mcu": {
+                  "part": "sfab/atmega328p@1.0.0",
+                  "params": {
+                    "firmware": {
+                      "$param": "firmware",
+                      "optional": true
+                    },
+                    "source": {
+                      "$param": "source",
+                      "optional": true
+                    },
+                    "quiescent": 0.0252
+                  }
                 }
               },
               "wires": [
@@ -220,15 +245,41 @@
                 ["power.GND", "cavcc.B"],
                 ["power.GND", "led.K"],
                 ["rrst.B", "crst.B"],
-                ["rled.B", "led.A"]
+                ["rled.B", "led.A"],
+                ["power.5V", "mcu.VCC"],
+                ["power.5V", "mcu.AVCC"],
+                ["power.GND", "mcu.GND"],
+                ["mcu.PB5", "rled.A"],
+                ["mcu.RESET", "rrst.B"]
               ],
               "expose": {
                 "VBUS": "power.VBUS",
                 "5V": "power.5V",
                 "GND": "power.GND",
                 "VIN": "power.VIN",
-                "RESET": "rrst.B",
-                "D13": "rled.A"
+                "D0": "mcu.PD0",
+                "D1": "mcu.PD1",
+                "D2": "mcu.PD2",
+                "D3": "mcu.PD3",
+                "D4": "mcu.PD4",
+                "D5": "mcu.PD5",
+                "D6": "mcu.PD6",
+                "D7": "mcu.PD7",
+                "D8": "mcu.PB0",
+                "D9": "mcu.PB1",
+                "D10": "mcu.PB2",
+                "D11": "mcu.PB3",
+                "D12": "mcu.PB4",
+                "D13": "mcu.PB5",
+                "A0": "mcu.PC0",
+                "A1": "mcu.PC1",
+                "A2": "mcu.PC2",
+                "A3": "mcu.PC3",
+                "A4": "mcu.PC4",
+                "A5": "mcu.PC5",
+                "A6": "mcu.ADC6",
+                "A7": "mcu.ADC7",
+                "RESET": "mcu.RESET"
               }
             },
             "omits": [

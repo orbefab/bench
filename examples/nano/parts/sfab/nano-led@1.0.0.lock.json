@@ -9,6 +9,13 @@
       "version": "1.0.0"
     },
     {
+      "id": "sfab/atmega328p@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/atmega328p@1.0.0.json",
+      "sha256": "6f4c69363ab62bd12f251f25da4826ba9d7c19bd58475ac8bf6b2509f278820b",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
       "id": "sfab/capacitor@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/capacitor@1.0.0.json",
       "sha256": "4cd09ef3beba925f97d238c6078aec4b927cc94621011cb534bb313140b60e8e",
@@ -39,7 +46,7 @@
     {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "6c76c5ea91412d0d4ea16ccdd2e90ed18eb62903bf91d165e2202536b5eef063",
+      "sha256": "515209eb63e8be235db59e049dfa528dad0f8f59ea61ed9d69b0fbf23823c8ab",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -90,6 +97,12 @@
       "id": "assembly",
       "path": "../../apps/server/catalog/types/assembly.json",
       "sha256": "d3d12a01bb5564827caab4bf45b624199124264c89dc582d46f4775b83a34c41",
+      "source": "catalog"
+    },
+    {
+      "id": "atmega328p",
+      "path": "../../apps/server/catalog/types/atmega328p.json",
+      "sha256": "557592500146c6bb6c1296efcc81c224456b5cbc7a3e28284f539d040b35f5df",
       "source": "catalog"
     },
     {

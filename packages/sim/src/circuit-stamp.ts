@@ -43,7 +43,7 @@ import {
   type TableLaw,
   tableLawOf,
 } from "@sfab-bench/parts";
-import { chipFactsOf } from "./chip-host";
+import { boardHostOf, chipFactsOf } from "./chip-host";
 import type { StampEnv } from "./env";
 import { formAdapter, stampDiode } from "./forms";
 import type { RailFeed } from "./power-path";
@@ -805,9 +805,6 @@ function stampOf(
   const loaded = parts.get(partId);
   if (!loaded) throw new Error(`${partId} did not load`);
   const slot = variantSlot(loaded.part, variant);
-  if (firmwareOnly && slot.kind !== "firmware") {
-    throw new Error(`${partId} variant ${variant} is not a firmware board`);
-  }
   const classKey = slot.key;
   const part = structuredClone(loaded.part);
   const chosen = part.axes?.behaviour?.[classKey];
@@ -891,6 +888,19 @@ function stampOf(
         : `${partId} variant ${variant} is not a circuit assembly`
     );
   }
+  // A composite that holds a firmware chip is a firmware board: the chip
+  // carries the image, the reset pin and the electrical facts.
+  const byPath = new Map(instances.map((inst) => [inst.path, inst]));
+  const chip = instances.find(
+    (inst) =>
+      inst.path !== boardId &&
+      (inst.axes.behaviour.impl as BehaviourImpl | null)?.kind === "firmware" &&
+      boardHostOf(inst, byPath, ROOT_PATH) === board
+  );
+  const isFirmware = slot.kind === "firmware" || chip !== undefined;
+  if (firmwareOnly && !isFirmware) {
+    throw new Error(`${partId} variant ${variant} is not a firmware board`);
+  }
   const circuitParts: CircuitInst[] = [];
   for (const inst of instances) {
     const row =
@@ -902,18 +912,18 @@ function stampOf(
     for (const inst of instances) {
       if (inst.path === ROOT_PATH || inst.path === boardId) continue;
       const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
-      if (behaviour?.kind === "composite") continue;
+      if (behaviour?.kind === "composite" || inst === chip) continue;
       if (circuitParts.some((part) => part.path === inst.path)) continue;
       throw new Error(`${partId}: ${inst.path} is not a circuit leaf`);
     }
   }
-  const behaviour = board.axes.behaviour.impl as BehaviourImpl | null;
+  const behaviour = (chip ?? board).axes.behaviour.impl as BehaviourImpl | null;
   const facts = behaviour?.kind === "firmware" ? chipFactsOf(behaviour) : null;
   const ground = groundPorts(board.type.ports)[0];
   if (!ground) throw new Error(`${partId} has no ground port`);
   let powerPort: string | undefined;
   let resetFraction: number | null = null;
-  if (slot.kind === "firmware") {
+  if (isFirmware) {
     if (!facts) throw new Error(`${partId} has no chip rail`);
     powerPort = railPowerPorts(board.type.ports, facts.railVoltage)[0];
     resetFraction = facts.resetFraction;
@@ -934,7 +944,7 @@ function stampOf(
     behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
   const stamp = stampBoard({
     boardId,
-    netlist: slot.kind === "firmware",
+    netlist: isFirmware,
     ports: board.type.ports,
     supplyGround: `${boardId}.${ground}`,
     powerPort,

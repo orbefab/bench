@@ -88,6 +88,24 @@
         "absMaxVoltage": [-0.5, 5.5]
       }
     },
+    "ADC6": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "in",
+      "adc": true,
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5]
+      }
+    },
+    "ADC7": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "in",
+      "adc": true,
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5]
+      }
+    },
     "GND": {
       "domain": "electrical",
       "role": "ground",

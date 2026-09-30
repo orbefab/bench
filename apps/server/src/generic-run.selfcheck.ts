@@ -237,31 +237,15 @@ function nestedNano(dir: string): void {
   ) as PartFile;
   const slot = nano.axes?.behaviour?.["2"];
   const circuits = slot?.variants.circuits;
-  if (!circuits || circuits.kind !== "firmware" || !circuits.board) {
+  if (!circuits || circuits.kind !== "composite") {
     throw new Error("catalog nano has no class-2 board");
   }
-  const board = circuits.board;
+  const board = circuits.netlist;
   delete board.instances.s4;
   delete board.instances.c106;
   board.instances.power = { part: "sfab/nano-power@1.0.0" };
-  board.wires = [
-    ["power.5V", "cvcc.A"],
-    ["power.5V", "cavcc.A"],
-    ["power.5V", "rrst.A"],
-    ["power.5V", "crst.A"],
-    ["power.GND", "cvcc.B"],
-    ["power.GND", "cavcc.B"],
-    ["power.GND", "led.K"],
-    ["rrst.B", "crst.B"],
-    ["rled.B", "led.A"],
-  ];
-  board.expose = {
-    VBUS: "power.VBUS",
-    "5V": "power.5V",
-    GND: "power.GND",
-    RESET: "rrst.B",
-    D13: "rled.A",
-  };
+  // The shell has no VIN port.
+  delete board.expose.VIN;
   writeJson(join(dir, "parts", "sfab", "nano-ch340@1.0.0.json"), nano);
   writeJson(join(dir, "types", "nano-power.json"), {
     format: "sfab.part-type@1",

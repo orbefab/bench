@@ -11,6 +11,7 @@ import {
   ROOT_PATH,
 } from "@sfab-bench/contract";
 
+import { boardHostOf } from "./board-host";
 import { behaviourNetlist, type LiveInstance } from "./levels";
 import { collectPartPorts, type PortWorld } from "./ports";
 import { makeDiag, splitPortRef } from "./si";
@@ -98,6 +99,19 @@ export function buildNets(
   const broken: Diagnostic[] = [];
   const world = portWorld(instances);
   const seen = new Set<string>();
+  // A firmware chip inside a board is the emulator's pins, not a circuit
+  // member: the board's parts and header ports make the nets, exactly as when
+  // the board was one part. The expose table still unions through it.
+  const byPath = new Map(instances.map((item) => [item.path, item]));
+  const hosted = new Set(
+    instances
+      .filter(
+        (item) =>
+          behaviourOf(item)?.kind === "firmware" &&
+          boardHostOf(item, byPath, ROOT_PATH) !== item
+      )
+      .map((item) => item.path)
+  );
 
   const locate = (parent: string, ref: string): WireEnd | null => {
     const split = splitPortRef(ref);
@@ -174,7 +188,9 @@ export function buildNets(
         continue;
       }
       const direct = ports.has(fa.full) && ports.has(fb.full);
-      if (direct) wires.push({ a: fa, b: fb });
+      if (direct && !hosted.has(fa.path) && !hosted.has(fb.path)) {
+        wires.push({ a: fa, b: fb });
+      }
       const fulls = [...left, ...right];
       for (let i = 1; i < fulls.length; i++) {
         const head = fulls[0];
@@ -186,6 +202,7 @@ export function buildNets(
 
   const groups = new Map<string, string[]>();
   for (const full of [...ports.keys()].sort()) {
+    if (hosted.has(ports.get(full)?.path ?? "")) continue;
     const root = uf.find(full);
     const list = groups.get(root);
     if (list) list.push(full);

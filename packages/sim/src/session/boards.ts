@@ -94,12 +94,13 @@ function boardSpecsOf(plan: RunPlan): BoardSpec[] {
     chip: board.chip,
     firmware: board.firmware,
     minOperatingVoltage: board.minOperatingVoltage,
+    ...(board.wire ? { wire: board.wire } : {}),
   }));
 }
 
 function bootBoard(s: SessionState, spec: BoardSpec): AvrBoard {
   const chip = chipSpec(spec.chip);
-  const board = new AvrBoard(spec.id, chip);
+  const board = new AvrBoard(spec.id, chip, spec.wire);
   attachAnalog(s, board);
   // No supply: the CPU never starts. A later step does not boot it either.
   if (!s.boardPower.get(spec.id)?.supplyId) return board;

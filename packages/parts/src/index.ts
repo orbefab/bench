@@ -1,4 +1,5 @@
 export { type BatteryParams, batteryFrom, ocvAt } from "./battery";
+export { boardHostOf, chipExposure } from "./board-host";
 export { nextCaptureRef } from "./capture-edit";
 export { comparatorFrom } from "./comparator";
 export { type ConvertedDocument, convertWorldFile } from "./convert";

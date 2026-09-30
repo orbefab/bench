@@ -398,7 +398,7 @@ function servoPulseUs(angle: number): number {
         "2": {
           variants: {
             circuits: {
-              board: {
+              netlist: {
                 instances: Record<
                   string,
                   { part: string; params?: { R: number } }
@@ -413,7 +413,7 @@ function servoPulseUs(angle: number): number {
   };
   const id = "sfab/nano-1n4148@1.0.0";
   part.id = id;
-  const board = part.axes.behaviour["2"].variants.circuits.board;
+  const board = part.axes.behaviour["2"].variants.circuits.netlist;
   const powerId = "sfab/nano-power-input-1n4148@1.0.0";
   const power = JSON.parse(
     readFileSync(

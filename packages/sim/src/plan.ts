@@ -39,7 +39,7 @@ import {
   type Wire,
   type WireEnd,
 } from "@sfab-bench/parts";
-import { boardHostOf, chipFactsOf } from "./chip-host";
+import { boardHostOf, chipExposure, chipFactsOf, wireOf } from "./chip-host";
 import {
   type AssignedPart,
   assignNodes,
@@ -139,6 +139,12 @@ export type RunBoard = {
   resetPort: string | null;
   /** V_RST / VCC, from the chip part. */
   resetFraction: number;
+  /**
+   * Wire bit to the chip pin the board's header port reaches through its
+   * `expose` table. Absent on a board that is its own chip: the default
+   * Arduino header applies.
+   */
+  wire?: (string | null)[];
   /**
    * Volts. A running chip above its brownout level and below this is outside
    * its specification. Null when the chip part gives no such band.
@@ -612,7 +618,8 @@ function rangePair(
 function digitalPeer(
   inst: LiveInstance,
   port: string,
-  loaded: LoadResult
+  loaded: LoadResult,
+  boardPaths: ReadonlySet<string>
 ): { boardId: string; bit: number } | null {
   for (const wire of loaded.wires) {
     const other =
@@ -622,12 +629,10 @@ function digitalPeer(
           ? wire.a
           : null;
     if (!other) continue;
-    const board = loaded.resolved.find((item) => item.path === other.path);
-    const boardBehaviour = board?.axes.behaviour.impl as BehaviourImpl | null;
-    if (!board || boardBehaviour?.kind !== "firmware") continue;
+    if (!boardPaths.has(other.path)) continue;
     const bit = arduinoPinBit(other.port);
     if (bit === undefined) continue;
-    return { boardId: board.path, bit };
+    return { boardId: other.path, bit };
   }
   return null;
 }
@@ -917,6 +922,16 @@ function build(
   // collapse of a gear train; form ranger@1. Anything else is a plan
   // error that names the path.
   const byPath = new Map(loaded.resolved.map((item) => [item.path, item]));
+  // A board is a firmware part, or the composite a firmware chip runs as.
+  const boardPaths = new Set(
+    loaded.resolved
+      .filter(
+        (item) =>
+          (item.axes.behaviour.impl as BehaviourImpl | null)?.kind ===
+          "firmware"
+      )
+      .map((item) => boardHostOf(item, byPath, ROOT_PATH).path)
+  );
   for (const inst of loaded.resolved) {
     // A composite root is a shell. A leaf opened as the root is the
     // instance: its body is planned, or it sits idle with a diagnostic.
@@ -961,6 +976,7 @@ function build(
       // `inst` is the chip that holds the image. `host` is the board it runs
       // as: the parent composite when this chip is a child of one, else itself.
       const host = boardHostOf(inst, byPath, ROOT_PATH);
+      const exposure = chipExposure(inst, host);
       const boardCircuit = behaviour.boardCircuit ?? null;
       const pathName = pathRefOf(boardCircuit);
       if (boardCircuit !== null && pathName !== "uno-usb") {
@@ -1036,8 +1052,14 @@ function build(
         boardCircuit,
         hasNetlist:
           behaviour.board !== undefined || alias || host.path !== inst.path,
-        resetPort: behaviour.resetPort ?? null,
+        resetPort:
+          host === inst
+            ? (behaviour.resetPort ?? null)
+            : ([...exposure.entries()].find(
+                ([, pin]) => pin === behaviour.resetPort
+              )?.[0] ?? null),
         resetFraction: facts.resetFraction,
+        ...(host === inst ? {} : { wire: wireOf(exposure) }),
         minOperatingVoltage: facts.minOperatingVoltage,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
@@ -1134,8 +1156,8 @@ function build(
         model: shortName(inst.part.id),
         pose: poseOf(inst),
         law: rangerLaw(numbers),
-        trig: digitalPeer(inst, "Trig", loaded),
-        echo: digitalPeer(inst, "Echo", loaded),
+        trig: digitalPeer(inst, "Trig", loaded, boardPaths),
+        echo: digitalPeer(inst, "Echo", loaded, boardPaths),
       });
       pushBox(boxes, inst, "part");
       continue;

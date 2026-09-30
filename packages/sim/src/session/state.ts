@@ -45,6 +45,8 @@ export type BoardSpec = {
   firmware: string;
   /** The chip part's SOA band floor, volts. Null: no band. */
   minOperatingVoltage: number | null;
+  /** Wire bit to chip pin, from the board's `expose`. Absent: the Arduino header. */
+  wire?: (string | null)[];
 };
 
 export type ServoDrive = {
