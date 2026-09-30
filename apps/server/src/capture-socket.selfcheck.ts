@@ -538,7 +538,7 @@ try {
       type: "redo",
       ...(part ? { part } : {}),
     });
-  const useOp = (key: string | undefined) => ({
+  const pickOp = (key: string | undefined) => ({
     kind: "set-level",
     document: WORLD,
     scope: "path",
@@ -571,7 +571,7 @@ try {
 
   // capture, use it, delete with Break, undo Break, undo use it, undo capture.
   await capture("h1");
-  await landed("use it", send([useOp(railPath)]));
+  await landed("use it", send([pickOp(railPath)]));
   const asked = await send([dropOp], { part: RAIL });
   expect(asked.type === "needs-confirm", `a used capture asks: ${asked.type}`);
   await landed("Break", send([dropOp], { part: RAIL, confirm: "break" }));
@@ -585,7 +585,7 @@ try {
   );
   // Break, undo, redo: the redo lands the Break again, and undo still unwinds.
   await capture("h2");
-  await landed("use it", send([useOp(railPath)]));
+  await landed("use it", send([pickOp(railPath)]));
   await landed("Break", send([dropOp], { part: RAIL, confirm: "break" }));
   await landed("undo Break", undo(RAIL));
   await landed("redo Break", redo(RAIL));
@@ -599,7 +599,7 @@ try {
   );
   // use it, delete with Break, undo × 3.
   await capture("h3");
-  await landed("use it", send([useOp(railPath)]));
+  await landed("use it", send([pickOp(railPath)]));
   await landed("Break", send([dropOp], { part: RAIL, confirm: "break" }));
   await landed("undo 1", undo(RAIL));
   await landed("undo 2", undo());
