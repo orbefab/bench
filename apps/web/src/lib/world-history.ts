@@ -12,6 +12,11 @@ export type PartHistory = {
 };
 
 export type HistoryAnswer = {
+  /**
+   * What the answer is to. An edit adds a step, an undo moves one to redo and
+   * a redo moves it back; a refusal moves nothing. Absent means an edit.
+   */
+  kind?: "edit" | "undo" | "redo" | "refuse";
   part?: string;
   canUndo: boolean;
   canRedo: boolean;
@@ -85,24 +90,31 @@ export function applyHistory(
       canRedo: answer.canRedo,
     }
   );
-  const touched = partKey(answer.part);
+  const key = partKey(answer.part);
+  let undoOrder = [...model.undoOrder];
+  let redoOrder = [...model.redoOrder];
+  const kind = answer.kind ?? "edit";
+  if (kind === "edit") {
+    // A new edit is a new step on that part, and ends that part's redo.
+    undoOrder.unshift(key);
+    redoOrder = redoOrder.filter((item) => item !== key);
+  } else if (kind === "undo") {
+    undoOrder = dropFirst(undoOrder, key);
+    redoOrder.unshift(key);
+  } else if (kind === "redo") {
+    redoOrder = dropFirst(redoOrder, key);
+    undoOrder.unshift(key);
+  }
   return {
     parts,
-    undoOrder: orderOf(
-      model.undoOrder,
-      parts,
-      "canUndo",
-      touched,
-      answer.canUndo
-    ),
-    redoOrder: orderOf(
-      model.redoOrder,
-      parts,
-      "canRedo",
-      touched,
-      answer.canRedo
-    ),
+    undoOrder: reconcile(undoOrder, parts, "canUndo"),
+    redoOrder: reconcile(redoOrder, parts, "canRedo"),
   };
+}
+
+function dropFirst(order: readonly string[], key: string): string[] {
+  const at = order.indexOf(key);
+  return at < 0 ? [...order] : [...order.slice(0, at), ...order.slice(at + 1)];
 }
 
 /** The server refused this undo or redo. That part can no longer do it. */
@@ -115,6 +127,7 @@ export function refuseHistory(
     (row) => partKey(row.part) === partKey(part)
   );
   return applyHistory(model, {
+    kind: "refuse",
     ...(part ? { part } : {}),
     canUndo: kind === "undo" ? false : (existing?.canUndo ?? false),
     canRedo: kind === "redo" ? false : (existing?.canRedo ?? false),
@@ -173,18 +186,20 @@ function replacePart(parts: PartHistory[], next: PartHistory): PartHistory[] {
   return kept;
 }
 
-function orderOf(
-  previous: readonly string[],
+/**
+ * The order is one entry per step, newest first, so a part with two steps
+ * appears twice. The server's flags win: a part that cannot do it has no
+ * entries, and a part that can, with none here, gets one at the end.
+ */
+function reconcile(
+  order: readonly string[],
   parts: readonly PartHistory[],
-  flag: "canUndo" | "canRedo",
-  touched: string,
-  touchedOn: boolean
+  flag: "canUndo" | "canRedo"
 ): string[] {
   const allowed = new Set(
     parts.filter((row) => row[flag]).map((row) => partKey(row.part))
   );
-  const next = previous.filter((key) => allowed.has(key) && key !== touched);
-  if (touchedOn && allowed.has(touched)) next.unshift(touched);
+  const next = order.filter((key) => allowed.has(key));
   for (const key of allowed) {
     if (!next.includes(key)) next.push(key);
   }

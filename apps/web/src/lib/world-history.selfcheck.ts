@@ -11,28 +11,33 @@ const scene = "sfab/nano-servo-scene@1.0.0";
 const flags = new Map<string, { canUndo: boolean; canRedo: boolean }>();
 let model = emptyHistory();
 
-function answer(part: string | undefined, canUndo: boolean, canRedo: boolean) {
+function answer(
+  part: string | undefined,
+  canUndo: boolean,
+  canRedo: boolean,
+  kind: "edit" | "undo" | "redo"
+) {
   flags.set(part ?? "", { canUndo, canRedo });
   const histories = [...flags.entries()].map(([key, row]) => ({
     ...(key ? { part: key } : {}),
     canUndo: row.canUndo,
     canRedo: row.canRedo,
   }));
-  model = applyHistory(model, { part, canUndo, canRedo, histories });
+  model = applyHistory(model, { kind, part, canUndo, canRedo, histories });
 }
 
-answer(undefined, true, false);
-answer(undefined, false, true);
-answer(undefined, true, false);
-answer(undefined, false, true);
-answer(scene, true, false);
-answer(scene, false, true);
-answer(scene, true, false);
-answer(scene, false, true);
-answer(undefined, true, false);
-answer(undefined, true, false);
-answer(undefined, true, true);
-answer(undefined, false, true);
+answer(undefined, true, false, "edit");
+answer(undefined, false, true, "undo");
+answer(undefined, true, false, "redo");
+answer(undefined, false, true, "undo");
+answer(scene, true, false, "edit");
+answer(scene, false, true, "undo");
+answer(scene, true, false, "redo");
+answer(scene, false, true, "undo");
+answer(undefined, true, false, "redo");
+answer(undefined, true, false, "edit");
+answer(undefined, true, true, "undo");
+answer(undefined, false, true, "undo");
 
 const done = historyButtons(model);
 expect(done.canUndo === false, "undo ends disabled");
@@ -131,5 +136,103 @@ expect(
   reconnected.canUndo === true && reconnected.undoPart === scene,
   "a reconnect after the move keeps the nested rename"
 );
+
+// One user action is one undo: the capture (rail), Use it (the world), then a
+// Break (rail again). Undoing the Break leaves the rail's older capture behind
+// the world's Use it, so the presses go rail, world, rail: three, not four.
+{
+  const rail = "local/rail@1.0.0";
+  const steps = new Map<string, { undo: number; redo: number }>();
+  let live = emptyHistory();
+  const stepsOf = (key: string) => {
+    const row = steps.get(key) ?? { undo: 0, redo: 0 };
+    steps.set(key, row);
+    return row;
+  };
+  const histories = () =>
+    [...steps.entries()].map(([key, row]) => ({
+      ...(key ? { part: key } : {}),
+      canUndo: row.undo > 0,
+      canRedo: row.redo > 0,
+    }));
+  const edit = (part: string | undefined) => {
+    const row = stepsOf(part ?? "");
+    row.undo += 1;
+    row.redo = 0;
+    live = applyHistory(live, {
+      kind: "edit",
+      ...(part ? { part } : {}),
+      canUndo: true,
+      canRedo: false,
+      histories: histories(),
+    });
+  };
+  const press = (kind: "undo" | "redo"): string | undefined | null => {
+    const buttons = historyButtons(live);
+    const target = kind === "undo" ? buttons.undoPart : buttons.redoPart;
+    if (kind === "undo" ? !buttons.canUndo : !buttons.canRedo) return null;
+    const row = stepsOf(target ?? "");
+    if (kind === "undo") {
+      row.undo -= 1;
+      row.redo += 1;
+    } else {
+      row.redo -= 1;
+      row.undo += 1;
+    }
+    live = applyHistory(live, {
+      kind,
+      ...(target ? { part: target } : {}),
+      canUndo: row.undo > 0,
+      canRedo: row.redo > 0,
+      histories: histories(),
+    });
+    return target;
+  };
+  edit(rail);
+  edit(undefined);
+  edit(rail);
+  const undone: (string | undefined | null)[] = [];
+  for (let i = 0; i < 5; i++) {
+    const target = press("undo");
+    if (target === null) break;
+    undone.push(target);
+  }
+  expect(
+    JSON.stringify(undone) === JSON.stringify([rail, undefined, rail]),
+    `a Break is one undo: ${JSON.stringify(undone)}`
+  );
+  const redone: (string | undefined | null)[] = [];
+  for (let i = 0; i < 5; i++) {
+    const target = press("redo");
+    if (target === null) break;
+    redone.push(target);
+  }
+  expect(
+    JSON.stringify(redone) === JSON.stringify([rail, undefined, rail]),
+    `and its redo is three steps in order: ${JSON.stringify(redone)}`
+  );
+  // A fixed-ports Break on the open document is one step on it: one undo. A
+  // Stay sends nothing, so there is no answer and no entry.
+  steps.clear();
+  live = emptyHistory();
+  edit(undefined);
+  expect(
+    JSON.stringify([press("undo"), press("undo")]) ===
+      JSON.stringify([undefined, null]),
+    "a fixed-ports Break is one undo"
+  );
+  edit(rail);
+  edit(undefined);
+  edit(rail);
+  for (const _ of [1, 2, 3]) press("undo");
+  for (const _ of [1, 2, 3]) press("redo");
+  // A refused undo records nothing and clears that part only.
+  const refusedModel = refuseHistory(live, "undo", rail);
+  expect(
+    refusedModel.undoOrder.filter((key) => key === rail).length === 0 &&
+      refusedModel.undoOrder.length === live.undoOrder.length - 2,
+    "a refused undo drops that part's undo entries and nothing else"
+  );
+}
 
 console.log("world-history.selfcheck ok");

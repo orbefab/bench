@@ -368,6 +368,7 @@ export function useWorldRun(
         pendingEdit = null;
         worldStore.getState().applyHistory(
           {
+            kind: pending?.kind ?? "edit",
             part: message.part ?? pending?.part,
             canUndo: message.canUndo,
             canRedo: message.canRedo,
