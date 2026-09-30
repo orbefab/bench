@@ -51,6 +51,8 @@ import { sha256Hex } from "./sha256";
 import { canonicalJson } from "./si";
 import type { Store } from "./store";
 
+const LOCK_SUFFIX = ".lock.json";
+
 export const EXTERNAL_EDIT = "the document changed outside this session";
 
 type SavedFile = {
@@ -929,6 +931,11 @@ export class EditSession {
 
   private watchedDrifted(): boolean {
     for (const file of this.watched) {
+      // A lock is shared: another session's use-it, Break or undo re-pins the
+      // same file, so a different lock is not an outside edit. A step whose
+      // lock no longer fits is still refused by `filesMatch` when it is undone
+      // or redone, so a real conflict is never hidden, only the history kept.
+      if (file.path.endsWith(LOCK_SUFFIX)) continue;
       const disk = this.diskText(file.path);
       const hash = disk === null ? null : sha256Hex(disk);
       if (hash !== file.hash) return true;

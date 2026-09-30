@@ -514,6 +514,119 @@ try {
     "undo restores every byte of the part, snapshot, counter and lock"
   );
 
+  // History across two sessions: the part's own (capture, delete) and the
+  // world's (use it, the rule and lock a Break rewrites).
+  const send = (
+    ops: object[],
+    extra: { part?: string; confirm?: "break" } = {}
+  ) =>
+    handleLiveEdit(
+      project,
+      WORLD,
+      parseWorldClient(JSON.stringify({ type: "edit", ops, ...extra })) as {
+        type: "edit";
+        ops: never[];
+      }
+    );
+  const undo = (part?: string) =>
+    handleLiveEdit(project, WORLD, {
+      type: "undo",
+      ...(part ? { part } : {}),
+    });
+  const redo = (part?: string) =>
+    handleLiveEdit(project, WORLD, {
+      type: "redo",
+      ...(part ? { part } : {}),
+    });
+  const useOp = (key: string | undefined) => ({
+    kind: "set-level",
+    document: WORLD,
+    scope: "path",
+    key,
+    axis: "behaviour",
+    class: 1,
+    variant: "capture-1",
+  });
+  const dropOp = {
+    kind: "remove-capture",
+    document: RAIL,
+    part: RAIL,
+    axis: "behaviour",
+    level: 1,
+    variant: "capture-1",
+  };
+  const landed = async (what: string, run: Promise<WorldServerMessage>) => {
+    const done = await run;
+    expect(done.type === "edited", `${what}: ${JSON.stringify(done)}`);
+  };
+  const capture = async (nonce: string) => {
+    launch(nonce, railPath);
+    const done = await settled(nonce);
+    expect(
+      done.type === "captured",
+      `capture ${nonce}: ${JSON.stringify(done)}`
+    );
+  };
+  const historyBefore = treeOf(project);
+
+  // capture, use it, delete with Break, undo Break, undo use it, undo capture.
+  await capture("h1");
+  await landed("use it", send([useOp(railPath)]));
+  const asked = await send([dropOp], { part: RAIL });
+  expect(asked.type === "needs-confirm", `a used capture asks: ${asked.type}`);
+  await landed("Break", send([dropOp], { part: RAIL, confirm: "break" }));
+  await landed("undo Break", undo(RAIL));
+  await landed("undo use it", undo());
+  await landed("undo the capture, after a Break and its undo", undo(RAIL));
+  deepStrictEqual(
+    treeOf(project),
+    historyBefore,
+    "every byte and directory is back after six undos"
+  );
+  // Break, undo, redo: the redo lands the Break again, and undo still unwinds.
+  await capture("h2");
+  await landed("use it", send([useOp(railPath)]));
+  await landed("Break", send([dropOp], { part: RAIL, confirm: "break" }));
+  await landed("undo Break", undo(RAIL));
+  await landed("redo Break", redo(RAIL));
+  await landed("undo Break again", undo(RAIL));
+  await landed("undo use it", undo());
+  await landed("undo the capture", undo(RAIL));
+  deepStrictEqual(
+    treeOf(project),
+    historyBefore,
+    "Break, undo, redo, undo × 3"
+  );
+  // use it, delete with Break, undo × 3.
+  await capture("h3");
+  await landed("use it", send([useOp(railPath)]));
+  await landed("Break", send([dropOp], { part: RAIL, confirm: "break" }));
+  await landed("undo 1", undo(RAIL));
+  await landed("undo 2", undo());
+  await landed("undo 3", undo(RAIL));
+  deepStrictEqual(treeOf(project), historyBefore, "use it, Break, undo × 3");
+  // capture, delete with no rule (no dialog), undo × 2.
+  await capture("h4");
+  await landed("delete", send([dropOp], { part: RAIL }));
+  await landed("undo delete", undo(RAIL));
+  await landed("undo capture", undo(RAIL));
+  deepStrictEqual(treeOf(project), historyBefore, "capture, delete, undo × 2");
+  // A real outside edit of the part file, or of the lock, still refuses the undo.
+  await capture("h5");
+  for (const outside of [railFile, lockFile]) {
+    const kept = readFileSync(outside, "utf8");
+    writeFileSync(outside, `${kept} `);
+    const refused = await undo(RAIL);
+    expect(
+      refused.type === "edit-refused" &&
+        refused.message === "the document changed outside this session",
+      `an outside edit of ${outside.split("/").pop()} refuses the undo: ${JSON.stringify(refused)}`
+    );
+    writeFileSync(outside, kept);
+  }
+  await landed("undo once the bytes fit again", undo(RAIL));
+  deepStrictEqual(treeOf(project), historyBefore, "the outside edits are gone");
+
   // A project copy of a part the world's lock pins in the catalog: one rule for
   // where the part lives, so capture, use it and undo all agree.
   const copy = join(project, "parts/sfab/nano-power-input@1.0.0.json");
@@ -630,5 +743,5 @@ try {
 }
 
 console.log(
-  "capture socket: progress, captured after edited, use it and undo, abort writes nothing, a second job is refused, card snapshot byte-identical to the CLI's, an abort read mid-run lands nothing, use it after a project-part capture lands, a project copy of a catalog part captures and undoes to the same bytes"
+  "capture socket: progress, captured after edited, use it and undo, abort writes nothing, a second job is refused, card snapshot byte-identical to the CLI's, an abort read mid-run lands nothing, use it after a project-part capture lands, a project copy of a catalog part captures and undoes to the same bytes, undo past a Break reaches the capture and an outside edit still refuses"
 );
