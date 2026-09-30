@@ -226,12 +226,39 @@ expect(
   edit(rail);
   for (const _ of [1, 2, 3]) press("undo");
   for (const _ of [1, 2, 3]) press("redo");
-  // A refused undo records nothing and clears that part only.
-  const refusedModel = refuseHistory(live, "undo", rail);
+  // Rail, world, rail; the rail's undo is refused (the server pops nothing);
+  // a new rail edit; then undoing it. The rail's older steps still come
+  // before the world's, in the order they were made.
+  steps.clear();
+  live = emptyHistory();
+  edit(rail);
+  edit(undefined);
+  edit(rail);
+  live = refuseHistory(live, "undo", rail);
   expect(
-    refusedModel.undoOrder.filter((key) => key === rail).length === 0 &&
-      refusedModel.undoOrder.length === live.undoOrder.length - 2,
-    "a refused undo drops that part's undo entries and nothing else"
+    historyButtons(live).undoPart === undefined && historyButtons(live).canUndo,
+    "after a refusal the next press asks the next part, not the rail again"
+  );
+  edit(rail);
+  const after: (string | undefined | null)[] = [];
+  for (let i = 0; i < 6; i++) {
+    const target = press("undo");
+    if (target === null) break;
+    after.push(target);
+  }
+  expect(
+    JSON.stringify(after) === JSON.stringify([rail, rail, undefined, rail]),
+    `a refusal does not lose the rail's place: ${JSON.stringify(after)}`
+  );
+  // With every entry blocked, undo is disabled until a step lands.
+  live = refuseHistory(
+    applyHistory(emptyHistory(), { part: rail, canUndo: true, canRedo: false }),
+    "undo",
+    rail
+  );
+  expect(
+    !historyButtons(live).canUndo,
+    "a refused undo disables the button when nothing else can undo"
   );
 }
 

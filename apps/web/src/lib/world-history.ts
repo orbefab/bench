@@ -1,7 +1,9 @@
 /**
- * Undo buttons follow the server. Each `edited` answer names one part
- * and, when present, every open part history. A local stack only
- * remembers which part to ask next, and it is trimmed to those flags.
+ * Undo buttons follow the server. Each `edited` answer names one part and,
+ * when present, every open part history. The local order holds one entry per
+ * step (newest first), so a press asks the part that owns the newest step; it
+ * is reconciled with the server's flags. A refused press blocks that part,
+ * without losing its entries, until another step lands.
  */
 
 export type PartHistory = {
@@ -29,6 +31,12 @@ export type HistoryModel = {
   undoOrder: string[];
   redoOrder: string[];
   parts: PartHistory[];
+  /**
+   * Parts whose next undo or redo the server refused. Their entries stay, so
+   * their place in the order is kept, but a press skips them until any step
+   * lands (which may be what their refusal was waiting on).
+   */
+  blocked: { undo: string[]; redo: string[] };
 };
 
 export type HistoryButtons = {
@@ -40,7 +48,12 @@ export type HistoryButtons = {
 };
 
 export function emptyHistory(): HistoryModel {
-  return { undoOrder: [], redoOrder: [], parts: [] };
+  return {
+    undoOrder: [],
+    redoOrder: [],
+    parts: [],
+    blocked: { undo: [], redo: [] },
+  };
 }
 
 export function partKey(part?: string): string {
@@ -61,6 +74,12 @@ export function sameHistory(a: HistoryModel, b: HistoryModel): boolean {
   }
   for (let i = 0; i < a.redoOrder.length; i++) {
     if (a.redoOrder[i] !== b.redoOrder[i]) return false;
+  }
+  if (
+    a.blocked.undo.join("\0") !== b.blocked.undo.join("\0") ||
+    a.blocked.redo.join("\0") !== b.blocked.redo.join("\0")
+  ) {
+    return false;
   }
   for (let i = 0; i < a.parts.length; i++) {
     const left = a.parts[i];
@@ -106,10 +125,26 @@ export function applyHistory(
     redoOrder = dropFirst(redoOrder, key);
     undoOrder.unshift(key);
   }
-  return {
+  const next = {
     parts,
     undoOrder: reconcile(undoOrder, parts, "canUndo"),
     redoOrder: reconcile(redoOrder, parts, "canRedo"),
+  };
+  // A step that lands may be what a refusal was waiting on; a state-only
+  // answer changes nothing, so the blocks stay.
+  return {
+    ...next,
+    blocked:
+      kind === "state"
+        ? {
+            undo: model.blocked.undo.filter((item) =>
+              next.undoOrder.includes(item)
+            ),
+            redo: model.blocked.redo.filter((item) =>
+              next.redoOrder.includes(item)
+            ),
+          }
+        : { undo: [], redo: [] },
   };
 }
 
@@ -118,21 +153,22 @@ function dropFirst(order: readonly string[], key: string): string[] {
   return at < 0 ? [...order] : [...order.slice(0, at), ...order.slice(at + 1)];
 }
 
-/** The server refused this undo or redo. That part can no longer do it. */
+/**
+ * The server refused this undo or redo, and popped nothing. The part keeps its
+ * entries and its place, and is skipped until some step lands.
+ */
 export function refuseHistory(
   model: HistoryModel,
   kind: "undo" | "redo",
   part?: string
 ): HistoryModel {
-  const existing = model.parts.find(
-    (row) => partKey(row.part) === partKey(part)
-  );
-  return applyHistory(model, {
-    kind: "state",
-    ...(part ? { part } : {}),
-    canUndo: kind === "undo" ? false : (existing?.canUndo ?? false),
-    canRedo: kind === "redo" ? false : (existing?.canRedo ?? false),
-  });
+  const key = partKey(part);
+  const list = kind === "undo" ? "undo" : "redo";
+  if (model.blocked[list].includes(key)) return model;
+  return {
+    ...model,
+    blocked: { ...model.blocked, [list]: [...model.blocked[list], key] },
+  };
 }
 
 /**
@@ -155,6 +191,10 @@ export function syncHistories(
     parts,
     undoOrder: mergeOrder(model.undoOrder, undoAllowed),
     redoOrder: mergeOrder(model.redoOrder, redoAllowed),
+    blocked: {
+      undo: model.blocked.undo.filter((key) => undoAllowed.has(key)),
+      redo: model.blocked.redo.filter((key) => redoAllowed.has(key)),
+    },
   };
 }
 
@@ -170,8 +210,12 @@ function mergeOrder(
 }
 
 export function historyButtons(model: HistoryModel): HistoryButtons {
-  const undoKey = model.undoOrder[0];
-  const redoKey = model.redoOrder[0];
+  const undoKey = model.undoOrder.find(
+    (key) => !model.blocked.undo.includes(key)
+  );
+  const redoKey = model.redoOrder.find(
+    (key) => !model.blocked.redo.includes(key)
+  );
   return {
     canUndo: undoKey !== undefined,
     canRedo: redoKey !== undefined,

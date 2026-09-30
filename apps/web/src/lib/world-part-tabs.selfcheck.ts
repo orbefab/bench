@@ -93,6 +93,7 @@ const parked = savePartTab(sidebar, arm, {
     undoOrder: [""],
     redoOrder: [],
     parts: [{ canUndo: true, canRedo: false }],
+    blocked: { undo: [], redo: [] },
   },
 });
 const away = openPartTab(parked, { file: usb });
