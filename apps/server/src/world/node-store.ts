@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -15,6 +16,29 @@ import type { Store } from "@sfab-bench/parts";
 /** A relative path is absolute from this process before parts sees it. */
 export function absolutePath(file: string): string {
   return path.isAbsolute(file) ? file : path.resolve(file);
+}
+
+/**
+ * Undoing the first capture leaves `snapshots/<publisher>/` and
+ * `overlays/<publisher>/` empty. Walk up from the removed file and drop each
+ * empty directory, ending with `snapshots/` or `overlays/` itself.
+ */
+function pruneEmptyCaptureDirs(removed: string): void {
+  const parts = removed.split(path.sep);
+  const at = Math.max(
+    parts.lastIndexOf("snapshots"),
+    parts.lastIndexOf("overlays")
+  );
+  if (at < 0) return;
+  for (let depth = parts.length - 1; depth > at; depth -= 1) {
+    const dir = parts.slice(0, depth).join(path.sep);
+    try {
+      if (readdirSync(dir).length > 0) return;
+      rmdirSync(dir);
+    } catch {
+      return;
+    }
+  }
 }
 
 export const nodeStore: Store = {
@@ -44,7 +68,9 @@ export const nodeStore: Store = {
     renameSync(absolutePath(from), abs);
   },
   remove(file) {
-    rmSync(absolutePath(file), { force: true });
+    const abs = absolutePath(file);
+    rmSync(abs, { force: true });
+    pruneEmptyCaptureDirs(abs);
   },
   list(file) {
     return readdirSync(absolutePath(file));

@@ -45,8 +45,11 @@ function treeOf(dir: string): Map<string, string> {
   const walk = (folder: string) => {
     for (const name of readdirSync(folder)) {
       const child = join(folder, name);
-      if (statSync(child).isDirectory()) walk(child);
-      else out.set(child.slice(dir.length), readFileSync(child, "utf8"));
+      if (statSync(child).isDirectory()) {
+        // A directory is an entry too, so an empty one left behind is a diff.
+        out.set(`${child.slice(dir.length)}/`, "");
+        walk(child);
+      } else out.set(child.slice(dir.length), readFileSync(child, "utf8"));
     }
   };
   walk(dir);
@@ -468,6 +471,35 @@ try {
     contentHash(JSON.parse(readFileSync(railFile, "utf8"))),
     "the lock pins the part's new bytes"
   );
+  const railUse = await handleLiveEdit(
+    project,
+    WORLD,
+    parseWorldClient(
+      JSON.stringify({
+        type: "edit",
+        ops: [
+          {
+            kind: "set-level",
+            document: WORLD,
+            scope: "path",
+            key: railPath,
+            axis: "behaviour",
+            class: 1,
+            variant: "capture-1",
+          },
+        ],
+      })
+    ) as Parameters<typeof handleLiveEdit>[2]
+  );
+  expect(
+    railUse.type === "edited",
+    `use it on a project part lands: ${JSON.stringify(railUse)}`
+  );
+  const railUnuse = await handleLiveEdit(project, WORLD, { type: "undo" });
+  expect(
+    railUnuse.type === "edited",
+    `undo of use it: ${JSON.stringify(railUnuse)}`
+  );
   const undoRail = await handleLiveEdit(project, WORLD, {
     type: "undo",
     part: RAIL,
@@ -481,6 +513,70 @@ try {
     railBefore,
     "undo restores every byte of the part, snapshot, counter and lock"
   );
+
+  // A project copy of a part the world's lock pins in the catalog: one rule for
+  // where the part lives, so capture, use it and undo all agree.
+  const copy = join(project, "parts/sfab/nano-power-input@1.0.0.json");
+  mkdirSync(join(project, "parts/sfab"), { recursive: true });
+  cpSync(join(catalog, "parts/sfab/nano-power-input@1.0.0.json"), copy);
+  const shadowBefore = treeOf(project);
+  // Placing the part above wrapped the world in a scene, so the path moved.
+  const shadowPath = loadWorldV2(absolutePath(`${project}/${WORLD}`), {
+    store: nodeStore,
+    catalogDir: catalog,
+    assetRoot: project,
+  }).resolved.find((inst) => inst.part.id === POWER)?.path;
+  expect(shadowPath, "the world still holds the catalog part");
+  launch("s1", shadowPath);
+  const shadowDone = await settled("s1");
+  expect(
+    shadowDone.type === "captured",
+    `a shadowed part captures: ${JSON.stringify(shadowDone)}`
+  );
+  expect(
+    readFileSync(copy, "utf8").includes("capture-1"),
+    "the loader loads the project copy, so the capture lands in it"
+  );
+  const shadowUse = await handleLiveEdit(
+    project,
+    WORLD,
+    parseWorldClient(
+      JSON.stringify({
+        type: "edit",
+        ops: [
+          {
+            kind: "set-level",
+            document: WORLD,
+            scope: "path",
+            key: shadowPath,
+            axis: "behaviour",
+            class: 1,
+            variant: "capture-1",
+          },
+        ],
+      })
+    ) as Parameters<typeof handleLiveEdit>[2]
+  );
+  expect(
+    shadowUse.type === "edited",
+    `use it on a shadowed part lands: ${JSON.stringify(shadowUse)}`
+  );
+  for (const step of [undefined, POWER]) {
+    const undone = await handleLiveEdit(project, WORLD, {
+      type: "undo",
+      ...(step ? { part: step } : {}),
+    });
+    expect(
+      undone.type === "edited",
+      `undo of a shadowed capture: ${JSON.stringify(undone)}`
+    );
+  }
+  deepStrictEqual(
+    treeOf(project),
+    shadowBefore,
+    "undoing use it and the capture restores every byte"
+  );
+  rmSync(copy);
 
   // No real path fails the restart after the edit passed its own load check, so
   // the mapping from the edit's answer to the client's messages is tested directly.
@@ -534,5 +630,5 @@ try {
 }
 
 console.log(
-  "capture socket: progress, captured after edited, use it and undo, abort writes nothing, a second job is refused, card snapshot byte-identical to the CLI's, an abort read mid-run lands nothing"
+  "capture socket: progress, captured after edited, use it and undo, abort writes nothing, a second job is refused, card snapshot byte-identical to the CLI's, an abort read mid-run lands nothing, use it after a project-part capture lands, a project copy of a catalog part captures and undoes to the same bytes"
 );

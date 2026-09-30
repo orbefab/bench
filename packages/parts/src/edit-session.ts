@@ -890,7 +890,15 @@ export class EditSession {
     } catch {
       return "bad";
     }
-    if (sha256Hex(disk) === sha256Hex(this.text)) return "same";
+    if (sha256Hex(disk) === sha256Hex(this.text)) {
+      // A part's own session re-pins this document's lock without touching the
+      // document, so the lock on disk is the one the next edit must start from.
+      const lock = lockPathFor(this.file);
+      this.lockText = this.store.exists(lock)
+        ? this.store.readText(lock)
+        : null;
+      return "same";
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(disk) as unknown;

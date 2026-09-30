@@ -14,10 +14,10 @@ import type {
 } from "@sfab-bench/contract";
 import {
   editLabel,
+  loadPartById,
   loadWorldV2,
   type NeedsConfirm,
   nextCaptureRef,
-  partFilePath,
 } from "@sfab-bench/parts";
 import {
   type AnyCaptureEntry,
@@ -58,23 +58,32 @@ function jobKey(project: string, world: string): string {
   return `${project}\0${world}`;
 }
 
-/** Reads the part the path names in the open document, as it is now. */
+/**
+ * Reads the part the path names in the open document, as it is now, and says
+ * whether the file the loader loads for it is in the project. That is the one
+ * rule for where a part lives, the same one the card's view uses.
+ */
 function partAtInstance(
   project: string,
   world: string,
   path: string
-): { part: PartFile } | { error: string } {
+): { part: PartFile; inProject: boolean } | { error: string } {
   const root = absolutePath(project);
   const file = absolutePath(join(root, world));
   if (!nodeStore.exists(file)) return { error: `no document ${world}` };
-  const loaded = loadWorldV2(file, {
+  const options = {
     store: nodeStore,
     catalogDir: absolutePath(catalogRoot()),
     assetRoot: root,
-  });
+  };
+  const loaded = loadWorldV2(file, options);
   const inst = loaded.resolved.find((item) => item.path === path);
   if (!inst) return { error: `no instance ${path}` };
-  return { part: inst.part };
+  const found = loadPartById(root, options, inst.part.id);
+  return {
+    part: inst.part,
+    inProject: "part" in found && found.source === "world",
+  };
 }
 
 /**
@@ -129,10 +138,8 @@ async function run(
   ];
   const found = partAtInstance(project, world, request.path);
   if ("error" in found) return failed(found.error);
-  const part = found.part;
+  const { part, inProject } = found;
   const root = absolutePath(project);
-  const own = partFilePath(root, part.id);
-  const inProject = Boolean(own && nodeStore.exists(own));
   const catalog = absolutePath(catalogRoot());
   const recipe = captureRecipeFor(part, request.axis, {
     catalogDir: catalog,
