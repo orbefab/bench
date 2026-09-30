@@ -41,10 +41,18 @@ export type CaptureRequest = {
   axis: CaptureAxisName;
 };
 
-type Job = { nonce: string; owner: unknown; controller: AbortController };
+type Job = {
+  nonce: string;
+  owner: unknown;
+  controller: AbortController;
+  /** Lets the event loop read the socket: an abort arrives between steps. */
+  pause: () => Promise<void>;
+};
 
 const jobs = new Map<string, Job>();
 const PROGRESS_MS = 250;
+
+const yieldToLoop = () => new Promise<void>((done) => setImmediate(done));
 
 function jobKey(project: string, world: string): string {
   return `${project}\0${world}`;
@@ -156,6 +164,7 @@ async function run(
           : {}),
         outFile: out,
         signal: job.controller.signal,
+        pause: job.pause,
         onStep(done, total, label) {
           const now = Date.now();
           if (done < total && now - last < PROGRESS_MS) return;
@@ -179,6 +188,8 @@ async function run(
   } finally {
     serverCaptureEnv.removeTree(tmp);
   }
+  // One more turn of the loop, so an abort sent during the last stretch is read.
+  await job.pause();
   if (job.controller.signal.aborted) return failed("aborted");
 
   // The number is taken now, not before the fit: another world may have
@@ -246,7 +257,8 @@ export function startCapture(
   world: string,
   request: CaptureRequest,
   owner: unknown,
-  emit: (event: WorldServerMessage) => void
+  emit: (event: WorldServerMessage) => void,
+  pause: () => Promise<void> = yieldToLoop
 ): void {
   const key = jobKey(project, world);
   if (jobs.has(key)) {
@@ -261,6 +273,7 @@ export function startCapture(
     nonce: request.nonce,
     owner,
     controller: new AbortController(),
+    pause,
   };
   jobs.set(key, job);
   void run(project, world, request, job, emit)

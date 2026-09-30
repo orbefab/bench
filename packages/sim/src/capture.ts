@@ -152,6 +152,12 @@ export type CaptureRun = {
   /** Checked between steps; an aborted run throws `CaptureAborted`. */
   signal?: { readonly aborted: boolean };
   onStep?: (done: number, total: number, label: string) => void;
+  /**
+   * Awaited after each step, so a host can let its event loop run (a
+   * socket message such as an abort) inside a long synchronous stretch.
+   * The CLI passes none, and the output is the same.
+   */
+  pause?: () => Promise<void>;
 };
 
 export class CaptureAborted extends Error {
@@ -160,7 +166,7 @@ export class CaptureAborted extends Error {
   }
 }
 
-type Progress = { check(): void; step(label: string): void };
+type Progress = { check(): void; step(label: string): Promise<void> };
 
 function progressOf(opts: CaptureRun, total: number): Progress {
   let done = 0;
@@ -168,9 +174,10 @@ function progressOf(opts: CaptureRun, total: number): Progress {
     check() {
       if (opts.signal?.aborted) throw new CaptureAborted();
     },
-    step(label) {
+    async step(label) {
       done += 1;
       opts.onStep?.(done, total, label);
+      await opts.pause?.();
     },
   };
 }
@@ -247,7 +254,7 @@ async function captureEntry(
       },
       env
     );
-    hinge.step("hinge snapshot");
+    await hinge.step("hinge snapshot");
     return {
       staticMaxAbsMv: 0,
       lineMaxAbsMv: 0,
@@ -323,7 +330,7 @@ async function captureEntry(
   const outPath = opts.outFile ?? snapshotPath(catalog, config.id, env);
   if (!fixture) throw new Error(`${config.part} capture needs a fixture`);
   const progress = progressOf(opts, 2 + (runFree ? scenes.length * 2 : 0));
-  progress.step(
+  await progress.step(
     `fitted ${knots.length} knots over ${sweep.current.length} sweep points`
   );
   const shared = {
@@ -363,7 +370,7 @@ async function captureEntry(
     base.quality = lint.quality;
     progress.check();
     const json = writeSnapshot(outPath, base, env);
-    progress.step("snapshot written");
+    await progress.step("snapshot written");
     return {
       staticMaxAbsMv: staticMax * 1000,
       lineMaxAbsMv,
@@ -425,7 +432,7 @@ async function captureEntry(
   done.quality = lint.quality;
   progress.check();
   const json = writeSnapshot(outPath, done, env);
-  progress.step("snapshot written");
+  await progress.step("snapshot written");
   return {
     staticMaxAbsMv: staticMax * 1000,
     lineMaxAbsMv,
@@ -733,7 +740,7 @@ async function runScenes(
         env
       );
       const wall1 = host.now() - t1;
-      progress?.step(`${spec.name}, class 1`);
+      await progress?.step(`${spec.name}, class 1`);
       progress?.check();
       const t2 = host.now();
       const high = await runWorld(
@@ -743,7 +750,7 @@ async function runScenes(
         env
       );
       const wall2 = host.now() - t2;
-      progress?.step(`${spec.name}, class 2`);
+      await progress?.step(`${spec.name}, class 2`);
       if (spec.name === "move") {
         moveUsPerMs.class1 = (wall1 * 1000) / spec.ms;
         moveUsPerMs.class2 = (wall2 * 1000) / spec.ms;

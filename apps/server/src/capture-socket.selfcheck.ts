@@ -141,6 +141,86 @@ try {
     "no job is left to abort"
   );
 
+  // A real abort: a socket message read while the job runs. The abort is
+  // queued from the first progress event, so it is the next turn of the
+  // event loop, exactly when the server reads the socket. A job that never
+  // yields between steps lands before that turn comes.
+  {
+    const parsed = request("mid", path);
+    if (!("type" in parsed) || parsed.type !== "capture") {
+      throw new Error("mid capture does not parse");
+    }
+    const heard: WorldServerMessage[] = [];
+    let queued = false;
+    startCapture(project, WORLD, parsed, events, (event) => {
+      heard.push(event);
+      if (event.type !== "capture-progress" || queued) return;
+      queued = true;
+      setImmediate(() => abortCapture(project, WORLD, "mid", events));
+    });
+    const deadline = Date.now() + 300_000;
+    while (
+      !heard.some(
+        (event) => event.type === "captured" || event.type === "capture-failed"
+      )
+    ) {
+      if (Date.now() > deadline) throw new Error("mid capture did not finish");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(queued, "the job reported progress before it finished");
+    deepStrictEqual(heard.at(-1), {
+      type: "capture-failed",
+      nonce: "mid",
+      message: "aborted",
+    });
+    expect(
+      !heard.some((event) => event.type === "captured"),
+      "an abort read mid-run does not land the capture"
+    );
+    deepStrictEqual(treeOf(project), before, "a mid-run abort writes nothing");
+    deepStrictEqual(captureTemps(), tempsBefore, "its temp directory is gone");
+  }
+
+  // The same, parked deterministically between two steps by a test pause.
+  {
+    const parsed = request("parked", path);
+    if (!("type" in parsed) || parsed.type !== "capture") {
+      throw new Error("parked capture does not parse");
+    }
+    let release = () => {};
+    const gate = new Promise<void>((open) => {
+      release = open;
+    });
+    let reached = () => {};
+    const atStep = new Promise<void>((arrive) => {
+      reached = arrive;
+    });
+    startCapture(
+      project,
+      WORLD,
+      parsed,
+      events,
+      (event) => events.push(event),
+      async () => {
+        reached();
+        await gate;
+      }
+    );
+    await atStep;
+    expect(
+      abortCapture(project, WORLD, "parked", events),
+      "the parked job can be aborted"
+    );
+    release();
+    deepStrictEqual(await settled("parked"), {
+      type: "capture-failed",
+      nonce: "parked",
+      message: "aborted",
+    });
+    deepStrictEqual(treeOf(project), before, "a parked abort writes nothing");
+    deepStrictEqual(captureTemps(), tempsBefore, "no temp directory is left");
+  }
+
   // Capture, and a second request while it runs is refused.
   launch("c1");
   launch("c2");
@@ -454,5 +534,5 @@ try {
 }
 
 console.log(
-  "capture socket: progress, captured after edited, use it and undo, abort writes nothing, a second job is refused, card snapshot byte-identical to the CLI's"
+  "capture socket: progress, captured after edited, use it and undo, abort writes nothing, a second job is refused, card snapshot byte-identical to the CLI's, an abort read mid-run lands nothing"
 );
