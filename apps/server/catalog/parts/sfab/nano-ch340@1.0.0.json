@@ -125,7 +125,8 @@
                 "A4": "mcu.PC4",
                 "A5": "mcu.PC5",
                 "A6": "mcu.ADC6",
-                "A7": "mcu.ADC7"
+                "A7": "mcu.ADC7",
+                "RESET": "mcu.RESET"
               }
             },
             "omits": [
