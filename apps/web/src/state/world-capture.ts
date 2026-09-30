@@ -7,7 +7,7 @@ import type { CaptureAxisName } from "@sfab-bench/contract";
 import { useStore as useZustandStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import { showToast } from "@/components/ui/toast";
+import { closeToast, showToast } from "@/components/ui/toast";
 import {
   abortWorldCapture,
   sendWorldCapture,
@@ -26,6 +26,10 @@ import {
 import { setLevelOp } from "@/lib/world-ops";
 import { worldStore } from "@/state/world";
 import { commitEdit } from "@/state/world-edit";
+
+const USE_IT_TOAST = "capture-use-it";
+/** An action toast needs time to be read and clicked. */
+const USE_IT_TOAST_MS = 12_000;
 
 export const captureStore = createStore<CaptureState>()(() => IDLE_CAPTURE);
 
@@ -63,17 +67,20 @@ function noteCaptureMessage(message: CaptureMessage) {
   if (after.phase === "landed") {
     const landed = after;
     showToast({
+      id: USE_IT_TOAST,
       type: "success",
       title: `Captured ${capturedLabel(landed)}: use it?`,
+      timeoutMs: USE_IT_TOAST_MS,
       action: {
         label: "Use it",
         onClick: () => {
+          closeToast(USE_IT_TOAST);
           const op = setLevelOp(
             worldStore.getState().path,
             landed.path,
             landed.axis,
             {
-              class: landed.level as 0 | 1 | 2 | 3,
+              class: landed.level,
               variant: landed.variant,
               runnable: true,
               chosen: false,

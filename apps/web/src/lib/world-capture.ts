@@ -6,6 +6,7 @@
 
 import type {
   CaptureAxisName,
+  LevelClass,
   WorldServerMessage,
   WorldViewLevelAxis,
   WorldViewLevelOption,
@@ -33,7 +34,7 @@ export type CaptureState =
       nonce: string;
       path: string;
       axis: CaptureAxisName;
-      level: number;
+      level: LevelClass;
       variant: string;
       ref: string;
     }

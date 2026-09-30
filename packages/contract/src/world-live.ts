@@ -8,7 +8,7 @@
  */
 
 import type { EditOp } from "./edit";
-import type { EditRefusal, RunReport } from "./layered";
+import type { EditRefusal, LevelClass, RunReport } from "./layered";
 import type { WorldError, WorldQuat, WorldVec3 } from "./world";
 
 export type WorldLinkPose = {
@@ -489,7 +489,7 @@ export type WorldServerMessage =
       nonce: string;
       path: string;
       axis: CaptureAxisName;
-      level: number;
+      level: LevelClass;
       variant: string;
       ref: string;
     }
