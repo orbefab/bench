@@ -752,6 +752,24 @@ function lintBehaviour(
       })
     );
   }
+  if (variant.kind === "firmware") {
+    const retired = ["board", "boardCircuit"].filter(
+      (field) => field in variant
+    );
+    if (retired.length > 0) {
+      diags.push(
+        makeDiag({
+          severity: "error",
+          path: partId,
+          port: name,
+          quantity: "Level",
+          left: retired.join(", "),
+          right: "composite",
+          detail: `firmware variant field ${retired.join(", ")} is retired: a board is a composite of a chip part and its board parts (docs/formats.md)`,
+        })
+      );
+    }
+  }
   if (variant.kind === "form" && isBodyForm(variant.form)) {
     diags.push(
       makeDiag({
