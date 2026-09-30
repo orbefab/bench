@@ -25,7 +25,6 @@ import {
   documentNetlist,
   type EditContext,
   editLabel,
-  quantityOn,
   refusalOf,
 } from "./edit";
 import { expandPartType } from "./expand";
@@ -35,6 +34,7 @@ import { lockAfterEdit, replaceLevels } from "./level-edit";
 import { type LibraryOptions, loadPartById, loadTypeById } from "./library";
 import { loadWorldV2 } from "./load";
 import { lockPathFor } from "./lock";
+import { declaredQuantity } from "./params";
 import { normalize, relative } from "./path";
 import {
   bindDependents,
@@ -986,7 +986,11 @@ export class EditSession {
       domainOf: (id, port) => portDomain(this.portWorld(), id, port),
       quantityOf(id, name) {
         const found = loadPartById(worldDir, opts, id);
-        return "part" in found ? quantityOn(found.part, name) : null;
+        if (!("part" in found)) return null;
+        return declaredQuantity(found.part, name, (childId) => {
+          const child = loadPartById(worldDir, opts, childId);
+          return "part" in child ? child.part : null;
+        });
       },
     };
   }

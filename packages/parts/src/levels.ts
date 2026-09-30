@@ -4,8 +4,10 @@ import {
   AXES,
   type AxisName,
   type BehaviourImpl,
+  isParamRef,
   type LevelClass,
   type Netlist,
+  type NetlistParams,
   type Params,
   type PartFile,
   type PartTypeFile,
@@ -340,6 +342,45 @@ function childPath(parent: string, id: string): string {
   return `${parent}.${id}`;
 }
 
+/** A `$param` that names a param the parent instance does not carry. */
+export type UnresolvedParam = {
+  /** The child instance path. */
+  path: string;
+  /** The child's own param name. */
+  param: string;
+  /** The parent param it asked for. */
+  ref: string;
+};
+
+/**
+ * A netlist child's params as plain values. `{ $param: name }` becomes the
+ * parent instance's value of `name`. A name the parent lacks leaves the key
+ * out and is reported, so the child never sees an `undefined`.
+ */
+function resolveParams(
+  written: NetlistParams | undefined,
+  parent: Params,
+  path: string,
+  unresolved: UnresolvedParam[]
+): Params {
+  const out: Params = {};
+  for (const [name, value] of Object.entries(written ?? {})) {
+    if (!isParamRef(value)) {
+      out[name] = value;
+      continue;
+    }
+    const forwarded = Object.hasOwn(parent, value.$param)
+      ? parent[value.$param]
+      : undefined;
+    if (forwarded === undefined) {
+      unresolved.push({ path, param: name, ref: value.$param });
+      continue;
+    }
+    out[name] = forwarded;
+  }
+  return out;
+}
+
 export function resolveLevels(
   lib: Library,
   rules: LevelRules,
@@ -348,10 +389,12 @@ export function resolveLevels(
   instances: LiveInstance[];
   appliedPaths: Set<string>;
   missing: { path: string; partId: string }[];
+  unresolved: UnresolvedParam[];
 } {
   const instances: LiveInstance[] = [];
   const appliedPaths = new Set<string>();
   const missing: { path: string; partId: string }[] = [];
+  const unresolved: UnresolvedParam[] = [];
 
   const visit = (
     part: PartFile,
@@ -434,10 +477,11 @@ export function resolveLevels(
         }
         // Ground and targets are the environment, not level rows.
         if (environmentKind(childPart.part) !== "other") continue;
+        const path = childPath(instancePath, id);
         visit(
           childPart.part,
-          childPath(instancePath, id),
-          { ...(child.params ?? {}) },
+          path,
+          resolveParams(child.params, params, path, unresolved),
           child.pose,
           nextParent,
           child.level === undefined ? undefined : specAxes(child.level)
@@ -452,7 +496,13 @@ export function resolveLevels(
       ? lib.parts.get(stage.part)?.part
       : stage.part;
   if (!rootPart) throw new Error("root part did not resolve");
-  visit(rootPart, ROOT_PATH, { ...(stage.params ?? {}) }, stage.pose);
+  // The document above the stage has no params, so a ref here is unresolved.
+  visit(
+    rootPart,
+    ROOT_PATH,
+    resolveParams(stage.params, {}, ROOT_PATH, unresolved),
+    stage.pose
+  );
   instances.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return { instances, appliedPaths, missing };
+  return { instances, appliedPaths, missing, unresolved };
 }

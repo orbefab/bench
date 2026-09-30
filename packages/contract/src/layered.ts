@@ -282,6 +282,27 @@ export type Pose = {
 
 export type Params = Record<string, number | string | boolean>;
 
+/**
+ * A netlist child's param that reads the parent instance's param of that
+ * name. The loader resolves it before the child is visited, so nothing
+ * downstream of `resolveLevels` ever sees one.
+ */
+export type ParamRef = { $param: string };
+
+/** `Params` as a netlist child may write them: values, or references. */
+export type NetlistParams = Record<string, Params[string] | ParamRef>;
+
+export function isParamRef(value: unknown): value is ParamRef {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  return (
+    keys.length === 1 &&
+    keys[0] === "$param" &&
+    typeof (value as { $param: unknown }).$param === "string" &&
+    (value as { $param: string }).$param.length > 0
+  );
+}
+
 /** `instance.port` on a composite netlist. */
 export type PortRef = string;
 
@@ -302,7 +323,8 @@ export type TargetInstance = {
 export type NetlistInstance = {
   part: string;
   pose?: Pose;
-  params?: Params;
+  /** A value is the child's own. `{ "$param": name }` forwards the parent's. */
+  params?: NetlistParams;
   level?: LevelSpec;
   /** Set when this instance is a target part. */
   target?: TargetInstance;

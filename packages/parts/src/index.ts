@@ -21,7 +21,6 @@ export {
   type EditContext,
   type EditSuccess,
   editLabel,
-  quantityOn,
   readEditOp,
 } from "./edit";
 export {
@@ -94,6 +93,7 @@ export {
   type Wire,
   type WireEnd,
 } from "./nets";
+export { declaredQuantity, quantityOn } from "./params";
 export { pathRefOf } from "./path-ref";
 export {
   bindDependents,

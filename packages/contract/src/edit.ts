@@ -11,7 +11,8 @@ import type {
   LevelClass,
   LevelSpec,
   NetlistInstance,
-  Params,
+  NetlistParams,
+  ParamRef,
   PlayBlock,
   PortRef,
   Pose,
@@ -41,7 +42,7 @@ export type AddInstanceOp = {
   id: string;
   part: string;
   pose?: Pose;
-  params?: Params;
+  params?: NetlistParams;
   level?: LevelSpec;
   /**
    * Inverse of remove-instance. The instance object keeps the key order
@@ -77,7 +78,7 @@ export type SetParamOp = {
   document: string;
   id: string;
   name: string;
-  value?: number | string | boolean;
+  value?: number | string | boolean | ParamRef;
   /** Inverse: this instance had no such param. */
   clear?: boolean;
 };

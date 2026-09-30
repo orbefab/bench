@@ -23,8 +23,8 @@ import type {
 } from "@sfab-bench/contract";
 import {
   DEFAULT_TIMESTEP_S,
-  FORM_PARAMS,
-  type Params,
+  isParamRef,
+  type NetlistParams,
 } from "@sfab-bench/contract";
 
 import { environmentKind } from "./document";
@@ -169,7 +169,9 @@ function readEditOpRaw(value: unknown): EditOp | { error: string } {
       if (typeof row.id !== "string" || typeof row.name !== "string") {
         return { error: "set-param needs an id and a name" };
       }
-      if (!isParamValue(row.value)) return { error: "set-param needs a value" };
+      if (!isParamValue(row.value) && !isParamRef(row.value)) {
+        return { error: "set-param needs a value" };
+      }
       return {
         kind: "set-param",
         document,
@@ -624,7 +626,9 @@ function applyParam(
         "set-param needs a value"
       );
     }
-    if (quantity === "text") {
+    if (isParamRef(op.value)) {
+      // A forward keeps the parent's value, whatever its quantity.
+    } else if (quantity === "text") {
       if (typeof op.value !== "string") {
         return fail(
           op.id,
@@ -674,7 +678,7 @@ function applyParam(
       document: op.document,
       id: op.id,
       name: op.name,
-      value: previous as number | string | boolean,
+      value: previous as NonNullable<typeof op.value>,
     },
   };
 }
@@ -1260,29 +1264,6 @@ export function documentNetlist(part: PartFile): Netlist | null {
   return null;
 }
 
-export function quantityOn(
-  part: PartFile,
-  name: string
-): Quantity | "text" | null {
-  const behaviour = part.axes?.behaviour;
-  if (!behaviour) return null;
-  for (const slot of Object.values(behaviour)) {
-    if (!slot) continue;
-    for (const variant of Object.values(slot.variants)) {
-      if (variant.kind === "form") {
-        const form = FORM_PARAMS[variant.form];
-        const quantity = form?.params[name];
-        if (quantity) return quantity;
-      }
-      if (variant.kind === "firmware") {
-        if (variant.imageParam === name || name === "source") return "text";
-        if (variant.params && name in variant.params) return "Dimensionless";
-      }
-    }
-  }
-  return null;
-}
-
 function fail(
   path: string,
   port: string,
@@ -1375,9 +1356,11 @@ function isPose(value: unknown): value is Pose {
   return Array.isArray(pose.position) && Array.isArray(pose.rotation);
 }
 
-function isParams(value: unknown): value is Params {
+function isParams(value: unknown): value is NetlistParams {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value as Record<string, unknown>).every(isParamValue);
+  return Object.values(value as Record<string, unknown>).every(
+    (item) => isParamValue(item) || isParamRef(item)
+  );
 }
 
 function isParamValue(value: unknown): value is number | string | boolean {

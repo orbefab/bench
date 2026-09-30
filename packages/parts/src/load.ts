@@ -239,6 +239,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
       resolved = {
         ...again,
         missing: [...resolved.missing, ...again.missing],
+        unresolved: [...resolved.unresolved, ...again.unresolved],
       };
     }
   } catch (err) {
@@ -303,6 +304,24 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
         left: miss.partId,
         right: "library",
         detail: `part ${miss.partId} is not in the library`,
+      })
+    );
+  }
+
+  const seenRef = new Set<string>();
+  for (const row of resolved.unresolved) {
+    const key = `${row.path}\0${row.param}`;
+    if (seenRef.has(key)) continue;
+    seenRef.add(key);
+    diagnostics.push(
+      makeDiag({
+        severity: "error",
+        path: row.path,
+        port: row.param,
+        quantity: "Param",
+        left: row.ref,
+        right: "parent param",
+        detail: `param ${row.param} forwards $param ${row.ref}, which the parent instance does not set`,
       })
     );
   }

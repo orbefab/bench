@@ -8,8 +8,10 @@ import {
   DOMAIN_QUANTITIES,
   FORM_PARAMS,
   GROUND_PART_ID,
+  isParamRef,
   LEVEL_OVERLAY_FORMAT,
   type LevelOverlayFile,
+  type Netlist,
   PART_FORMAT,
   PART_TYPE_FORMAT,
   type PartFile,
@@ -30,6 +32,7 @@ import {
 import { expandPartType } from "./expand";
 import { gearTrainErrors } from "./gear-train";
 import { ldoFrom } from "./ldo";
+import { declaredQuantity } from "./params";
 import { basename, join, relative, sep } from "./path";
 import { collectPartPorts, type PortLevel, type PortWorld } from "./ports";
 import {
@@ -979,6 +982,51 @@ function partAt(
   return null;
 }
 
+/**
+ * A child param that is an object must be `{ "$param": name }`, and the
+ * parent part must declare `name`: a form or firmware param of its own, or
+ * one it forwards to a child that declares the param it is given to.
+ */
+function lintParamRefs(
+  lib: Library,
+  part: PartFile,
+  instances: Netlist["instances"],
+  diags: Diagnostic[]
+): void {
+  const partById = (id: string) => lib.parts.get(id)?.part ?? null;
+  for (const [id, child] of Object.entries(instances)) {
+    for (const [key, value] of Object.entries(child.params ?? {})) {
+      if (typeof value !== "object" || value === null) continue;
+      if (!isParamRef(value)) {
+        diags.push(
+          makeDiag({
+            severity: "error",
+            path: part.id,
+            port: `${id}.${key}`,
+            quantity: "Param",
+            left: JSON.stringify(value),
+            right: "value or $param",
+            detail: `param ${key} is an object that is not { "$param": name }`,
+          })
+        );
+        continue;
+      }
+      if (declaredQuantity(part, value.$param, partById)) continue;
+      diags.push(
+        makeDiag({
+          severity: "error",
+          path: part.id,
+          port: `${id}.${key}`,
+          quantity: "Param",
+          left: value.$param,
+          right: "declared param",
+          detail: `param ${key} forwards $param ${value.$param}, which ${part.id} does not declare (${child.part} needs to declare ${key})`,
+        })
+      );
+    }
+  }
+}
+
 function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
   const behaviour = part.axes?.behaviour;
   if (!behaviour) return;
@@ -1000,6 +1048,7 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
             : null;
       if (!netlist) continue;
       const { instances, wires, expose } = netlist;
+      lintParamRefs(lib, part, instances, diags);
       const typed = Object.keys(parentType.ports).length > 0;
       for (const [outer, inner] of Object.entries(expose)) {
         if (typed && !parentType.ports[outer]) {
