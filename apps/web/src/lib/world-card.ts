@@ -7,6 +7,7 @@
 
 import type {
   AxisName,
+  WorldViewCapture,
   WorldViewLevelOption,
   WorldViewNode,
   WorldViewPort,
@@ -21,6 +22,8 @@ export type CardOption = WorldViewLevelOption & {
 export type CardAxis = {
   axis: AxisName;
   options: CardOption[];
+  /** Whether Capture can run here. Absent on an axis that never captures. */
+  capture?: WorldViewCapture;
 };
 
 export type InstanceCard = {
@@ -41,6 +44,7 @@ export function instanceCard(node: WorldViewNode): InstanceCard {
     params,
     axes: node.levels.map((axis) => ({
       axis: axis.axis,
+      ...(axis.capture ? { capture: axis.capture } : {}),
       options: axis.options.map((option) => {
         const chosen =
           axis.chosen !== null &&

@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 
+import { LevelAxis } from "@/components/LevelAxis";
 import { SerialConsole } from "@/components/SerialConsole";
 import { SourceView } from "@/components/SourceView";
 import { Button } from "@/components/ui/button";
@@ -40,10 +41,8 @@ import { formatSimTime } from "@/lib/world-issues";
 import { moveTarget, poseCommit } from "@/lib/world-move";
 import { openPartTarget } from "@/lib/world-open-part";
 import {
-  type LevelOption,
   type PlayChange,
   renamePartOp,
-  setLevelOp,
   setParamOp,
   setPlayOp,
 } from "@/lib/world-ops";
@@ -790,15 +789,6 @@ function commitParam(
   if (op) commitEdit([op], { part: target.part });
 }
 
-function commitLevel(
-  path: string,
-  axis: WorldViewNode["levels"][number]["axis"],
-  option: LevelOption
-) {
-  const op = setLevelOp(worldStore.getState().path, path, axis, option);
-  if (op) commitEdit([op]);
-}
-
 function commitPlay(current: WorldViewPlay, next: PlayChange) {
   const op = setPlayOp(worldStore.getState().path, current, next);
   if (op) commitEdit([op]);
@@ -1103,34 +1093,7 @@ function InstanceBody({
       ) : null}
       {card.axes.map((axis) => (
         <Section key={axis.axis} title={axis.axis}>
-          <select
-            className="w-full rounded-md border border-border bg-background px-2 py-1 text-[12px]"
-            value={
-              axis.options.find((option) => option.chosen)
-                ? `${axis.options.find((option) => option.chosen)?.class}:${axis.options.find((option) => option.chosen)?.variant}`
-                : ""
-            }
-            onChange={(event) => {
-              const option = axis.options.find(
-                (item) => `${item.class}:${item.variant}` === event.target.value
-              );
-              if (!option) return;
-              commitLevel(node.id, axis.axis, option);
-            }}
-          >
-            {axis.options.map((option) => (
-              <option
-                key={`${option.class}:${option.variant}`}
-                value={`${option.class}:${option.variant}`}
-                disabled={option.gray}
-                title={option.reason}
-              >
-                {option.class} {option.variant}
-                {option.chosen ? " · current" : ""}
-                {option.label ? ` · ${option.label}` : ""}
-              </option>
-            ))}
-          </select>
+          <LevelAxis node={node} axis={axis} />
         </Section>
       ))}
       <OpenPart node={node} />

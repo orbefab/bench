@@ -1,5 +1,5 @@
 import { ok as expect } from "node:assert/strict";
-import { confirmActions, confirmLines } from "./world-confirm";
+import { confirmActions, confirmLines, confirmTitle } from "./world-confirm";
 
 const prompt = {
   count: 2,
@@ -24,6 +24,15 @@ const actions = confirmActions(prompt);
 expect(
   actions.stay === "stay" && actions.breakLabel === "Break 2",
   "Stay and Break N"
+);
+
+expect(
+  confirmTitle([{ kind: "remove-instance" }]) === "This edit drops fixed ports",
+  "an instance edit keeps the fixed-ports title"
+);
+expect(
+  confirmTitle([{ kind: "remove-capture" }]) === "A parent uses this capture",
+  "deleting a capture asks about the parent that uses it"
 );
 
 console.log("world-confirm.selfcheck ok");

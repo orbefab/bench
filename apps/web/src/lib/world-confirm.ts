@@ -27,6 +27,13 @@ export function confirmLines(prompt: ConfirmPrompt): ConfirmLine[] {
   }));
 }
 
+/** The ask is for fixed ports unless the edit deletes a capture a parent uses. */
+export function confirmTitle(ops: readonly { kind: string }[]): string {
+  return ops.some((op) => op.kind === "remove-capture")
+    ? "A parent uses this capture"
+    : "This edit drops fixed ports";
+}
+
 export function confirmActions(prompt: ConfirmPrompt): {
   stay: "stay";
   breakLabel: string;

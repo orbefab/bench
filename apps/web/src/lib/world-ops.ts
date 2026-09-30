@@ -65,6 +65,22 @@ export function setLevelOp(
   };
 }
 
+/** Delete a captured level. The server asks first when a parent depends on it. */
+export function removeCaptureOp(
+  target: { document: string; part: string },
+  axis: WorldViewNode["levels"][number]["axis"],
+  option: Pick<LevelOption, "class" | "variant">
+): EditOp {
+  return {
+    kind: "remove-capture",
+    document: target.document,
+    part: target.part,
+    axis,
+    level: option.class,
+    variant: option.variant,
+  };
+}
+
 export type PlayChange = {
   gravity?: [number, number, number];
   seed?: number;

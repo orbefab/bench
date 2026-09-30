@@ -6,6 +6,7 @@ import {
 import { Pause, Play, X } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, useEffect } from "react";
 
+import { CaptureBar } from "@/components/CaptureBar";
 import { Button } from "@/components/ui/button";
 import { sendWorldCommand } from "@/hooks/useWorldRun";
 import {
@@ -99,6 +100,7 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
   if (!recording) {
     return (
       <div className={shell}>
+        <CaptureBar />
         <div className={rowClass}>
           {playButton}
           <span className="text-xs tabular-nums text-muted-foreground">
@@ -147,6 +149,7 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
 
   return (
     <div className={shell}>
+      <CaptureBar />
       {rows.length > 0 ? (
         <div className="flex max-h-36 flex-col gap-0.5 overflow-y-auto">
           {rows.map((item) => (

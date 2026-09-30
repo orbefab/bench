@@ -1,4 +1,5 @@
 import type {
+  CaptureAxisName,
   EditOp,
   WorldPinState,
   WorldSender,
@@ -9,6 +10,7 @@ import { useEffect } from "react";
 
 import { showToast } from "@/components/ui/toast";
 import { getDeviceToken } from "@/lib/api";
+import { type CaptureMessage, isCaptureMessage } from "@/lib/world-capture";
 import { editRefusalText, historyRefusalTitle } from "@/lib/world-edit-refusal";
 import { historyButtons } from "@/lib/world-history";
 import { decideHudSample } from "@/lib/world-hud";
@@ -129,6 +131,28 @@ export function sendWorldRedo() {
   });
 }
 
+/** Capture this instance's axis. Returns the job's nonce, or null when there is no socket. */
+export function sendWorldCapture(
+  path: string,
+  axis: CaptureAxisName
+): string | null {
+  if (socket?.readyState !== WebSocket.OPEN) return null;
+  const nonce = worldCommandNonce();
+  socket.send(JSON.stringify({ type: "capture", nonce, path, axis }));
+  return nonce;
+}
+
+export function abortWorldCapture(nonce: string) {
+  sendSocket({ type: "capture-abort", nonce });
+}
+
+/** What the socket hands capture messages to. Injected, so no import cycle. */
+export type WorldCaptureHandlers = {
+  message(message: CaptureMessage): void;
+  /** A new socket has no job to hear from. */
+  reset(): void;
+};
+
 /** Stay: the edit is not sent again. */
 export function stayWorldEdit() {
   pendingEdit = null;
@@ -155,7 +179,11 @@ function pinsOf(boards: WorldState["boards"]): Record<string, WorldPinState> {
  * One socket for the open world. Poses stay in a ref. React hears
  * play state, a throttled sim time, the last remote command, and errors.
  */
-export function useWorldRun(project: string, world: string) {
+export function useWorldRun(
+  project: string,
+  world: string,
+  capture?: WorldCaptureHandlers
+) {
   const loadId = useWorld((s) => s.loadId);
   // revision is intentionally absent: a reload refetches meshes only.
   const socketKey = worldSocketKey({ project, world, loadId });
@@ -173,6 +201,7 @@ export function useWorldRun(project: string, world: string) {
     let pendingHud: WorldState | null = null;
     const hud = worldStore.getState();
     resetBoardConsole();
+    capture?.reset();
 
     const clearAttach = () => {
       if (attachTimer) clearTimeout(attachTimer);
@@ -324,6 +353,10 @@ export function useWorldRun(project: string, world: string) {
           part: pending.part,
           label: pending.label,
         });
+        return;
+      }
+      if (isCaptureMessage(message)) {
+        capture?.message(message);
         return;
       }
       if (message.type === "histories") {

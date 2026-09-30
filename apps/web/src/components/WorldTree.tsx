@@ -27,7 +27,11 @@ import {
   matchesShortcut,
   probeEscLayers,
 } from "@/lib/shortcuts";
-import { confirmActions, confirmLines } from "@/lib/world-confirm";
+import {
+  confirmActions,
+  confirmLines,
+  confirmTitle,
+} from "@/lib/world-confirm";
 import { instanceEditTarget, wireEditTarget } from "@/lib/world-edit-target";
 import { historyButtons } from "@/lib/world-history";
 import { editorKeyAction } from "@/lib/world-keys";
@@ -192,7 +196,7 @@ export function WorldConfirmDialog() {
       }}
     >
       <AlertDialogContent>
-        <AlertDialogTitle>This edit drops fixed ports</AlertDialogTitle>
+        <AlertDialogTitle>{confirmTitle(confirm.ops)}</AlertDialogTitle>
         <AlertDialogDescription>{confirm.message}</AlertDialogDescription>
         <ul className="mt-3 space-y-2 text-sm">
           {lines.map((line) => (

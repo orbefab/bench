@@ -86,6 +86,7 @@ import { usePrefs } from "@/state/prefs";
 import { useScene } from "@/state/scene";
 import { useViewer } from "@/state/viewer";
 import { useWorld } from "@/state/world";
+import { worldCaptureHandlers } from "@/state/world-capture";
 import { useXrUi } from "@/state/xr";
 import { enterAR, enterVR } from "@/xrStore";
 
@@ -463,7 +464,7 @@ function ViewerShell({ host }: { host: boolean }) {
   const worldPath = useWorld((s) => s.path);
   const folder = useOpenFolder(host);
   const projectPath = useProjectSession().project.path;
-  useWorldRun(projectPath, worldPath);
+  useWorldRun(projectPath, worldPath, worldCaptureHandlers);
   const hasProject = Boolean(projectPath);
   const chatWidth = usePrefs((s) => s.chatWidth);
   const chatOpen = usePrefs((s) => s.chatOpen);
