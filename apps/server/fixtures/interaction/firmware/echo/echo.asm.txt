@@ -1,0 +1,23 @@
+; Hand-assembled ATmega328P serial echo for the interaction golden.
+; No compiler is involved: echo.hex is these words, little-endian.
+; 115200 baud is UBRR0 = 8 (an internal timing choice; the sim reads bytes).
+;
+; Sends 'E' at boot. Every received byte toggles D13 (PB5) and is echoed.
+;
+;  0  E108  ldi  r16, 0x18       ; RXEN0 | TXEN0
+;  1  9300  sts  UCSR0B, r16     ; 0x00C1
+;  3  E008  ldi  r16, 8
+;  4  9300  sts  UBRR0L, r16     ; 0x00C4
+;  6  9A25  sbi  DDRB, 5         ; D13 output
+;  7  E425  ldi  r18, 'E'
+;  8  C007  rjmp send
+;  9  9110  lds  r17, UCSR0A     ; loop, 0x00C0
+; 11  FF17  sbrs r17, 7          ; RXC0
+; 12  CFFC  rjmp loop
+; 13  9120  lds  r18, UDR0       ; 0x00C6
+; 15  9A1D  sbi  PINB, 5         ; toggles PORTB5
+; 16  9110  lds  r17, UCSR0A     ; send
+; 18  FF15  sbrs r17, 5          ; UDRE0
+; 19  CFFC  rjmp send
+; 20  9320  sts  UDR0, r18
+; 22  CFF2  rjmp loop
