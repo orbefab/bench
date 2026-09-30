@@ -348,7 +348,12 @@ type WorldViewNode = {
   ports: { name: string; source: "type" | "expose" | "auto"; fixed: boolean }[];
   params: Params;                                      // instance params, SI
   wires?: { a: string; b: string }[];                  // assembly netlist, file order
-  levels: { axis: AxisName; options: WorldViewLevelOption[]; chosen: { class: LevelClass; variant: string } | null }[];
+  levels: {
+    axis: AxisName;
+    options: WorldViewLevelOption[];
+    chosen: { class: LevelClass; variant: string } | null;
+    capture?: { ready: true } | { ready: false; reason: string };
+  }[];
   children: WorldViewNode[];
 };
 type WorldViewLevelOption = {
@@ -357,8 +362,13 @@ type WorldViewLevelOption = {
   label: string;
   runnable: boolean;                                   // loader static check
   reason?: string;
+  source?: "part" | "snapshot" | "overlay";
+  ref?: string;                                        // snapshot id, when the variant is a snapshot
+  stale?: string;                                      // why the snapshot no longer matches its part
 };
 ```
+
+`capture` is on the `behaviour` and `body` axes of a placed part, and absent on `visual`, ground and targets. `ready` uses the same lookup and `into` rule as the capture job (the part document's recipe, else the catalog's, then the level that takes the result), so a button that reads `ready: true` does not fail for a missing recipe. `reason` is the sentence to show when it is not ready. `source` says where the option is defined: `part` is the part document and not a snapshot, `snapshot` is a snapshot variant in the part document, and `overlay` is a variant the project's level overlay added (the loader records which variants the merge added). `ref` is the snapshot id of a `snapshot` or `overlay` snapshot variant. `stale` is set only on a snapshot this run loaded, when its recorded hash no longer matches the part.
 
 Children follow the resolved instances, in netlist order, so `fleet.rig2.servo` is a child of `fleet.rig2`. `wires` is that assembly's authored wires, in the same order, and is absent on a leaf. `levels` is one entry per axis the part authors. `runnable` is the loader's static check (a known kind, form, or chip). It does not re-plan this scene. `play` is the open document's block. Every id in the old fields is a node id with that role. A box whose id is not in `parts` or `supplies` is a `leaf`. Ground and targets are nodes from the document netlist. Their ids are instance ids; they are not rows in `report.levels`.
 

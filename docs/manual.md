@@ -76,14 +76,15 @@ Bench keeps these naming ideas separate on purpose.
 ### 4. Capture level names
 
 - Captures appear as **levels** on the part (history you can pick and delete).
-- A new level gets a simple auto-name; you can rename it on the card. That is separate from instance rename and file rename.
+- A new level is auto-named `capture-<n>`, and its snapshot file `<name>-<axis>-<n>`. The number counts up per part and axis, and a deleted capture's number is not reused.
+- **Renaming a level is deferred.** For now a level keeps its auto-name; delete it and capture again if you need a fresh one. Level rename, when it lands, stays separate from instance rename and file rename.
 
 | Gesture | Renames | Does not rename |
 |---------|---------|-----------------|
 | Tree row | This instance's label in the parent | Part file, ports, other instances |
 | Card → Rename part file | The part document on disk | Tree instance labels elsewhere (until refreshed from file) |
 | (v1) nothing | Ports | — use bubbled / pin-derived names |
-| Card level | A Capture history entry's label | Instance or file |
+| (later) Card level | A Capture history entry's label | Instance or file |
 
 ---
 
@@ -141,11 +142,16 @@ Parking a tab (switching away) **drops the live run** (file and view/selection s
 - You usually Capture from a fixture (a parent that may include supplies). The supply stays in the fixture; it is **not** baked into the capture. Later parents bring their own power. Outside the capture regime, you get **envelope** warnings.
 - You do **not** have to Open the child first: Capture works from the current playable document on the **selection**.
 - Captures **stack as history** on that part. Pick among levels on the card (**Live** when available, plus captures; unavailable options grayed). **Delete** old history entries from the card.
-- Progress on the **under-stage bar** (Abort). Success: **toast + card**. Failure: **error toast + block on the card**.
+- **The Capture button.** Each axis picker that can capture has its own **Capture** button beside it. When it can't run, it is disabled and the card says why beside it ("no capture recipe for …", "no level holds a snapshot on …"). It is also disabled while another capture is running in this world ("a capture is running"). Pressing it captures the selected instance's part on that axis.
+- **Progress** shows on the **under-stage bar**: what the capture is doing, `done / total`, a bar, and **Abort**. The play controls stay as they are, and the run is not touched. Abort writes nothing.
+- **When it finishes.** A toast says **"Captured <name>: use it?"** with a **Use it** button. The part **stays on its current level** until you press it. **Use it** switches the axis to the new level, as one undoable edit. The new level is in the picker either way. Failure: **error toast + block on the card** (until your next capture or selection change). An abort is quiet: no block.
+- **Sources.** Each level in the picker says where it comes from: **part** (defined in the part file), **snapshot** (a captured snapshot), or **overlay** (added by this project's level overlay). A **stale** mark, with its reason on hover, says the part changed after the capture.
+- **Delete** shows on snapshot and overlay levels only, never on a level the part file defines. If a parent's level rule selects the level, Delete **asks first** and lists what depends on it: **Stay** (nothing changes) or **Break N** (delete it and leave those rules broken, each with a warning).
+- **Undo / redo** (⌘/Ctrl+Z · ⌘/Ctrl+Shift+Z) cover capture, **Use it**, and Delete. Undoing a capture removes the level and its snapshot file.
 - After edits inside a part, every capture above that edit is marked **stale**, and the card says so. You can still run it.
 - Capture is **recipe-guided** when a recipe exists for that part type (still being refined). Visual "capture the mesh" is not a main verb: renderer LOD handles heavy visuals.
 
-**Where a capture lives.** On screen it is a level on the part. On disk it is its own snapshot file beside the part, and the part's level list points at it. So a capture never rewrites the part, and a table of numbers does not bloat it.
+**Where a capture lives.** On screen it is a level on the part. On disk it is a snapshot file in the project's `snapshots/` folder, named `<name>-<axis>-<n>`, and the part's level list points at it by id. So a table of numbers does not bloat the part.
 
 **Capturing a library part** (one you Added from a library, not one you made) never touches the library file. Bench writes a **level overlay** into your project (`overlays/<publisher>/<name>@<version>.levels.json`). Every instance of that part in the project gets the new level; other projects don't.
 

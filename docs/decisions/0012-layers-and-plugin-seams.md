@@ -49,6 +49,11 @@ interface:
 
 1. **Forms.** A form id, its param schema, lint rules, a run adapter (stamp
    into an engine, or run alone), a capture recipe, and a card renderer.
+   The capture recipe lives on the part document (its `capture` field),
+   else in the catalog's `capture.config.json`. Either way it is keyed by
+   part id, not by type: `nano-power-input` and `uno-power-input` share a
+   type and have their own recipes. The card reaches it through the world
+   view (`capture` on each level axis), not by importing the lookup.
 2. **Tools.** A mode, a hotkey, and a 3D interaction that emits edit
    operations.
 3. **Importers.** One per asset category, converting to that category's

@@ -38,10 +38,11 @@ A one-time converter turns a `.world.json` into a part with those fields.
 Until the converter lands (A3 in [`product.md`](../product.md)), a world is
 still a `.world.json` and ADR 0009's format stays in force.
 
-### A capture is a level in the UI and a sidecar file on disk
+### A capture is a level in the UI and a snapshot file in the project
 
-Each capture is a `sfab.snapshot@1` file beside the part, and the part's
-level list points at it. A capture on a library part writes a project
+Each capture is a `sfab.snapshot@1` file in the project's `snapshots/`
+folder, and a level on the part points at it by id. A project part gets
+that level in its own file. A capture on a library part writes a project
 **level overlay**, `overlays/<pub>/<name>@<ver>.levels.json`, that adds
 levels to every instance of that part in the project. The library file is
 never written.
@@ -72,14 +73,14 @@ shown on the tree row, as a 3D callout, and on the card.
 
 ### Negative
 - A format change: every example world converts, and every lock is rewritten.
-- A capture is two files (part + sidecar), and an overlay is a third place a
+- A capture is two files (part + snapshot), and an overlay is a third place a
   level can come from.
 - A degraded run can hide a mistake that a hard error would have made obvious.
 
 ### Mitigations
 - The converter is one-time, and a converted example must replay its old
   recording identically (the A3 proof).
-- The card names each level's source (part, sidecar, or overlay).
+- The card names each level's source (part, snapshot, or overlay).
 - Every degradation is a warning shown three ways, and the run report lists them.
 
 ## Implementation notes
