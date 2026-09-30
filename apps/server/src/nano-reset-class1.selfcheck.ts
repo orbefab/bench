@@ -89,6 +89,13 @@ try {
       board?.stamp?.resetNode,
       `class ${level} Nano stamp has no reset node`
     );
+    // The chip part's brownout params are the board's, at both classes.
+    expect(
+      board?.brownoutVoltage === 2.7 &&
+        board.brownoutAssertVoltage === 2.675 &&
+        board.brownoutReleaseVoltage === 2.725,
+      `class ${level} Nano brownout ${board?.brownoutVoltage}/${board?.brownoutAssertVoltage}/${board?.brownoutReleaseVoltage}`
+    );
     console.log(
       `class ${level} Nano: reset port ${board?.resetPort}, reset node ${board?.stamp?.resetNode}`
     );
