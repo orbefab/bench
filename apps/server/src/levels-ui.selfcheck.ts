@@ -2,19 +2,24 @@
  * Level cards, world_set_level, and part visual boxes.
  */
 
-import { ok as expect } from "node:assert/strict";
+import { deepStrictEqual, ok as expect } from "node:assert/strict";
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { emptySnapshot, type WorldServerMessage } from "@sfab-bench/contract";
+import {
+  emptySnapshot,
+  type WorldServerMessage,
+  type WorldViewNode,
+} from "@sfab-bench/contract";
 import { contentHash } from "@sfab-bench/parts";
 import { levelCard, reasonWords } from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
@@ -207,6 +212,128 @@ expect(
   "nano, usb, and module sit on separate poses"
 );
 console.log(`parts: ${modulePart?.id} · ${modulePart?.model}`);
+
+/** Capture readiness and where each level comes from, as the card reads them. */
+{
+  const flat = (nodes: WorldViewNode[]): WorldViewNode[] =>
+    nodes.flatMap((node) => [node, ...flat(node.children)]);
+  const nodeAt = (view: ReturnType<typeof viewOf>, id: string) => {
+    const node = flat(view.tree.nodes).find((item) => item.id === id);
+    if (!node) throw new Error(`no node ${id}`);
+    return node;
+  };
+  const axisOf = (node: WorldViewNode, axis: string) =>
+    node.levels.find((row) => row.axis === axis);
+  const nanoView = viewOf(
+    openReport(nanoDir, "parts/sfab/nano-vcc-usb@1.0.0.json").plan
+  );
+  const power = nodeAt(nanoView, "nano.power");
+  deepStrictEqual(axisOf(power, "behaviour")?.capture, { ready: true });
+  expect(
+    axisOf(power, "visual")?.capture === undefined,
+    "a visual axis never captures"
+  );
+  const snap = axisOf(power, "behaviour")?.options.find(
+    (opt) => opt.source === "snapshot"
+  );
+  expect(
+    snap?.ref?.startsWith("sfab/nano-power-input") === true &&
+      axisOf(power, "behaviour")?.options.some((opt) => opt.source === "part"),
+    `catalog part: snapshot and part levels ${JSON.stringify(power.levels)}`
+  );
+  const board = nodeAt(nanoView, "nano");
+  const noRecipe = axisOf(board, "behaviour")?.capture;
+  expect(
+    noRecipe?.ready === false &&
+      noRecipe.reason === `no capture recipe for ${board.type}`,
+    `board without a recipe ${JSON.stringify(noRecipe)}`
+  );
+
+  const dir = mkdtempSync(join(tmpdir(), "sfab-level-source-"));
+  try {
+    cpSync(nanoDir, dir, { recursive: true });
+    const partId = "sfab/nano-power-input@1.0.0";
+    const overlayFile = join(
+      dir,
+      "overlays/sfab/nano-power-input@1.0.0.levels.json"
+    );
+    mkdirSync(dirname(overlayFile), { recursive: true });
+    writeFileSync(
+      overlayFile,
+      `${JSON.stringify(
+        {
+          format: "sfab.level-overlay@1",
+          part: partId,
+          axes: {
+            behaviour: {
+              "1": {
+                variants: {
+                  "behaviour-1": {
+                    kind: "snapshot",
+                    ref: "sfab/nano-power-input-behaviour-1@1.0.0",
+                    omits: ["dynamic response"],
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+    const overlaid = nodeAt(
+      viewOf(openReport(dir, "parts/sfab/nano-vcc-usb@1.0.0.json").plan),
+      "nano.power"
+    );
+    const added = axisOf(overlaid, "behaviour")?.options.find(
+      (opt) => opt.variant === "behaviour-1"
+    );
+    expect(
+      overlaid.source === "catalog" || overlaid.source === "library",
+      `overlaid part is a library part, not ${overlaid.source}`
+    );
+    expect(
+      added?.source === "overlay" &&
+        added.ref === "sfab/nano-power-input-behaviour-1@1.0.0",
+      `overlay variant ${JSON.stringify(added)}`
+    );
+    expect(
+      axisOf(overlaid, "behaviour")?.options.find(
+        (opt) => opt.source === "snapshot"
+      ),
+      "the library's own snapshot level stays a snapshot"
+    );
+
+    const own = join(dir, "parts/sfab/nano-power-input@1.0.0.json");
+    cpSync(
+      fileURLToPath(
+        new URL(
+          "../catalog/parts/sfab/nano-power-input@1.0.0.json",
+          import.meta.url
+        )
+      ),
+      own
+    );
+    rmSync(overlayFile);
+    const mine = nodeAt(
+      viewOf(openReport(dir, "parts/sfab/nano-vcc-usb@1.0.0.json").plan),
+      "nano.power"
+    );
+    expect(mine.source === "project", `project part is ${mine.source}`);
+    expect(
+      axisOf(mine, "behaviour")?.options.some(
+        (opt) => opt.source === "snapshot"
+      ) && axisOf(mine, "behaviour")?.capture?.ready === true,
+      `project part snapshot ${JSON.stringify(mine.levels)}`
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  console.log(
+    "level source: part, snapshot, overlay; capture ready on nano-power-input, reasoned without a recipe"
+  );
+}
 
 const gaugeView = viewOf(gauge.plan);
 const sensorBox = gaugeView.boxes.find((box) => box.id === "sensor");

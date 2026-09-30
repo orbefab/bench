@@ -16,6 +16,7 @@ import {
   type WorldPrimitive,
   type WorldStepProp,
   type WorldTarget,
+  type WorldViewNode,
   type WorldViewTree,
 } from "@sfab-bench/contract";
 import { collapse } from "@sfab-bench/engine-body";
@@ -1403,6 +1404,7 @@ function build(
         rangers,
         leaves,
         store: env.store,
+        join: (...parts) => env.resolve(...parts),
         projectDir: worldDir,
         catalogDir: env.absolutePath(env.catalogDir()),
         assetRoot,
@@ -1477,16 +1479,24 @@ export function planWorld(
       };
     }
   }
-  noteFreshness(built.plan.report ?? null, loaded, found.root, env);
+  noteFreshness(
+    built.plan.report ?? null,
+    built.plan.tree,
+    loaded,
+    found.root,
+    env
+  );
   return { ok: true, plan: built.plan };
 }
 
 /**
  * A capture is stale when its stored hash no longer matches the part.
- * It still runs. A hash that cannot be recomputed is left unmarked.
+ * It still runs. A hash that cannot be recomputed is left unmarked. Only
+ * a snapshot this run loaded is checked, so the view marks those options.
  */
 function noteFreshness(
   report: RunReport | null,
+  tree: WorldViewTree | undefined,
   loaded: LoadResult,
   root: string,
   env: PlanEnv
@@ -1507,6 +1517,11 @@ function noteFreshness(
     );
     if (!fresh.checked || fresh.hash === from.hash) continue;
     row.stale = true;
+    markStaleOptions(
+      tree?.nodes ?? [],
+      row.ref,
+      `the part changed since ${from.part} class ${from.level} was captured`
+    );
     report.warnings.push(
       makeDiag({
         severity: "warning",
@@ -1519,6 +1534,21 @@ function noteFreshness(
         detail: `stale capture of ${from.part} class ${from.level} (${snap.path})`,
       })
     );
+  }
+}
+
+function markStaleOptions(
+  nodes: readonly WorldViewNode[],
+  ref: string,
+  reason: string
+): void {
+  for (const node of nodes) {
+    for (const axis of node.levels) {
+      for (const option of axis.options) {
+        if (option.ref === ref) option.stale = reason;
+      }
+    }
+    markStaleOptions(node.children, ref, reason);
   }
 }
 

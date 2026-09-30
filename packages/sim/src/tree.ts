@@ -5,11 +5,13 @@ import {
   type AxisName,
   type BehaviourImpl,
   type BodyImpl,
+  type CaptureAxisName,
   type LevelClass,
   type PartFile,
   type Pose,
   ROOT_PATH,
   type VisualImpl,
+  type WorldViewCapture,
   type WorldViewLevelAxis,
   type WorldViewLevelOption,
   type WorldViewNode,
@@ -33,6 +35,11 @@ import {
   splitPortRef,
 } from "@sfab-bench/parts";
 
+import {
+  type CaptureRecipeSource,
+  captureLevelFor,
+  captureRecipeFor,
+} from "./capture-recipe";
 import { formAdapter } from "./forms";
 import { chipFacts } from "./power-path";
 
@@ -51,6 +58,7 @@ export function runTree(input: {
   rangers: readonly { id: string }[];
   leaves: readonly { id: string }[];
   store: Store;
+  join(...parts: string[]): string;
   projectDir: string;
   catalogDir: string;
   assetRoot: string;
@@ -116,7 +124,7 @@ export function runTree(input: {
       return { part: partsById.get(id) ?? null, place: null };
     }
     partsById.set(id, loaded.part);
-    const place = partPlace(loaded.source, loaded.path);
+    const place = partPlace(loaded.source, loaded.path, loaded.overlay?.added);
     places.set(id, place);
     return { part: loaded.part, place };
   };
@@ -130,10 +138,16 @@ export function runTree(input: {
     return located(id).place;
   };
 
+  const recipes = {
+    catalogDir: input.catalogDir,
+    store: input.store,
+    join: input.join,
+  };
   const nodes = new Map<string, WorldViewNode>();
   for (const inst of input.resolved) {
     const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
     const netlist = behaviourNetlist(inst.part, behaviour);
+    const place = placeOf(inst.part.id);
     nodes.set(inst.path, {
       id: inst.path,
       name:
@@ -147,8 +161,11 @@ export function runTree(input: {
       ports: portsOf(inst, world, dependents(inst.part.id)),
       params: { ...inst.params },
       ...(netlist ? { wires: netlist.wires.map(([a, b]) => ({ a, b })) } : {}),
-      levels: levelAxes(inst.part, chosenOf(inst), inst.declaredOnly),
-      ...originFields(placeOf(inst.part.id)),
+      levels: levelAxes(inst.part, chosenOf(inst), inst.declaredOnly, {
+        added: place?.added,
+        capture: { typeId: inst.type.id, source: recipes },
+      }),
+      ...originFields(place),
       children: [],
     });
   }
@@ -273,7 +290,13 @@ function portWorld(resolved: readonly LiveInstance[]): PortWorld {
 type PartPlace = {
   source: WorldViewPartSource;
   file?: string;
+  /** Variants the project's level overlay added, as `levelKey`. */
+  added?: Set<string>;
 };
+
+function levelKey(axis: string, level: string | number, variant: string) {
+  return `${axis}\0${level}\0${variant}`;
+}
 
 /**
  * The loader calls the project layer "world". A part pinned from the
@@ -282,10 +305,14 @@ type PartPlace = {
  */
 function partPlace(
   source: "world" | "library" | "catalog" | "inline",
-  path: string
+  path: string,
+  added?: readonly { axis: string; level: string; variant: string }[]
 ): PartPlace {
-  if (source === "library") return { source: "library" };
-  if (source === "catalog") return { source: "catalog" };
+  const overlay = added
+    ? { added: new Set(added.map((v) => levelKey(v.axis, v.level, v.variant))) }
+    : {};
+  if (source === "library") return { source: "library", ...overlay };
+  if (source === "catalog") return { source: "catalog", ...overlay };
   if (source === "world") return { source: "project", file: path };
   return { source: "project" };
 }
@@ -318,7 +345,9 @@ function envNode(
     ports: [],
     params: {},
     levels: part
-      ? levelAxes(part, defaultsOf(part), part.declaredOnly === true)
+      ? levelAxes(part, defaultsOf(part), part.declaredOnly === true, {
+          added: place?.added,
+        })
       : [],
     ...originFields(place),
     children: [],
@@ -392,7 +421,12 @@ function levelAxes(
   chosen: Partial<
     Record<AxisName, { class: LevelClass; variant: string } | null>
   >,
-  declaredOnly: boolean
+  declaredOnly: boolean,
+  origin: {
+    added?: Set<string>;
+    /** Absent on a node that is never captured (ground, target). */
+    capture?: { typeId: string; source: CaptureRecipeSource };
+  }
 ): WorldViewLevelAxis[] {
   const axes: WorldViewLevelAxis[] = [];
   for (const axis of AXES) {
@@ -411,11 +445,16 @@ function levelAxes(
           label: variantLabel(impl),
           runnable: check.runnable,
           ...(check.reason ? { reason: check.reason } : {}),
+          ...sourceOf(axis, cls, variant, impl, origin.added),
         });
       }
     }
     if (options.length === 0) continue;
     const pick = chosen[axis];
+    const capture =
+      origin.capture && (axis === "behaviour" || axis === "body")
+        ? captureOf(part, axis, origin.capture)
+        : undefined;
     axes.push({
       axis,
       options,
@@ -426,9 +465,47 @@ function levelAxes(
         )
           ? pick
           : null,
+      ...(capture ? { capture } : {}),
     });
   }
   return axes;
+}
+
+/** The loader knows which variants the overlay merge added; the rest is by kind. */
+function sourceOf(
+  axis: AxisName,
+  cls: LevelClass,
+  variant: string,
+  impl: unknown,
+  added: Set<string> | undefined
+): Pick<WorldViewLevelOption, "source" | "ref"> {
+  const ref =
+    impl && typeof impl === "object" && "ref" in impl
+      ? (impl as { kind?: string; ref?: unknown })
+      : null;
+  const snapshotRef =
+    ref?.kind === "snapshot" && typeof ref.ref === "string" ? ref.ref : null;
+  const source = added?.has(levelKey(axis, cls, variant))
+    ? "overlay"
+    : ref?.kind === "snapshot"
+      ? "snapshot"
+      : "part";
+  return { source, ...(snapshotRef ? { ref: snapshotRef } : {}) };
+}
+
+/** The same lookup and `into` rule the capture job uses. */
+function captureOf(
+  part: PartFile,
+  axis: CaptureAxisName,
+  input: { typeId: string; source: CaptureRecipeSource }
+): WorldViewCapture {
+  const recipe = captureRecipeFor(part, axis, input.source);
+  if (!recipe) {
+    return { ready: false, reason: `no capture recipe for ${input.typeId}` };
+  }
+  const level = captureLevelFor(part, axis, recipe);
+  if ("error" in level) return { ready: false, reason: level.error };
+  return { ready: true };
 }
 
 const SCENE_FORMS = new Set([

@@ -50,8 +50,11 @@ export type LoadedPart = {
   sha256: string;
   shadowed?: string;
   /** The project's level overlay merged into `part`. `sha256` stays the library file's. */
-  overlay?: { path: string; sha256: string };
+  overlay?: { path: string; sha256: string; added: OverlayVariant[] };
 };
+
+/** One variant the overlay merge added to a library part. */
+export type OverlayVariant = { axis: string; level: string; variant: string };
 
 export type LoadedType = {
   type: PartTypeFile;
@@ -202,7 +205,11 @@ export function loadPartById(
     if (file && opts.store.exists(file)) {
       const merged = mergeOverlay(raw, readJson(opts.store, file), id);
       if (isDiag(merged)) return merged;
-      overlay = { path: relPosix(opts.assetRoot, file), sha256: merged.sha256 };
+      overlay = {
+        path: relPosix(opts.assetRoot, file),
+        sha256: merged.sha256,
+        added: merged.added,
+      };
     }
   }
   return {
@@ -237,7 +244,8 @@ function mergeOverlay(
   part: PartFile,
   rawOverlay: unknown,
   id: string
-): { sha256: string } | Diagnostic {
+): { sha256: string; added: OverlayVariant[] } | Diagnostic {
+  const added: OverlayVariant[] = [];
   const bad = (left: string, detail: string) =>
     makeDiag({
       severity: "error",
@@ -282,10 +290,11 @@ function mergeOverlay(
           );
         }
         target.variants[name] = (add.variants as Record<string, unknown>)[name];
+        added.push({ axis, level, variant: name });
       }
     }
   }
-  return { sha256: contentHash(rawOverlay as object) };
+  return { sha256: contentHash(rawOverlay as object), added };
 }
 
 export function loadTypeById(

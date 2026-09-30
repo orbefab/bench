@@ -104,7 +104,24 @@ export type WorldViewLevelOption = {
   runnable: boolean;
   /** Why a grayed option cannot run. Absent when it can. */
   reason?: string;
+  /**
+   * Where the option is defined. `part`: the part document, not a
+   * snapshot. `snapshot`: a snapshot variant in the part document.
+   * `overlay`: a variant the project's level overlay added.
+   */
+  source?: WorldViewLevelSource;
+  /** The snapshot id. Present on a `snapshot` or `overlay` snapshot option. */
+  ref?: string;
+  /** Why the snapshot no longer matches its source. Absent when it is fresh. */
+  stale?: string;
 };
+
+export type WorldViewLevelSource = "part" | "snapshot" | "overlay";
+
+/** Whether Capture can run on an axis, and if not, why. */
+export type WorldViewCapture =
+  | { ready: true }
+  | { ready: false; reason: string };
 
 /** One axis the part authors. Missing axes are omitted. */
 export type WorldViewLevelAxis = {
@@ -112,6 +129,8 @@ export type WorldViewLevelAxis = {
   options: WorldViewLevelOption[];
   /** The level this run resolved. Null when the axis did not resolve. */
   chosen: { class: LevelClass; variant: string } | null;
+  /** Absent on an axis that can never capture, such as `visual`. */
+  capture?: WorldViewCapture;
 };
 
 /**
