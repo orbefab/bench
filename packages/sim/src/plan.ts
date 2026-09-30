@@ -970,6 +970,17 @@ function build(
       // as: the parent composite when this chip is a child of one, else itself.
       const host = boardHostOf(inst, byPath, ROOT_PATH);
       const exposure = chipExposure(inst, host);
+      // One board per host: a second chip exposed by the same parent does not
+      // run, and the first one does.
+      if (boards.some((board) => board.id === host.path)) {
+        diags.push(
+          cannot(
+            host,
+            `more than one firmware chip runs as this board (${inst.path} does not run)`
+          )
+        );
+        continue;
+      }
       const facts = chipFactsOf(behaviour);
       if (!facts) {
         diags.push(

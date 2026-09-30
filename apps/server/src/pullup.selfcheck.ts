@@ -57,7 +57,6 @@ function gpioPlan(
       voltagePin: "5V",
       groundPin: "GND",
       current: 0.05,
-      boardCircuit: null,
       hasNetlist: false,
       resetPort: null,
       resetFraction: 0.9,

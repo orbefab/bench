@@ -105,6 +105,33 @@ const BOARD = part("sfab/test-board@1.0.0", "test-board", {
   },
 });
 
+/** Two chips behind one set of header ports: one board id, so only the first runs. */
+const TWO = part("sfab/two-board@1.0.0", "test-board", {
+  "1": {
+    default: "netlist",
+    variants: {
+      netlist: {
+        kind: "composite",
+        omits: ["a test board"],
+        netlist: {
+          instances: {
+            mcu: {
+              part: "sfab/atmega328p@1.0.0",
+              params: { firmware: { $param: "firmware", optional: true } },
+            },
+            mcu2: {
+              part: "sfab/atmega328p@1.0.0",
+              params: { firmware: { $param: "firmware", optional: true } },
+            },
+          },
+          wires: [["mcu.VCC", "mcu.AVCC"]],
+          expose: { "5V": "mcu.VCC", GND: "mcu2.GND", D9: "mcu.PB1" },
+        },
+      },
+    },
+  },
+});
+
 function scene(name: string, boardPart: string, params: object, power: string) {
   const instances = {
     board: { part: boardPart, params },
@@ -145,7 +172,17 @@ try {
     join(root, "parts", "sfab", "test-board@1.0.0.json"),
     JSON.stringify(BOARD)
   );
+  writeFileSync(
+    join(root, "parts", "sfab", "two-board@1.0.0.json"),
+    JSON.stringify(TWO)
+  );
   const worlds: [string, string, object, string][] = [
+    [
+      "two-chips",
+      "sfab/two-board@1.0.0",
+      { firmware: "firmware/echo/echo.hex" },
+      "5V",
+    ],
     [
       "composite",
       "sfab/test-board@1.0.0",
@@ -236,6 +273,21 @@ try {
   } finally {
     sim.dispose();
   }
+
+  // Two chips under one parent share the parent's id: the first runs, the
+  // second is a diagnostic on the host.
+  const two = planWorld(root, world("two-chips"));
+  if (!two.ok) {
+    throw new Error(two.errors.map((item) => item.message).join("; "));
+  }
+  expect(
+    two.plan.boards.length === 1 && two.plan.boards[0]?.id === "board",
+    `two chips made ${two.plan.boards.length} boards`
+  );
+  const dup = (two.plan.degraded ?? []).find((row) =>
+    row.message.includes("more than one firmware chip runs as this board")
+  );
+  expect(dup?.path === "board", `two-chip diagnostic path ${dup?.path}`);
 
   // Not a child: the chip part in a scene is its own board.
   const alone = planWorld(root, world("bare-chip"));

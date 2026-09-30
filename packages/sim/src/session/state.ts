@@ -123,7 +123,7 @@ export type SupplySpec = {
 export type RailGroup = {
   circuit: RailCircuit;
   loads: Load[];
-  /** Sub-step minimum of the board node. Unused when `path` is false. */
+  /** Sub-step minimum of the board node. */
   boardMin: number;
 };
 
