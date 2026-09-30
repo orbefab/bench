@@ -46,9 +46,10 @@ export function confirmBody(
   const remove = ops.find((op) => op.kind === "remove-capture");
   if (!remove) return prompt.message;
   const rules = prompt.ports.flatMap((port) => port.dependents);
-  const noun = rules.length === 1 ? "rule uses" : "rules use";
   const name = remove.variant ?? prompt.ports[0]?.name ?? "this capture";
-  return `${name} is deleted from the part, but ${rules.length} ${noun} it: ${rules.join("; ")}. Break deletes it and sends those parts back to the level's default. Stay changes nothing.`;
+  const count =
+    rules.length === 1 ? "1 rule that uses" : `${rules.length} rules that use`;
+  return `Deleting ${name} breaks ${count} it: ${rules.join("; ")}. Break deletes it and sends those parts back to the level's default. Stay changes nothing.`;
 }
 
 export function confirmActions(prompt: ConfirmPrompt): {

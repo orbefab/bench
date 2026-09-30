@@ -48,7 +48,8 @@ const body = confirmBody([{ kind: "remove-capture", variant: "capture-1" }], {
   ports: [{ name: "capture-1", dependents: ["nano.power default"] }],
 });
 expect(
-  body.includes("capture-1") &&
+  body.startsWith("Deleting capture-1 breaks 1 rule that uses it: ") &&
+    !body.includes("is deleted") &&
     body.includes("nano.power default") &&
     body.includes("back to the level's default") &&
     !body.includes("Send it again") &&
