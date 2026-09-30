@@ -650,6 +650,17 @@ try {
     readFileSync(copy, "utf8").includes("capture-1"),
     "the loader loads the project copy, so the capture lands in it"
   );
+  const row = (
+    JSON.parse(readFileSync(lockFile, "utf8")) as {
+      parts: { id: string; path: string; source: string }[];
+    }
+  ).parts.find((item) => item.id === POWER);
+  expect(
+    row?.source === "world" &&
+      row.path.endsWith("parts/sfab/nano-power-input@1.0.0.json") &&
+      !row.path.includes("catalog"),
+    `the refreshed lock row names the project file: ${JSON.stringify(row)}`
+  );
   const shadowUse = await handleLiveEdit(
     project,
     WORLD,

@@ -380,8 +380,18 @@ function mergeRows<T extends { id: string; sha256: string }>(
       };
     }
     if (prev.sha256 !== next.sha256) {
-      const copy = structuredClone(prev);
+      // A refreshed row names the file the loader resolved now, so a capture
+      // into a project copy of a catalog part stops pointing at the catalog.
+      const copy = structuredClone(prev) as T & {
+        path?: string;
+        source?: string;
+      };
+      const found = next as T & { path?: string; source?: string };
       copy.sha256 = next.sha256;
+      if (found.path !== undefined && "path" in copy) copy.path = found.path;
+      if (found.source !== undefined && "source" in copy) {
+        copy.source = found.source;
+      }
       rows.push(copy);
     } else {
       rows.push(prev);
