@@ -498,11 +498,6 @@ export type BehaviourImpl = { omits: string[] } & (
       imageParam?: string;
       params?: Record<string, number>;
       fuses?: Record<string, string>;
-      /**
-       * Named cable `path:uno-usb`: this part's class-2 board netlist.
-       * Absent, a variant with no `board` uses the power pin as the terminal.
-       */
-      boardCircuit?: string;
       /** Logic port the chip uses as reset. Absent, the rail has no reset node. */
       resetPort?: string;
       /**
@@ -517,12 +512,6 @@ export type BehaviourImpl = { omits: string[] } & (
       railVoltage?: number;
       resetFraction?: number;
       minOperatingVoltage?: number;
-      /**
-       * Class-2 board. Child parts, wires, and expose from this
-       * board's ports onto those children. The chip's pin drivers
-       * stay in the firmware params.
-       */
-      board?: Netlist;
     }
   | { kind: "script"; script: string }
 );

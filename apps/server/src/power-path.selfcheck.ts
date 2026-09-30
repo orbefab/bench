@@ -34,13 +34,13 @@ import {
   stepBrownout,
 } from "./world/power";
 import {
+  railAttachment,
   UNO_F1_IHOLD,
   UNO_F1_R,
   UNO_F1_R_HOT,
   UNO_F1_TAU_S,
   UNO_F1_TMAX_8A_S,
   UNO_T1_RDS,
-  unoUsbPathFor,
 } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
@@ -219,7 +219,6 @@ const stall = createRailCircuit({
   rSeries: usb.rSeries,
   iLimit: usb.currentLimit,
   motors: [{ resistance: law.resistance, k: law.k }],
-  boardPath: "uno-usb",
   stamp: unoStamp,
   feed: "usb",
 });
@@ -244,12 +243,14 @@ console.log(
 );
 
 expect(
-  unoUsbPathFor("usb", "path:uno-usb"),
-  "a USB port on an Uno should take the path"
+  railAttachment({ connector: "usb", hasNetlist: true, stamp: unoStamp })
+    .feed === "usb",
+  "a USB port on an Uno should take the cable"
 );
 expect(
-  !unoUsbPathFor(null, "path:uno-usb"),
-  "a bench supply should not take the path"
+  railAttachment({ connector: null, hasNetlist: true, stamp: unoStamp })
+    .feed === "header",
+  "a bench supply should take the header"
 );
 {
   const benchClosed = solveRail({
@@ -291,7 +292,6 @@ expect(
     rSeries: 0.5,
     iLimit: 2,
     motors: [],
-    boardPath: "uno-usb",
     stamp: unoStamp,
     feed: "usb",
   });
@@ -326,7 +326,6 @@ expect(
     rSeries: 0.5,
     iLimit: 3,
     motors: [],
-    boardPath: "uno-usb",
     stamp: unoStamp,
     feed: "usb",
   });
@@ -398,7 +397,6 @@ expect(
     rSeries: usb.rSeries,
     iLimit: usb.currentLimit,
     motors,
-    boardPath: "uno-usb",
     stamp: unoStamp,
     feed: "usb",
   });

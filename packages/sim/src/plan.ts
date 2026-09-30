@@ -24,7 +24,6 @@ import { type AvrPinParams, avrPinParams } from "@sfab-bench/engine-circuit";
 import {
   assetDir,
   type BatteryParams,
-  class2BoardNetlist,
   envelopeOf,
   gearTrainErrors,
   type LiveInstance,
@@ -33,7 +32,6 @@ import {
   loadWorldV2,
   makeDiag,
   mergeFormParams,
-  pathRefOf,
   siValue,
   tableLawOf,
   type Wire,
@@ -128,11 +126,6 @@ export type RunBoard = {
   groundPin: string;
   /** Amperes drawn by the board, independent of voltage. */
   current: number;
-  /**
-   * `path:uno-usb`, or null when this variant does not name that cable.
-   * A board netlist carries `stamp` either way.
-   */
-  boardCircuit: string | null;
   /** The selected variant has a board netlist. */
   hasNetlist: boolean;
   /** Logic port the chip uses as reset. Null when the chip names none. */
@@ -977,23 +970,10 @@ function build(
       // as: the parent composite when this chip is a child of one, else itself.
       const host = boardHostOf(inst, byPath, ROOT_PATH);
       const exposure = chipExposure(inst, host);
-      const boardCircuit = behaviour.boardCircuit ?? null;
-      const pathName = pathRefOf(boardCircuit);
-      if (boardCircuit !== null && pathName !== "uno-usb") {
-        diags.push(cannot(host, `unknown board circuit ${boardCircuit}`));
-        continue;
-      }
       const facts = chipFactsOf(behaviour);
       if (!facts) {
         diags.push(
           cannot(host, `unknown chip "${behaviour.chip}"`, "unsupported")
-        );
-        continue;
-      }
-      const alias = pathName === "uno-usb" && behaviour.board === undefined;
-      if (alias && !class2BoardNetlist(inst.part)) {
-        diags.push(
-          cannot(host, `${inst.part.id} has no board netlist for path:uno-usb`)
         );
         continue;
       }
@@ -1049,9 +1029,7 @@ function build(
         voltagePin: powerName,
         groundPin: groundName,
         current: quiescent ?? 0,
-        boardCircuit,
-        hasNetlist:
-          behaviour.board !== undefined || alias || host.path !== inst.path,
+        hasNetlist: host.path !== inst.path,
         resetPort:
           host === inst
             ? (behaviour.resetPort ?? null)

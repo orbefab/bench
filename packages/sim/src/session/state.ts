@@ -13,7 +13,6 @@ import type { CompiledWorld } from "@sfab-bench/engine-body";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 import type { BatteryParams } from "@sfab-bench/parts";
 import type { BrownoutState, MotorLaw } from "../power";
-import type { BoardPathName } from "../power-path";
 import type { RailCircuit } from "../rail-circuit";
 import type { RangerRuntime } from "../ranger";
 import type { ServoTrack } from "../servo";
@@ -124,7 +123,6 @@ export type SupplySpec = {
 export type RailGroup = {
   circuit: RailCircuit;
   loads: Load[];
-  path: BoardPathName | null;
   /** Sub-step minimum of the board node. Unused when `path` is false. */
   boardMin: number;
 };

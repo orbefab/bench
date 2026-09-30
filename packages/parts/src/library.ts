@@ -388,12 +388,7 @@ function childRefs(part: PartFile): string[] {
     const slot = behaviour[String(cls) as "0"];
     if (!slot) continue;
     for (const variant of Object.values(slot.variants)) {
-      const netlist =
-        variant.kind === "composite"
-          ? variant.netlist
-          : variant.kind === "firmware"
-            ? variant.board
-            : null;
+      const netlist = variant.kind === "composite" ? variant.netlist : null;
       if (!netlist) continue;
       for (const inst of Object.values(netlist.instances)) refs.push(inst.part);
     }
@@ -968,12 +963,7 @@ function partAt(
   for (const slot of Object.values(behaviour)) {
     if (!slot) continue;
     for (const variant of Object.values(slot.variants)) {
-      const netlist =
-        variant.kind === "composite"
-          ? variant.netlist
-          : variant.kind === "firmware"
-            ? (variant.board ?? null)
-            : null;
+      const netlist = variant.kind === "composite" ? variant.netlist : null;
       if (!netlist) continue;
       const found = partAt(lib, netlist.instances, rest);
       if (found) return found;
@@ -1040,12 +1030,7 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
     const slot = behaviour[String(cls) as "0"];
     if (!slot) continue;
     for (const variant of Object.values(slot.variants)) {
-      const netlist =
-        variant.kind === "composite"
-          ? variant.netlist
-          : variant.kind === "firmware"
-            ? variant.board
-            : null;
+      const netlist = variant.kind === "composite" ? variant.netlist : null;
       if (!netlist) continue;
       const { instances, wires, expose } = netlist;
       lintParamRefs(lib, part, instances, diags);

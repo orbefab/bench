@@ -65,7 +65,7 @@ import {
   runningBrownout,
   stepBrownout,
 } from "./power";
-import { type BoardPathName, railAttachment } from "./power-path";
+import { railAttachment } from "./power-path";
 import { probeTracks } from "./probe";
 import { createRailCircuit, type RailCircuit } from "./rail-circuit";
 import { RangerRuntime } from "./ranger";

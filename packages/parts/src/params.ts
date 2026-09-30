@@ -37,9 +37,6 @@ function netlistsOf(part: PartFile): Netlist[] {
   for (const slot of Object.values(part.axes?.behaviour ?? {})) {
     for (const variant of Object.values(slot?.variants ?? {})) {
       if (variant.kind === "composite") out.push(variant.netlist);
-      else if (variant.kind === "firmware" && variant.board) {
-        out.push(variant.board);
-      }
     }
   }
   return out;

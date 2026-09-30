@@ -1,12 +1,6 @@
 /** A firmware chip, the board it runs as, and the electrical facts it carries. */
 
-import {
-  ATMEGA328P_16MHZ_MIN_V,
-  arduinoPinBit,
-  type BehaviourImpl,
-} from "@sfab-bench/contract";
-
-import { chipFacts } from "./power-path";
+import { arduinoPinBit, type BehaviourImpl } from "@sfab-bench/contract";
 
 export { boardHostOf, chipExposure } from "@sfab-bench/parts";
 
@@ -28,11 +22,7 @@ export type ChipFacts = {
 export function chipFactsOf(behaviour: FirmwareBehaviour): ChipFacts | null {
   const { railVoltage, resetFraction, minOperatingVoltage } = behaviour;
   if (typeof railVoltage !== "number" || typeof resetFraction !== "number") {
-    // The single-part boards carry no facts until they become composites.
-    const legacy = chipFacts(behaviour.chip);
-    return legacy
-      ? { ...legacy, minOperatingVoltage: ATMEGA328P_16MHZ_MIN_V }
-      : null;
+    return null;
   }
   return {
     railVoltage,

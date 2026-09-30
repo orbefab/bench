@@ -85,7 +85,6 @@ export {
 } from "./power";
 export {
   BOARD_LOAD_KNEE_V,
-  type BoardPathName,
   NANO_BOARD_A,
   type RailFeed,
   railAttachment,
@@ -97,8 +96,6 @@ export {
   UNO_T1_DIODE,
   UNO_T1_RDS,
   UNO_TERM_NODE,
-  type UsbPath,
-  unoUsbPathFor,
 } from "./power-path";
 export { type ProbeIndex, probeTracks } from "./probe";
 export {

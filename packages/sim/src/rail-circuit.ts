@@ -45,13 +45,7 @@ import {
   connectParts,
   realize,
 } from "./circuit-stamp";
-import {
-  BOARD_LOAD_KNEE_V,
-  type BoardPathName,
-  type RailFeed,
-  UNO_BOARD_NODE,
-  UNO_TERM_NODE,
-} from "./power-path";
+import { BOARD_LOAD_KNEE_V, type RailFeed } from "./power-path";
 
 export type { Braking };
 
@@ -80,12 +74,6 @@ export type RailCircuitSpec = {
   /** Default `clip`, matching `solveRail`. */
   braking?: Braking;
   /**
-   * Default `none`: the supply terminal is the rail, as in the closed form.
-   * `uno-usb` inserts the Uno cable. A board netlist passes `stamp` and
-   * `feed` instead of a path name. The supply stays a part.
-   */
-  boardPath?: "none" | BoardPathName;
-  /**
    * `battery@1` source. When set, the rail stamps this instead of
    * `vNom`, `rSeries`, and `iLimit`.
    */
@@ -94,7 +82,6 @@ export type RailCircuitSpec = {
   pin?: AvrPinParams;
   /**
    * Circuit parts for this rail, from the plan.
-   * `path:uno-usb` with no stamp loads the Uno board netlist.
    */
   stamp?: BoardStamp;
   /**
@@ -910,9 +897,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     feedOf.set(board.id, realized.feedNode);
     boardNodes.set(board.id, realized.boardNode);
     const netlist = board.stamp.netlist === true;
-    const knee = (many ? netlist : spec.boardPath === "uno-usb" || netlist)
-      ? BOARD_LOAD_KNEE_V
-      : 0;
+    const knee = netlist ? BOARD_LOAD_KNEE_V : 0;
     const load = new CurrentLoad(
       many ? `load.${board.id}` : "load",
       realized.boardNode,
@@ -966,21 +951,16 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     );
   }
 
-  const uno = spec.boardPath === "uno-usb";
   const first = prepared[0];
   const boardNode =
     listed.length === 0
-      ? uno
-        ? UNO_BOARD_NODE
-        : "rail"
+      ? "rail"
       : many
         ? (tiedBoard ?? boardNodes.get(first?.id ?? "") ?? "rail")
         : (single?.boardNode ?? "rail");
   const termNode =
     listed.length === 0
-      ? uno
-        ? UNO_TERM_NODE
-        : "rail"
+      ? "rail"
       : many
         ? multiSupply
           ? (spec.primaryNode ?? feedOf.get(first?.id ?? "") ?? boardNode)
@@ -1000,9 +980,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     );
   }
   const substeps = inductive || capacitive ? SUBSTEPS : 1;
-  const load =
-    loads[0] ??
-    new CurrentLoad("load", boardNode, "0", uno ? BOARD_LOAD_KNEE_V : 0);
+  const load = loads[0] ?? new CurrentLoad("load", boardNode, "0", 0);
   const battery = spec.battery
     ? new BatteryElement("src", termNode, "0", spec.battery)
     : null;
@@ -1033,7 +1011,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   });
   const path = many
     ? first?.feed === "usb"
-    : uno || (single !== null && first?.stamp.netlist === true);
+    : single !== null && first?.stamp.netlist === true;
   return {
     winding: new Float64Array(motors.length),
     path,

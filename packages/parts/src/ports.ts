@@ -440,7 +440,6 @@ function netlistFor(part: PartFile, spec?: PortLevel): Netlist | null {
     const variant = slot ? variantOf(slot, spec.variant) : undefined;
     if (!variant) return null;
     if (variant.kind === "composite") return variant.netlist;
-    if (variant.kind === "firmware" && variant.board) return variant.board;
     return null;
   }
   const preferred = behaviour["2"] ?? null;
@@ -451,11 +450,6 @@ function netlistFor(part: PartFile, spec?: PortLevel): Netlist | null {
     if (!slot) continue;
     const variant = variantOf(slot);
     if (variant?.kind === "composite") return variant.netlist;
-  }
-  for (const slot of Object.values(behaviour)) {
-    if (!slot) continue;
-    const variant = variantOf(slot);
-    if (variant?.kind === "firmware" && variant.board) return variant.board;
   }
   return null;
 }
@@ -487,8 +481,6 @@ export function netlistsOf(part: PartFile): Netlist[] {
     if (!slot) continue;
     for (const variant of Object.values(slot.variants)) {
       if (variant.kind === "composite") out.push(variant.netlist);
-      else if (variant.kind === "firmware" && variant.board)
-        out.push(variant.board);
     }
   }
   return out;

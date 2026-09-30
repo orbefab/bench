@@ -608,12 +608,7 @@ function childIds(part: PartFile): string[] {
     const slot = behaviour[key];
     if (!slot) continue;
     for (const variant of Object.values(slot.variants)) {
-      const netlist =
-        variant.kind === "composite"
-          ? variant.netlist
-          : variant.kind === "firmware"
-            ? variant.board
-            : null;
+      const netlist = variant.kind === "composite" ? variant.netlist : null;
       if (!netlist) continue;
       for (const inst of Object.values(netlist.instances)) ids.push(inst.part);
     }
@@ -636,8 +631,6 @@ function variantSlot(
     const impl = behaviour[key]?.variants[variant];
     if (!impl) continue;
     saw = true;
-    if (impl.kind === "firmware" && impl.board)
-      return { key, kind: "firmware" };
     if (impl.kind === "composite") return { key, kind: "composite" };
   }
   if (!saw) throw new Error(`${part.id} has no variant ${variant}`);

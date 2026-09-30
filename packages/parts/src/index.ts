@@ -53,7 +53,6 @@ export {
 } from "./level-edit";
 export {
   behaviourNetlist,
-  class2BoardNetlist,
   compileRules,
   type LevelRules,
   type LiveInstance,
@@ -95,7 +94,6 @@ export {
   type WireEnd,
 } from "./nets";
 export { declaredQuantity, quantityOn } from "./params";
-export { pathRefOf } from "./path-ref";
 export {
   bindDependents,
   collectPartPorts,

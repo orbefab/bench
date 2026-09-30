@@ -34,7 +34,7 @@ export type ChipIo = {
 
 /**
  * What the emulator knows about one chip, and nothing electrical. The
- * rail, V_RST and brownout live in `chipFacts` and on the chip part.
+ * rail, V_RST and brownout live on the chip part.
  *
  * A second chip is a second entry. Its extra ports (E, F) are more keys in
  * `ports`, its timers are the list it has (0, 1, 3), `usart` is the console

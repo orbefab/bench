@@ -29,7 +29,6 @@ import {
 
 import { environmentKind } from "./document";
 import { applyLevelEdit } from "./level-edit";
-import { class2BoardNetlist } from "./levels";
 import { makeDiag, parsePartRef, splitPortRef } from "./si";
 
 /** A refused edit: the diagnostic, and the detail its sentence was built from. */
@@ -1147,9 +1146,9 @@ function variantOn(
   );
 }
 
-/** What a path walks: the document netlist, else the class-2 firmware board's. */
+/** What a path walks: the document netlist. */
 function pathNetlist(part: PartFile): Netlist | null {
-  return documentNetlist(part) ?? class2BoardNetlist(part);
+  return documentNetlist(part);
 }
 
 /** The part a path rule names, after the loader's single-scene unwrap. */

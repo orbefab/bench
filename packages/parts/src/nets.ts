@@ -83,7 +83,7 @@ function behaviourOf(inst: LiveInstance): BehaviourImpl | null {
   return impl as BehaviourImpl;
 }
 
-/** Composite children, a firmware board, or the class-2 netlist `path:uno-usb` names. */
+/** Composite children. */
 export function netlistOf(inst: LiveInstance): Netlist | null {
   return behaviourNetlist(inst.part, behaviourOf(inst));
 }

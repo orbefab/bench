@@ -3,8 +3,8 @@
 // (031dc5e). `nanoRail` there stays the older test circuit, not this board.
 /**
  * A `usb-a-port` wired to an Uno's `5V` is the cable into the USB connector.
- * That is how the arm examples are drawn. `path:uno-usb` is resolved in
- * the plan to that part's class-2 board netlist. A bench supply on `5V`
+ * That is how the arm examples are drawn. The Uno's board netlist takes
+ * the cable at its `usb` port. A bench supply on `5V`
  * is the header: the supply attaches at `5V`, `VBUS` is unfed, and the
  * capacitors on `5V` stay. Servos on `uno.5V` load the board node.
  * The power walk cannot tell a part on the header from a part on the board,
@@ -16,7 +16,6 @@
  */
 
 import { type DiodeParams, thermalVoltage } from "@sfab-bench/engine-circuit";
-import { pathRefOf } from "@sfab-bench/parts";
 
 /** Supply side of F1. The rail's Thevenin terminal when the path is on. */
 export const UNO_TERM_NODE = "term";
@@ -90,96 +89,35 @@ export const UNO_PC2_ESR = PC2_TAN_DELTA / (2 * Math.PI * 120 * UNO_PC2_C);
 export const UNO_DECOUPLE_C = 100e-9;
 
 /**
- * A cable network that is still a named path. A firmware board netlist
- * is not one of these: the caller passes the stamp and `feed`.
- */
-export type BoardPathName = "uno-usb";
-
-/**
  * Where the supply attaches. `usb` is VBUS. `header` is the 5V node.
  * `vin` is the VIN node: the onboard regulator feeds the 5V rail.
  */
 export type RailFeed = "usb" | "header" | "vin";
 
-/** What `usbPathFor` tells the worker to put on the rail. */
-export type UsbPath =
-  | { kind: "path"; path: BoardPathName }
-  | { kind: "netlist"; feed: "usb" | "header" };
-
 /**
- * The network between this supply and the board it feeds, or null when
- * the supply terminal is the pin. The caller has already checked that
- * this supply feeds that board.
- *
- * `path:uno-usb` names the board netlist the plan already stamped, and
- * only a `usb` connector takes the cable. Any other supply is the header:
- * `feed` is `header`, so `VBUS` is unfed and whatever the netlist puts
- * on the supply port stays. A board netlist (`hasNetlist`) takes
- * `feed: "usb"` from that connector
- * (the cable lands on the board's `usb` port) and `feed: "header"` from
- * any other supply. The supply stays a part. The board does not replace it.
- */
-export function usbPathFor(
-  connector: string | null,
-  boardCircuit: string | null,
-  hasNetlist = false
-): UsbPath | null {
-  const usb = connector === "usb";
-  const named = pathRefOf(boardCircuit);
-  if (named === "uno-usb") {
-    return usb ? { kind: "path", path: "uno-usb" } : null;
-  }
-  if (named) return null;
-  if (!hasNetlist) return null;
-  return { kind: "netlist", feed: usb ? "usb" : "header" };
-}
-
-/**
- * True when this supply is the USB cable into a board that names
- * `path:uno-usb`. Connector `usb` takes the cable. Any other feed does not.
- */
-export function unoUsbPathFor(
-  connector: string | null,
-  boardCircuit: string | null
-): boolean {
-  const path = usbPathFor(connector, boardCircuit, false);
-  return path?.kind === "path" && path.path === "uno-usb";
-}
-
-/**
- * What the worker puts on one rail. The plan has already stamped
- * `path:uno-usb`. A usb connector attaches at `VBUS`. Any other feed
- * attaches at the board supply port and leaves `VBUS` unfed.
+ * What the worker puts on one rail. A board netlist (`hasNetlist`) takes
+ * `feed: "usb"` from a `usb` connector (the cable lands on the board's
+ * `usb` port) and `feed: "header"` from any other supply. The supply
+ * stays a part. A board with no netlist takes the supply on its power pin
+ * with `feed: "header"` when the plan stamped one.
  */
 export function railAttachment<T>(input: {
   connector: string | null;
-  boardCircuit: string | null;
   hasNetlist: boolean;
   stamp: T | undefined;
 }): {
-  boardPath: BoardPathName | null;
   stamp?: T;
   feed?: "usb" | "header";
 } {
-  const chosen = usbPathFor(
-    input.connector,
-    input.boardCircuit,
-    input.hasNetlist
-  );
-  const boardPath = chosen?.kind === "path" ? chosen.path : null;
   const stamp = input.stamp;
-  const feed =
-    chosen?.kind === "netlist"
-      ? chosen.feed
-      : chosen?.kind === "path" && chosen.path === "uno-usb"
-        ? "usb"
-        : stamp
-          ? "header"
-          : undefined;
-  return {
-    boardPath,
-    ...(stamp && feed ? { stamp, feed } : {}),
-  };
+  const feed = input.hasNetlist
+    ? input.connector === "usb"
+      ? "usb"
+      : "header"
+    : stamp
+      ? "header"
+      : undefined;
+  return stamp && feed ? { stamp, feed } : {};
 }
 
 /**
@@ -194,21 +132,3 @@ export const NANO_MCU_A = 0.01;
 export const NANO_CH340_A = 0.012;
 export const NANO_POWER_LED_A = 0.0032;
 export const NANO_BOARD_A = NANO_MCU_A + NANO_CH340_A + NANO_POWER_LED_A;
-
-/**
- * External reset threshold, fraction of VCC. DS40002061 V_RST maximum:
- * RESET can be recognised as low up to this fraction. Staying above it
- * means the pin never crosses into reset.
- */
-export const NANO_VRST_MAX = 0.9;
-
-/**
- * Chip facts the run knows. Pin names stay in `ARDUINO_PINS`. The rail
- * voltage picks the board's power input. `resetFraction` is V_RST / VCC.
- */
-export function chipFacts(
-  chip: string
-): { railVoltage: number; resetFraction: number } | null {
-  if (chip !== "atmega328p") return null;
-  return { railVoltage: 5, resetFraction: NANO_VRST_MAX };
-}

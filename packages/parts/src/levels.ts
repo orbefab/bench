@@ -17,7 +17,6 @@ import {
 
 import { environmentKind, type RunRoot } from "./document";
 import { type Library, typeOf } from "./library";
-import { pathRefOf } from "./path-ref";
 import { type AxisRequest, classesOf, isLevelClass, specAxes } from "./si";
 
 export type ReasonKind =
@@ -308,32 +307,12 @@ function resolveAxis(
   };
 }
 
-/**
- * The netlist this behaviour expands. `path:uno-usb` uses the declaring
- * part's class-2 board, so the wires and the children match class 2.
- */
+/** The netlist this behaviour expands: a composite's children. */
 export function behaviourNetlist(
-  part: PartFile,
+  _part: PartFile,
   behaviour: BehaviourImpl | null
 ): Netlist | null {
-  if (!behaviour) return null;
-  if (behaviour.kind === "composite") return behaviour.netlist;
-  if (behaviour.kind === "firmware" && behaviour.board) return behaviour.board;
-  if (
-    behaviour.kind === "firmware" &&
-    pathRefOf(behaviour.boardCircuit ?? null) === "uno-usb"
-  ) {
-    return class2BoardNetlist(part);
-  }
-  return null;
-}
-
-/** The class-2 firmware board, when that variant carries a netlist. */
-export function class2BoardNetlist(part: PartFile): Netlist | null {
-  const slot = part.axes?.behaviour?.["2"];
-  if (!slot) return null;
-  const impl = slot.variants[slot.default];
-  if (impl?.kind === "firmware" && impl.board) return impl.board;
+  if (behaviour?.kind === "composite") return behaviour.netlist;
   return null;
 }
 
@@ -453,19 +432,14 @@ export function resolveLevels(
     });
     const behaviour = axes.behaviour.impl as BehaviourImpl | null;
     const netlist = behaviourNetlist(part, behaviour);
-    const aliasNetlist =
-      netlist !== null &&
-      behaviour?.kind === "firmware" &&
-      behaviour.board === undefined;
     if (netlist) {
       // The world root is the scene container. Its children use the world
       // default. A shell that only reached its class by fallback does not
       // pass that class down either: the default still applies underneath.
-      const nextParent = aliasNetlist
-        ? (2 as LevelClass)
-        : instancePath !== ROOT_PATH &&
-            axes.behaviour.class !== null &&
-            axes.behaviour.source !== "fallback"
+      const nextParent =
+        instancePath !== ROOT_PATH &&
+        axes.behaviour.class !== null &&
+        axes.behaviour.source !== "fallback"
           ? axes.behaviour.class
           : undefined;
       for (const [id, child] of Object.entries(netlist.instances)) {

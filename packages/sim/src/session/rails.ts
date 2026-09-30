@@ -4,7 +4,7 @@ import { arduinoPinBit, type Diagnostic } from "@sfab-bench/contract";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 import { splitPortRef } from "@sfab-bench/parts";
 import type { RunBoard, RunPlan } from "../plan";
-import { type BoardPathName, railAttachment } from "../power-path";
+import { railAttachment } from "../power-path";
 import { createRailCircuit, type RailCircuit } from "../rail-circuit";
 import { blankTrack } from "../servo";
 import {
@@ -344,7 +344,6 @@ function bindRails(s: SessionState) {
           const feeder = usb ?? feeders[0] ?? primary;
           const one = railAttachment({
             connector: feeder.connector,
-            boardCircuit: board.boardCircuit,
             hasNetlist: board.hasNetlist,
             stamp: board.stamp,
           });
@@ -374,7 +373,6 @@ function bindRails(s: SessionState) {
       const group = {
         circuit,
         loads: members,
-        path: null as BoardPathName | null,
         boardMin: 0,
       };
       for (const id of island.supplyIds) s.rails.set(id, group);
@@ -427,7 +425,6 @@ function bindRails(s: SessionState) {
     const group = {
       circuit,
       loads: members,
-      path: null as BoardPathName | null,
       boardMin: 0,
     };
     for (const id of island.supplyIds) s.rails.set(id, group);
@@ -445,11 +442,9 @@ function bindRails(s: SessionState) {
     )?.stamp;
     const attached = railAttachment({
       connector: supplyConnectorOf(s, supply.id),
-      boardCircuit: fed?.boardCircuit ?? null,
       hasNetlist: fed?.hasNetlist ?? false,
       stamp: fed?.stamp ?? supplyStamp,
     });
-    const path = attached.boardPath;
     // One stamped board is the shared rail with N = 1.
     const shared = stamped.length >= 1 && stamped.length === fedBoards.length;
     const sharedSpans = spansOn(
@@ -460,7 +455,6 @@ function bindRails(s: SessionState) {
       ? createRailCircuit({
           ...supplyTerms(supply),
           motors: motorsOf(members),
-          ...(stamped.length === 1 && path ? { boardPath: path } : {}),
           ...(stamped.length === 1 && fed
             ? { pin: fed.pin, ledAlias: `${fed.id}.led` }
             : {}),
@@ -468,7 +462,6 @@ function bindRails(s: SessionState) {
           boards: stamped.map((board) => {
             const one = railAttachment({
               connector: supplyConnectorOf(s, supply.id),
-              boardCircuit: board.boardCircuit,
               hasNetlist: board.hasNetlist,
               stamp: board.stamp,
             });
@@ -487,7 +480,6 @@ function bindRails(s: SessionState) {
       : createRailCircuit({
           ...supplyTerms(supply),
           motors: motorsOf(members),
-          ...(path ? { boardPath: path } : {}),
           ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
           ...(attached.stamp && (fed?.vinFeed || attached.feed)
             ? {
@@ -502,7 +494,7 @@ function bindRails(s: SessionState) {
       const load = members[i];
       if (load) load.railSlot = i;
     }
-    s.rails.set(supply.id, { circuit, loads: members, path, boardMin: 0 });
+    s.rails.set(supply.id, { circuit, loads: members, boardMin: 0 });
   }
 }
 

@@ -433,7 +433,6 @@ function worldRails(world: string): {
       : board.stamp;
     const attached = railAttachment({
       connector: supply.connector,
-      boardCircuit: class2 ? null : board.boardCircuit,
       hasNetlist: class2 || board.hasNetlist,
       stamp,
     });
@@ -442,7 +441,6 @@ function worldRails(world: string): {
       rSeries: supply.rSeries,
       iLimit: supply.currentLimit,
       motors,
-      ...(attached.boardPath ? { boardPath: attached.boardPath } : {}),
       ...(attached.stamp && attached.feed
         ? { stamp: attached.stamp, feed: attached.feed }
         : {}),
