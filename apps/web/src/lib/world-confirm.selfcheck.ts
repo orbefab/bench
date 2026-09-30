@@ -56,6 +56,21 @@ expect(
     !body.includes("with break"),
   "the capture dialog names the capture and the rule, and not the resend wording"
 );
+const plural = confirmBody([{ kind: "remove-capture", variant: "capture-2" }], {
+  count: 2,
+  message: serverSentence,
+  ports: [
+    {
+      name: "capture-2",
+      dependents: ["nano.power default", "nano.rail path"],
+    },
+  ],
+});
+expect(
+  plural.startsWith("Deleting capture-2 breaks 2 rules that use it: ") &&
+    plural.includes("nano.power default; nano.rail path"),
+  "two rules read 'rules that use it'"
+);
 expect(
   confirmBody([{ kind: "remove-instance" }], prompt) === prompt.message,
   "the fixed-ports dialog keeps the server's sentence"
