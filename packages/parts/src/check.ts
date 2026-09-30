@@ -9,11 +9,13 @@ import {
   type Quantity,
   RATING_FIELD_QUANTITY,
   type Ratings,
+  ROOT_PATH,
   SI_UNIT,
   SUPPLY_FORMS,
   type VisualImpl,
 } from "@sfab-bench/contract";
 import { batteryFrom, ocvAt } from "./battery";
+import { boardHostOf } from "./board-host";
 import type { LiveInstance } from "./levels";
 import { mergeFormParams } from "./merge";
 import { collectPorts, type LiveNet, type LivePort, type Wire } from "./nets";
@@ -452,6 +454,7 @@ function fileDiags(
   store: Store
 ): Diagnostic[] {
   const diags: Diagnostic[] = [];
+  const byPath = new Map(instances.map((item) => [item.path, item]));
   for (const inst of instances) {
     const body = inst.axes.body.impl as BodyImpl | null;
     if (body?.kind === "urdf" || body?.kind === "mjcf") {
@@ -511,10 +514,12 @@ function fileDiags(
         typeof image === "string" &&
         !store.exists(resolve(assetRoot, image))
       ) {
+        // The image is the board's: a hosted chip's forwarded param is
+        // reported on the board it runs as.
         diags.push(
           makeDiag({
             severity: "error",
-            path: inst.path,
+            path: boardHostOf(inst, byPath, ROOT_PATH).path,
             port: behaviour.imageParam,
             quantity: "Time",
             left: image,
