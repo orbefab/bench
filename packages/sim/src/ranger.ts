@@ -7,7 +7,7 @@
  */
 
 import type { Pose } from "@sfab-bench/contract";
-import { type AvrBoard, CPU_HZ } from "@sfab-bench/engine-mcu";
+import type { AvrBoard } from "@sfab-bench/engine-mcu";
 
 /** Include geom group 0 only: targets and static primitives. */
 export const RANGER_GEOM_GROUP = [1, 0, 0, 0, 0, 0];
@@ -230,7 +230,8 @@ export class RangerRuntime {
 
   onEdge(bit: number, high: boolean, cycles: number) {
     const trig = this.spec.trig;
-    if (!trig || bit !== trig.bit || !this.board) return;
+    const board = this.board;
+    if (!trig || bit !== trig.bit || !board) return;
     if (high) {
       // A rise during a measurement is not a new trigger, even if the
       // fall lands after Echo has already gone low.
@@ -245,7 +246,8 @@ export class RangerRuntime {
     if (!this.armed) return;
     this.armed = false;
     const highCycles = cycles - this.riseAt;
-    const minCycles = Math.round(this.spec.law.trigMin * CPU_HZ);
+    const hz = board.hz;
+    const minCycles = Math.round(this.spec.law.trigMin * hz);
     if (highCycles < minCycles) return;
     if (!this.powered()) {
       this.distanceM = null;
@@ -254,10 +256,11 @@ export class RangerRuntime {
       this.releaseEcho();
       return;
     }
-    this.begin();
+    this.begin(hz);
   }
 
-  private begin() {
+  /** `hz` is the trigger board's clock. */
+  private begin(hz: number) {
     const physics = this.physics();
     const hit = physics
       ? castRanger(
@@ -273,12 +276,12 @@ export class RangerRuntime {
     const widthCycles =
       hit === null || !(law.c > 0)
         ? 0
-        : Math.max(1, Math.round(((2 * hit) / law.c) * CPU_HZ));
-    const timeoutCycles = Math.round(law.echoTimeout * CPU_HZ);
+        : Math.max(1, Math.round(((2 * hit) / law.c) * hz));
+    const timeoutCycles = Math.round(law.echoTimeout * hz);
     const echoCycles = hit === null ? timeoutCycles : widthCycles;
     this.distanceM = hit;
     this.hit = hit !== null;
-    this.echoS = echoCycles > 0 ? echoCycles / CPU_HZ : null;
+    this.echoS = echoCycles > 0 ? echoCycles / hz : null;
     if (echoCycles <= 0) return;
     const board = this.board;
     const echo = this.spec.echo;
@@ -287,7 +290,7 @@ export class RangerRuntime {
     this.measuring = true;
     this.drew = true;
     const token = this.token;
-    const delay = Math.round(law.echoDelay * CPU_HZ);
+    const delay = Math.round(law.echoDelay * hz);
     board.schedule(delay, () => {
       if (token !== this.token || !this.busy) return;
       board.setDriven(echo.bit, true);

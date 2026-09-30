@@ -9,6 +9,7 @@ import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   type AdcConversion,
   AvrBoard,
+  chipSpec,
   FIRMWARE_RELOADED,
   parseIntelHex,
 } from "@sfab-bench/engine-mcu";
@@ -101,11 +102,12 @@ function boardSpecsOf(plan: RunPlan): BoardSpec[] {
 }
 
 function bootBoard(s: SessionState, spec: BoardSpec): AvrBoard {
-  const board = new AvrBoard(spec.id);
+  const chip = chipSpec(spec.chip);
+  const board = new AvrBoard(spec.id, chip);
   attachAnalog(s, board);
   // No supply: the CPU never starts. A later step does not boot it either.
   if (!s.boardPower.get(spec.id)?.supplyId) return board;
-  if (!chipFacts(spec.chip)) {
+  if (!chip || !chipFacts(spec.chip)) {
     board.stop(`unsupported chip "${spec.chip}"`);
     return board;
   }

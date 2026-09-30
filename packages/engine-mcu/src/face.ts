@@ -5,6 +5,7 @@ import {
   type Engine,
 } from "@sfab-bench/contract";
 import { AvrBoard } from "./board";
+import { requireChipSpec } from "./chips";
 
 /** Flash image and the brownout threshold. Supply starts at 5 V. */
 export type McuEngineSpec = {
@@ -41,7 +42,7 @@ export class McuEngine implements Engine {
     this.ms = 0;
     this.pendingTx = "";
     this.pinVolts.clear();
-    const board = new AvrBoard(this.id);
+    const board = new AvrBoard(this.id, requireChipSpec("atmega328p"));
     this.board = board;
     board.load(parsed.firmware);
     this.applySupply();

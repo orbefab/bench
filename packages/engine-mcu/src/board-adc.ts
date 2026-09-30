@@ -7,12 +7,9 @@ import {
   ADCMuxInputType,
   ADCReference,
   AVRADC,
-  adcConfig,
   type CPU,
 } from "avr8js";
-
-/** ATmega328P clock. One ADC clock is `prescaler` CPU cycles. */
-const CPU_HZ = 16_000_000;
+import type { ChipSpec } from "./chips";
 
 /**
  * Internal bandgap, the typical. DS40002061 ADC Characteristics, internal
@@ -64,15 +61,20 @@ export type BoardAdcHooks = {
  * of the previous master step and lags it by at most 1 ms. The internal
  * 1.1 V reference is the bandgap. AREF is the hooked net, or 0.
  */
-export function attachBoardAdc(cpu: CPU, hooks: BoardAdcHooks): AVRADC {
-  const adc = new AVRADC(cpu, adcConfig);
+export function attachBoardAdc(
+  cpu: CPU,
+  hooks: BoardAdcHooks,
+  chip: ChipSpec
+): AVRADC {
+  const adc = new AVRADC(cpu, chip.adc);
   const held = new Map<string, number>();
   adc.onADCRead = (input) => {
     const source = sourceOf(input, hooks);
     const prescaler = adc.prescaler;
     const adcClocks = adc.sampleCycles / prescaler;
     const sampleClocks = adcClocks > 13 ? 13.5 : 1.5;
-    const tSample = (sampleClocks * prescaler) / CPU_HZ;
+    // One ADC clock is `prescaler` CPU cycles.
+    const tSample = (sampleClocks * prescaler) / chip.hz;
     const prev = held.get(source.mux) ?? 0;
     const voltage = holdVoltage(source.voltage, prev, source.rSource, tSample);
     held.set(source.mux, voltage);

@@ -1,7 +1,7 @@
 import { ok as expect } from "node:assert/strict";
 import { maskHasPin } from "@sfab-bench/contract";
 import { AVR_PIN } from "@sfab-bench/engine-circuit";
-import { AvrBoard, FLASH_BYTES } from "@sfab-bench/engine-mcu";
+import { AvrBoard, FLASH_BYTES, requireChipSpec } from "@sfab-bench/engine-mcu";
 import { assemble } from "avr8js/dist/esm/utils/assembler.js";
 import type { RunPin, RunPlan } from "./world/plan";
 import { applyGpioDrives, gpioInputNets } from "./world/wiring";
@@ -108,7 +108,7 @@ const image = new Uint8Array(FLASH_BYTES);
 image.fill(0xff);
 image.set(assembled.bytes);
 
-const board = new AvrBoard("uno");
+const board = new AvrBoard("uno", requireChipSpec("atmega328p"));
 board.load(image);
 expect(board.running, "pull-up program did not load");
 board.stepMillis();
@@ -172,7 +172,7 @@ function loadProgram(id: string, source: string): AvrBoard {
   const image = new Uint8Array(FLASH_BYTES);
   image.fill(0xff);
   image.set(assembled.bytes);
-  const board = new AvrBoard(id);
+  const board = new AvrBoard(id, requireChipSpec("atmega328p"));
   board.load(image);
   expect(board.running, `${id} did not load`);
   return board;
