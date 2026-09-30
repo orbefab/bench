@@ -627,6 +627,55 @@ try {
   await landed("undo once the bytes fit again", undo(RAIL));
   deepStrictEqual(treeOf(project), historyBefore, "the outside edits are gone");
 
+  // A world edit always re-pins its own lock row (the world's sha is in it), so
+  // its step records the lock and undo or redo never writes the session's
+  // in-memory copy. After another session re-pins the lock, the step is refused
+  // and the disk lock is left as that session wrote it.
+  const lockRows = () =>
+    (
+      JSON.parse(readFileSync(lockFile, "utf8")) as {
+        parts: { id: string; sha256: string }[];
+      }
+    ).parts;
+  const rowsBefore = lockRows();
+  await landed(
+    "a world edit",
+    send([{ kind: "set-play", document: WORLD, seed: 7 }])
+  );
+  const changed = lockRows().filter(
+    (row, at) => row.sha256 !== rowsBefore[at]?.sha256
+  );
+  expect(
+    changed.length === 1 && changed[0]?.id !== RAIL,
+    `the edit re-pins only the world's own row, so its step records the lock: ${JSON.stringify(changed)}`
+  );
+  await capture("h6");
+  const lockPinned = readFileSync(lockFile, "utf8");
+  const refusedUndo = await undo();
+  expect(
+    refusedUndo.type === "edit-refused",
+    `undo after another session re-pinned the lock: ${JSON.stringify(refusedUndo)}`
+  );
+  expect(
+    readFileSync(lockFile, "utf8") === lockPinned,
+    "a refused undo leaves the pin the other session wrote"
+  );
+  await landed("undo the capture", undo(RAIL));
+  await landed("undo the world edit once the lock fits", undo());
+  await capture("h7");
+  const pinnedAgain = readFileSync(lockFile, "utf8");
+  const refusedRedo = await redo();
+  expect(
+    refusedRedo.type === "edit-refused",
+    `redo after another session re-pinned the lock: ${JSON.stringify(refusedRedo)}`
+  );
+  expect(
+    readFileSync(lockFile, "utf8") === pinnedAgain,
+    "a refused redo leaves the pin the other session wrote"
+  );
+  await landed("undo the capture", undo(RAIL));
+  deepStrictEqual(treeOf(project), historyBefore, "and everything unwinds");
+
   // A project copy of a part the world's lock pins in the catalog: one rule for
   // where the part lives, so capture, use it and undo all agree.
   const copy = join(project, "parts/sfab/nano-power-input@1.0.0.json");
