@@ -85,24 +85,11 @@ function resetsOf(state: WorldState): number {
   return resets;
 }
 
-export async function runHeadless(opts: {
-  project: string;
-  world: string;
-  ms: number;
-}): Promise<RunResult> {
-  const root = projectReal(opts.project);
-  if (root) {
-    const file = resolveInside(root, opts.world);
-    if (file) {
-      const healed = healTornWrite(nodeStore, file);
-      if (healed) throw new Error(healed.error);
-    }
-  }
-  const lines: RunLine[] = [];
-  const pending = new Map<string, string>();
-  const sim = new Sim({
+/** The in-process `Sim` a headless run drives. Serial is kept for `drainSerial`. */
+export function headlessSim(): Sim {
+  return new Sim({
     post() {
-      /* serial is drained below; the seam line reads the ledger */
+      /* serial is drained by the caller; the seam line reads the ledger */
     },
     now: () => performance.now(),
     schedule: (fn, ms) => setTimeout(fn, ms),
@@ -120,6 +107,24 @@ export async function runHeadless(opts: {
     plan: nodePlanEnv,
     keepSerial: true,
   });
+}
+
+export async function runHeadless(opts: {
+  project: string;
+  world: string;
+  ms: number;
+}): Promise<RunResult> {
+  const root = projectReal(opts.project);
+  if (root) {
+    const file = resolveInside(root, opts.world);
+    if (file) {
+      const healed = healTornWrite(nodeStore, file);
+      if (healed) throw new Error(healed.error);
+    }
+  }
+  const lines: RunLine[] = [];
+  const pending = new Map<string, string>();
+  const sim = headlessSim();
   try {
     const loaded = await sim.load({
       project: opts.project,
