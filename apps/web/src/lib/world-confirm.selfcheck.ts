@@ -1,5 +1,10 @@
 import { ok as expect } from "node:assert/strict";
-import { confirmActions, confirmLines, confirmTitle } from "./world-confirm";
+import {
+  confirmActions,
+  confirmBody,
+  confirmLines,
+  confirmTitle,
+} from "./world-confirm";
 
 const prompt = {
   count: 2,
@@ -33,6 +38,26 @@ expect(
 expect(
   confirmTitle([{ kind: "remove-capture" }]) === "A parent uses this capture",
   "deleting a capture asks about the parent that uses it"
+);
+
+const serverSentence =
+  "This removes capture-1, which 1 level rule select (nano.power default). Nothing changed. Send it again with break to put those rules back on the level's default.";
+const body = confirmBody([{ kind: "remove-capture", variant: "capture-1" }], {
+  count: 1,
+  message: serverSentence,
+  ports: [{ name: "capture-1", dependents: ["nano.power default"] }],
+});
+expect(
+  body.includes("capture-1") &&
+    body.includes("nano.power default") &&
+    body.includes("back to the level's default") &&
+    !body.includes("Send it again") &&
+    !body.includes("with break"),
+  "the capture dialog names the capture and the rule, and not the resend wording"
+);
+expect(
+  confirmBody([{ kind: "remove-instance" }], prompt) === prompt.message,
+  "the fixed-ports dialog keeps the server's sentence"
 );
 
 console.log("world-confirm.selfcheck ok");

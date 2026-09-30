@@ -327,6 +327,33 @@ console.log(`parts: ${modulePart?.id} · ${modulePart?.model}`);
       ) && axisOf(mine, "behaviour")?.capture?.ready === true,
       `project part snapshot ${JSON.stringify(mine.levels)}`
     );
+    // Delete is offered on a capture, never on a level the part defines, and
+    // "capture" is decided by where the snapshot file lives, not by a name.
+    const authored = axisOf(mine, "behaviour")?.options.find(
+      (opt) => opt.source === "snapshot"
+    );
+    expect(
+      authored?.ref && authored.deletable === undefined,
+      `a part's own snapshot is not deletable: ${JSON.stringify(authored)}`
+    );
+    expect(added?.deletable === true, "an overlay variant is deletable");
+    const snapshotRel = `snapshots/${authored?.ref}.json`;
+    const catalogSnapshots = fileURLToPath(
+      new URL("../catalog/", import.meta.url)
+    );
+    mkdirSync(dirname(join(dir, snapshotRel)), { recursive: true });
+    cpSync(join(catalogSnapshots, snapshotRel), join(dir, snapshotRel));
+    const captured = axisOf(
+      nodeAt(
+        viewOf(openReport(dir, "parts/sfab/nano-vcc-usb@1.0.0.json").plan),
+        "nano.power"
+      ),
+      "behaviour"
+    )?.options.find((opt) => opt.variant === authored?.variant);
+    expect(
+      captured?.deletable === true,
+      "a project part's variant with a snapshot in the project's snapshots/ is deletable"
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

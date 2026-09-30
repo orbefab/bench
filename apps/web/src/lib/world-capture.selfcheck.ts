@@ -159,12 +159,8 @@ expect(
   "an option names its source, or none"
 );
 expect(
-  levelDeletable("library", { source: "overlay" }) &&
-    levelDeletable("project", { source: "snapshot" }) &&
-    !levelDeletable("library", { source: "snapshot" }) &&
-    !levelDeletable("project", { source: "part" }) &&
-    !levelDeletable("project", {}),
-  "only an overlay variant or a project snapshot can be deleted"
+  levelDeletable({ deletable: true }) && !levelDeletable({}),
+  "delete follows the view's flag, never the variant's name"
 );
 deepStrictEqual(
   captureEditTarget(

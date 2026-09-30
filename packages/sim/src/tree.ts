@@ -163,6 +163,14 @@ export function runTree(input: {
       ...(netlist ? { wires: netlist.wires.map(([a, b]) => ({ a, b })) } : {}),
       levels: levelAxes(inst.part, chosenOf(inst), inst.declaredOnly, {
         added: place?.added,
+        ...(place?.source === "project"
+          ? {
+              inProject: (ref: string) =>
+                input.store.exists(
+                  input.join(input.projectDir, "snapshots", `${ref}.json`)
+                ),
+            }
+          : {}),
         capture: { typeId: inst.type.id, source: recipes },
       }),
       ...originFields(place),
@@ -424,6 +432,8 @@ function levelAxes(
   declaredOnly: boolean,
   origin: {
     added?: Set<string>;
+    /** Set on a project part: does this snapshot file sit in the project's `snapshots/`? */
+    inProject?: (ref: string) => boolean;
     /** Absent on a node that is never captured (ground, target). */
     capture?: { typeId: string; source: CaptureRecipeSource };
   }
@@ -445,7 +455,7 @@ function levelAxes(
           label: variantLabel(impl),
           runnable: check.runnable,
           ...(check.reason ? { reason: check.reason } : {}),
-          ...sourceOf(axis, cls, variant, impl, origin.added),
+          ...sourceOf(axis, cls, variant, impl, origin.added, origin.inProject),
         });
       }
     }
@@ -477,8 +487,9 @@ function sourceOf(
   cls: LevelClass,
   variant: string,
   impl: unknown,
-  added: Set<string> | undefined
-): Pick<WorldViewLevelOption, "source" | "ref"> {
+  added: Set<string> | undefined,
+  inProject: ((ref: string) => boolean) | undefined
+): Pick<WorldViewLevelOption, "source" | "ref" | "deletable"> {
   const ref =
     impl && typeof impl === "object" && "ref" in impl
       ? (impl as { kind?: string; ref?: unknown })
@@ -490,7 +501,14 @@ function sourceOf(
     : ref?.kind === "snapshot"
       ? "snapshot"
       : "part";
-  return { source, ...(snapshotRef ? { ref: snapshotRef } : {}) };
+  const deletable =
+    source === "overlay" ||
+    (source === "snapshot" && snapshotRef && inProject?.(snapshotRef));
+  return {
+    source,
+    ...(snapshotRef ? { ref: snapshotRef } : {}),
+    ...(deletable ? { deletable: true as const } : {}),
+  };
 }
 
 /** The same lookup and `into` rule the capture job uses. */

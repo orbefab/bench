@@ -29,6 +29,7 @@ import {
 } from "@/lib/shortcuts";
 import {
   confirmActions,
+  confirmBody,
   confirmLines,
   confirmTitle,
 } from "@/lib/world-confirm";
@@ -197,7 +198,9 @@ export function WorldConfirmDialog() {
     >
       <AlertDialogContent>
         <AlertDialogTitle>{confirmTitle(confirm.ops)}</AlertDialogTitle>
-        <AlertDialogDescription>{confirm.message}</AlertDialogDescription>
+        <AlertDialogDescription>
+          {confirmBody(confirm.ops, confirm)}
+        </AlertDialogDescription>
         <ul className="mt-3 space-y-2 text-sm">
           {lines.map((line) => (
             <li key={line.port}>

@@ -83,15 +83,13 @@ export function LevelAxis({
   const line = card?.axes.find((row) => row.axis === axis.axis);
   const snapshot = axis.axis === "behaviour" ? card?.snapshot : null;
   const current = axis.options.find((option) => option.chosen);
-  const captureAxis = axis.axis === "visual" ? undefined : axis.capture;
+  const captureAxis = axis.capture;
   const reason = captureAxis ? captureDisabledReason(capture, axis) : null;
   const failure =
     capture.phase === "failed" && capture.axis === axis.axis
       ? captureFailure(capture, node.id)
       : null;
-  const captures = axis.options.filter((option) =>
-    levelDeletable(node.source, option)
-  );
+  const captures = axis.options.filter(levelDeletable);
   return (
     <>
       <select

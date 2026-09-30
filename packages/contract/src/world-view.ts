@@ -114,6 +114,12 @@ export type WorldViewLevelOption = {
   ref?: string;
   /** Why the snapshot no longer matches its source. Absent when it is fresh. */
   stale?: string;
+  /**
+   * True on a capture the card may delete: an overlay variant, or a
+   * variant of a project part whose snapshot file is in the project's
+   * `snapshots/`. Absent on a level the part itself defines.
+   */
+  deletable?: true;
 };
 
 export type WorldViewLevelSource = "part" | "snapshot" | "overlay";

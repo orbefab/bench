@@ -174,16 +174,14 @@ export function levelSourceWords(
 }
 
 /**
- * Only a capture can be deleted: an overlay variant, or a snapshot in a
- * project part. A level the part document defines is not one, and a
- * library part's own snapshot is read-only.
+ * Only a capture can be deleted, and the server says which: an overlay
+ * variant, or a project part's variant whose snapshot is in the project's
+ * `snapshots/`. A level the part document defines is not one.
  */
 export function levelDeletable(
-  nodeSource: WorldViewPartSource | undefined,
-  option: Pick<WorldViewLevelOption, "source">
+  option: Pick<WorldViewLevelOption, "deletable">
 ): boolean {
-  if (option.source === "overlay") return true;
-  return option.source === "snapshot" && nodeSource === "project";
+  return option.deletable === true;
 }
 
 /**
