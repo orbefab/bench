@@ -961,13 +961,10 @@ async function armLines(dir: string, world: string): Promise<ArmLines> {
     const planned = planWorld(dir, "parts/sfab/arm-bench@1.0.0.json");
     expect(planned.ok, "a Uno with no netlist did not run");
     if (!planned.ok) throw new Error("unreachable");
-    const hit = (planned.plan.degraded ?? []).find((item) =>
-      item.message.includes(
-        "sfab/uno-r3@1.0.0 has no board netlist for path:uno-usb"
-      )
-    );
-    expect(hit, "no netlist diagnostic");
-    console.log(`degraded ${hit.path}: ${hit.message}`);
+    // The board is a composite now, so there is no alias to fall short.
+    const boards = planned.plan.boards.map((board) => board.id).join();
+    expect(boards === "uno", `a Uno with only class 1 runs as uno: ${boards}`);
+    console.log("a Uno with no class-2 slot runs from its class-1 composite");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

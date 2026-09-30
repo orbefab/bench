@@ -252,8 +252,10 @@ line(
     // Each rig's Uno power group stays class 2, and its leaves fall back.
     // The VIN path (two regulators, the comparator, the divider, PC1) is in that count.
     reasons.parent === 2 &&
-    reasons.fallback === 104 &&
-    reasons.none === 12 &&
+    // Each Uno now holds a chip child (`mcu`): two more fallback rows and one
+    // more row with no level per rig, all from the board's new structure.
+    reasons.fallback === 108 &&
+    reasons.none === 14 &&
     rig1?.class === 0 &&
     rig1.reason === "type rule hobby-servo-3wire" &&
     rig2?.class === 2 &&
@@ -462,7 +464,18 @@ if (usbLaw?.kind === "form" && benchLaw?.kind === "form") {
 const unoPart = readJson<PartFile>(
   path.join(catalogDir, "parts/sfab/uno-r3@1.0.0.json")
 );
-const fw = unoPart.axes?.behaviour?.["1"]?.variants.avr8js;
+// The Uno is a composite of the chip part; the chip carries the numbers, and
+// the board's own load rides on its `mcu` child.
+const chipPart = readJson<PartFile>(
+  path.join(catalogDir, "parts/sfab/atmega328p@1.0.0.json")
+);
+const fw = chipPart.axes?.behaviour?.["1"]?.variants.avr8js;
+const unoBoard = unoPart.axes?.behaviour?.["1"]?.variants.avr8js;
+expect(
+  unoBoard?.kind === "composite" &&
+    unoBoard.netlist.instances.mcu?.params?.quiescent === 0.05,
+  "uno board load rides on its chip child"
+);
 expect(fw?.kind === "firmware" && fw.params, "uno firmware");
 if (fw?.kind === "firmware" && fw.params) {
   line(
@@ -470,7 +483,6 @@ if (fw?.kind === "firmware" && fw.params) {
       fw.params.brownoutVoltage === 2.7 &&
       fw.params.brownoutAssertVoltage === 2.675 &&
       fw.params.brownoutReleaseVoltage === 2.725 &&
-      fw.params.quiescent === 0.05 &&
       fw.fuses?.extended === "0xFD" &&
       Math.abs((fw.params.resetHoldS ?? 0) - 0.066) < 1e-9 &&
       uno.ports["5V"]?.ratings?.voltage?.[0] === 3.78 &&

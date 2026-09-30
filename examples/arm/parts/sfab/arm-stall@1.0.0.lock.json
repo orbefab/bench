@@ -23,6 +23,13 @@
       "version": "1.0.0"
     },
     {
+      "id": "sfab/atmega328p@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/atmega328p@1.0.0.json",
+      "sha256": "6f4c69363ab62bd12f251f25da4826ba9d7c19bd58475ac8bf6b2509f278820b",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
       "id": "sfab/bench-supply@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/bench-supply@1.0.0.json",
       "sha256": "c7156ad0f9958bb1f50c08debe3922dc84e21fbb6a05210bb5db4029c791c524",
@@ -130,7 +137,7 @@
     {
       "id": "sfab/uno-r3@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/uno-r3@1.0.0.json",
-      "sha256": "223c6035b4b4e21bf60083d05fd4bace6dd46a6c3a834eadad3e59eac70bb443",
+      "sha256": "9a40a7ac1840598cb8c66559e800558654ad04f3610e9fbc8b5016836944f1ec",
       "source": "catalog",
       "version": "1.0.0"
     }
@@ -146,6 +153,12 @@
       "id": "assembly",
       "path": "../../apps/server/catalog/types/assembly.json",
       "sha256": "d3d12a01bb5564827caab4bf45b624199124264c89dc582d46f4775b83a34c41",
+      "source": "catalog"
+    },
+    {
+      "id": "atmega328p",
+      "path": "../../apps/server/catalog/types/atmega328p.json",
+      "sha256": "557592500146c6bb6c1296efcc81c224456b5cbc7a3e28284f539d040b35f5df",
       "source": "catalog"
     },
     {

@@ -12,7 +12,6 @@ import type { RecordingEvent, RecordingRead } from "@sfab-bench/contract";
 import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stepWorld, stopWorld } from "./world/host";
 import { planWorld } from "./world/plan";
-import { unoUsbPathFor } from "./world/power-path";
 import { powerFeedsOf } from "./world/wiring";
 
 const armDir = fileURLToPath(
@@ -63,8 +62,8 @@ function pathBoards(name: string): Map<string, string> {
     const supplyId = feeds.boards[board.id];
     if (!supplyId) continue;
     const supply = planned.plan.supplies.find((item) => item.id === supplyId);
-    if (!supply || !unoUsbPathFor(supply.connector, board.boardCircuit))
-      continue;
+    // A USB cable into a board with a netlist is the path the fixture froze.
+    if (!supply || supply.connector !== "usb" || !board.hasNetlist) continue;
     boards.set(supplyId, board.id);
   }
   return boards;
