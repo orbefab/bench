@@ -14,9 +14,10 @@ export type PartHistory = {
 export type HistoryAnswer = {
   /**
    * What the answer is to. An edit adds a step, an undo moves one to redo and
-   * a redo moves it back; a refusal moves nothing. Absent means an edit.
+   * a redo moves it back; `state` (a refusal, or the same flags again) moves
+   * nothing. Absent means an edit.
    */
-  kind?: "edit" | "undo" | "redo" | "refuse";
+  kind?: "edit" | "undo" | "redo" | "state";
   part?: string;
   canUndo: boolean;
   canRedo: boolean;
@@ -127,7 +128,7 @@ export function refuseHistory(
     (row) => partKey(row.part) === partKey(part)
   );
   return applyHistory(model, {
-    kind: "refuse",
+    kind: "state",
     ...(part ? { part } : {}),
     canUndo: kind === "undo" ? false : (existing?.canUndo ?? false),
     canRedo: kind === "redo" ? false : (existing?.canRedo ?? false),

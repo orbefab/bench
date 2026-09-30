@@ -160,8 +160,11 @@ expect(writes === 4, `the restart writes the store ${writes} times`);
 writes = 0;
 worldStore.getState().setReport(report);
 worldStore.getState().setDiagnostics([{ ...warning }]);
+// A restart with no new step re-reports the same flags. That is a state-only
+// answer; an `edited` answer is a step, and adds an entry to the undo order.
 worldStore.getState().applyHistory(
   {
+    kind: "state",
     canUndo: true,
     canRedo: false,
     histories: [{ canUndo: true, canRedo: false }],
