@@ -219,9 +219,11 @@ function regulatedSupply(
   return null;
 }
 
-/** Which supply reaches each board and each part. Same walk as the v1 feeds. */
+/** Which supply reaches each board and each part, on the net walk. */
 export function powerFeedsOf(plan: RunPlan): PowerFeeds {
-  const adjacent = wireGraph(plan, "power");
+  // The whole net, as `suppliesOnPort` reads it: a passive hub between the
+  // supply and a pin does not cut the feed.
+  const adjacent = wireGraph(plan);
   const boards: Record<string, string | null> = {};
   for (const board of plan.boards) {
     let feed: string | null = null;
