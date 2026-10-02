@@ -1,0 +1,13 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/sg90-gears@1.0.0",
+  "type": "gear-train",
+  "foreign": false,
+  "declaredOnly": true,
+  "sources": [
+    {
+      "title": "SG90 gear train",
+      "ref": "declared-only; ratio is not in the Bench catalog"
+    }
+  ]
+}

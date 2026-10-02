@@ -1,0 +1,39 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "servo-control-ic",
+  "ports": {
+    "V+": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in"
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    },
+    "signal": {
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "in"
+    },
+    "M+": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "out"
+    },
+    "M-": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "out"
+    },
+    "sense": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "in"
+    }
+  },
+  "plausible": {
+    "Voltage": [-1, 12]
+  }
+}

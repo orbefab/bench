@@ -1,12 +1,9 @@
+import { ok as expect } from "node:assert/strict";
 import {
   finishPersistMessages,
   messagesWithTurnError,
   shouldPersistMessages,
 } from "./persist-thread";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const user = {
   id: "u",

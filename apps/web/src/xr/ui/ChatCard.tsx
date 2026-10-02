@@ -498,7 +498,7 @@ function XrChatSession({
           )}
           {error ? (
             <Text fontSize={12} color={theme.danger}>
-              {error.message}
+              {error}
             </Text>
           ) : null}
         </Container>

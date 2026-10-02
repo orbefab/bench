@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<!--
+  robot: arm | consumers: MuJoCo (sfab-bench world), CAD Viewer
+  units: meters, kilograms, radians | frames: +X forward, +Y left, +Z up (REP-103)
+  root: base | source of dimensions: examples/arm/robot/cad/base.py, examples/arm/robot/cad/upper_arm.py, examples/arm/robot/cad/arm.py
+  meshes: meshes/, one STL per link exported in that link's frame, source units mm, scale 0.001
+  inertials: cadgen.geometry.mass_properties on the link STEP solids
+             at PLA density 1.24 g/cm³ = 1.24e-6 kg/mm³
+             off-diagonal terms below 1e-20 kg·m² were written as 0
+  links:
+  - base | physical | frame at center of the bottom face, +Z up | parent joint: none (root, fixed to the world by the consumer)
+    visual: meshes/base.stl identity | collision: box 0.06 0.06 0.02 at xyz 0 0 0.01
+    mass 0.08928 kg | com 0 0 0.01 | inertia about com, link axes
+  - upper_arm | physical | frame at the shoulder, center of the proximal end face, bar along +X
+    parent joint: shoulder | visual: meshes/upper_arm.stl identity
+    collision: box 0.12 0.02 0.01 at xyz 0.06 0 0
+    mass 0.02976 kg | com 0.06 0 0 | inertia about com, link axes
+  joints:
+  - shoulder | revolute | parent base | child upper_arm
+    origin xyz 0 0 0.025 (base top 0.020 plus half the 0.010 bar thickness, so the faces coincide)
+    axis 0 0 1 in the joint frame | limits 0 .. 150° = 0 .. 2.617993877991494 rad
+    positive motion: right-hand rotation about +Z, the arm swings from +X toward +Y
+    source: examples/arm/robot/cad/arm.py mate "shoulder"
+  assumptions:
+  - shoulder effort 0.18 N·m and velocity 10.472 rad/s are hobby-servo class placeholders, not measured
+  - joint damping 0.001 N·m·s/rad is a small numerical damper, not a datasheet value
+  - collision boxes match the CAD envelopes; visuals are the STL meshes
+  - base is the URDF root and is fixed to the world when attached (no floating joint)
+  - link names are base and upper_arm, joint name is shoulder
+  - MuJoCo compiler fusestatic=false and discardvisual=false are set in the mujoco extension
+-->
+<robot name="arm">
+  <mujoco>
+    <compiler fusestatic="false" discardvisual="false"/>
+  </mujoco>
+  <link name="base">
+    <inertial>
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <mass value="0.08928"/>
+      <inertia ixx="0.00002976" ixy="0" ixz="0" iyy="0.00002976" iyz="0" izz="0.000053568"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/base.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.06 0.02"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="upper_arm">
+    <inertial>
+      <origin xyz="0.06 0 0" rpy="0 0 0"/>
+      <mass value="0.02976"/>
+      <inertia ixx="0.00000124" ixy="0" ixz="0" iyy="0.00003596" iyz="0" izz="0.000036704"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/upper_arm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0.06 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.12 0.02 0.01"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="shoulder" type="revolute">
+    <parent link="base"/>
+    <child link="upper_arm"/>
+    <origin xyz="0 0 0.025" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="2.617993877991494" effort="0.18" velocity="10.472"/>
+    <dynamics damping="0.001" friction="0"/>
+  </joint>
+</robot>

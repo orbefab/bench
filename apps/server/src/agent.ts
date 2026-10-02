@@ -10,8 +10,10 @@ import {
 } from "@sfab-bench/contract";
 import { z } from "zod";
 import { AGENT_IDENTITY } from "./agent-identity";
+import { boardTools } from "./board-tools";
 import { createLocalSandbox } from "./local-sandbox";
 import { viewerTools } from "./viewer-context";
+import { worldTools } from "./world-tools";
 
 const callOptions = z.object({ model: z.string().min(1) });
 
@@ -49,7 +51,7 @@ export function harnessAdapter(id: HarnessId, effort: ChatEffort = "default") {
 function makeAgent(id: HarnessId, effort: ChatEffort, root: string) {
   const shared = {
     sandbox: createLocalSandbox(root),
-    tools: viewerTools,
+    tools: { ...viewerTools, ...boardTools, ...worldTools },
     instructions: AGENT_IDENTITY,
     permissionMode: "allow-all" as const,
     callOptionsSchema: callOptions,

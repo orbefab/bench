@@ -1,0 +1,83 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/stall-scene@1.0.0",
+  "type": "assembly",
+  "foreign": false,
+  "axes": {
+    "behaviour": {
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": ["no snapshot of this assembly"],
+            "netlist": {
+              "instances": {
+                "arm": {
+                  "part": "sfab/arm@1.0.0",
+                  "pose": {
+                    "position": [0, 0, 0],
+                    "rotation": [1, 0, 0, 0]
+                  }
+                },
+                "uno": {
+                  "part": "sfab/uno-r3@1.0.0",
+                  "pose": {
+                    "position": [0.1, 0, 0.006],
+                    "rotation": [1, 0, 0, 0]
+                  },
+                  "params": {
+                    "firmware": "examples/arm/firmware/stall/stall.hex",
+                    "source": "examples/arm/firmware/stall/stall.ino"
+                  }
+                },
+                "bench": {
+                  "part": "sfab/bench-supply@1.0.0",
+                  "params": {
+                    "V": 5,
+                    "Ilimit": 0.3
+                  }
+                },
+                "servo": {
+                  "part": "sfab/sg90@1.0.0"
+                }
+              },
+              "wires": [
+                ["bench.5V", "uno.5V"],
+                ["bench.GND", "uno.GND"],
+                ["uno.D9", "servo.signal"],
+                ["uno.5V", "servo.V+"],
+                ["uno.GND", "servo.GND"],
+                ["servo.shaft", "arm.shoulder"],
+                ["servo.mount", "arm.base"]
+              ],
+              "expose": {}
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["assembly adds no body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["assembly adds no visual"]
+          }
+        }
+      }
+    }
+  }
+}

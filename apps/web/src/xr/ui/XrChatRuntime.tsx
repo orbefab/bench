@@ -1,32 +1,21 @@
-import { useChat } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import {
   createContext,
   type ReactNode,
-  useCallback,
   useContext,
   useEffect,
   useRef,
   useState,
 } from "react";
-import {
-  type AskUserQuestionsOutput,
-  findPendingAskUserQuestions,
-} from "@/chat/ask-user-questions";
-import { mapChatErrorMessage } from "@/chat/composer-recovery";
-import { findPendingGetViewer } from "@/chat/get-viewer";
-import { finishPersistMessages } from "@/chat/persist-thread";
-import { useLiveViewerTools } from "@/chat/useLiveViewerTools";
-import { viewerChatTransport } from "@/chat/viewer-chat-runtime";
+import type { AskUserQuestionsOutput } from "@/chat/ask-user-questions";
+import { useBenchChat } from "@/chat/useBenchChat";
 import type { GalleryChatMessage } from "@/components/chat/mock-chat-messages";
 import {
   messagePlainText,
-  persistThread,
   useViewerChat,
 } from "@/components/chat/useViewerChat";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
-import { jsonApi } from "@/lib/api";
-import { setXrChatChars, store, useStore } from "@/state/store";
+import { setXrChatChars, useXrUi, xrUiStore } from "@/state/xr";
 
 type Voice = ReturnType<typeof useVoiceInput>;
 
@@ -34,12 +23,13 @@ export type XrChatRuntime = {
   messages: GalleryChatMessage[];
   busy: boolean;
   status: ChatStatus;
-  error: Error | undefined;
+  /** Mapped chat error. Null when the stream has no error. */
+  error: string | null;
   draft: string;
   setDraft: (value: string | ((cur: string) => string)) => void;
   send: () => void;
   stop: () => void;
-  pendingAsk: ReturnType<typeof findPendingAskUserQuestions>;
+  pendingAsk: ReturnType<typeof useBenchChat>["pendingAsk"];
   answerAskUser: (toolCallId: string, output: AskUserQuestionsOutput) => void;
   voice: Voice;
 };
@@ -66,99 +56,66 @@ function XrChatSessionRuntime({
   onPersist: () => void;
   children: ReactNode;
 }) {
-  const xrChatOpen = useStore((s) => s.xrChatOpen);
+  const xrChatOpen = useXrUi((s) => s.xrChatOpen);
   const openRef = useRef(xrChatOpen);
   openRef.current = xrChatOpen;
   const [draft, setDraft] = useState("");
   const busyRef = useRef(false);
   const sendRef = useRef<(text: string) => void>(() => {});
 
-  const turnErrorRef = useRef<string | null>(null);
   const {
     messages,
     sendMessage,
     status,
-    error,
+    errorText,
+    live,
+    pendingAsk,
     stop,
-    addToolOutput,
-    setMessages,
-  } = useChat({
-    id: threadId,
-    throttle: 50,
-    messages: initialMessages,
-    transport: viewerChatTransport(),
-    onError: (err) => {
-      turnErrorRef.current = mapChatErrorMessage(err) ?? err.message;
-    },
-    onFinish: ({ messages: next, isError }) => {
-      const text = turnErrorRef.current;
-      turnErrorRef.current = null;
-      const toSave = finishPersistMessages(
-        next as GalleryChatMessage[],
-        isError,
-        text
-      );
-      if (!toSave) return;
-      if (isError) setMessages(toSave);
-      void persistThread(threadId, toSave).then(onPersist);
+    answerAskUser,
+  } = useBenchChat({
+    threadId,
+    initialMessages,
+    // A rejected PUT does not refresh. An HTTP error response still does,
+    // matching persistThread().then(onPersist) with no rejection handler.
+    onPersistSettled: (outcome) => {
+      if (!outcome.ok && outcome.reason === "network") return;
+      onPersist();
     },
   });
 
-  const busy = status === "submitted" || status === "streaming";
-  const pendingAsk = findPendingAskUserQuestions(messages);
-  const pendingViewer = findPendingGetViewer(messages);
-  const fillSuspendedTurn = useCallback(() => {
-    void sendMessage();
-  }, [sendMessage]);
-  useLiveViewerTools(
-    messages as GalleryChatMessage[],
-    addToolOutput,
-    busy,
-    fillSuspendedTurn
-  );
-  busyRef.current = busy || pendingViewer !== null;
+  busyRef.current = live;
 
-  const send = useCallback(() => {
+  const sendFreeform = (
+    pending: NonNullable<typeof pendingAsk>,
+    text: string
+  ) => {
+    const question = pending.input.questions[0];
+    if (!question?.allowFreeForm) return false;
+    answerAskUser(pending.toolCallId, {
+      action: "answered",
+      answers: { [question.id]: { optionIds: [], freeform: text } },
+    });
+    return true;
+  };
+
+  const send = () => {
     const text = draft.trim();
     if (!text || busyRef.current) return;
-    const pending = findPendingAskUserQuestions(messages);
-    if (pending) {
-      const question = pending.input.questions[0];
-      if (!question?.allowFreeForm) return;
+    if (pendingAsk) {
+      if (!sendFreeform(pendingAsk, text)) return;
       setDraft("");
-      void Promise.resolve(
-        addToolOutput({
-          tool: "askUserQuestions",
-          toolCallId: pending.toolCallId,
-          output: {
-            action: "answered",
-            answers: { [question.id]: { optionIds: [], freeform: text } },
-          },
-        })
-      ).then(() => sendMessage());
       return;
     }
     setDraft("");
     void sendMessage({ text });
-  }, [addToolOutput, draft, messages, sendMessage]);
+  };
 
+  // Voice can start a turn while the chat card is closed.
   sendRef.current = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || busyRef.current) return;
-    const pending = findPendingAskUserQuestions(messages);
-    if (pending) {
-      const question = pending.input.questions[0];
-      if (!question?.allowFreeForm) return;
-      void Promise.resolve(
-        addToolOutput({
-          tool: "askUserQuestions",
-          toolCallId: pending.toolCallId,
-          output: {
-            action: "answered",
-            answers: { [question.id]: { optionIds: [], freeform: trimmed } },
-          },
-        })
-      ).then(() => sendMessage());
+    if (pendingAsk) {
+      sendFreeform(pendingAsk, trimmed);
       return;
     }
     void sendMessage({ text: trimmed });
@@ -173,15 +130,14 @@ function XrChatSessionRuntime({
   });
 
   useEffect(() => {
-    const waiting = busy || pendingViewer !== null;
-    const phase = waiting
+    const phase = live
       ? status === "streaming"
         ? "streaming"
         : "submitted"
       : "idle";
-    store.getState().setXrChatPhase(phase);
-    return () => store.getState().setXrChatPhase("idle");
-  }, [busy, pendingViewer, status]);
+    xrUiStore.getState().setXrChatPhase(phase);
+    return () => xrUiStore.getState().setXrChatPhase("idle");
+  }, [live, status]);
   useEffect(() => {
     const last = [...messages].reverse().find((m) => m.role === "assistant");
     setXrChatChars(
@@ -191,27 +147,16 @@ function XrChatSessionRuntime({
   }, [messages]);
 
   const value: XrChatRuntime = {
-    messages: messages as GalleryChatMessage[],
-    busy: busy || pendingViewer !== null,
+    messages,
+    busy: live,
     status,
-    error,
+    error: errorText,
     draft,
     setDraft,
     send,
-    stop: () => {
-      stop();
-      void jsonApi["chat"].stop.$post();
-    },
+    stop,
     pendingAsk,
-    answerAskUser: (toolCallId, output) => {
-      void Promise.resolve(
-        addToolOutput({
-          tool: "askUserQuestions",
-          toolCallId,
-          output,
-        })
-      ).then(() => sendMessage());
-    },
+    answerAskUser,
     voice,
   };
 

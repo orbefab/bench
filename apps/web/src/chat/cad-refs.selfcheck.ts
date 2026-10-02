@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { parseEditorContent, textToDoc } from "../components/ui/chat-input";
 import {
   CAD_MENTION_FACE_CAP,
@@ -13,10 +14,6 @@ import {
   partRefFromCadRef,
   resolveCadRef,
 } from "./cad-refs";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const look = parseCadRefs("Look at #o1.1 and #o1.1.f6.");
 expect(look.length === 2, "two refs");

@@ -10,7 +10,8 @@ import {
   partLabelFileStem,
 } from "@/lib/part-label";
 import { siblingRows } from "@/lib/part-tree";
-import { useStore } from "@/state/store";
+import { useScene } from "@/state/scene";
+import { useViewer } from "@/state/viewer";
 
 function SelectionBody() {
   const {
@@ -20,11 +21,10 @@ function SelectionBody() {
     pickedRef,
     select,
     isolate,
-    fit,
     setVisible,
     showAll,
     hiddenIds,
-  } = useStore(
+  } = useViewer(
     useShallow((s) => ({
       review: s.review,
       title: s.title,
@@ -32,12 +32,12 @@ function SelectionBody() {
       pickedRef: s.pickedRef,
       select: s.select,
       isolate: s.isolate,
-      fit: s.fit,
       setVisible: s.setVisible,
       showAll: s.showAll,
       hiddenIds: s.hiddenIds,
     }))
   );
+  const fit = useScene((s) => s.fit);
   const part = selectedId !== null ? review?.parts[selectedId] : undefined;
   const ref = pickedRef ?? part?.cadRef ?? null;
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
@@ -178,7 +178,7 @@ function SelectionBody() {
 }
 
 function MeasureBody() {
-  const { measure, clearMeasure, setTool } = useStore(
+  const { measure, clearMeasure, setTool } = useViewer(
     useShallow((s) => ({
       measure: s.measure,
       clearMeasure: s.clearMeasure,
@@ -247,7 +247,7 @@ export function DetailPanel({
   width: number;
   cardRef?: (el: HTMLElement | null) => void;
 }) {
-  const { review, selectedId, pickedRef, tool } = useStore(
+  const { review, selectedId, pickedRef, tool } = useViewer(
     useShallow((s) => ({
       review: s.review,
       selectedId: s.selectedId,

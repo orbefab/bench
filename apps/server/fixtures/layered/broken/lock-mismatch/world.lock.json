@@ -1,0 +1,14 @@
+{
+  "format": "sfab.lock@1",
+  "world": "lock-mismatch",
+  "parts": [
+    {
+      "id": "sfab/sg90@1.0.0",
+      "version": "1.0.0",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "source": "catalog",
+      "path": "apps/server/catalog/parts/sfab/sg90@1.0.0.json"
+    }
+  ],
+  "types": []
+}

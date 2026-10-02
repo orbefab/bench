@@ -1,0 +1,333 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/nano-ch340@1.0.0",
+  "type": "arduino-nano",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Arduino Nano 3.x pinout",
+      "ref": "docs.arduino.cc/hardware/nano: D0-D13, A0-A7, 5V, 3V3, GND, VIN, RESET; PWM on D3, D5, D6, D9, D10, D11; A6 and A7 are analog input only; board 45 mm by 18 mm"
+    },
+    {
+      "title": "ATmega328P DC characteristics",
+      "ref": "DS40002061: same logic ratings and brownout as the Uno. Active supply 0.010 A at 5 V and 16 MHz, read from the active-current figure"
+    },
+    {
+      "title": "CH340G",
+      "ref": "WCH CH340 datasheet: USB working current 0.012 A"
+    },
+    {
+      "title": "Power LED",
+      "ref": "Arduino Nano Rev 3.2 schematic, NanoV3.2.sch: RP1 is a 1 kohm pack (CAY16-102J4LF), and element C is from +5V to the power LED. The clone is assumed to match. Forward drop 1.8 V assumed, so 0.0032 A at 5 V"
+    },
+    {
+      "title": "USB diode S4",
+      "ref": "Vishay SS12-SS14, document 88746, Fig. 3. The clone marks this diode S4. No polyfuse and no P-MOSFET"
+    },
+    {
+      "title": "C106",
+      "ref": "A part marked C106, most likely a 10 uF / 16 V tantalum, placed on +5V after the diode. Position assumed. ESR 5 ohm assumed, inside the 4-8 ohm maxima of a case-A part of that rating (Kemet T491, AVX TAJ)"
+    },
+    {
+      "title": "D13 LED resistor",
+      "ref": "1 kohm assumed. The resistor code on the board is unknown"
+    },
+    {
+      "title": "D13 input leakage",
+      "ref": "DS40002061 Iin 1 uA max. A 5 Mohm resistor from D13 to ground, so the LED node has a DC path while the pin is an input"
+    },
+    {
+      "title": "Reset network",
+      "ref": "Nano Rev 3.2 schematic, NanoV3.2.sch: C4 is 100 nF from DTR to RESET, and the pull-up is RP1 at 1 kohm. The clone is assumed to match. DTR idle high is the +5V node"
+    },
+    {
+      "title": "ATmega328P 16 MHz speed grade",
+      "ref": "DS40002061 Figure 33-1, Maximum Frequency vs. VCC. On the 2.7 V / 10 MHz to 4.5 V / 20 MHz segment, 16 MHz needs 3.78 V. Electrical characteristics list VCC up to 5.5 V. The 5V pin operating range is 3.78 V to 5.5 V. Absolute maximum stays 6 V."
+    },
+    {
+      "title": "ATmega328P pin",
+      "ref": "DS40002061 Figure 35-22 and Figure 35-24 at 25 C and VCC 5 V: Roh and Rol are the fitted resistances. Rpu is the midpoint of 20 kohm to 50 kohm. Input leakage is Iin 1 uA at 5 V, a 5 Mohm path to ground"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "pins",
+        "variants": {
+          "pins": {
+            "kind": "script",
+            "script": "pins-follow-level",
+            "omits": [
+              "instruction timing",
+              "peripherals",
+              "brownout",
+              "analog pin waveforms"
+            ]
+          }
+        }
+      },
+      "1": {
+        "default": "avr8js",
+        "variants": {
+          "avr8js": {
+            "kind": "composite",
+            "netlist": {
+              "instances": {
+                "power": {
+                  "part": "sfab/nano-power-input@1.0.0",
+                  "level": {
+                    "behaviour": 1
+                  }
+                },
+                "mcu": {
+                  "part": "sfab/atmega328p@1.0.0",
+                  "params": {
+                    "firmware": {
+                      "$param": "firmware",
+                      "optional": true
+                    },
+                    "source": {
+                      "$param": "source",
+                      "optional": true
+                    },
+                    "quiescent": 0.0252
+                  }
+                }
+              },
+              "wires": [
+                ["power.5V", "mcu.VCC"],
+                ["power.5V", "mcu.AVCC"],
+                ["power.GND", "mcu.GND"]
+              ],
+              "expose": {
+                "VBUS": "power.VBUS",
+                "5V": "power.5V",
+                "GND": "power.GND",
+                "VIN": "power.VIN",
+                "D0": "mcu.PD0",
+                "D1": "mcu.PD1",
+                "D2": "mcu.PD2",
+                "D3": "mcu.PD3",
+                "D4": "mcu.PD4",
+                "D5": "mcu.PD5",
+                "D6": "mcu.PD6",
+                "D7": "mcu.PD7",
+                "D8": "mcu.PB0",
+                "D9": "mcu.PB1",
+                "D10": "mcu.PB2",
+                "D11": "mcu.PB3",
+                "D12": "mcu.PB4",
+                "D13": "mcu.PB5",
+                "A0": "mcu.PC0",
+                "A1": "mcu.PC1",
+                "A2": "mcu.PC2",
+                "A3": "mcu.PC3",
+                "A4": "mcu.PC4",
+                "A5": "mcu.PC5",
+                "A6": "mcu.ADC6",
+                "A7": "mcu.ADC7",
+                "RESET": "mcu.RESET"
+              }
+            },
+            "omits": [
+              "rail capacitance (snapshot has no state)",
+              "D13 LED and reset network",
+              "temperature",
+              "I/O pin impedance",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
+            ]
+          },
+          "ideal-terminal": {
+            "kind": "firmware",
+            "chip": "atmega328p",
+            "resetPort": "RESET",
+            "imageParam": "firmware",
+            "railVoltage": 5,
+            "resetFraction": 0.9,
+            "minOperatingVoltage": 3.78,
+            "params": {
+              "brownoutVoltage": 2.7,
+              "brownoutAssertVoltage": 2.675,
+              "brownoutReleaseVoltage": 2.725,
+              "resetHoldS": 0.066,
+              "quiescent": 0.0252,
+              "roh": 25.066666666666663,
+              "rol": 23.4,
+              "rpu": 35000,
+              "rLeak": 5000000
+            },
+            "fuses": {
+              "extended": "0xFD"
+            },
+            "omits": [
+              "USB diode drop",
+              "rail capacitance",
+              "D13 LED current",
+              "reset network",
+              "temperature",
+              "I/O pin impedance",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
+            ]
+          }
+        }
+      },
+      "2": {
+        "default": "circuits",
+        "variants": {
+          "circuits": {
+            "kind": "composite",
+            "netlist": {
+              "instances": {
+                "power": {
+                  "part": "sfab/nano-power-input@1.0.0"
+                },
+                "cvcc": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "cavcc": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "rrst": {
+                  "part": "sfab/resistor@1.0.0",
+                  "params": {
+                    "R": 1000
+                  }
+                },
+                "crst": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "rled": {
+                  "part": "sfab/resistor@1.0.0",
+                  "params": {
+                    "R": 1000
+                  }
+                },
+                "led": {
+                  "part": "sfab/led-red@1.0.0"
+                },
+                "mcu": {
+                  "part": "sfab/atmega328p@1.0.0",
+                  "params": {
+                    "firmware": {
+                      "$param": "firmware",
+                      "optional": true
+                    },
+                    "source": {
+                      "$param": "source",
+                      "optional": true
+                    },
+                    "quiescent": 0.0252
+                  }
+                }
+              },
+              "wires": [
+                ["power.5V", "cvcc.A"],
+                ["power.5V", "cavcc.A"],
+                ["power.5V", "rrst.A"],
+                ["power.5V", "crst.A"],
+                ["power.GND", "cvcc.B"],
+                ["power.GND", "cavcc.B"],
+                ["power.GND", "led.K"],
+                ["rrst.B", "crst.B"],
+                ["rled.B", "led.A"],
+                ["power.5V", "mcu.VCC"],
+                ["power.5V", "mcu.AVCC"],
+                ["power.GND", "mcu.GND"],
+                ["mcu.PB5", "rled.A"],
+                ["mcu.RESET", "rrst.B"]
+              ],
+              "expose": {
+                "VBUS": "power.VBUS",
+                "5V": "power.5V",
+                "GND": "power.GND",
+                "VIN": "power.VIN",
+                "D0": "mcu.PD0",
+                "D1": "mcu.PD1",
+                "D2": "mcu.PD2",
+                "D3": "mcu.PD3",
+                "D4": "mcu.PD4",
+                "D5": "mcu.PD5",
+                "D6": "mcu.PD6",
+                "D7": "mcu.PD7",
+                "D8": "mcu.PB0",
+                "D9": "mcu.PB1",
+                "D10": "mcu.PB2",
+                "D11": "mcu.PB3",
+                "D12": "mcu.PB4",
+                "D13": "mcu.PB5",
+                "A0": "mcu.PC0",
+                "A1": "mcu.PC1",
+                "A2": "mcu.PC2",
+                "A3": "mcu.PC3",
+                "A4": "mcu.PC4",
+                "A5": "mcu.PC5",
+                "A6": "mcu.ADC6",
+                "A7": "mcu.ADC7",
+                "RESET": "mcu.RESET"
+              }
+            },
+            "omits": [
+              "USB Schottky when the 5V header feeds the board",
+              "3.3 V rail",
+              "auto-reset on upload",
+              "CH340 serial",
+              "USB enumeration",
+              "TX and RX LEDs",
+              "temperature",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["board mass is not in the catalog"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.045, 0.018, 0.008],
+            "omits": [
+              "headers",
+              "silk",
+              "USB connector shape",
+              "board height is assumed"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

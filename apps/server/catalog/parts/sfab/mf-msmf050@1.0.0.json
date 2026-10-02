@@ -1,0 +1,66 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/mf-msmf050@1.0.0",
+  "type": "ptc-fuse",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Bourns MF-MSMF050",
+      "ref": "MF-MSMF series, the MF-MSMF050 row (the schematic's MF-MSMF050-2, not the later /16X row). Rmin 0.15 ohm, R1max 1.00 ohm. Class 1 uses Rmin: R1max is the post-trip ceiling. Ihold 0.50 A, Itrip 1.00 A. Maximum time to trip 0.15 s at 8 A"
+    },
+    {
+      "title": "Trip power, hot resistance, reset, thermal time",
+      "ref": "Assumed. tripPower 0.12 W sits between Ihold squared times Rmin (0.0375 W, must never trip) and Itrip squared times Rmin (0.15 W, must). rHot 80 ohm is not in the datasheet. uReset 0.85. tau is chosen so 8 A reaches u = 1 in 0.1 s"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "thermal",
+        "variants": {
+          "thermal": {
+            "kind": "form",
+            "form": "ptc-fuse@1",
+            "params": {
+              "rCold": 0.15,
+              "rHot": 80,
+              "iHold": 0.5,
+              "iTrip": 1,
+              "tripPower": 0.12,
+              "tau": 7.9498951770914,
+              "uReset": 0.85
+            },
+            "omits": [
+              "temperature of the surroundings",
+              "trip-time spread",
+              "R1max drift after a trip"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.008, 0.005, 0.003],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}

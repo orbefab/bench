@@ -1,10 +1,11 @@
 import type {
+  ClientPrincipal,
   ProjectSession,
   SessionClient,
   SessionEvent,
   SessionSnapshot,
 } from "@sfab-bench/contract";
-import { type ClientPrincipal, getPrincipal } from "./principal";
+import { getPrincipal } from "./principal";
 import {
   catalogRevision,
   currentProject,
@@ -31,10 +32,9 @@ export function clientOf(principal: ClientPrincipal): SessionClient {
   return { id: principal.deviceId, label: "Account" };
 }
 
-function emit(event: SessionEvent, except?: SessionSocket) {
+function emit(event: SessionEvent) {
   const payload = JSON.stringify(event);
   for (const socket of sockets) {
-    if (socket === except) continue;
     try {
       socket.send(payload);
     } catch {

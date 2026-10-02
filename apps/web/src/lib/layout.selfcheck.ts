@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   CANVAS_MIN_WIDTH,
   CHAT_DEFAULT_WIDTH,
@@ -28,10 +29,6 @@ import {
   toolbarLayout,
   toolbarRightReserve,
 } from "./layout";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(preferredChatWidth(100) === CHAT_MIN_WIDTH, "stored below min");
 expect(preferredChatWidth(900) === CHAT_MAX_WIDTH, "stored above max");

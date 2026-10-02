@@ -23,7 +23,8 @@ import {
   isChatEffort,
   isHarnessId,
 } from "@/lib/harness";
-import { store, useStore } from "@/state/store";
+import { prefsStore, usePrefs } from "@/state/prefs";
+import { useXrUi } from "@/state/xr";
 
 export type ThreadRow = {
   id: string;
@@ -86,12 +87,12 @@ function applyThreadPrefs(row: {
       : DEFAULT_HARNESS_MODEL[harness];
   const effort: ChatEffort =
     row.effort && isChatEffort(row.effort) ? row.effort : DEFAULT_CHAT_EFFORT;
-  store.getState().setChatSelection(harness, model);
-  store.getState().setChatEffort(effort);
+  prefsStore.getState().setChatSelection(harness, model);
+  prefsStore.getState().setChatEffort(effort);
 }
 
 function persistOpenPrefs(id: string) {
-  const s = store.getState();
+  const s = prefsStore.getState();
   return jsonApi.threads[":id"].prefs.$put({
     param: { id },
     json: { harness: s.chatHarness, model: s.chatModel, effort: s.chatEffort },
@@ -99,10 +100,10 @@ function persistOpenPrefs(id: string) {
 }
 
 export function ViewerChatProvider({ children }: { children: ReactNode }) {
-  const chatOpen = useStore((s) => s.chatOpen);
-  const compactChatOpen = useStore((s) => s.compactChatOpen);
-  const xrChatOpen = useStore((s) => s.xrChatOpen);
-  const xrDock = useStore((s) => s.bringChat);
+  const chatOpen = usePrefs((s) => s.chatOpen);
+  const compactChatOpen = usePrefs((s) => s.compactChatOpen);
+  const xrChatOpen = useXrUi((s) => s.xrChatOpen);
+  const xrDock = useXrUi((s) => s.bringChat);
   const active = chatOpen || compactChatOpen || xrChatOpen || xrDock != null;
   const projectPath = useProjectSession().project.path;
   const [threads, setThreads] = useState<ThreadRow[]>([]);
@@ -215,8 +216,8 @@ export function ViewerChatProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!threadId) return;
-    let prev = store.getState();
-    return store.subscribe((next) => {
+    let prev = prefsStore.getState();
+    return prefsStore.subscribe((next) => {
       const was = prev;
       prev = next;
       if (

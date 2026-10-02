@@ -6,9 +6,8 @@ import {
   showFirstSetupHint,
 } from "@/chat/composer-recovery";
 import type { HarnessRefreshReason } from "@/chat/model-picker";
-import type { HarnessInfo } from "@/hooks/useHarnesses";
-import { HARNESS_LABEL, type HarnessId } from "@/lib/harness";
-import { useStore } from "@/state/store";
+import { HARNESS_LABEL, type HarnessId, type HarnessInfo } from "@/lib/harness";
+import { usePrefs } from "@/state/prefs";
 
 /** Line under the composer while this machine installs the selected provider. */
 export function useFirstSetupHint(
@@ -18,7 +17,7 @@ export function useFirstSetupHint(
     refresh: (reason?: HarnessRefreshReason) => void;
   }
 ): string | null {
-  const live = useStore((s) => s.chatHarness);
+  const live = usePrefs((s) => s.chatHarness);
   const { harnesses, refresh } = catalog;
   const [frozen, setFrozen] = useState<HarnessId | null>(null);
   const [latched, setLatched] = useState(() => new Set<string>());

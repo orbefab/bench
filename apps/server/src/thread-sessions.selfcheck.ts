@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -13,10 +14,6 @@ import {
   shouldPersistPark,
   stripResumeCredentials,
 } from "./thread-sessions";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const withCreds = {
   type: "resume-session" as const,

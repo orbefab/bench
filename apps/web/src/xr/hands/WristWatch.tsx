@@ -2,14 +2,14 @@ import { Container } from "@react-three/uikit";
 import { AppWindow } from "@react-three/uikit-lucide";
 import { useXRInputSourceState } from "@react-three/xr";
 
-import { useStore } from "@/state/store";
+import { useXrUi } from "@/state/xr";
 import { useXrTheme } from "@/xr/ui/theme";
 
 /** Renders inside the left `HandRig`, so the wrist transform is already applied. */
 export function WristWatch() {
   const left = useXRInputSourceState("controller", "left");
-  const cardOpen = useStore((s) => s.cardOpen);
-  const setCardOpen = useStore((s) => s.setCardOpen);
+  const cardOpen = useXrUi((s) => s.cardOpen);
+  const setCardOpen = useXrUi((s) => s.setCardOpen);
   const theme = useXrTheme();
   if (left || cardOpen) return null;
 

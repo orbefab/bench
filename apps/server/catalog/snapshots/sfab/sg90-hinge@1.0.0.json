@@ -1,0 +1,88 @@
+{
+  "axis": "body",
+  "envelope": {
+    "bounds": {
+      "shaft.speed": [
+        -10.472,
+        10.472
+      ],
+      "shaft.torque": [
+        -0.176,
+        0.176
+      ]
+    }
+  },
+  "error": [
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "free-run-max-abs",
+      "quantity": "shaft.angle",
+      "value": 0.00363702
+    },
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "free-run-rms",
+      "quantity": "shaft.angle",
+      "value": 0.002350363
+    },
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "step-rise",
+      "quantity": "shaft.angle",
+      "value": 0.00036181
+    }
+  ],
+  "form": "hinge@1",
+  "format": "sfab.snapshot@1",
+  "params": {
+    "armature": 0.0003707906139409754,
+    "damping": 0.0024999999999999996,
+    "frictionloss": 0.002
+  },
+  "part": "sfab/sg90@1.0.0",
+  "partType": "hobby-servo-3wire",
+  "ports": {
+    "inputs": [
+      "shaft.torque"
+    ],
+    "outputs": [
+      "shaft.angle"
+    ]
+  },
+  "provenance": {
+    "bench": {
+      "avr8js": "0.21.1",
+      "mujoco": "3.14.0",
+      "version": "0.2.2"
+    },
+    "created": "2026-09-27T00:00:00.000Z",
+    "fixture": {
+      "hash": "39a42d44474e8fe026419dbe74f1184e8c5ccbbbf334f2e48db8e1c7d0c5d00b",
+      "ref": "sfab/sg90-body",
+      "seed": 20260927
+    },
+    "from": {
+      "hash": "2e78acd2aa1df5fb3b41cde5006fa7bda7d1ad891c185bc14f51b5c795766aeb",
+      "level": "2",
+      "part": "sfab/sg90@1.0.0"
+    },
+    "source": "captured",
+    "tool": {
+      "name": "sfab-bench-capture",
+      "version": "1"
+    }
+  },
+  "quality": "Q2a"
+}

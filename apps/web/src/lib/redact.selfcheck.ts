@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   APP_VERSION,
   crashCardReason,
@@ -11,10 +12,6 @@ import {
   messageFromHttpBody,
 } from "./load-copy";
 import { redact, redactHomePaths, redactProjectPrefix } from "./redact";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(
   redactHomePaths("/Users/you/cad/part.step") === "~/cad/part.step",

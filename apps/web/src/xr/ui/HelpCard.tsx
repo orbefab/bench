@@ -1,6 +1,6 @@
 import { Container, Text } from "@react-three/uikit";
 
-import { useStore } from "@/state/store";
+import { useXrUi } from "@/state/xr";
 import { ToolBtn } from "@/xr/ui/ToolBtn";
 import { useXrTheme } from "@/xr/ui/theme";
 
@@ -39,7 +39,7 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
 ];
 
 export function HelpCard() {
-  const setPage = useStore((s) => s.setPage);
+  const setPage = useXrUi((s) => s.setPage);
   const theme = useXrTheme();
   return (
     <Container

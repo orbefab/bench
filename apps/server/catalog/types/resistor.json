@@ -1,0 +1,19 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "resistor",
+  "plausible": {
+    "Resistance": [0.001, 1000000000]
+  },
+  "ports": {
+    "A": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    },
+    "B": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    }
+  }
+}

@@ -3,7 +3,9 @@ import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useStore } from "@/state/store";
+import { usePrefs } from "@/state/prefs";
+import { useScene } from "@/state/scene";
+import { useViewer } from "@/state/viewer";
 
 type Props = {
   onHome: () => void;
@@ -13,25 +15,20 @@ type Props = {
 };
 
 export function Toolbar({ onHome, onFit, top, left }: Props) {
-  const {
-    review,
-    selectedId,
-    isolate,
-    fit,
-    axesVisible,
-    setAxesVisible,
-    tool,
-    setTool,
-  } = useStore(
+  const { review, selectedId, isolate, tool, setTool } = useViewer(
     useShallow((s) => ({
       review: s.review,
       selectedId: s.selectedId,
       isolate: s.isolate,
-      fit: s.fit,
-      axesVisible: s.axesVisible,
-      setAxesVisible: s.setAxesVisible,
       tool: s.tool,
       setTool: s.setTool,
+    }))
+  );
+  const fit = useScene((s) => s.fit);
+  const { axesVisible, setAxesVisible } = usePrefs(
+    useShallow((s) => ({
+      axesVisible: s.axesVisible,
+      setAxesVisible: s.setAxesVisible,
     }))
   );
   return (

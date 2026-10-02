@@ -5,6 +5,7 @@ import {
   forgetCadSpawnKey,
   placeAtGaze,
   shouldPlaceAtGaze,
+  spawnDocumentKey,
   XR_CAD_SPAWN_DISTANCE,
   XR_CAD_SPAWN_DROP,
 } from "@/scene/SpawnInFront";
@@ -328,6 +329,75 @@ for (const yaw of [0, 0.7, -2.1]) {
     }),
     true,
     "reopen after close"
+  );
+}
+
+/**
+ * A world uses the same spawn key as a STEP. Switching STEP → world → STEP
+ * in one session places each time. Reloading the same world does not.
+ */
+{
+  if (spawnDocumentKey("", "cad/a.step") !== "cad/a.step") {
+    note("a STEP path is the spawn document");
+  }
+  if (
+    spawnDocumentKey("examples/arm/parts/sfab/arm-bench@1.0.0.json", "") !==
+    "examples/arm/parts/sfab/arm-bench@1.0.0.json"
+  ) {
+    note("a world path is the spawn document");
+  }
+  if (
+    spawnDocumentKey(
+      "examples/arm/parts/sfab/arm-bench@1.0.0.json",
+      "cad/a.step"
+    ) !== "examples/arm/parts/sfab/arm-bench@1.0.0.json"
+  ) {
+    note("a world wins when both paths are set");
+  }
+  if (spawnDocumentKey("", "") !== "") note("nothing open does not spawn");
+
+  const placed = (got: boolean, want: boolean, label: string) => {
+    if (got !== want) note(`${label}: ${got}, expected ${want}`);
+  };
+  const sess = { id: 1 };
+  let last: { session: unknown; url: string } | null = null;
+  const stepA = spawnDocumentKey("", "cad/a.step");
+  placed(
+    shouldPlaceAtGaze({ session: sess, url: stepA, last }),
+    true,
+    "STEP spawns"
+  );
+  last = { session: sess, url: stepA };
+  const world = spawnDocumentKey(
+    "examples/arm/parts/sfab/arm-bench@1.0.0.json",
+    ""
+  );
+  placed(
+    shouldPlaceAtGaze({ session: sess, url: world, last }),
+    true,
+    "STEP to world places again"
+  );
+  last = { session: sess, url: world };
+  // A forced reopen bumps loadId and a disk reload bumps revision.
+  // Neither belongs in spawnDocumentKey: this stays false, and a
+  // grabbed world does not snap back in front.
+  placed(
+    shouldPlaceAtGaze({ session: sess, url: world, last }),
+    false,
+    "the same world does not respawn"
+  );
+  const other = spawnDocumentKey("examples/arm/other.world.json", "");
+  placed(
+    shouldPlaceAtGaze({ session: sess, url: other, last }),
+    true,
+    "a second world places"
+  );
+  last = { session: sess, url: other };
+  const stepB = spawnDocumentKey("", "cad/b.step");
+  placed(
+    shouldPlaceAtGaze({ session: sess, url: stepB, last }),
+    true,
+    "world to STEP places again"
   );
 }
 

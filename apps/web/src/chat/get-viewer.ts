@@ -86,6 +86,18 @@ export function latestShownArtifact(
   return file;
 }
 
+/**
+ * The server holds the folder lock until the chat stream finishes, and the
+ * tool-call bytes are already on the wire by then. A continuation posted
+ * while `streaming` is still true gets 409 "a reply is already in progress".
+ */
+export function getViewerFillReady(input: {
+  pending: boolean;
+  streaming: boolean;
+}): boolean {
+  return input.pending && !input.streaming;
+}
+
 export function findPendingGetViewer(
   messages: Array<{ role: string; parts?: readonly unknown[] }>
 ): { toolCallId: string } | null {

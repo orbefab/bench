@@ -14,7 +14,7 @@ import {
 import * as THREE from "three";
 
 import { faceToward } from "@/scene/SpawnInFront";
-import { store } from "@/state/store";
+import { xrUiStore } from "@/state/xr";
 import { CardChrome, HandleButton } from "@/xr/ui/CardChrome";
 import { type CardSize, cardMeters, type Region } from "@/xr/ui/chrome";
 import {
@@ -106,7 +106,7 @@ export function WorldCard({
   onSizeRef.current = onSizeChange;
 
   const setDragging = useCallback((active: boolean) => {
-    store.getState().setCardDragging(active);
+    xrUiStore.getState().setCardDragging(active);
   }, []);
 
   const notifyDragStart = useCallback((region: Region) => {

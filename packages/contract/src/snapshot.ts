@@ -12,11 +12,21 @@ export type ViewerSnapshot = {
   selectedName: string | null;
   tree: ViewerTreeItem[];
   partCount: number;
+  /** Present when the open document is a world. */
+  playing?: boolean;
+  /** Seconds. Present when the open document is a world. */
+  simTime?: number;
+  /**
+   * This client's world selection (D-015). Present only when a world is
+   * open. An instance path, plus `link` when the pick is one link of a
+   * robot. Null when nothing in that world is selected.
+   */
+  selection?: { kind: "instance"; path: string; link?: string } | null;
 };
 
 export type CatalogEntry = {
   path: string;
-  kind: "step" | "glb";
+  kind: "step" | "glb" | "world";
 };
 
 export function emptySnapshot(file = ""): ViewerSnapshot {
@@ -32,21 +42,12 @@ export function emptySnapshot(file = ""): ViewerSnapshot {
 
 export function catalogLabel(path: string): string {
   const name = path.split("/").filter(Boolean).pop() ?? path;
-  return name.replace(/\.(step|stp|glb|gltf)$/i, "");
+  return name
+    .replace(/\.world\.json$/i, "")
+    .replace(/\.(step|stp|glb|gltf)$/i, "");
 }
 
-/** Immediate parent folder of the file, relative to the project. */
-export function catalogFolder(path: string): string | null {
-  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
-  if (parts.length < 2) return null;
-  return parts[parts.length - 2]!;
-}
-
-export function catalogKindLabel(kind: CatalogEntry["kind"]): string {
-  return kind === "glb" ? "GLB" : "STEP";
-}
-
-export function flattenCatalog(files: CatalogEntry[]): CatalogEntry[] {
+function flattenCatalog(files: CatalogEntry[]): CatalogEntry[] {
   return [...files].sort((a, b) =>
     catalogLabel(a.path).localeCompare(catalogLabel(b.path), undefined, {
       sensitivity: "base",

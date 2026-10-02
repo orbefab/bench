@@ -1,0 +1,180 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/uno-power-input@1.0.0",
+  "type": "power-input",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Arduino Uno Rev3 USB front end",
+      "ref": "Arduino Uno Rev3 schematic, arduino.cc, CC-BY-SA (A000066). Rev3e bill arduino_Uno_Rev3-02-TH. F1 is MF-MSMF050, T1 is FDN340P, PC2 is 47 uF, C2 C4 C6 C7 are 100 nF on +5V"
+    },
+    {
+      "title": "PC2 ESR",
+      "ref": "Panasonic EEE-1EA470WP. tan delta 0.20 at 120 Hz, +20 C, so ESR = tan delta / (2 pi 120 C). PC1 is the same part on VIN. Ceramic ESR is not on the bill; assumed 0"
+    },
+    {
+      "title": "VIN path",
+      "ref": "Arduino Uno Rev3 schematic. VIN header to U1 (NCP1117ST50T3G) to +5V, with PC1 47 uF on VIN. M7, the 1N4007, is on the barrel jack only and is not between the VIN header and U1. U2 is LP2985-33 on +5V. U5A (LMV358) compares VIN through RN1A and RN1B, 10 kohm each, against 3V3, and drives T1's gate"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "table",
+        "variants": {
+          "table": {
+            "kind": "snapshot",
+            "ref": "sfab/uno-power-input@1.0.0",
+            "omits": [
+              "fuse trip",
+              "thermal state",
+              "rail capacitance",
+              "temperature"
+            ]
+          }
+        }
+      },
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": [
+              "comparator output is one master step (1 ms) late",
+              "temperature of the surroundings",
+              "trip-time spread",
+              "R1max drift after a trip",
+              "gate charge",
+              "the region between on and off",
+              "temperature"
+            ],
+            "netlist": {
+              "instances": {
+                "f1": {
+                  "part": "sfab/mf-msmf050@1.0.0"
+                },
+                "t1": {
+                  "part": "sfab/fdn340p@1.0.0"
+                },
+                "pc2": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 0.000047,
+                    "esr": 5.64379230822324
+                  }
+                },
+                "c2": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "c4": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "c6": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "c7": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 1e-7
+                  }
+                },
+                "pc1": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": {
+                    "C": 0.000047,
+                    "esr": 5.64379230822324
+                  }
+                },
+                "u1": {
+                  "part": "sfab/ncp1117-5v0@1.0.0"
+                },
+                "u2": {
+                  "part": "sfab/lp2985-3v3@1.0.0"
+                },
+                "u5a": {
+                  "part": "sfab/lmv358@1.0.0"
+                },
+                "rn1a": {
+                  "part": "sfab/resistor@1.0.0",
+                  "params": {
+                    "R": 10000
+                  }
+                },
+                "rn1b": {
+                  "part": "sfab/resistor@1.0.0",
+                  "params": {
+                    "R": 10000
+                  }
+                }
+              },
+              "wires": [
+                ["f1.B", "t1.S"],
+                ["t1.D", "pc2.A"],
+                ["t1.D", "c2.A"],
+                ["t1.D", "c4.A"],
+                ["t1.D", "c6.A"],
+                ["t1.D", "c7.A"],
+                ["t1.D", "u1.OUT"],
+                ["t1.D", "u2.IN"],
+                ["t1.D", "u5a.VP"],
+                ["pc2.B", "c2.B"],
+                ["pc2.B", "c4.B"],
+                ["pc2.B", "c6.B"],
+                ["pc2.B", "c7.B"],
+                ["pc2.B", "pc1.B"],
+                ["pc2.B", "u1.GND"],
+                ["pc2.B", "u2.GND"],
+                ["pc2.B", "u5a.VN"],
+                ["pc2.B", "rn1b.B"],
+                ["u1.IN", "pc1.A"],
+                ["u1.IN", "rn1a.A"],
+                ["rn1a.B", "rn1b.A"],
+                ["rn1a.B", "u5a.P"],
+                ["u2.OUT", "u5a.N"],
+                ["u5a.OUT", "t1.G"]
+              ],
+              "expose": {
+                "VBUS": "f1.A",
+                "5V": "t1.D",
+                "GND": "pc2.B",
+                "VIN": "u1.IN"
+              }
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.012, 0.008, 0.004],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}

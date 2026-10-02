@@ -8,9 +8,9 @@ export function projectUrl(): string {
 }
 
 /**
- * Keep `?project=` in the page URL. Switching folders drops `?file=` unless
- * `clearFile` is false (a deep link must not lose `?file=` while the folder
- * query is filled in).
+ * Keep `?project=` in the page URL. Switching folders drops `?file=` and
+ * `?world=` unless `clearFile` is false (a deep link must not lose its
+ * document while the folder query is filled in).
  */
 export function syncProjectQuery(path: string, opts?: { clearFile?: boolean }) {
   if (typeof window === "undefined") return;
@@ -20,17 +20,13 @@ export function syncProjectQuery(path: string, opts?: { clearFile?: boolean }) {
   const changed = prev !== abs;
   if (abs) next.searchParams.set("project", abs);
   else next.searchParams.delete("project");
-  if (changed && opts?.clearFile !== false) next.searchParams.delete("file");
+  if (changed && opts?.clearFile !== false) {
+    next.searchParams.delete("file");
+    next.searchParams.delete("world");
+  }
   const want = next.pathname + next.search + next.hash;
   const have =
     window.location.pathname + window.location.search + window.location.hash;
   if (want !== have) window.history.replaceState(null, "", want);
   if (changed) window.dispatchEvent(new Event("sfab-project"));
-}
-
-export function appendProjectQuery(url: URL): URL {
-  const project = projectUrl();
-  if (project && !url.searchParams.has("project"))
-    url.searchParams.set("project", project);
-  return url;
 }

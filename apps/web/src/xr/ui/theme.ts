@@ -1,5 +1,5 @@
 import type { Appearance } from "@/lib/appearance";
-import { useStore } from "@/state/store";
+import { useXrUi } from "@/state/xr";
 
 export type XrPalette = {
   card: string;
@@ -79,6 +79,6 @@ export const XR_PALETTE: Record<Appearance, XrPalette> = {
 
 /** uikit and the studio floor live inside the R3F tree, so they read the zustand mirror. */
 export function useXrTheme(): XrPalette {
-  const appearance = useStore((s) => s.appearance);
+  const appearance = useXrUi((s) => s.appearance);
   return XR_PALETTE[appearance];
 }

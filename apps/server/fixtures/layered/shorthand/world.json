@@ -1,0 +1,79 @@
+{
+  "version": 2,
+  "environment": {
+    "ground": {
+      "plane": true
+    },
+    "gravity": [0, 0, -9.80665]
+  },
+  "run": {
+    "seed": 1,
+    "levels": {
+      "default": 1
+    }
+  },
+  "root": {
+    "id": "r",
+    "part": {
+      "format": "sfab.part@1",
+      "id": "local/resistor@1.0.0",
+      "foreign": false,
+      "type": {
+        "format": "sfab.part-type@1",
+        "id": "resistor",
+        "ports": {
+          "A": {
+            "domain": "electrical",
+            "role": "analog",
+            "direction": "passive"
+          },
+          "B": {
+            "domain": "electrical",
+            "role": "analog",
+            "direction": "passive"
+          }
+        }
+      },
+      "axes": {
+        "behaviour": {
+          "0": {
+            "default": "r",
+            "variants": {
+              "r": {
+                "kind": "form",
+                "form": "resistor@1",
+                "params": {
+                  "R": 1000
+                },
+                "omits": ["temperature coefficient"]
+              }
+            }
+          }
+        },
+        "body": {
+          "0": {
+            "default": "none",
+            "variants": {
+              "none": {
+                "kind": "none",
+                "omits": ["package"]
+              }
+            }
+          }
+        },
+        "visual": {
+          "0": {
+            "default": "box",
+            "variants": {
+              "box": {
+                "kind": "box",
+                "size": [0.006, 0.002, 0.002],
+                "omits": ["bands"]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

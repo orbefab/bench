@@ -1,0 +1,92 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/nano-divider-scene@1.0.0",
+  "type": "assembly",
+  "foreign": false,
+  "axes": {
+    "behaviour": {
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": ["no snapshot of this assembly"],
+            "netlist": {
+              "instances": {
+                "nano": {
+                  "part": "sfab/nano-ch340@1.0.0",
+                  "pose": {
+                    "position": [0, 0, 0.004],
+                    "rotation": [1, 0, 0, 0]
+                  },
+                  "params": {
+                    "firmware": "firmware/divider/divider.hex",
+                    "source": "firmware/divider/divider.ino"
+                  }
+                },
+                "usb": {
+                  "part": "sfab/usb-port-500ma@1.0.0",
+                  "pose": {
+                    "position": [-0.038, 0, 0.0025],
+                    "rotation": [1, 0, 0, 0]
+                  }
+                },
+                "rtop": {
+                  "part": "sfab/resistor@1.0.0",
+                  "pose": {
+                    "position": [0.04, 0.01, 0.004],
+                    "rotation": [1, 0, 0, 0]
+                  },
+                  "params": {
+                    "R": 10000
+                  }
+                },
+                "rbot": {
+                  "part": "sfab/resistor@1.0.0",
+                  "pose": {
+                    "position": [0.04, -0.01, 0.004],
+                    "rotation": [1, 0, 0, 0]
+                  },
+                  "params": {
+                    "R": 10000
+                  }
+                }
+              },
+              "wires": [
+                ["usb.5V", "nano.5V"],
+                ["usb.GND", "nano.GND"],
+                ["nano.5V", "rtop.A"],
+                ["rtop.B", "nano.A0"],
+                ["nano.A0", "rbot.A"],
+                ["rbot.B", "nano.GND"]
+              ],
+              "expose": {}
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["assembly adds no body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["assembly adds no visual"]
+          }
+        }
+      }
+    }
+  }
+}

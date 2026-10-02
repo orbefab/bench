@@ -1,6 +1,6 @@
 import { createXRStore } from "@react-three/xr";
 
-import { store } from "@/state/store";
+import { xrUiStore } from "@/state/xr";
 import {
   forceIwerRuntimeIfNative,
   shouldForceIwerOnThisPage,
@@ -60,7 +60,7 @@ const CURSOR_OFFSET = 0.001;
 const fade =
   (idle: number) =>
   (pointer: PointerLike): number => {
-    if (store.getState().worldGrabbing) return 0;
+    if (xrUiStore.getState().worldGrabbing) return 0;
     return pointer.getButtonsDown().size > 0 ? 1 : idle;
   };
 
@@ -153,7 +153,7 @@ async function swapSession(next: "immersive-ar" | "immersive-vr") {
   const { session, mode } = xrStore.getState();
   if (session && mode === next) return session;
   if (session) {
-    store.getState().setXrSwitch(next === "immersive-ar" ? "ar" : "vr");
+    xrUiStore.getState().setXrSwitch(next === "immersive-ar" ? "ar" : "vr");
     try {
       await session.end();
       const nextSession = await (next === "immersive-ar"
@@ -162,7 +162,7 @@ async function swapSession(next: "immersive-ar" | "immersive-vr") {
       unsquashEmulatorPreview();
       return nextSession;
     } finally {
-      store.getState().setXrSwitch(null);
+      xrUiStore.getState().setXrSwitch(null);
     }
   }
   const started = await (next === "immersive-ar"

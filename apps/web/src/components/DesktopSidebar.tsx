@@ -1,7 +1,5 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
-
 import { Lockup } from "@/components/brand/Lockup";
 import { ConnectionStatusDot } from "@/components/ConnectionStatusDot";
 import { FileTree } from "@/components/FileTree";
@@ -30,7 +28,9 @@ import {
   shortcutTooltip,
 } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-import { useStore } from "@/state/store";
+import { usePrefs } from "@/state/prefs";
+import { useViewer } from "@/state/viewer";
+import { useWorld } from "@/state/world";
 
 export function DesktopSidebar({
   host,
@@ -41,12 +41,10 @@ export function DesktopSidebar({
   folder: OpenFolderApi;
   catalog: CatalogState;
 }) {
-  const { url, recentFiles } = useStore(
-    useShallow((s) => ({
-      url: s.url,
-      recentFiles: s.recentFiles,
-    }))
-  );
+  const url = useViewer((s) => s.url);
+  const worldPath = useWorld((s) => s.path);
+  const currentPath = worldPath || url;
+  const recentFiles = usePrefs((s) => s.recentFiles);
   const {
     project,
     setDoc,
@@ -133,7 +131,7 @@ export function DesktopSidebar({
             key={project.path}
             projectPath={project.path}
             files={files}
-            current={url}
+            current={currentPath}
             filter={filter}
             recents={recentFiles}
             error={error}

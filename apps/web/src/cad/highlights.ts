@@ -18,16 +18,6 @@ const selectTint = new THREE.Color(0x2563eb);
 type TintRec = { mat: ColorMat; orig: THREE.Color };
 let tints: TintRec[] = [];
 
-function subtreeMeshes(review: CadReview, id: number): THREE.Mesh[] {
-  const part = review.parts[id];
-  if (!part) return [];
-  const out: THREE.Mesh[] = [];
-  part.object.traverse((child) => {
-    if (child instanceof THREE.Mesh) out.push(child);
-  });
-  return out;
-}
-
 function tintMesh(mesh: THREE.Mesh, color: THREE.Color, amount: number) {
   const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   for (const mat of list) {
@@ -42,21 +32,43 @@ export function clearHighlights() {
   tints = [];
 }
 
+function collectMeshes(root: THREE.Object3D | null): THREE.Mesh[] {
+  if (!root) return [];
+  const out: THREE.Mesh[] = [];
+  root.traverse((child) => {
+    if (child instanceof THREE.Mesh) out.push(child);
+  });
+  return out;
+}
+
+/**
+ * Hover wins over selection, same amounts as the CAD part tint.
+ * Each mesh needs its own material: the color is lerped in place.
+ */
+export function applyMeshHighlights(
+  selected: THREE.Object3D | null,
+  hovered: THREE.Object3D | null
+) {
+  clearHighlights();
+  const hoverMeshes = new Set(collectMeshes(hovered));
+  if (selected) {
+    for (const mesh of collectMeshes(selected)) {
+      if (!hoverMeshes.has(mesh)) tintMesh(mesh, selectTint, 0.55);
+    }
+  }
+  for (const mesh of hoverMeshes) tintMesh(mesh, hoverTint, 0.45);
+}
+
 export function applyHighlights(
   review: CadReview,
   selectedId: number | null,
   hoveredId: number | null
 ) {
-  clearHighlights();
-  const hoverMeshes = new Set(
-    hoveredId !== null ? subtreeMeshes(review, hoveredId) : []
-  );
-  if (selectedId !== null) {
-    for (const mesh of subtreeMeshes(review, selectedId)) {
-      if (!hoverMeshes.has(mesh)) tintMesh(mesh, selectTint, 0.55);
-    }
-  }
-  for (const mesh of hoverMeshes) tintMesh(mesh, hoverTint, 0.45);
+  const selected =
+    selectedId !== null ? (review.parts[selectedId]?.object ?? null) : null;
+  const hovered =
+    hoveredId !== null ? (review.parts[hoveredId]?.object ?? null) : null;
+  applyMeshHighlights(selected, hovered);
 }
 
 /** Nearest ancestor (or self) stamped with a `partId` by the loaders. */

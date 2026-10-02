@@ -1,0 +1,26 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "ldo-regulator",
+  "plausible": {
+    "Voltage": [0, 30],
+    "Current": [0, 5],
+    "Resistance": [0, 10]
+  },
+  "ports": {
+    "IN": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in"
+    },
+    "OUT": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "out"
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    }
+  }
+}

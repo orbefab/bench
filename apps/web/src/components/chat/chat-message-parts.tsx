@@ -55,20 +55,20 @@ import {
 import { partLabelFileStem } from "@/lib/part-label";
 import { copyText } from "@/lib/settings";
 import { cn } from "@/lib/utils";
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
 import type { AIDataPart } from "./ai-types";
 import type { GalleryChatMessage } from "./mock-chat-messages";
 import { messagePlainText } from "./useViewerChat";
 
 function CadRefChip({ token }: { token: string }) {
-  const label = useStore((s) => {
+  const label = useViewer((s) => {
     const parts = s.review?.parts ?? [];
     return (
       resolveCadRef(token, parts, partLabelFileStem(parts.length, s.title))
         ?.label ?? null
     );
   });
-  const selectByRef = useStore((s) => s.selectByRef);
+  const selectByRef = useViewer((s) => s.selectByRef);
 
   if (!label) {
     return (

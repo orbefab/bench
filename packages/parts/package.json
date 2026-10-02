@@ -1,0 +1,20 @@
+{
+  "name": "@sfab-bench/parts",
+  "version": "0.2.2",
+  "private": true,
+  "description": "Part documents: loader, resolver, levels, nets, lint, and lock. File access goes through a Store.",
+  "homepage": "https://bench.sfab.ai",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sfab-bench/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/battery-2s-lipo@1.0.0",
+  "type": "battery",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Analog Devices DS2786 open-circuit table, two cells in series",
+      "ref": "Interpreting the Open-Circuit-Voltage Fuel Gauge of the DS2786, Table 1, the example cell. Nine open-circuit knots, each cell voltage doubled. Full is 8.354 V. vCutoff is 6.426 V, that table's empty open-circuit voltage. This pack is for VIN."
+    },
+    {
+      "title": "Capacity and resistance, assumed",
+      "ref": "Capacity 3600 C and rInternal 0.1 ohm are assumed. The open-circuit table is the published example cell, not a measurement of this pack."
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "ideal",
+        "variants": {
+          "ideal": {
+            "kind": "form",
+            "form": "ideal-voltage@1",
+            "params": { "V": 8.354 },
+            "omits": ["series resistance", "state of charge", "cutoff"]
+          }
+        }
+      },
+      "1": {
+        "default": "pack",
+        "variants": {
+          "pack": {
+            "kind": "form",
+            "form": "battery@1",
+            "params": {
+              "ocv": [
+                [0, 6.426],
+                [0.05, 7.186],
+                [0.1, 7.374],
+                [0.15, 7.386],
+                [0.25, 7.51],
+                [0.45, 7.598],
+                [0.55, 7.664],
+                [0.85, 8.08],
+                [1, 8.354]
+              ],
+              "rInternal": 0.1,
+              "capacity": 3600,
+              "soc0": 1,
+              "vCutoff": 6.426
+            },
+            "omits": ["temperature", "Peukert", "relaxation", "aging"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": { "kind": "none", "omits": ["pack body"] }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.07, 0.035, 0.02],
+            "omits": ["cell shape"]
+          }
+        }
+      }
+    }
+  }
+}

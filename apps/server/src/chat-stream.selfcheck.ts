@@ -1,13 +1,10 @@
+import { ok as expect } from "node:assert/strict";
 import {
   dropTrailingHarnessErrors,
   harnessErrorsAsTurnParts,
   harnessErrorText,
   isCompletedTurnFinish,
 } from "./chat-stream";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 async function collect<T>(stream: ReadableStream<T>): Promise<T[]> {
   const out: T[] = [];

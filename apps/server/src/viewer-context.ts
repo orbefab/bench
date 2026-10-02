@@ -17,6 +17,10 @@ export function runViewerContext<T>(store: ViewerStore, fn: () => Promise<T>) {
   return als.run(store, fn);
 }
 
+export function viewerProjectRoot(): string | null {
+  return als.getStore()?.root ?? null;
+}
+
 export function viewerFileUrl(path: string) {
   const root = als.getStore()?.root;
   if (!root) return { error: "no project open" };
@@ -25,12 +29,16 @@ export function viewerFileUrl(path: string) {
   return { shown: shownUrl(resolved) };
 }
 
+/** How the world tools name their `world` argument. */
+export const WORLD_ARG =
+  "world is the project-relative path of the open root part from get_viewer.";
+
 export const viewerTools = {
   // No execute: the asking client snapshots after tessellation and continues
   // the turn. A server execute would freeze the send-time (often empty) view.
   get_viewer: tool({
     description:
-      "What this asking client's visualizer is showing right now: project-relative path, empty, tree names, selected # ref. Call after show_artifact if you need the loaded tree.",
+      "What this asking client's visualizer is showing right now: project-relative path, empty, tree names, selected # ref. When a world is open, file is that world and the snapshot includes playing, simTime, and selection — this client's instance path, plus a link when the pick is a link inside a robot, or null. Call after show_artifact if you need the loaded tree.",
     inputSchema: z.object({}),
   }),
   show_artifact: tool({

@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   disambiguateSiblingNames,
   fileStemFromLabel,
@@ -7,10 +8,6 @@ import {
   partLabelFileStem,
 } from "./part-label";
 import { filterPartTree, type PartTreeItem } from "./part-tree";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(isRawPartName("=>[0:1:1:2]"), "occt dump");
 expect(isRawPartName("=> [0:1:1:2]"), "occt dump with space");

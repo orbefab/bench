@@ -10,7 +10,7 @@ import { useRef, useState } from "react";
 import * as THREE from "three";
 import { useShallow } from "zustand/react/shallow";
 
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
 import { pulse } from "@/xr/haptics";
 import { TOOLS } from "@/xr/tools";
 import { useXrTheme } from "@/xr/ui/theme";
@@ -52,7 +52,7 @@ export function ToolDrawer() {
   const right = useXRInputSourceState("controller", "right");
   const session = useXR((s) => s.session);
   const camera = useThree((s) => s.camera);
-  const { tool, setTool } = useStore(
+  const { tool, setTool } = useViewer(
     useShallow((s) => ({ tool: s.tool, setTool: s.setTool }))
   );
   const [open, setOpen] = useState(false);

@@ -1,13 +1,11 @@
+import { ok as expect } from "node:assert/strict";
 import {
   findPendingGetViewer,
+  getViewerFillReady,
   latestShownArtifact,
   shownFromPart,
   viewerIsReady,
 } from "./get-viewer";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const shownTool = shownFromPart(
   {
@@ -70,6 +68,18 @@ const pending = findPendingGetViewer([
   },
 ]);
 expect(pending?.toolCallId === "gv-1", "finds pending get_viewer");
+expect(
+  getViewerFillReady({ pending: true, streaming: true }) === false,
+  "a get_viewer continuation waits until the stream releases the folder lock"
+);
+expect(
+  getViewerFillReady({ pending: true, streaming: false }) === true,
+  "the continuation may post once the turn is no longer streaming"
+);
+expect(
+  getViewerFillReady({ pending: false, streaming: false }) === false,
+  "nothing pending does not post a continuation"
+);
 
 expect(
   findPendingGetViewer([

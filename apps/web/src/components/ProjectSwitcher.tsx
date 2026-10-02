@@ -1,3 +1,4 @@
+import type { ProjectRow } from "@sfab-bench/contract";
 import { Check, ChevronDown, Folder, FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -14,7 +15,6 @@ import {
   folderName,
   openTabProject,
   type ProjectInfo,
-  type ProjectRow,
   registerAndOpenTab,
   shortPath,
 } from "@/lib/project";

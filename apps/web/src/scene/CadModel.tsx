@@ -5,11 +5,12 @@ import { useShallow } from "zustand/react/shallow";
 
 import { pickAlongRay, pickFromIntersections } from "@/cad/highlights";
 import { MeasureGizmo } from "@/scene/MeasureGizmo";
-import { store, useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
+import { xrUiStore } from "@/state/xr";
 
 export function CadModel({ onFit }: { onFit: (obj: THREE.Object3D) => void }) {
   const { review, selectFromModel, hover, setVisible, tool, measureClick } =
-    useStore(
+    useViewer(
       useShallow((s) => ({
         review: s.review,
         selectFromModel: s.selectFromModel,
@@ -58,8 +59,8 @@ export function CadModel({ onFit }: { onFit: (obj: THREE.Object3D) => void }) {
           const hit = fromEvent(ev);
           if (!hit) return;
           // A pinch that starts or ends a grab is not a click on the model.
-          if (store.getState().worldGrabbing || store.getState().cardDragging)
-            return;
+          const xr = xrUiStore.getState();
+          if (xr.worldGrabbing || xr.cardDragging) return;
           if (tool === "measure") {
             const local = wrap.current
               ? wrap.current.worldToLocal(hit.point.clone())

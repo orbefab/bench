@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   buildCommands,
   clampActiveIndex,
@@ -8,10 +9,6 @@ import {
   visiblePalette,
   wrapActiveIndex,
 } from "./command-palette";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(
   queryTokens("  Foo   BAR ").join(",") === "foo,bar",

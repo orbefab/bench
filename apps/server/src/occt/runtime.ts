@@ -63,7 +63,9 @@ export function openCascade(): Promise<OpenCascade> {
   if (!pending) {
     const started = Date.now();
     pending = loadModule().then((oc) => {
-      console.log(`[occt] kernel ready in ${Date.now() - started}ms`);
+      // Wall-clock lines are opt-in so two runs of one commit log the same.
+      if (process.env.BENCH_TIMINGS === "1")
+        console.log(`[occt] kernel ready in ${Date.now() - started}ms`);
       return oc;
     });
     pending.catch(() => {

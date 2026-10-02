@@ -6,12 +6,12 @@ import { useShallow } from "zustand/react/shallow";
 
 import { namedKids } from "@/cad/tree";
 import { useOpenOnSelect } from "@/hooks/useTreeNode";
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
 import { FeedbackContext } from "@/xr/ui/ToolBtn";
 import { useXrTheme } from "@/xr/ui/theme";
 
 export function TreeRow({ obj, depth = 0 }: { obj: Object3D; depth?: number }) {
-  const { review, selectedId, select, setVisible, hiddenIds } = useStore(
+  const { review, selectedId, select, setVisible, hiddenIds } = useViewer(
     useShallow((s) => ({
       review: s.review,
       selectedId: s.selectedId,

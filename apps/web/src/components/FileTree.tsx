@@ -1,4 +1,10 @@
-import { ChevronRight, EllipsisVertical, FileBox, Folder } from "lucide-react";
+import {
+  ChevronRight,
+  EllipsisVertical,
+  FileBox,
+  Folder,
+  Globe,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -78,17 +84,27 @@ function FileRow({
   const [actionsOpen, setActionsOpen] = useState(false);
   const active = node.path === current;
   const name = node.name || fileName(node.path);
+  const world = node.kind === "world";
   const inner = (
     <>
-      <FileBox className="text-sidebar-foreground" />
+      {world ? (
+        <Globe className="text-sidebar-foreground" />
+      ) : (
+        <FileBox className="text-sidebar-foreground" />
+      )}
       <span className="min-w-0 flex-1 truncate text-sidebar-foreground">
         {name}
       </span>
+      {world ? (
+        <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/60">
+          World
+        </span>
+      ) : null}
     </>
   );
   const shared = {
     isActive: active,
-    title: node.path,
+    title: world ? `World · ${node.path}` : node.path,
     onClick: () => onPick(node.path),
     className: "pr-8 text-sidebar-foreground [&>svg]:text-sidebar-foreground",
   };

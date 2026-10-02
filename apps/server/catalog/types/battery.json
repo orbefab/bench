@@ -1,0 +1,23 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "battery",
+  "ports": {
+    "+": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "out"
+    },
+    "-": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    }
+  },
+  "plausible": {
+    "Voltage": [0, 30],
+    "Current": [0, 20],
+    "Resistance": [0, 10],
+    "Charge": [0, 1000000],
+    "Dimensionless": [0, 1]
+  }
+}

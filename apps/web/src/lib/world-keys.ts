@@ -1,0 +1,55 @@
+/**
+ * Editor keys. They do nothing while an input or the chat has focus.
+ * Undo is ⌘/Ctrl+Z. Redo is ⇧⌘/Ctrl+Shift+Z, and also Ctrl+Y.
+ */
+
+import { toolForKey, type WorldToolMode } from "@/lib/world-tool";
+
+export type EditorKey = {
+  key: string;
+  meta?: boolean;
+  ctrl?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+};
+
+export type EditorAction =
+  | "undo"
+  | "redo"
+  | "play"
+  | "delete"
+  | "rename"
+  /** A tool's own key, from the tool table. */
+  | { tool: WorldToolMode };
+
+export function editorKeyAction(
+  event: EditorKey,
+  typing: boolean
+): EditorAction | null {
+  if (typing) return null;
+  if (event.alt) return null;
+  const key = event.key;
+  const mod = Boolean(event.meta || event.ctrl);
+  if (mod && !event.shift && (key === "z" || key === "Z")) return "undo";
+  if (mod && event.shift && (key === "z" || key === "Z")) return "redo";
+  if (
+    event.ctrl &&
+    !event.meta &&
+    !event.shift &&
+    (key === "y" || key === "Y")
+  ) {
+    return "redo";
+  }
+  if (!mod && !event.shift && (key === " " || key === "Spacebar"))
+    return "play";
+  if (!mod && !event.shift && (key === "Delete" || key === "Backspace")) {
+    return "delete";
+  }
+  if (!mod && !event.shift && key === "F2") return "rename";
+  // A bare tool key. ⌘W and Ctrl+W close the tab and stay the browser's.
+  if (!mod && !event.shift) {
+    const tool = toolForKey(key);
+    if (tool) return { tool };
+  }
+  return null;
+}

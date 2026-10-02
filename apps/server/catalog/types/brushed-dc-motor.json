@@ -1,0 +1,28 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "brushed-dc-motor",
+  "ports": {
+    "V+": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in"
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    },
+    "shaft": {
+      "domain": "rotational",
+      "direction": "out"
+    }
+  },
+  "plausible": {
+    "Voltage": [0, 48],
+    "Current": [-20, 20],
+    "TorquePerCurrent": [0, 5],
+    "Resistance": [0.01, 100],
+    "Angle": [0, 4],
+    "Dimensionless": [0, 1]
+  }
+}

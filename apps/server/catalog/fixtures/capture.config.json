@@ -1,0 +1,75 @@
+{
+  "created": "2026-09-27T00:00:00.000Z",
+  "tool": {
+    "name": "sfab-bench-capture",
+    "version": "1"
+  },
+  "entries": [
+    {
+      "id": "sfab/nano-power-input@1.0.0",
+      "part": "sfab/nano-power-input@1.0.0",
+      "variant": "netlist",
+      "instance": "power",
+      "across": ["VBUS", "5V"],
+      "through": "VBUS",
+      "iSense": 1,
+      "fitV": 0.002,
+      "baseline": { "level": "2", "value": 0 },
+      "heldOut": "fixture",
+      "staticError": true,
+      "sweep": {
+        "fixture": "sfab/nano-power-input",
+        "currentPort": "VBUS",
+        "currentQuantity": "Current"
+      },
+      "envelope": {}
+    },
+    {
+      "id": "sfab/uno-power-input@1.0.0",
+      "part": "sfab/uno-power-input@1.0.0",
+      "variant": "netlist",
+      "instance": "power",
+      "across": ["VBUS", "5V"],
+      "through": "VBUS",
+      "iSense": 1,
+      "fitV": 0.002,
+      "baseline": { "level": "2", "value": 0 },
+      "heldOut": "fixture",
+      "staticError": true,
+      "sweep": {
+        "fixture": "sfab/uno-power-input",
+        "currentPort": "VBUS",
+        "currentQuantity": "Current"
+      },
+      "envelope": {}
+    },
+    {
+      "id": "sfab/led-module-red@1.0.0",
+      "part": "sfab/led-module-red@1.0.0",
+      "variant": "netlist",
+      "instance": "module",
+      "across": ["IN", "GND"],
+      "through": "IN",
+      "iSense": 1,
+      "fitV": 0.002,
+      "baseline": { "level": "2", "value": 0 },
+      "heldOut": "fixture",
+      "staticError": true,
+      "sweep": {
+        "fixture": "sfab/led-module-red",
+        "currentPort": "IN",
+        "currentQuantity": "Current"
+      },
+      "envelope": {}
+    },
+    {
+      "form": "hinge@1",
+      "id": "sfab/sg90-hinge@1.0.0",
+      "part": "sfab/sg90@1.0.0",
+      "fixture": "sfab/sg90-body",
+      "baseline": { "level": "2", "value": 0 },
+      "heldOut": "fixture",
+      "sourceLevel": "2"
+    }
+  ]
+}

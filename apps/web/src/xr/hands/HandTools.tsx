@@ -4,7 +4,8 @@ import { useXRInputSourceState } from "@react-three/xr";
 import type { ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
+import { useXrUi } from "@/state/xr";
 import { PalmDownGate } from "@/xr/PalmDownGate";
 import { TOOLS } from "@/xr/tools";
 import { FeedbackContext, ToolBtn, useFeedback } from "@/xr/ui/ToolBtn";
@@ -20,9 +21,9 @@ function RightWristFace({ children }: { children: ReactNode }) {
 }
 
 function ToolWatch() {
-  const { tool, toolsOpen, setToolsOpen } = useStore(
+  const tool = useViewer((s) => s.tool);
+  const { toolsOpen, setToolsOpen } = useXrUi(
     useShallow((s) => ({
-      tool: s.tool,
       toolsOpen: s.toolsOpen,
       setToolsOpen: s.setToolsOpen,
     }))
@@ -50,13 +51,13 @@ function ToolWatch() {
 }
 
 function HandToolRig({ hidden }: { hidden: boolean }) {
-  const { tool, setTool, setToolsOpen } = useStore(
+  const { tool, setTool } = useViewer(
     useShallow((s) => ({
       tool: s.tool,
       setTool: s.setTool,
-      setToolsOpen: s.setToolsOpen,
     }))
   );
+  const setToolsOpen = useXrUi((s) => s.setToolsOpen);
   // The left hand points at this strip. Hands have no actuator, so this is
   // a no-op today and starts working if a controller ever drives it.
   const leftHand = useXRInputSourceState("hand", "left");
@@ -100,8 +101,8 @@ function HandToolRig({ hidden }: { hidden: boolean }) {
 /** Renders inside the right `HandRig`, so the wrist transform is already applied. */
 export function HandTools() {
   const right = useXRInputSourceState("controller", "right");
-  const toolsOpen = useStore((s) => s.toolsOpen);
-  const moving = useStore((s) => s.worldGrabbing);
+  const toolsOpen = useXrUi((s) => s.toolsOpen);
+  const moving = useXrUi((s) => s.worldGrabbing);
   if (right) return null;
   return (
     <RightWristFace>

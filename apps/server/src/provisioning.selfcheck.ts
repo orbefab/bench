@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { ensureProvisioned, installFailureDetail } from "./provisioning";
-
-function expect(cond: unknown, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(
   installFailureDetail(
@@ -56,7 +53,7 @@ function fakeInstall() {
   };
 }
 
-const main = async () => {
+const run = async () => {
   // Two folders sending at once must join one install, not run two. This is
   // the whole reason `inflight` is keyed by harness and not by (root, harness).
   const shared = fakeInstall();
@@ -120,7 +117,26 @@ const main = async () => {
     "a timed-out install is retried by the next send"
   );
   afterHang.settle();
+};
 
+// ensureProvisioned logs each failure with its stack, which carries absolute
+// paths. Collect those lines so the check's output stays the same on every machine.
+const main = async () => {
+  const realError = console.error;
+  const logged: string[] = [];
+  console.error = (...args: unknown[]) => {
+    logged.push(String(args[0]));
+  };
+  try {
+    await run();
+  } finally {
+    console.error = realError;
+  }
+  expect(
+    logged.includes("[provisioning] cursor install failed") &&
+      logged.includes("[provisioning] codex install failed"),
+    "failed installs are logged"
+  );
   console.log("provisioning.selfcheck ok");
 };
 

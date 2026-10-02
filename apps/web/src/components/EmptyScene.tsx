@@ -18,7 +18,7 @@ import {
   NO_CAD_TRAIL,
   WELCOME_OPEN_COPY,
 } from "@/lib/welcome";
-import { useStore } from "@/state/store";
+import { usePrefs } from "@/state/prefs";
 
 function UnavailableFolderCard({ folder }: { folder: OpenFolderApi }) {
   return (
@@ -39,7 +39,7 @@ export function EmptyScene({
   folder: OpenFolderApi;
 }) {
   const { setDoc, fileRecents } = useProjectSession();
-  const setTreeOpen = useStore((s) => s.setTreeOpen);
+  const setTreeOpen = usePrefs((s) => s.setTreeOpen);
   return (
     <div className="pointer-events-none absolute inset-0 z-0 grid place-items-center">
       {scene === "welcome-hint" ? (

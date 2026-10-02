@@ -1,0 +1,38 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "usb-a-port",
+  "ports": {
+    "5V": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "out",
+      "connector": "usb"
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    },
+    "D+": {
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout"
+    },
+    "D-": {
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout"
+    }
+  },
+  "buses": {
+    "usb": {
+      "ports": ["D+", "D-"],
+      "protocol": "usb"
+    }
+  },
+  "plausible": {
+    "Voltage": [0, 20],
+    "Current": [0, 5],
+    "Resistance": [0, 10]
+  }
+}

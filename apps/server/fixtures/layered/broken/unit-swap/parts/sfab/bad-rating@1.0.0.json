@@ -1,0 +1,48 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/bad-rating@1.0.0",
+  "type": "brushed-dc-motor",
+  "foreign": false,
+  "ratings": {
+    "V+": {
+      "voltage": [12, 12],
+      "current": {
+        "v": 0.7,
+        "q": "Voltage",
+        "d": {
+          "kg": 1,
+          "m": 2,
+          "s": -3,
+          "A": -1
+        }
+      }
+    }
+  },
+  "sources": [
+    {
+      "title": "Broken on purpose",
+      "ref": "current field tagged as Voltage so the dimension check fires"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "law",
+        "variants": {
+          "law": {
+            "kind": "form",
+            "form": "dc-motor@1",
+            "params": {
+              "K": 0.05,
+              "R": 2,
+              "efficiency": 0.7,
+              "eSat": 0.2,
+              "quiescent": 0.02
+            },
+            "omits": ["inductance"]
+          }
+        }
+      }
+    }
+  }
+}

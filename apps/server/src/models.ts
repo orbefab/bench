@@ -9,8 +9,6 @@ import { harnessHome } from "./local-sandbox";
 
 const execFileAsync = promisify(execFile);
 
-export const DEFAULT_CHAT_MODEL = "zai-coding-plan/glm-5.3-flash";
-
 export type OpenCodeModel = {
   id: string;
   name: string;

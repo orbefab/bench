@@ -1,0 +1,56 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/gauge@1.0.0",
+  "type": "distance-gauge",
+  "foreign": false,
+  "ratings": {
+    "servo": {
+      "torque": [-0.22, 0.22],
+      "speed": [-10.472, 10.472]
+    }
+  },
+  "sources": [
+    {
+      "title": "examples/gauge/robot/gauge.urdf",
+      "ref": "Printed base, dial and flag from examples/gauge/cad. Flag link mass is the solid flag plus the horn. Base link mass is 15% of the solid base plus the solid dial. Assumed until M10."
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "rigid",
+        "variants": {
+          "rigid": {
+            "kind": "form",
+            "form": "multibody@1",
+            "params": {},
+            "omits": ["joint flexibility", "link compliance"]
+          }
+        }
+      }
+    },
+    "body": {
+      "1": {
+        "default": "urdf",
+        "variants": {
+          "urdf": {
+            "kind": "urdf",
+            "file": "robot/gauge.urdf",
+            "omits": ["link flex"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["the URDF meshes are the visual"]
+          }
+        }
+      }
+    }
+  }
+}

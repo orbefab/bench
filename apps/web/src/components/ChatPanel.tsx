@@ -40,7 +40,7 @@ import {
 } from "@/lib/layout";
 import { escBelongsTo, probeEscLayers } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-import { useStore } from "@/state/store";
+import { usePrefs } from "@/state/prefs";
 
 export function ChatPanel({
   width,
@@ -55,10 +55,10 @@ export function ChatPanel({
   compact?: boolean;
   toggleRef?: RefObject<HTMLButtonElement | null>;
 }) {
-  const treeOpen = useStore((s) => s.treeOpen);
-  const setWidth = useStore((s) => s.setChatWidth);
-  const setChatOpen = useStore((s) => s.setChatOpen);
-  const setCompactChatOpen = useStore((s) => s.setCompactChatOpen);
+  const treeOpen = usePrefs((s) => s.treeOpen);
+  const setWidth = usePrefs((s) => s.setChatWidth);
+  const setChatOpen = usePrefs((s) => s.setChatOpen);
+  const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
   const [resizing, setResizing] = useState(false);
   const [live, setLive] = useState(false);
   const [sessionPreview, setSessionPreview] = useState<string | null>(null);

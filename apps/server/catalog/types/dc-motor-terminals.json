@@ -1,0 +1,20 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "dc-motor-terminals",
+  "ports": {
+    "A": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    },
+    "B": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    },
+    "shaft": {
+      "domain": "rotational",
+      "direction": "out"
+    }
+  }
+}

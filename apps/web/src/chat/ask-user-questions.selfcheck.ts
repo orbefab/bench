@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   askUserComposerPlaceholder,
   buildAskUserQuestionsOutput,
@@ -5,10 +6,6 @@ import {
   formatAskUserAnswer,
   parseAskUserQuestionsInput,
 } from "./ask-user-questions";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const parsed = parseAskUserQuestionsInput({
   allowPartialAnswers: true,

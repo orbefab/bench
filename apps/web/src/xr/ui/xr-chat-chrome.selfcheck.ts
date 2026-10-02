@@ -1,3 +1,4 @@
+import { equal as expect } from "node:assert/strict";
 import {
   XR_CHAT_DEFAULT_H,
   XR_CHAT_DEFAULT_W,
@@ -7,14 +8,6 @@ import {
   XR_COMPOSER_MIN_H,
   xrComposerHeight,
 } from "./xrChatChrome";
-
-function expect(got: unknown, want: unknown, label: string) {
-  if (got !== want) {
-    throw new Error(
-      `${label}: expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`
-    );
-  }
-}
 
 expect(xrComposerHeight(""), XR_COMPOSER_MIN_H, "empty stays min");
 expect(xrComposerHeight("hi"), XR_COMPOSER_MIN_H, "one short line stays min");

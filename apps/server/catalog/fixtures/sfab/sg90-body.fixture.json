@@ -1,0 +1,52 @@
+{
+  "format": "sfab.fixture@1",
+  "partType": "hobby-servo-3wire",
+  "mount": { "load": { "inertia": 0.0000215 } },
+  "sweeps": [
+    {
+      "port": "mount",
+      "quantity": "Inertia",
+      "values": [0.0000215, 0.00014384]
+    }
+  ],
+  "inputs": [
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": 0.05, "t0": 0.01, "width": 0.06 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": -0.05, "t0": 0.01, "width": 0.06 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": 0.1, "t0": 0.01, "width": 0.042 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": -0.1, "t0": 0.01, "width": 0.042 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": 0.176, "t0": 0.005, "width": 0.025 }
+    },
+    {
+      "port": "shaft",
+      "signal": "step",
+      "params": { "amplitude": -0.176, "t0": 0.005, "width": 0.025 }
+    },
+    {
+      "port": "shaft",
+      "signal": "chirp",
+      "params": { "amplitude": 0.176, "f0": 14, "f1": 28 }
+    }
+  ],
+  "record": ["shaft.angle"],
+  "duration": 0.2,
+  "seed": 20260927
+}

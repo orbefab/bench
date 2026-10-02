@@ -5,16 +5,13 @@
  * Homebrew / opencode. If a .app from `pnpm desktop:package` is present, it
  * is checked too.
  */
+import { ok as expect } from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertHarnessBridgeAssets } from "./harness-bridge.mjs";
-
-function expect(cond, label) {
-  if (!cond) throw new Error(label);
-}
 
 const empty = mkdtempSync(join(tmpdir(), "sfab-bridge-"));
 try {

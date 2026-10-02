@@ -1,0 +1,26 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/sg90-control@1.0.0",
+  "type": "servo-control-ic",
+  "foreign": true,
+  "declaredOnly": true,
+  "ratings": {
+    "V+": {
+      "voltage": [4.8, 6],
+      "absMaxVoltage": [0, 6.5]
+    },
+    "signal": {
+      "absMaxVoltage": [-0.3, 6],
+      "logic": {
+        "vil": 0.9,
+        "vih": 2
+      }
+    }
+  },
+  "sources": [
+    {
+      "title": "SG90 control die",
+      "ref": "closed; foreign part, no published equation"
+    }
+  ]
+}

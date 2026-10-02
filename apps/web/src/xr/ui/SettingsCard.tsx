@@ -4,22 +4,26 @@ import { useContext } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { requestAppearance } from "@/lib/appearance";
-import { useStore } from "@/state/store";
+import { usePrefs } from "@/state/prefs";
+import { useXrUi } from "@/state/xr";
 import { FeedbackContext, ToolBtn } from "@/xr/ui/ToolBtn";
 import { useXrTheme } from "@/xr/ui/theme";
 import { enterAR, enterVR } from "@/xrStore";
 
 export function SettingsCard() {
-  const { axesVisible, setAxesVisible, setPage, appearance, setAppearance } =
-    useStore(
-      useShallow((s) => ({
-        axesVisible: s.axesVisible,
-        setAxesVisible: s.setAxesVisible,
-        setPage: s.setPage,
-        appearance: s.appearance,
-        setAppearance: s.setAppearance,
-      }))
-    );
+  const { axesVisible, setAxesVisible } = usePrefs(
+    useShallow((s) => ({
+      axesVisible: s.axesVisible,
+      setAxesVisible: s.setAxesVisible,
+    }))
+  );
+  const { setPage, appearance, setAppearance } = useXrUi(
+    useShallow((s) => ({
+      setPage: s.setPage,
+      appearance: s.appearance,
+      setAppearance: s.setAppearance,
+    }))
+  );
   const theme = useXrTheme();
   const session = useXR((s) => s.session);
   const mode = useXR((s) => s.mode);

@@ -2,6 +2,14 @@ import type { ChatEffort, HarnessId } from "./harness";
 
 export type SessionClient = { id: string; label: string };
 
+/** A folder in the recents list. */
+export type ProjectRow = {
+  path: string;
+  name: string;
+  lastFile: string | null;
+  openedAt: number;
+};
+
 export type SessionThreadPrefs = {
   harness: HarnessId;
   model: string;

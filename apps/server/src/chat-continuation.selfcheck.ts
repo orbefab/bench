@@ -3,13 +3,10 @@
  * not the AI SDK chatbot helper (that helper also matches completed
  * show_artifact and will continue an idle harness turn).
  */
+import { ok as expect } from "node:assert/strict";
 import type { UIMessage } from "ai";
 
 import { admitChatTurn, isFillRequest, priorMessages } from "./chat";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const user: UIMessage = {
   id: "u",

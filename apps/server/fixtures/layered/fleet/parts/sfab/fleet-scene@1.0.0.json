@@ -1,0 +1,50 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/fleet-scene@1.0.0",
+  "type": "assembly",
+  "foreign": false,
+  "axes": {
+    "behaviour": {
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": ["no snapshot of this assembly"],
+            "netlist": {
+              "instances": {
+                "fleet": {
+                  "part": "sfab/two-rig-fleet@1.0.0"
+                }
+              },
+              "wires": [],
+              "expose": {}
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["wrapper adds no body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["wrapper adds no visual"]
+          }
+        }
+      }
+    }
+  }
+}

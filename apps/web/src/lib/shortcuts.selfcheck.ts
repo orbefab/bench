@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   CHAT_DEFAULT_WIDTH,
   CHAT_MIN_WIDTH,
@@ -21,10 +22,6 @@ import {
   shortcut,
   shortcutTooltip,
 } from "./shortcuts";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(isMacPlatform("MacIntel"), "mac platform");
 expect(isMacPlatform("Win32", "Mozilla/5.0") === false, "windows is not mac");
@@ -102,6 +99,21 @@ expect(
 expect(formatShortcut("composer-mention", true) === "#", "mention chord");
 expect(formatShortcut("ask-user-choose", true) === "1–9", "ask-user chord");
 expect(formatShortcut("escape", true) === "Esc", "esc chord");
+expect(formatShortcut("timeline-live", true) === "End", "timeline live chord");
+expect(
+  matchesShortcut({ key: "End" }, "timeline-live", { mac: true }),
+  "End returns to live"
+);
+expect(
+  matchesShortcut(
+    { key: "End", target: { tagName: "INPUT" } },
+    "timeline-live",
+    {
+      mac: true,
+    }
+  ) === false,
+  "End stays in a field"
+);
 expect(
   formatShortcutChips(["Mod", "B"], true).join(" ") === "⌘ B",
   "mac files chips"

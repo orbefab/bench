@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { useStore } from "@/state/store";
+import { useXrUi } from "@/state/xr";
 import { CardBody } from "@/xr/ui/CardBody";
 import { DetailsCard } from "@/xr/ui/DetailsCard";
 import { FilesCard } from "@/xr/ui/FilesCard";
@@ -14,8 +14,8 @@ export function CardPanels({
   width?: number;
   height?: number;
 }) {
-  const page = useStore((s) => s.page);
-  const setPage = useStore((s) => s.setPage);
+  const page = useXrUi((s) => s.page);
+  const setPage = useXrUi((s) => s.setPage);
   const [filesOpen, setFilesOpen] = useState(false);
   useEffect(() => {
     if (page === "settings" || page === "help") setFilesOpen(false);

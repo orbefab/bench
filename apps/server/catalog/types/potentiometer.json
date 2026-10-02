@@ -1,0 +1,25 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "potentiometer",
+  "ports": {
+    "A": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    },
+    "W": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    },
+    "B": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    },
+    "shaft": {
+      "domain": "rotational",
+      "direction": "passive"
+    }
+  }
+}

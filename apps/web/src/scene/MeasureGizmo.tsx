@@ -19,7 +19,7 @@ import {
   measureNativeTextHeight,
   measureScreenScale,
 } from "@/lib/measure";
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
 
 const parentScale = new THREE.Vector3();
 const worldPos = new THREE.Vector3();
@@ -58,7 +58,7 @@ function desktopExtra(
 }
 
 export function MeasureGizmo() {
-  const measure = useStore((s) => s.measure);
+  const measure = useViewer((s) => s.measure);
   const aRef = useRef<THREE.Mesh>(null);
   const bRef = useRef<THREE.Mesh>(null);
   const labelRef = useRef<THREE.Group>(null);

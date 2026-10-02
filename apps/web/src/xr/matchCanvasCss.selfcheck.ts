@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { matchCanvasCssToBuffer } from "./matchCanvasCss";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const pane = {
   width: 1440,

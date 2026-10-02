@@ -16,7 +16,7 @@ import {
   STUDIO_HEX,
 } from "@/lib/appearance";
 import { desktopBridge } from "@/lib/desktop";
-import { store } from "@/state/store";
+import { xrUiStore } from "@/state/xr";
 
 const STORAGE_KEY = "sfab-bench.theme";
 
@@ -99,7 +99,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const paint = () => {
       applyAppearance(resolvedTheme);
-      store.getState().setAppearance(resolvedTheme);
+      xrUiStore.getState().setAppearance(resolvedTheme);
       const meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute("content", STUDIO_HEX[resolvedTheme]);
       desktopBridge()?.setTheme?.(theme);

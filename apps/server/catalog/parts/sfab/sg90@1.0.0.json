@@ -1,0 +1,257 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/sg90@1.0.0",
+  "type": "hobby-servo-3wire",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Bench SG90 datasheet fit",
+      "ref": "packages/contract/src/world.ts @ b5ce591"
+    },
+    {
+      "title": "TowerPro SG90 typical mass and envelope",
+      "ref": "9 g, 23 mm x 12.2 mm x 29 mm; not in the Bench catalog"
+    },
+    {
+      "title": "Aus Electronics Direct TA0233 SG90 brochure",
+      "ref": "Published tooth counts: 9-tooth pinion, compounds 47:10, 38:8, 32:7, 23-tooth output. The brochure's 55.49:1 drops the 47:10 stage. N = 82156/315."
+    },
+    {
+      "title": "Rigid-gear collapse of that train",
+      "ref": "Rotor cup is an estimate: copper 8960 kg/m³, diameter 6 mm, length 8 mm, wall 0.6 mm, plus the 9-tooth pinion. Gears are POM disks at 1410 kg/m³, face width 1.5 mm, tooth-zone fill 1/2. Modules 0.20, 0.25, 0.30 and 0.40 mm, so each large gear is about 10 mm across. Bores 0.5 mm on the pinion, 0.75 mm on the idlers, 2.4 mm on the output. Damping is 70% on the rotor and 30% on the output. Friction is split 50/50. Idlers carry neither. Gear data stays on this servo until the class-2 children run; the gears child takes this body over then."
+    }
+  ],
+  "ratings": {
+    "V+": {
+      "voltage": [4.8, 6],
+      "absMaxVoltage": [0, 6.5],
+      "current": [0, 0.7]
+    },
+    "signal": {
+      "frequency": [40, 200],
+      "absMaxVoltage": [-0.3, 6],
+      "logic": {
+        "vil": 0.9,
+        "vih": 2
+      }
+    },
+    "shaft": {
+      "torque": [-0.176, 0.176],
+      "speed": [-10.472, 10.472]
+    }
+  },
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "slew",
+        "variants": {
+          "slew": {
+            "kind": "form",
+            "form": "slew@1",
+            "params": {
+              "omega": 10.472
+            },
+            "omits": [
+              "back-EMF",
+              "supply current",
+              "torque-speed curve",
+              "gear backlash",
+              "motor inductance",
+              "winding heat"
+            ]
+          }
+        }
+      },
+      "1": {
+        "default": "datasheet",
+        "variants": {
+          "datasheet": {
+            "kind": "form",
+            "form": "dc-motor@1",
+            "params": {
+              "K": 0.458,
+              "R": 7.1,
+              "efficiency": 0.57,
+              "eSat": 0.3,
+              "quiescent": 0.01
+            },
+            "omits": ["gear backlash", "motor inductance", "winding heat"]
+          }
+        }
+      },
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": [
+              "magnetic saturation",
+              "gear tooth compliance",
+              "winding heat"
+            ],
+            "netlist": {
+              "instances": {
+                "motor": {
+                  "part": "sfab/sg90-motor@1.0.0"
+                },
+                "gears": {
+                  "part": "sfab/sg90-gears@1.0.0"
+                },
+                "pot": {
+                  "part": "sfab/sg90-pot@1.0.0"
+                },
+                "control": {
+                  "part": "sfab/sg90-control@1.0.0"
+                }
+              },
+              "wires": [
+                ["control.M+", "motor.A"],
+                ["control.M-", "motor.B"],
+                ["motor.shaft", "gears.input"],
+                ["gears.output", "pot.shaft"],
+                ["control.sense", "pot.W"],
+                ["pot.A", "control.V+"],
+                ["pot.B", "control.GND"]
+              ],
+              "expose": {
+                "V+": "control.V+",
+                "GND": "control.GND",
+                "signal": "control.signal",
+                "shaft": "gears.output",
+                "mount": "gears.housing"
+              }
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "1": {
+        "default": "lumped",
+        "variants": {
+          "lumped": {
+            "kind": "lumped",
+            "mass": 0.009,
+            "com": [0, 0, 0],
+            "inertia": [7.4238e-7, 0.0000010275, 5.0838e-7, 0, 0, 0],
+            "joint": {
+              "armature": 0.00005,
+              "frictionloss": 0.002,
+              "damping": 0.0025
+            },
+            "omits": ["gear-stage bodies", "case flex"]
+          },
+          "collapsed": {
+            "kind": "snapshot",
+            "ref": "sfab/sg90-hinge@1.0.0",
+            "omits": [
+              "fitted armature: this is the class-2 collapse (reflected armature, not fitted)"
+            ]
+          }
+        }
+      },
+      "2": {
+        "default": "gear-train",
+        "variants": {
+          "gear-train": {
+            "kind": "gear-train",
+            "input": "rotor",
+            "output": "output",
+            "shafts": [
+              {
+                "name": "rotor",
+                "mass": 0.0007333759612329867,
+                "inertia": 5.387068780247043e-9,
+                "damping": 2.5726492761638665e-8,
+                "frictionloss": 0.000003834169141632991
+              },
+              {
+                "name": "g1",
+                "mass": 0.0001484753196829288,
+                "inertia": 1.616580003354382e-9,
+                "damping": 0,
+                "frictionloss": 0
+              },
+              {
+                "name": "g2",
+                "mass": 0.0001507365153565197,
+                "inertia": 1.689375384633888e-9,
+                "damping": 0,
+                "frictionloss": 0
+              },
+              {
+                "name": "g3",
+                "mass": 0.0001574427566115979,
+                "inertia": 1.7770781240122473e-9,
+                "damping": 0,
+                "frictionloss": 0
+              },
+              {
+                "name": "output",
+                "mass": 0.00010063047486217586,
+                "inertia": 1.397366434978325e-9,
+                "damping": 0.00075,
+                "frictionloss": 0.001
+              }
+            ],
+            "meshes": [
+              {
+                "driver": "rotor",
+                "driven": "g1",
+                "teethDriver": 9,
+                "teethDriven": 47
+              },
+              {
+                "driver": "g1",
+                "driven": "g2",
+                "teethDriver": 10,
+                "teethDriven": 38
+              },
+              {
+                "driver": "g2",
+                "driven": "g3",
+                "teethDriver": 8,
+                "teethDriven": 32
+              },
+              {
+                "driver": "g3",
+                "driven": "output",
+                "teethDriver": 7,
+                "teethDriven": 23
+              }
+            ],
+            "omits": [
+              "tooth compliance",
+              "backlash",
+              "per-mesh friction and efficiency (not published)",
+              "live gear bodies: the run uses the exact rigid collapse"
+            ]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.023, 0.0122, 0.029],
+            "omits": ["case shape", "horn"]
+          }
+        }
+      },
+      "1": {
+        "default": "mesh",
+        "variants": {
+          "mesh": {
+            "kind": "mesh",
+            "placeholder": true,
+            "omits": ["horn", "cable"],
+            "files": ["placeholder:sg90.glb"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -62,7 +62,8 @@ import {
   probeEscLayers,
 } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-import { useStore } from "@/state/store";
+import { usePrefs } from "@/state/prefs";
+import { useViewer } from "@/state/viewer";
 import { EffortSelect } from "./EffortSelect";
 import { ModelPicker } from "./ModelPicker";
 import { ProviderStatus } from "./ProviderStatus";
@@ -156,7 +157,7 @@ function ChatInputInner({
   const draftTouchedRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [draftText, setDraftText] = useState(() => getSessionDraft(threadId));
-  const { review, selectedId, title } = useStore(
+  const { review, selectedId, title } = useViewer(
     useShallow((s) => ({
       review: s.review,
       selectedId: s.selectedId,
@@ -493,7 +494,7 @@ export function GalleryChatInput({
     loadingModel,
     modelLoaded,
   });
-  const harness = useStore((s) => s.chatHarness);
+  const harness = usePrefs((s) => s.chatHarness);
   const catalog = useHarnesses();
   const info = catalog.harnesses.find((h) => h.id === harness);
   const sendBlockReason = providerSendBlockReason({

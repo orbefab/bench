@@ -1,0 +1,44 @@
+{
+  "name": "@sfab-bench/sim",
+  "version": "0.2.2",
+  "private": true,
+  "description": "World simulation: plan, form adapters, orchestrator, recorder, and capture. No file access of its own.",
+  "homepage": "https://bench.sfab.ai",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./plan": "./src/plan.ts",
+    "./circuit-stamp": "./src/circuit-stamp.ts",
+    "./wiring": "./src/wiring.ts",
+    "./view": "./src/view.ts",
+    "./power": "./src/power.ts",
+    "./power-path": "./src/power-path.ts",
+    "./rail-circuit": "./src/rail-circuit.ts",
+    "./record": "./src/record.ts",
+    "./seams": "./src/seams.ts",
+    "./servo": "./src/servo.ts",
+    "./ranger": "./src/ranger.ts",
+    "./targets": "./src/targets.ts",
+    "./analog-pin": "./src/analog-pin.ts",
+    "./capture": "./src/capture.ts",
+    "./capture-recipe": "./src/capture-recipe.ts",
+    "./hinge-capture": "./src/body/hinge-capture.ts",
+    "./env": "./src/env.ts",
+    "./freshness": "./src/freshness.ts",
+    "./sim": "./src/sim.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mujoco/mujoco": "3.14.0",
+    "@sfab-bench/contract": "workspace:*",
+    "@sfab-bench/engine-body": "workspace:*",
+    "@sfab-bench/engine-circuit": "workspace:*",
+    "@sfab-bench/engine-mcu": "workspace:*",
+    "@sfab-bench/parts": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

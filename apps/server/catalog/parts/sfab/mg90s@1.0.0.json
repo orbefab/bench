@@ -1,0 +1,132 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/mg90s@1.0.0",
+  "type": "hobby-servo-3wire",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "TowerPro MG90S product page",
+      "ref": "https://towerpro.com.tw/product/mg90s-3/ mass 0.0134 kg; prose envelope 0.0228 x 0.0122 x 0.0285 m (table C is 0.0284 m and table D is 0.0124 m; width is the dimension line, the same 0.0122 m the gauge pocket uses); stall torque 0.1765 N·m at 4.8 V and 0.2157 N·m at 6.6 V; no-load 10.472 rad/s at 4.8 V and 13.090 rad/s at 6.0 V; dead band 1e-6 s. The operating-voltage sentence names only 4.8 V. Seller listings often print a 4.8-6 V range and put 0.2157 N·m at 6 V; this part follows the manufacturer page."
+    },
+    {
+      "title": "Assumed stall current, until M2",
+      "ref": "0.70 A at 5 V, measured on a generic MG90S by ProtoSupplies (https://protosupplies.com/product/servo-motor-micro-mg90s/). The TowerPro page has no stall current. R = 7.14 ohm is 5/0.70. Quiescent 0.01 A is that listing's idle figure. Assumed; the owner M2 reading replaces the stall current."
+    },
+    {
+      "title": "Assumed pulse window",
+      "ref": "5.44e-4 to 2.4e-3 s, the Servo.h window this runtime maps. The TowerPro page states no pulse range. ProtoSupplies describes 1e-3 to 2e-3 s. Assumed."
+    },
+    {
+      "title": "Assumed saturation, logic and joint, until M5 and M6",
+      "ref": "Copied from the SG90 fit: eSat 0.3 rad, signal frequency 40-200 Hz, logic vil 0.9 V and vih 2 V, signal abs-max -0.3 to 6 V, joint armature 5e-5 kg·m2, frictionloss 0.002 N·m, damping 0.0025 N·m·s/rad. Metal gears are not the SG90 nylon train; no published difference. Assumed."
+    },
+    {
+      "title": "Class-1 fit at 4.8 V",
+      "ref": "K = 0.458 V·s/rad from the 4.8 V no-load speed, rounded like the SG90. efficiency 0.573 from the 4.8 V stall torque. Class 0 slew is that 4.8 V speed, 10.472 rad/s. A DC motor scales speed and torque with V. At 6.0 V the speed matches the page; torque scales above the 0.2157 N·m the page assigns to 6.6 V. Shaft torque rating 0.215 N·m is that 6.6 V figure, truncated to 0.001 N·m."
+    },
+    {
+      "title": "Case box",
+      "ref": "Visual and inertia use the prose envelope. The gauge pocket plan is examples/gauge/cad/lib/dimensions.py at 0.0228 m by 0.0122 m. Inertia is the solid box of that envelope at 0.0134 kg, about the center."
+    },
+    {
+      "title": "No behaviour class 2",
+      "ref": "The control IC, motor and potentiometer composite is later. This part has no class 2."
+    }
+  ],
+  "ratings": {
+    "V+": {
+      "voltage": [4.8, 6.6],
+      "absMaxVoltage": [0, 6.6],
+      "current": [0, 0.924]
+    },
+    "signal": {
+      "frequency": [40, 200],
+      "absMaxVoltage": [-0.3, 6],
+      "logic": {
+        "vil": 0.9,
+        "vih": 2
+      }
+    },
+    "shaft": {
+      "torque": [-0.215, 0.215],
+      "speed": [-13.09, 13.09]
+    }
+  },
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "slew",
+        "variants": {
+          "slew": {
+            "kind": "form",
+            "form": "slew@1",
+            "params": {
+              "omega": 10.472
+            },
+            "omits": [
+              "back-EMF",
+              "supply current",
+              "torque-speed curve",
+              "gear backlash",
+              "motor inductance",
+              "winding heat"
+            ]
+          }
+        }
+      },
+      "1": {
+        "default": "datasheet",
+        "variants": {
+          "datasheet": {
+            "kind": "form",
+            "form": "dc-motor@1",
+            "params": {
+              "K": 0.458,
+              "R": 7.14,
+              "efficiency": 0.573,
+              "eSat": 0.3,
+              "quiescent": 0.01
+            },
+            "omits": [
+              "gear backlash",
+              "motor inductance",
+              "winding heat",
+              "control IC, motor and potentiometer"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "1": {
+        "default": "lumped",
+        "variants": {
+          "lumped": {
+            "kind": "lumped",
+            "mass": 0.0134,
+            "com": [0, 0, 0],
+            "inertia": [1.0732e-6, 1.4875e-6, 7.4669e-7, 0, 0, 0],
+            "joint": {
+              "armature": 0.00005,
+              "frictionloss": 0.002,
+              "damping": 0.0025
+            },
+            "omits": ["gear-stage bodies", "case flex"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.0228, 0.0122, 0.0285],
+            "omits": ["case shape", "horn", "tabs"]
+          }
+        }
+      }
+    }
+  }
+}

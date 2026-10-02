@@ -1,0 +1,61 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/two-rig-fleet@1.0.0",
+  "type": "assembly",
+  "foreign": false,
+  "axes": {
+    "behaviour": {
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": ["no snapshot of this assembly"],
+            "netlist": {
+              "instances": {
+                "rig1": {
+                  "part": "sfab/arm-rig@1.0.0",
+                  "pose": {
+                    "position": [0, 0, 0],
+                    "rotation": [1, 0, 0, 0]
+                  }
+                },
+                "rig2": {
+                  "part": "sfab/arm-rig@1.0.0",
+                  "pose": {
+                    "position": [0, 0.35, 0],
+                    "rotation": [1, 0, 0, 0]
+                  }
+                }
+              },
+              "wires": [],
+              "expose": {}
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["wrapper adds no body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["wrapper adds no visual"]
+          }
+        }
+      }
+    }
+  }
+}

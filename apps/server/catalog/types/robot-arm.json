@@ -1,0 +1,25 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "robot-arm",
+  "ports": {
+    "shoulder": {
+      "domain": "rotational",
+      "direction": "passive",
+      "frame": "shoulder"
+    },
+    "base": {
+      "domain": "mount",
+      "direction": "passive",
+      "frame": "base"
+    },
+    "upper_arm": {
+      "domain": "mount",
+      "direction": "passive",
+      "frame": "upper_arm"
+    }
+  },
+  "plausible": {
+    "Torque": [-5, 5],
+    "AngularVelocity": [-100, 100]
+  }
+}

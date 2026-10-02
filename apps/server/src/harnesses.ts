@@ -7,30 +7,13 @@ import {
   HARNESS_IDS,
   HARNESS_LABEL,
   type HarnessId,
+  type HarnessInfo,
+  type HarnessModel,
   type HarnessStatus,
   STATIC_HARNESS_MODELS,
 } from "@sfab-bench/contract";
 import { harnessBridgeReady } from "./local-sandbox";
 import { listOpenCodeModels } from "./models";
-
-export type { HarnessStatus };
-
-export type HarnessModel = {
-  id: string;
-  name: string;
-  slug: string;
-  group?: string;
-};
-
-export type HarnessInfo = {
-  id: HarnessId;
-  label: string;
-  status: HarnessStatus;
-  detail?: string;
-  defaultModel: string;
-  models: HarnessModel[];
-  bridgeReady: boolean;
-};
 
 type ProbedHarness = Omit<HarnessInfo, "bridgeReady">;
 

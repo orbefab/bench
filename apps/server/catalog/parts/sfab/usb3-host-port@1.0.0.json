@@ -1,0 +1,62 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/usb3-host-port@1.0.0",
+  "type": "usb-a-port",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "USB 3.2 Specification, bus power",
+      "ref": "A USB 3 unit load is 0.15 A. A host port supplies at least six unit loads, 0.9 A. V is 5. Ilimit is 0.9 A, that six-unit-load ceiling, for the same reason as the USB 2 preset: the USB-IF drop test loads a PC USB 3.2 host at 0.9 A and still requires VBUS of at least 4.75 V."
+    },
+    {
+      "title": "Series resistance, assumed",
+      "ref": "Rs is 0.25 ohm, assumed. At 0.9 A the drop is 0.225 V, so the terminal is 4.775 V, inside the 4.75 V to 5.25 V window. The resistance that would sit on the 4.75 V floor is higher, and 0.25 ohm is the round value under it."
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "ideal",
+        "variants": {
+          "ideal": {
+            "kind": "form",
+            "form": "ideal-voltage@1",
+            "params": { "V": 5 },
+            "omits": ["series resistance", "current limit", "sag"]
+          }
+        }
+      },
+      "1": {
+        "default": "thevenin",
+        "variants": {
+          "thevenin": {
+            "kind": "form",
+            "form": "thevenin-limit@1",
+            "params": { "V": 5, "Rs": 0.25, "Ilimit": 0.9 },
+            "omits": ["USB enumeration", "cable inductance", "heat"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": { "kind": "none", "omits": ["connector body"] }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.015, 0.012, 0.005],
+            "omits": ["shell shape"]
+          }
+        }
+      }
+    }
+  }
+}

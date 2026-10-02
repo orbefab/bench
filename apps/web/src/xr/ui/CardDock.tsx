@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { useShallow } from "zustand/react/shallow";
 import { placeAtGaze } from "@/scene/SpawnInFront";
-import { useStore } from "@/state/store";
+import { useXrUi } from "@/state/xr";
 import { wristObject } from "@/xr/hands/HandRig";
 import { CardPanels } from "@/xr/ui/CardPanels";
 import { type CardSize, HandleButton, WorldCard } from "@/xr/ui/WorldCard";
@@ -43,7 +43,7 @@ const tmpS = new THREE.Vector3();
 
 function YToggle() {
   const left = useXRInputSourceState("controller", "left");
-  const setCardOpen = useStore((s) => s.setCardOpen);
+  const setCardOpen = useXrUi((s) => s.setCardOpen);
   useXRControllerButtonEvent(left, "y-button", (state) => {
     if (state === "pressed") setCardOpen((open) => !open);
   });
@@ -61,7 +61,7 @@ export function CardDock() {
     setBringCard,
     setCardOpen,
     bringCard,
-  } = useStore(
+  } = useXrUi(
     useShallow((s) => ({
       cardOpen: s.cardOpen,
       cardMode: s.cardMode,
@@ -77,7 +77,7 @@ export function CardDock() {
   });
   const world = cardMode === "world";
   const size = world ? worldSize : { w: TREE_CARD.w, h: TREE_CARD.h };
-  const movingCad = useStore((s) => s.worldGrabbing);
+  const movingCad = useXrUi((s) => s.worldGrabbing);
   const dragging = useRef(false);
   const anchor = useRef<THREE.Group>(null);
   const leftRay = useRef<THREE.Object3D>(null);

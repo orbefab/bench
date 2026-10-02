@@ -7,7 +7,8 @@ import {
   XR_CAD_SPAWN_DISTANCE,
   XR_CAD_SPAWN_DROP,
 } from "@/scene/SpawnInFront";
-import { store } from "@/state/store";
+import { sceneStore } from "@/state/scene";
+import { xrUiStore } from "@/state/xr";
 
 /** Quest hold-Meta recenter fires XRReferenceSpace `reset`. Bring the CAD
  * model and world-locked cards back in front of the wearer. Wrist docks stay put.
@@ -22,16 +23,17 @@ export function RecenterOnReset() {
     if (pending.current === 0) return;
     pending.current -= 1;
     if (pending.current > 0) return;
-    const s = store.getState();
-    if (s.placed)
-      placeAtGaze(s.placed, camera, {
+    const placed = sceneStore.getState().placed;
+    const xr = xrUiStore.getState();
+    if (placed)
+      placeAtGaze(placed, camera, {
         distance: XR_CAD_SPAWN_DISTANCE,
         drop: XR_CAD_SPAWN_DROP,
         face: true,
         resetScale: false,
       });
-    if (s.cardOpen && s.cardMode === "world") s.bringCard?.();
-    s.bringChat?.();
+    if (xr.cardOpen && xr.cardMode === "world") xr.bringCard?.();
+    xr.bringChat?.();
   });
 
   useEffect(() => {

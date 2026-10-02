@@ -21,7 +21,7 @@ import {
   type UIMessage,
 } from "ai";
 import { getAgent } from "./agent";
-import { messagesToPersist, withTurnError } from "./chat-persist";
+import { mergePersistedTurn, withTurnError } from "./chat-persist";
 import {
   dropTrailingHarnessErrors,
   harnessErrorsAsTurnParts,
@@ -159,6 +159,15 @@ function stampUser(last: UIMessage, snapshot: ViewerSnapshot): UIMessage {
   const bits = [`file=${snapshot.file || "(none)"}`];
   if (snapshot.empty) bits.push("empty");
   if (snapshot.selected) bits.push(`selected=${snapshot.selected}`);
+  if (typeof snapshot.playing === "boolean") {
+    bits.push(snapshot.playing ? "playing" : "paused");
+  }
+  if (
+    typeof snapshot.simTime === "number" &&
+    Number.isFinite(snapshot.simTime)
+  ) {
+    bits.push(`simTime=${snapshot.simTime.toFixed(3)}`);
+  }
   const stamp = `[viewer] ${bits.join(" ")}`;
   const parts = last.parts ?? [];
   const texts = parts.filter((p) => p.type === "text");
@@ -249,6 +258,10 @@ export async function handleChat(
 
   return createUIMessageStreamResponse({
     stream: createUIMessageStream({
+      // A fill's last message is the assistant that is waiting on a client
+      // tool. Reusing its id makes the continuation extend that message
+      // instead of starting a second one.
+      originalMessages: body.messages,
       execute: async ({ writer }) => {
         let session: HarnessAgentSession | undefined;
         try {
@@ -362,19 +375,20 @@ export async function handleChat(
           endSessionRun(root);
         }
       },
-      onFinish: ({ responseMessage, isAborted, outcome }) => {
-        let assistant: UIMessage | undefined = responseMessage;
+      onFinish: ({ responseMessage, isAborted, outcome, isContinuation }) => {
         if (isAborted && (responseMessage.parts ?? []).length === 0) {
           persistChat(chatId, live, root);
           return;
         }
-        if (outcome.status === "failed") {
-          assistant = withTurnError(
-            responseMessage,
-            harnessErrorText(outcome.error)
-          );
-        }
-        persistChat(chatId, messagesToPersist(live, assistant), root);
+        const response =
+          outcome.status === "failed"
+            ? withTurnError(responseMessage, harnessErrorText(outcome.error))
+            : responseMessage;
+        persistChat(
+          chatId,
+          mergePersistedTurn(live, response, isContinuation),
+          root
+        );
       },
       onError: harnessErrorText,
     }),

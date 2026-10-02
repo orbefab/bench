@@ -3,7 +3,7 @@ import { useXRInputSourceState } from "@react-three/xr";
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 
-import { store } from "@/state/store";
+import { xrUiStore } from "@/state/xr";
 
 const JOINTS: XRHandJoint[] = [
   "wrist",
@@ -329,7 +329,7 @@ function OneHand({ handedness }: { handedness: "left" | "right" }) {
     line.needsUpdate = true;
 
     // Grab state is read, never subscribed to: this runs in the frame loop.
-    const s = store.getState();
+    const s = xrUiStore.getState();
     const hold = handedness === "left" ? s.leftHold : s.rightHold;
     const ready = handedness === "left" ? s.left : s.right;
     const color = hold ? HOLD_COLOR : ready ? READY_COLOR : IDLE_COLOR;

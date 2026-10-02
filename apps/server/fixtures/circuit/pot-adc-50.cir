@@ -1,0 +1,7 @@
+pot-adc-50-a0.5
+Vvrail rail 0 DC 5.000000000000e+0
+Rrt rail wiper 5.0000000000000000e+3
+Rrb wiper 0 5.0000000000000000e+3
+.options reltol=1e-6 abstol=1e-12 vntol=1e-7 gmin=1e-12 method=gear temp=25 tnom=25
+.tran 9.9999999999999995e-7 1.0000000000000001e-5 0 9.9999999999999995e-7
+.end

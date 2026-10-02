@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type * as THREE from "three";
 
 import { placeAtGaze } from "@/scene/SpawnInFront";
-import { useStore } from "@/state/store";
+import { useXrUi } from "@/state/xr";
 import { ChatOrbHud } from "@/xr/ui/ChatOrbHud";
 import { ChatPanels } from "@/xr/ui/ChatPanels";
 import { type CardSize, cardMeters } from "@/xr/ui/chrome";
@@ -25,9 +25,9 @@ const ORB_LIFT = 0.08;
 export function ChatDock() {
   const session = useXR((s) => s.session);
   const camera = useThree((s) => s.camera);
-  const xrChatOpen = useStore((s) => s.xrChatOpen);
-  const setXrChatOpen = useStore((s) => s.setXrChatOpen);
-  const setBringChat = useStore((s) => s.setBringChat);
+  const xrChatOpen = useXrUi((s) => s.xrChatOpen);
+  const setXrChatOpen = useXrUi((s) => s.setXrChatOpen);
+  const setBringChat = useXrUi((s) => s.setBringChat);
   const [size, setSize] = useState<CardSize>({
     w: CHAT_CARD.w,
     h: CHAT_CARD.h,

@@ -1,0 +1,63 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/sensor-3v3@1.0.0",
+  "type": "logic-sensor-3v3",
+  "foreign": false,
+  "ratings": {
+    "V+": {
+      "voltage": [3, 3.6],
+      "absMaxVoltage": [0, 3.6]
+    },
+    "IN": {
+      "absMaxVoltage": [-0.3, 3.6],
+      "logic": {
+        "vil": 0.99,
+        "vih": 2.31
+      }
+    }
+  },
+  "sources": [
+    {
+      "title": "3.3 V CMOS input, not 5 V tolerant",
+      "ref": "VIL 0.3*3.3 V, VIH 0.7*3.3 V, pin abs-max 3.6 V"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "logic",
+        "variants": {
+          "logic": {
+            "kind": "form",
+            "form": "logic-in@1",
+            "params": {},
+            "omits": ["sensor physics", "noise"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.01, 0.01, 0.002],
+            "omits": ["package marking"]
+          }
+        }
+      }
+    }
+  }
+}

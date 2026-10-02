@@ -1,0 +1,83 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/battery-3xaa-alkaline@1.0.0",
+  "type": "battery",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Energizer Alkaline Handbook, Figure 12, plus the fresh open-circuit example",
+      "ref": "Three cells in series. Figure 12 (2018 handbook, page 11) is one AA cell at 0.1 A, ending at 0.8 V after 25 h. The text states 1.2 V at 15 h and 0.8 V at 25 h. The other knots were read off that figure. Reading tolerance is about 0.02 V on the cell, 0.06 V on the pack. Each loaded knot is three times the cell voltage plus 0.1 A times the pack rInternal (0.045 V), so the table is open circuit and the drop is not counted twice. The fresh point is the handbook's open-circuit example of 1.6 V, three cells, 4.8 V at soc 1, and it is not a point on the loaded curve. vCutoff stays 2.4 V, the terminal voltage where Figure 12 stops. Capacity is 9000 C, 0.1 A times 25 h, and a series pack has one cell's charge."
+    },
+    {
+      "title": "Energizer E91 datasheet, nominal internal resistance",
+      "ref": "Fresh cylindrical alkaline internal resistance is 0.15 ohm to 0.3 ohm. The pack uses 0.45 ohm, the low end of that range times three cells. Fig. 9's dual-pulse example is 0.214 ohm for one cell; the low end of the fresh range is the choice here."
+    },
+    {
+      "title": "Three cells, not four",
+      "ref": "Four fresh cells are about 6.4 V. A Nano 5V pin absolute maximum is 6 V, so four cells are above what that pin may take. This pack is three cells, about 4.8 V fresh."
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "ideal",
+        "variants": {
+          "ideal": {
+            "kind": "form",
+            "form": "ideal-voltage@1",
+            "params": { "V": 4.8 },
+            "omits": ["series resistance", "state of charge", "cutoff"]
+          }
+        }
+      },
+      "1": {
+        "default": "pack",
+        "variants": {
+          "pack": {
+            "kind": "form",
+            "form": "battery@1",
+            "params": {
+              "ocv": [
+                [0, 2.445],
+                [0.04, 2.51],
+                [0.12, 3.11],
+                [0.2, 3.36],
+                [0.4, 3.645],
+                [0.6, 3.8],
+                [0.8, 3.99],
+                [0.92, 4.27],
+                [0.96, 4.44],
+                [1, 4.8]
+              ],
+              "rInternal": 0.45,
+              "capacity": 9000,
+              "soc0": 1,
+              "vCutoff": 2.4
+            },
+            "omits": ["temperature", "Peukert", "relaxation", "aging"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": { "kind": "none", "omits": ["cell body"] }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.045, 0.014, 0.05],
+            "omits": ["cell shape"]
+          }
+        }
+      }
+    }
+  }
+}

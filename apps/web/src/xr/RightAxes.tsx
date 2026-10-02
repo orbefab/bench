@@ -10,7 +10,8 @@ import { useRef } from "react";
 import * as THREE from "three";
 import { useShallow } from "zustand/react/shallow";
 
-import { store, useStore } from "@/state/store";
+import { usePrefs } from "@/state/prefs";
+import { sceneStore } from "@/state/scene";
 import { useXrTheme } from "@/xr/ui/theme";
 import { WorldAxes } from "@/xr/WorldAxes";
 
@@ -26,7 +27,7 @@ function ModelAlignedAxes({ length }: { length: number }) {
     g.parent.getWorldQuaternion(parentQ);
     g.quaternion.copy(parentQ).invert();
     // Read `placed` per frame instead of subscribing: this runs in the frame loop.
-    const target = store.getState().placed;
+    const target = sceneStore.getState().placed;
     if (target) {
       target.updateWorldMatrix(true, false);
       target.getWorldQuaternion(modelQ);
@@ -41,7 +42,7 @@ function ModelAlignedAxes({ length }: { length: number }) {
 }
 
 export function CornerAxes() {
-  const axesVisible = useStore((s) => s.axesVisible);
+  const axesVisible = usePrefs((s) => s.axesVisible);
   const theme = useXrTheme();
   if (!axesVisible) return null;
   return (
@@ -57,7 +58,7 @@ export function CornerAxes() {
 export function RightAxes() {
   const session = useXR((s) => s.session);
   const right = useXRInputSourceState("controller", "right");
-  const { axesVisible, setAxesVisible } = useStore(
+  const { axesVisible, setAxesVisible } = usePrefs(
     useShallow((s) => ({
       axesVisible: s.axesVisible,
       setAxesVisible: s.setAxesVisible,
@@ -85,7 +86,7 @@ export function RightAxes() {
 export function RightHandAxes() {
   const session = useXR((s) => s.session);
   const right = useXRInputSourceState("controller", "right");
-  const axesVisible = useStore((s) => s.axesVisible);
+  const axesVisible = usePrefs((s) => s.axesVisible);
   if (!session || right || !axesVisible) return null;
   return (
     <group position={[0, 0.02, 0.09]}>

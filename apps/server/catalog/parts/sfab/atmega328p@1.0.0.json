@@ -1,0 +1,92 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/atmega328p@1.0.0",
+  "type": "atmega328p",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "ATmega328P DC characteristics",
+      "ref": "DS40002061: VIL max 0.3*Vcc, VIH min 0.6*Vcc, VOL max 0.9 V at 0.020 A, VOH min 4.2 V at -0.020 A, Vcc abs-max 6.0 V. Pins PB0-PB7, PC0-PC6, PD0-PD7, VCC, AVCC, AREF, GND, RESET"
+    },
+    {
+      "title": "ATmega328P 16 MHz speed grade",
+      "ref": "DS40002061 Figure 33-1, Maximum Frequency vs. VCC. On the 2.7 V / 10 MHz to 4.5 V / 20 MHz segment, 16 MHz needs 3.78 V, so a running chip between the brownout level and 3.78 V is outside its specification (minOperatingVoltage). Electrical characteristics list VCC up to 5.5 V"
+    },
+    {
+      "title": "ATmega328P reset",
+      "ref": "DS40002061 V_RST maximum 0.9 * VCC: RESET can be recognised as low up to that fraction (resetFraction). The rail is 5 V (railVoltage)"
+    },
+    {
+      "title": "ATmega328P pin",
+      "ref": "DS40002061 Figure 35-22 and Figure 35-24 at 25 C and VCC 5 V: Roh and Rol are the fitted resistances. Rpu is the midpoint of 20 kohm to 50 kohm. Input leakage is Iin 1 uA at 5 V, a 5 Mohm path to ground"
+    },
+    {
+      "title": "ATmega328P brownout",
+      "ref": "DS40002061 Table 29-1 with BODLEVEL 2.7 V (extended fuse 0xFD): threshold 2.7 V, hysteresis 25 mV either side. Reset hold is the 66 ms start-up time"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "avr8js",
+        "variants": {
+          "avr8js": {
+            "kind": "firmware",
+            "chip": "atmega328p",
+            "resetPort": "RESET",
+            "imageParam": "firmware",
+            "railVoltage": 5,
+            "resetFraction": 0.9,
+            "minOperatingVoltage": 3.78,
+            "params": {
+              "brownoutVoltage": 2.7,
+              "brownoutAssertVoltage": 2.675,
+              "brownoutReleaseVoltage": 2.725,
+              "resetHoldS": 0.066,
+              "quiescent": 0.01,
+              "roh": 25.066666666666663,
+              "rol": 23.4,
+              "rpu": 35000,
+              "rLeak": 5000000
+            },
+            "fuses": {
+              "extended": "0xFD"
+            },
+            "omits": [
+              "temperature",
+              "I/O pin impedance",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.0105, 0.0075, 0.0012],
+            "omits": ["leads", "marking"]
+          }
+        }
+      }
+    }
+  }
+}

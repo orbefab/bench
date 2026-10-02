@@ -1,0 +1,83 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/nano-vcc-scene@1.0.0",
+  "type": "assembly",
+  "foreign": false,
+  "axes": {
+    "behaviour": {
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": ["no snapshot of this assembly"],
+            "netlist": {
+              "instances": {
+                "flag": {
+                  "part": "sfab/flag@1.0.0",
+                  "pose": {
+                    "position": [0, 0, 0],
+                    "rotation": [1, 0, 0, 0]
+                  }
+                },
+                "nano": {
+                  "part": "sfab/nano-ch340@1.0.0",
+                  "pose": {
+                    "position": [0.08, 0, 0.004],
+                    "rotation": [1, 0, 0, 0]
+                  },
+                  "params": {
+                    "firmware": "firmware/vcc/vcc.hex",
+                    "source": "firmware/vcc/vcc.ino"
+                  }
+                },
+                "usb": {
+                  "part": "sfab/usb-port-500ma@1.0.0",
+                  "pose": {
+                    "position": [0.042, 0, 0.0025],
+                    "rotation": [1, 0, 0, 0]
+                  }
+                },
+                "servo": {
+                  "part": "sfab/sg90@1.0.0"
+                }
+              },
+              "wires": [
+                ["usb.5V", "nano.5V"],
+                ["usb.GND", "nano.GND"],
+                ["nano.D9", "servo.signal"],
+                ["nano.5V", "servo.V+"],
+                ["nano.GND", "servo.GND"],
+                ["servo.shaft", "flag.hinge"],
+                ["servo.mount", "flag.base"]
+              ],
+              "expose": {}
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["assembly adds no body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["assembly adds no visual"]
+          }
+        }
+      }
+    }
+  }
+}

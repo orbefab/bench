@@ -1,0 +1,18 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "gear-train",
+  "ports": {
+    "input": {
+      "domain": "rotational",
+      "direction": "in"
+    },
+    "output": {
+      "domain": "rotational",
+      "direction": "out"
+    },
+    "housing": {
+      "domain": "mount",
+      "direction": "passive"
+    }
+  }
+}

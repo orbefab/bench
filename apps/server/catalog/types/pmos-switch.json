@@ -1,0 +1,27 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "pmos-switch",
+  "plausible": {
+    "Resistance": [0, 1000],
+    "Voltage": [-20, 20],
+    "Current": [1e-20, 10],
+    "Dimensionless": [0.5, 5]
+  },
+  "ports": {
+    "S": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    },
+    "D": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    },
+    "G": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    }
+  }
+}

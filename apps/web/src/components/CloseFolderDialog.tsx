@@ -17,12 +17,12 @@ import {
   closeFolderTitle,
 } from "@/lib/motion";
 import { closeTabProject, folderName } from "@/lib/project";
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
 
 export function CloseFolderDialog() {
   const [open, setOpen] = useState(false);
   const path = useProjectSession().project.path;
-  const url = useStore((s) => s.url);
+  const url = useViewer((s) => s.url);
   const { tabStreaming } = useViewerChat();
 
   useEffect(() => {

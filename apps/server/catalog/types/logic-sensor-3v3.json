@@ -1,0 +1,24 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "logic-sensor-3v3",
+  "ports": {
+    "V+": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in"
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    },
+    "IN": {
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "in"
+    }
+  },
+  "plausible": {
+    "Voltage": [-1, 6]
+  }
+}

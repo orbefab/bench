@@ -1,6 +1,6 @@
 import { EyeOff, MousePointer2, Ruler } from "@react-three/uikit-lucide";
 
-import type { Tool } from "@/state/store";
+import type { Tool } from "@/state/viewer";
 
 export type { Tool };
 

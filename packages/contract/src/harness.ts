@@ -21,6 +21,24 @@ export const HARNESS_STATUSES = [
 
 export type HarnessStatus = (typeof HARNESS_STATUSES)[number];
 
+export type HarnessModel = {
+  id: string;
+  name: string;
+  slug: string;
+  group?: string;
+};
+
+/** One row of `GET /api/harnesses`. */
+export type HarnessInfo = {
+  id: HarnessId;
+  label: string;
+  status: HarnessStatus;
+  detail?: string;
+  defaultModel: string;
+  models: HarnessModel[];
+  bridgeReady: boolean;
+};
+
 export const HARNESS_LABEL: Record<HarnessId, string> = {
   opencode: "OpenCode",
   codex: "Codex",

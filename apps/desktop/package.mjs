@@ -108,7 +108,7 @@ writeFileSync(
 for (const file of ["main.cjs", "preload.cjs"]) {
   cpSync(join(here, "dist", file), join(next, file));
 }
-for (const file of ["api.mjs", "occt-worker.mjs"]) {
+for (const file of ["api.mjs", "occt-worker.mjs", "world-worker.mjs"]) {
   cpSync(join(here, "..", "server", "dist", file), join(next, file));
 }
 cpSync(join(root, "apps", "web", "dist"), join(next, "web"), {

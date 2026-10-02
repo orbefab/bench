@@ -1,0 +1,70 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/arm@1.0.0",
+  "type": "robot-arm",
+  "foreign": false,
+  "ratings": {
+    "shoulder": {
+      "torque": [-0.18, 0.18],
+      "speed": [-10.472, 10.472]
+    }
+  },
+  "sources": [
+    {
+      "title": "examples/arm/robot/arm.urdf",
+      "ref": "b5ce591; effort 0.18 N·m and velocity 10.472 rad/s are hobby-servo placeholders"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "rigid",
+        "variants": {
+          "rigid": {
+            "kind": "form",
+            "form": "multibody@1",
+            "params": {},
+            "omits": ["joint flexibility", "link compliance"]
+          }
+        }
+      }
+    },
+    "body": {
+      "1": {
+        "default": "urdf",
+        "variants": {
+          "urdf": {
+            "kind": "urdf",
+            "file": "examples/arm/robot/arm.urdf",
+            "omits": ["link flex", "joint friction beyond the URDF damper"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.12, 0.06, 0.04],
+            "omits": ["link meshes"]
+          }
+        }
+      },
+      "1": {
+        "default": "meshes",
+        "variants": {
+          "meshes": {
+            "kind": "mesh",
+            "files": [
+              "examples/arm/robot/meshes/base.stl",
+              "examples/arm/robot/meshes/upper_arm.stl"
+            ],
+            "omits": ["cutaway"]
+          }
+        }
+      }
+    }
+  }
+}

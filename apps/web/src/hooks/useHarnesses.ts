@@ -9,27 +9,8 @@ import {
 } from "@/chat/model-picker";
 import { useProjectSession } from "@/hooks/useProjectSession";
 import { apiFetch } from "@/lib/api";
-import type { HarnessId, HarnessStatus } from "@/lib/harness";
+import type { HarnessId, HarnessInfo } from "@/lib/harness";
 import { projectUrl } from "@/lib/project-query";
-
-export type { HarnessStatus };
-
-export type HarnessModel = {
-  id: string;
-  name: string;
-  slug: string;
-  group?: string;
-};
-
-export type HarnessInfo = {
-  id: HarnessId;
-  label: string;
-  status: HarnessStatus;
-  detail?: string;
-  defaultModel: string;
-  models: HarnessModel[];
-  bridgeReady: boolean;
-};
 
 export function harnessModelName(
   harnesses: HarnessInfo[],

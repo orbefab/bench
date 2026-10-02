@@ -1,10 +1,19 @@
 name: CI
 
+# Pull requests and `main` get a light check: lint, typecheck, and the smoke
+# self-checks. The full suite (`pnpm test`) is a local gate before landing;
+# run it here by hand with "Run workflow" when a branch is about to merge.
+
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      full:
+        description: Run the full self-check suite (pnpm test)
+        type: boolean
+        default: true
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -14,8 +23,9 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  check:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -30,23 +40,12 @@ jobs:
 
       - run: pnpm lint:check
 
-  typecheck:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
       - run: pnpm typecheck
 
-  test:
+      - run: pnpm test:smoke
+
+  full-test:
+    if: github.event_name == 'workflow_dispatch' && inputs.full
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

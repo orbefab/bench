@@ -1,0 +1,23 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "ptc-fuse",
+  "plausible": {
+    "Resistance": [0.001, 100000],
+    "Current": [0.000001, 100],
+    "HeatFlow": [0.000001, 1000],
+    "Time": [0.000001, 10000],
+    "Dimensionless": [0, 1]
+  },
+  "ports": {
+    "A": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    },
+    "B": {
+      "domain": "electrical",
+      "role": "analog",
+      "direction": "passive"
+    }
+  }
+}

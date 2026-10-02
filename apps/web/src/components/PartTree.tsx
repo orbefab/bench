@@ -25,7 +25,8 @@ import {
   siblingRows,
 } from "@/lib/part-tree";
 import { cn } from "@/lib/utils";
-import { useStore } from "@/state/store";
+import { useScene } from "@/state/scene";
+import { useViewer } from "@/state/viewer";
 
 type TreeRow = PartTreeItem & { obj: Object3D; part: CadPart };
 
@@ -73,16 +74,16 @@ function Node({
   openKeys: Set<string>;
   onToggle: (key: string) => void;
 }) {
-  const { selectedId, select, isolate, fit, setVisible, hiddenIds } = useStore(
+  const { selectedId, select, isolate, setVisible, hiddenIds } = useViewer(
     useShallow((s) => ({
       selectedId: s.selectedId,
       select: s.select,
       isolate: s.isolate,
-      fit: s.fit,
       setVisible: s.setVisible,
       hiddenIds: s.hiddenIds,
     }))
   );
+  const fit = useScene((s) => s.fit);
   const kids = row.children as TreeRow[];
   const part = row.part;
   const selected = selectedId === part.id;
@@ -161,7 +162,7 @@ function Node({
 }
 
 function ModelTreeBody() {
-  const { review, title, selectedId } = useStore(
+  const { review, title, selectedId } = useViewer(
     useShallow((s) => ({
       review: s.review,
       title: s.title,
@@ -299,7 +300,7 @@ export function PartTree({
   onCollapse: () => void;
   cardRef?: (el: HTMLElement | null) => void;
 }) {
-  const url = useStore((s) => s.url);
+  const url = useViewer((s) => s.url);
   return (
     <RenderErrorBoundary
       resetKeys={[url]}
@@ -336,7 +337,7 @@ function PartTreeBody({
   onCollapse: () => void;
   cardRef?: (el: HTMLElement | null) => void;
 }) {
-  const { review, title, url } = useStore(
+  const { review, title, url } = useViewer(
     useShallow((s) => ({
       review: s.review,
       title: s.title,

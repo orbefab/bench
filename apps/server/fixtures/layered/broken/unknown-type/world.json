@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "environment": {
+    "ground": {
+      "plane": true
+    },
+    "gravity": [0, 0, -9.80665]
+  },
+  "run": {
+    "seed": 1,
+    "levels": {
+      "default": 1,
+      "types": {
+        "no-such-type": 0
+      }
+    }
+  },
+  "root": {
+    "id": "scene",
+    "part": "sfab/sg90@1.0.0"
+  }
+}

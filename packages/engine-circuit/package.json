@@ -1,0 +1,20 @@
+{
+  "name": "@sfab-bench/engine-circuit",
+  "version": "0.2.2",
+  "private": true,
+  "description": "MNA circuit engine. No file access.",
+  "homepage": "https://bench.sfab.ai",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sfab-bench/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

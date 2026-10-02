@@ -1,9 +1,6 @@
+import { ok as expect } from "node:assert/strict";
 import { AGENT_IDENTITY } from "./agent-identity";
 import { viewerTools } from "./viewer-context";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(
   typeof viewerTools.get_viewer.execute !== "function",

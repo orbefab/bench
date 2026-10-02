@@ -1,31 +1,14 @@
-import { useChat } from "@ai-sdk/react";
 import {
   Check,
   Copy,
   EllipsisVertical,
   MessageCircleDashedIcon,
 } from "lucide-react";
-import {
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import {
-  type AskUserQuestionsOutput,
-  findPendingAskUserQuestions,
-} from "@/chat/ask-user-questions";
-import {
-  isWorkspaceBusyError,
-  lastUserPromptText,
-  mapChatErrorMessage,
-} from "@/chat/composer-recovery";
-import { findPendingGetViewer } from "@/chat/get-viewer";
+import { type RefObject, useEffect, useState } from "react";
+import { lastUserPromptText } from "@/chat/composer-recovery";
 import { firstUserLine } from "@/chat/history";
-import { finishPersistMessages, isTurnErrorPart } from "@/chat/persist-thread";
-import { useLiveViewerTools } from "@/chat/useLiveViewerTools";
-import { viewerChatTransport } from "@/chat/viewer-chat-runtime";
+import { isTurnErrorPart } from "@/chat/persist-thread";
+import { useBenchChat } from "@/chat/useBenchChat";
 import {
   type GalleryChatHandle,
   GalleryChatInput,
@@ -33,7 +16,6 @@ import {
 } from "@/components/chat/chat-input";
 import { ChatMessageRow } from "@/components/chat/chat-message-parts";
 import type { GalleryChatMessage } from "@/components/chat/mock-chat-messages";
-import { persistThread } from "@/components/chat/useViewerChat";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -56,9 +38,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { showNetworkErrorToast } from "@/components/ui/toast";
-import { jsonApi } from "@/lib/api";
 import { copyText } from "@/lib/settings";
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
 
 export async function copyConversationJson(conversation: {
   id: string | null;
@@ -151,68 +132,36 @@ export function ChatSession({
   captureDraftRef: RefObject<(() => void) | null>;
   composerRef: RefObject<GalleryChatHandle | null>;
 }) {
-  const turnErrorRef = useRef<string | null>(null);
-  const progress = useStore((s) => s.progress);
-  const url = useStore((s) => s.url);
+  const progress = useViewer((s) => s.progress);
+  const url = useViewer((s) => s.url);
   const {
     messages,
     sendMessage,
     status,
-    error,
+    errorText,
+    errorIsBusy,
+    busy,
+    live,
+    pendingAsk,
+    pendingViewer,
     stop,
-    addToolOutput,
-    setMessages,
-  } = useChat({
-    id: threadId,
-    throttle: 50,
-    messages: initialMessages,
-    transport: viewerChatTransport(),
-    onError: (err) => {
-      turnErrorRef.current = mapChatErrorMessage(err) ?? err.message;
+    answerAskUser,
+    retryFailedTurn,
+  } = useBenchChat({
+    threadId,
+    initialMessages,
+    onPersistSettled: (outcome) => {
+      if (!outcome.ok) {
+        showNetworkErrorToast({ title: "Couldn't save this chat" });
+        return;
+      }
+      onPersist();
     },
-    onFinish: ({ messages: next, isError }) => {
-      const text = turnErrorRef.current;
-      turnErrorRef.current = null;
-      const toSave = finishPersistMessages(
-        next as GalleryChatMessage[],
-        isError,
-        text
-      );
-      if (!toSave) return;
-      // Persist already stamps data-error; live state must use it or the turn
-      // collapses to a Worked chip until reload.
-      if (isError) setMessages(toSave);
-      void persistThread(threadId, toSave).then(
-        (res) => {
-          if (res && "ok" in res && res.ok === false) {
-            showNetworkErrorToast({ title: "Couldn't save this chat" });
-            return;
-          }
-          onPersist();
-        },
-        () => {
-          showNetworkErrorToast({ title: "Couldn't save this chat" });
-        }
-      );
+    onStopFailed: () => {
+      showNetworkErrorToast({ title: "Couldn't stop the reply" });
     },
   });
-  const busy = status === "submitted" || status === "streaming";
-  const pendingAsk = findPendingAskUserQuestions(messages);
-  const pendingViewer = findPendingGetViewer(messages);
-  const live = busy || pendingViewer !== null;
   const loadingModel = pendingViewer !== null || progress !== null;
-  const abortWorkspaceTurn = useCallback(() => {
-    stop();
-    void jsonApi["chat"].stop.$post().then(
-      (res) => {
-        if (!res.ok)
-          showNetworkErrorToast({ title: "Couldn't stop the reply" });
-      },
-      () => {
-        showNetworkErrorToast({ title: "Couldn't stop the reply" });
-      }
-    );
-  }, [stop]);
   useEffect(() => {
     captureDraftRef.current = () => composerRef.current?.captureDraft();
     return () => {
@@ -224,29 +173,20 @@ export function ChatSession({
       stopTurnRef.current = null;
       return;
     }
-    stopTurnRef.current = abortWorkspaceTurn;
+    stopTurnRef.current = stop;
     return () => {
       stopTurnRef.current = null;
     };
-  }, [live, abortWorkspaceTurn, stopTurnRef]);
+  }, [live, stop, stopTurnRef]);
   useEffect(() => {
-    registerTabTurn(busy, busy ? abortWorkspaceTurn : null);
+    registerTabTurn(busy, busy ? stop : null);
     return () => registerTabTurn(false, null);
-  }, [busy, abortWorkspaceTurn, registerTabTurn]);
+  }, [busy, stop, registerTabTurn]);
   useEffect(() => {
     onLive(live);
     return () => onLive(false);
   }, [live, onLive]);
-  const fillSuspendedTurn = useCallback(() => {
-    void sendMessage();
-  }, [sendMessage]);
-  useLiveViewerTools(
-    messages as GalleryChatMessage[],
-    addToolOutput,
-    busy,
-    fillSuspendedTurn
-  );
-  messagesRef.current = messages as GalleryChatMessage[];
+  messagesRef.current = messages;
   messagesThreadIdRef.current = threadId;
   const streamingMessageId =
     busy && messages.at(-1)?.role === "assistant"
@@ -260,32 +200,6 @@ export function ChatSession({
     void sendMessage({ text });
   };
 
-  const retryFailedTurn = () => {
-    const last = messages.at(-1);
-    if (last?.role === "user") {
-      void sendMessage();
-      return;
-    }
-    const text = lastUserPromptText(messages);
-    if (!text) return;
-    void sendMessage({ text });
-  };
-
-  const onAnswerAskUser = useCallback(
-    (toolCallId: string, output: AskUserQuestionsOutput) => {
-      void Promise.resolve(
-        addToolOutput({
-          tool: "askUserQuestions",
-          toolCallId,
-          output,
-        })
-      ).then(() => sendMessage());
-    },
-    [addToolOutput, sendMessage]
-  );
-
-  const errorText = mapChatErrorMessage(error);
-  const errorIsBusy = isWorkspaceBusyError(error);
   const liveError = status === "error";
   const lastMessage = messages.at(-1);
   const tailErrorId =
@@ -315,7 +229,7 @@ export function ChatSession({
               size="sm"
               variant="ghost"
               className="h-6 px-2"
-              onClick={abortWorkspaceTurn}
+              onClick={stop}
             >
               Stop
             </Button>
@@ -380,8 +294,8 @@ export function ChatSession({
         canStop={pendingViewer !== null}
         loadingModel={loadingModel}
         modelLoaded={Boolean(url) && progress === null}
-        onAnswerAskUser={onAnswerAskUser}
-        onStop={abortWorkspaceTurn}
+        onAnswerAskUser={answerAskUser}
+        onStop={stop}
         onSubmit={onSubmit}
         pendingAsk={pendingAsk}
         ref={composerRef}

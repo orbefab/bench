@@ -1,0 +1,21 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "bench-supply-cv-cc",
+  "ports": {
+    "5V": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "out"
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    }
+  },
+  "plausible": {
+    "Voltage": [0, 60],
+    "Current": [0, 20],
+    "Resistance": [0, 10]
+  }
+}

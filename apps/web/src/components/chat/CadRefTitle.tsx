@@ -2,7 +2,7 @@ import type { CadReview } from "@/cad/review";
 import { resolveCadRef } from "@/chat/cad-refs";
 import { titleRefSegments } from "@/chat/history";
 import { partLabelFileStem } from "@/lib/part-label";
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
 
 // A stable empty list: a fresh `[]` from the selector re-renders forever when no model is open.
 const NO_PARTS: CadReview["parts"] = [];
@@ -14,8 +14,8 @@ export function CadRefTitle({
   title: string;
   className?: string;
 }) {
-  const parts = useStore((s) => s.review?.parts ?? NO_PARTS);
-  const fileLabel = useStore((s) => s.title);
+  const parts = useViewer((s) => s.review?.parts ?? NO_PARTS);
+  const fileLabel = useViewer((s) => s.title);
   const fileStem = partLabelFileStem(parts.length, fileLabel);
   const segments = titleRefSegments(
     title,

@@ -1,0 +1,67 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/bench-supply@1.0.0",
+  "type": "bench-supply-cv-cc",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Bench supply, 0.05 ohm series resistance",
+      "ref": "rSeries 0.05 ohm; voltage and current limit come from the world"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "ideal",
+        "variants": {
+          "ideal": {
+            "kind": "form",
+            "form": "ideal-voltage@1",
+            "params": {
+              "V": 5
+            },
+            "omits": ["series resistance", "current limit"]
+          }
+        }
+      },
+      "1": {
+        "default": "thevenin",
+        "variants": {
+          "thevenin": {
+            "kind": "form",
+            "form": "thevenin-limit@1",
+            "params": {
+              "V": 5,
+              "Rs": 0.05,
+              "Ilimit": 1
+            },
+            "omits": ["sense-lead drop", "heat"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["chassis"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.2, 0.15, 0.1],
+            "omits": ["panel"]
+          }
+        }
+      }
+    }
+  }
+}

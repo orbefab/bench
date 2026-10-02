@@ -1,13 +1,10 @@
+import { ok as expect } from "node:assert/strict";
 import {
   closeFolderNeedsConfirm,
   closeFolderTitle,
   orbitDampingEnabled,
   viewerFrameloop,
 } from "./motion";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(orbitDampingEnabled(false), "damping on");
 expect(orbitDampingEnabled(true) === false, "reduce disables damping");

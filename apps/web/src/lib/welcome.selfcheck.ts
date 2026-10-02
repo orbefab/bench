@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   browseListingApply,
   CAD_SKILL_URL,
@@ -18,10 +19,6 @@ import {
   STARTER_REPO_URL,
   WELCOME_OPEN_COPY,
 } from "./welcome";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(PRODUCT_TITLE === "sfab-bench", "brand matches index.html");
 expect(documentTitle({}) === "sfab-bench", "welcome title");

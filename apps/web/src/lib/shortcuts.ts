@@ -7,6 +7,9 @@
  * mention list → open popover/select → command palette/dialogs →
  * voice recording cancel → compact chat sheet.
  * Esc never hides docked chat or clears the CAD selection.
+ * In a world, with none of those layers open, Esc cancels a tool gesture,
+ * then leaves the tool (`world-tool-escape`), and only then clears the
+ * selection.
  */
 
 export type ShortcutScope = "global" | "composer" | "ask-user";
@@ -19,7 +22,10 @@ export type ShortcutId =
   | "composer-newline"
   | "composer-mention"
   | "escape"
-  | "ask-user-choose";
+  | "world-tool-escape"
+  | "world-tool-wire"
+  | "ask-user-choose"
+  | "timeline-live";
 
 export type Shortcut = {
   id: ShortcutId;
@@ -80,6 +86,27 @@ export const SHORTCUTS: readonly Shortcut[] = [
     keys: ["Esc"],
     label: "Cancel voice, close mention, or close a dialog",
     scope: "global",
+  },
+  {
+    id: "world-tool-escape",
+    keys: ["Esc"],
+    label: "Cancel a tool gesture, then leave the tool",
+    scope: "global",
+    ignoreEditable: true,
+  },
+  {
+    id: "world-tool-wire",
+    keys: ["W"],
+    label: "Wire tool: enter it, or leave it again",
+    scope: "global",
+    ignoreEditable: true,
+  },
+  {
+    id: "timeline-live",
+    keys: ["End"],
+    label: "Return the timeline to live",
+    scope: "global",
+    ignoreEditable: true,
   },
 ];
 
@@ -208,6 +235,7 @@ export function matchesShortcut(
 const EVENT_KEY_ALIASES: Record<string, readonly string[]> = {
   Esc: ["Escape"],
   Escape: ["Escape"],
+  End: ["End"],
   "↑": ["ArrowUp"],
   ArrowUp: ["ArrowUp"],
   Enter: ["Enter"],

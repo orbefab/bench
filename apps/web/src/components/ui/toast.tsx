@@ -30,6 +30,8 @@ export function showToast(opts: {
   title: string;
   description?: string;
   action?: { label: string; onClick: () => void };
+  /** How long a success or info toast stays. An error stays until dismissed. */
+  timeoutMs?: number;
 }) {
   if (!toastsEnabled()) return;
   const projectPath = projectUrl();
@@ -42,7 +44,8 @@ export function showToast(opts: {
     type: opts.type,
     title,
     description,
-    timeout: opts.type === "error" ? 0 : SUCCESS_INFO_TIMEOUT_MS,
+    timeout:
+      opts.type === "error" ? 0 : (opts.timeoutMs ?? SUCCESS_INFO_TIMEOUT_MS),
     priority: opts.type === "error" ? "high" : "low",
     actionProps: opts.action
       ? {

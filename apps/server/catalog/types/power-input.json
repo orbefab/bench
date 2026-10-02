@@ -1,0 +1,30 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "power-input",
+  "plausible": {
+    "Voltage": [-1, 10],
+    "Current": [-2, 2]
+  },
+  "ports": {
+    "VBUS": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in"
+    },
+    "5V": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in"
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    },
+    "VIN": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in"
+    }
+  }
+}

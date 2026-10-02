@@ -1,6 +1,6 @@
 # ADR-0003: Share the library, not the viewport
 
-**Status:** Accepted
+**Status:** Accepted. Amended by [0009](0009-world-simulation.md) for worlds
 **Date:** 2026-09-14
 **Deciders:** Alwurts
 

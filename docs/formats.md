@@ -1,0 +1,647 @@
+# Layered simulation: types and formats v1
+
+**Status:** v1, adopted by [ADR 0010](decisions/0010-layered-simulation.md). `D-nnn` references are the settled decisions listed in that ADR. The nearest open standards (ADR 0010, D-011) are in §9. §10 lists the changes the circuit experiments proposed; they land in v1.1 with the code that needs them.
+
+## 1. Quantities and units
+
+- Files store **SI coherent numbers only**: V, A, C, Ω, F, H, N·m, rad, rad/s, kg, m, s, K, W. Degrees, mA and kgf·cm are display units.
+- Each quantity has a name and a dimension vector over `kg m s A K mol cd rad`. Ports connect when the **names** match, not only the dimensions: torque and energy share a vector but not a name.
+- A value may be **tagged** `{ v, q, d, unit? }`. The checker verifies the tag against the field, and a `unit` that is not the SI unit is an error.
+- Dimension vectors cannot see prefixes, so mA and A look alike. The linter therefore checks **plausible ranges per quantity per part type** (D-023.7).
+
+```ts
+type Quantity =
+  | "Voltage" | "Current" | "Charge" | "Resistance" | "Capacitance" | "Inductance"
+  | "Angle" | "AngularVelocity" | "Torque"
+  | "Position" | "Velocity" | "Force"
+  | "Temperature" | "HeatFlow"
+  | "Mass" | "Inertia" | "Time" | "Frequency"
+  | "Pose" | "Wrench"                         // composite: match by name only
+  | "Dimensionless" | "TorquePerCurrent" | "TorquePerAngularVelocity";
+
+type SiNumber = number | { v: number; q: Quantity; d: Dim; unit?: string };
+type Range = [SiNumber, SiNumber];
+```
+
+## 2. Ports
+
+| Domain | Across | Through |
+| --- | --- | --- |
+| `electrical` | Voltage | Current |
+| `rotational` | Angle (+ AngularVelocity) | Torque |
+| `translational` | Position (+ Velocity) | Force |
+| `thermal` | Temperature | HeatFlow |
+| `mount` | Pose | Wrench |
+
+Digital is **not** a domain (D-006):
+- electrical ports carry a `role`: `power`, `ground`, `logic` or `analog`;
+- a net is `digital` only when every port on it is `logic`; any `power`, `ground` or `analog` port makes it `analog`;
+- unconnected pins are not nets;
+- a world may force a net with `run.levels.nets`.
+
+```ts
+type PortDecl = {
+  domain: Domain;
+  role?: "power" | "ground" | "logic" | "analog";
+  direction?: "in" | "out" | "inout" | "passive";
+  pwm?: boolean; adc?: boolean;
+  internal?: boolean;                     // not a wiring target; the cable reaches it
+  connector?: string;                     // cable family; "usb" matches a supply to a board port
+  frame?: string;                         // mount / rotational: where on the body
+  ratings?: Ratings;
+};
+
+type Ratings = {
+  voltage?: Range; absMaxVoltage?: Range;
+  current?: Range; absMaxCurrent?: Range;
+  logic?: { vil?: SiNumber; vih?: SiNumber; vol?: SiNumber; voh?: SiNumber };
+  frequency?: Range; torque?: Range; speed?: Range;
+  temperature?: Range; resistance?: Range;
+};
+
+type BusDecl = { ports: string[]; protocol: string };   // "uart", "i2c", "spi"; transaction level later
+```
+
+**Port templates** (D-023.6): a type may declare repeated pins as a template, e.g. `{ "id": "D{n}", "n": [0, 13], "pwm": [3, 5, 6, 9, 10, 11], "role": "logic" }`. The loader expands the template, and the checker, lockfile and reports see only expanded ports.
+
+### Checks at load
+
+1. **Structural:** the port exists; domains and quantity names match.
+2. **Ratings:**
+   - A supply voltage outside a power input's operating range is a **warning**. Outside abs-max, it is an **error**.
+   - A logic high above the receiver's abs-max is an **error**.
+   - A current limit below a stall current is **not** a wiring error. It is a runtime envelope.
+3. **Plausibility:** each quantity falls in the part type's plausible range.
+4. **Runtime:** envelopes and SOA, warned once.
+
+Every message names the instance path, the port, the quantity and both values.
+
+## 3. Part types and parts
+
+A part type is the connector contract. A part is a real product implementing it, versioned `publisher/name@x.y.z` (D-007).
+
+```ts
+type PartTypeFile = {
+  format: "sfab.part-type@1";
+  id: string;                                   // "hobby-servo-3wire"
+  ports: Record<string, PortDecl>;              // after template expansion
+  templates?: PortTemplate[];
+  buses?: Record<string, BusDecl>;
+  plausible?: Partial<Record<Quantity, Range>>; // D-023.7
+};
+
+type PartFile = {
+  format: "sfab.part@1";
+  id: string;                                   // "sfab/sg90@1.0.0"
+  type: string | PartTypeFile;                  // inline type = one-file shorthand
+  foreign?: boolean;                            // D-009: black box, capped quality
+  declaredOnly?: boolean;                       // exists in a netlist, no working behaviour
+  sources?: Citation[];
+  ratings?: Record<string, Ratings>;            // per port, overrides the type
+  play?: PlayBlock;                             // read only when this part is the root of a run
+  capture?: { behaviour?: CaptureRecipe; body?: CaptureRecipe }; // how to capture that axis of this part
+  axes: {
+    behaviour?: AxisMap<BehaviourImpl>;
+    body?: AxisMap<BodyImpl>;
+    visual?: AxisMap<VisualImpl>;
+  };
+};
+
+// A `table@1` recipe (behaviour). A `hinge@1` recipe (body) has `form`, `fixture`, `baseline`,
+// `heldOut: "fixture"`, `sourceLevel` and `into?` instead.
+type CaptureRecipe = {
+  variant: string; instance: string;            // the variant to stamp and the board instance that holds it
+  across?: [string, string]; through: string;   // the port pair, and the port the current goes through
+  iSense: 1 | -1; fitV: number;
+  baseline: { level: string; value: number };
+  heldOut: "fixture" | "use-like" | "both";
+  staticError?: boolean;
+  sweep: { fixture?: string; currentPort?: string; currentQuantity?: string; current?: number[] };
+  envelope: { marginA?: number };
+  into?: string;                                // level that takes the new variant; absent: the level that holds a snapshot
+};
+
+// D-004: classes 0..3, named variants inside each class, one default per class.
+type AxisMap<T> = Partial<Record<"0" | "1" | "2" | "3", { default: string; variants: Record<string, T> }>>;
+
+// Read only when this part is the root of a run. A nested part keeps it, and the run ignores it.
+type PlayBlock = {
+  gravity: Vec3;                                // m/s²
+  seed: number;
+  timestep: number;                             // seconds; only 0.001 runs today
+  levels: {
+    default: LevelSpec;
+    types?: Record<string, LevelSpec>;
+    paths?: Record<string, LevelSpec>;          // unprefixed, as in a world: "servo"
+    nets?: Record<string, "digital" | "analog">;
+  };
+  air?: { density: number };                    // kept so a world import does not drop it
+  primitives?: unknown[];                       // static props; not parts
+  stepProps?: unknown[];
+};
+```
+
+Every implementation carries `omits: string[]`: the effects this level leaves out. It feeds the report's "not simulated" list. For example, SG90 behaviour class 1 omits gear backlash, motor inductance and winding heat.
+
+```ts
+type BehaviourImpl = { omits: string[] } & (
+  | { kind: "form"; form: FormId; params: Record<string, SiNumber> }
+  | { kind: "snapshot"; ref: string }
+  | { kind: "composite"; netlist: Netlist }
+  | { kind: "firmware"; chip: string; imageParam?: string; params?: Record<string, number>; fuses?: Record<string, string>; resetPort?: string; railVoltage?: number; resetFraction?: number; minOperatingVoltage?: number }
+  | { kind: "script"; script: string });
+
+// D-023.1: the body owns joint friction, damping and armature.
+type BodyImpl = { omits: string[] } & (
+  | { kind: "lumped"; mass: number; com: Vec3; inertia: Sym6;
+      joint?: { armature?: number; frictionloss?: number; damping?: number } }
+  | { kind: "gear-train"; input: string; output: string;
+      shafts: { name: string; inertia: number; damping: number; frictionloss: number; mass?: number }[];
+      meshes: { driver: string; driven: string; teethDriver: number; teethDriven: number }[] }
+  | { kind: "snapshot"; ref: string }
+  | { kind: "urdf"; file: string } | { kind: "mjcf"; file: string }
+  | { kind: "children" } | { kind: "none" });
+
+type VisualImpl = { omits: string[] } & (
+  | { kind: "mesh"; files: string[]; placeholder?: boolean }
+  | { kind: "box"; size: Vec3 } | { kind: "children" } | { kind: "none" });
+
+A mesh with `placeholder: true` is drawn as the nearest lower class whose visual is a `box`. The visual level row says which class, for example "placeholder mesh; drawn as the class-0 box". A mesh file is not drawn. A URDF body is not also drawn as a box.
+
+type Netlist = {
+  instances: Record<string, {
+    part: string; pose?: Pose; params?: Record<string, number | string | boolean | { $param: string }>; level?: LevelSpec;
+    target?: { shape: "box" | "sphere" | "cylinder"; size: Vec3 | number | { radius: number; length: number }; path?: { t: number; position: Vec3 }[] };
+  }>;
+  wires: [PortRef, PortRef][];
+  expose: Record<string, PortRef>;             // the composite's ports → inner ports
+};
+```
+
+- Instance numeric `params` override form params of the same name. For example, a bench supply takes the world's voltage and current limit.
+- A netlist child's param may be `{ "$param": "<name>" }`, meaning the parent instance's param `<name>`. The child sees the plain value: `resolveLevels` resolves the reference against the parent instance's resolved params before it visits the child, so a forward through two composites resolves at each level, and `Params` (the resolved record everything else reads) stays scalar. The parent's params are the ones its own instance carries in the document above it (after that instance's own references resolve). A name the parent instance does not set leaves the child's key out and, unless the reference is `optional`, is an error diagnostic on the child (`param <key> forwards $param <name>, which the parent instance does not set`); it never becomes `undefined`. With `"optional": true` the key is left out when the parent does not set the param, and there is no diagnostic: a board uses this to forward `firmware` and `source` to its chip child when a bare board has no image. The linter checks the part: the value must be `{ "$param": string }` with an optional `"optional": true` and nothing else, and the composite must declare `<name>`. A composite declares a param when a child takes it under a name that child part declares (a firmware `imageParam` or `source`, a form param, a variant param), and it inherits that quantity, so `set-param` on the composite's instance takes it. `set-param` may write or clear a reference, and undo restores the reference as written. Rename and add-instance keep it.
+- A netlist instance may set `level` (`LevelSpec`, defined with the world). A bare number sets behaviour, body and visual. An object sets the named axes. A path rule beats that level, and that level beats a type rule. A parent class replaces a request only while it is still the default. The report reason is `instance level`.
+- The chip is a part. `sfab/atmega328p@1.0.0` is the ATmega328P: its ports are the chip pins (`PB0`.., `PC0`.., `PD0`.., `ADC6`, `ADC7`, `RESET`, `VCC`, `AVCC`, `GND`) and its firmware variant holds the image params. The non-default variant `ideal-terminal` is an ideal terminal with no board. A firmware variant carries the chip's electrical facts as data: `railVoltage` (volts; picks the power input), `resetFraction` (V_RST / VCC) and `minOperatingVoltage` (volts; a running chip above its brownout level and below this is outside its specification at the part's clock). A variant with no `railVoltage` or `resetFraction` is an unknown chip and the part cannot run. A board-level `quiescent` (amperes) is a param on the chip child. Every board on a supply is stamped into that supply's one circuit, each under its instance path, with its own board node, brownout, reset and pins. `fuseStart: "tripped"` trips every `ptc-fuse@1` stamped on the rail. A header feed has none after the prune.
+- A firmware variant may set `resetPort` to the logic port the chip uses as reset (`RESET` on the Nano and the Uno). The rail's reset threshold is that chip's fraction of the rail. `atmega328p` is 0.9. An unknown `chip` degrades that board: severity `degraded`, code `unsupported`. The rest of the document still runs.
+- The board's supply input is the non-internal port with `role: "power"`, `direction: "in"`, and a voltage rating that contains the chip rail. The run prefers the candidate a supply is wired to. `VIN` on these boards is rated above the 5 V rail, so it is not the chip's voltage pin, and a supply on `5V` still wins when both are wired. A supply wired only to `VIN` attaches at `VIN`. The onboard regulator then feeds the 5 V node. If the chosen level cannot express a port this scene drives — a class-1 branch snapshot does not expose a port that has a supply on its net — that part runs the nearest runnable level on the axis. Nearest is the smallest class distance; on a tie, the more detailed level. The card's reason is `nearest runnable level`, source `fallback`. Ground is the non-internal port with `role: "ground"`. A port's `connector` names the cable family. The catalog `usb-a-port` pin `5V` says `usb`, and so does the internal `VBUS` on the Nano and the Uno, so a usb supply on `5V` lands on `VBUS` when the board is a composite with a netlist, and on `5V` otherwise. A bench supply has no connector, so it attaches to `5V`. On that header feed, `VBUS` is unfed: the fuse and the switch drop, and the capacitors the netlist puts on `5V` stay.
+- A board is a composite: its netlist holds the chip part as a child, the board's circuit parts, and an `expose` from the header ports onto them. The expose table is the pin map: a header port exposed onto a chip pin names that pin. **Board id:** a firmware chip that is a netlist child of a composite whose `expose` reaches one of its ports runs as that parent's board, and the board id is the parent's path. Any other firmware part is its own board. The world addresses the board as one instance. The clone Nano (`sfab/nano-ch340@1.0.0`) and the Uno (`sfab/uno-r3@1.0.0`) are this shape. Class 2 (`circuits`) adds the reset network, the +5V capacitors and the D13 LED to the class 1 (`avr8js`) netlist, which is the chip and the power input and stays algebraic. The chip child takes the board's `firmware` and `source` params through `{ "$param": "firmware", "optional": true }`: `optional` omits the key when the parent has no such param, instead of erroring. The D13 LED, the reset network and the rail capacitance stay in that variant's omits. `VBUS` is an `internal` power port on `arduino-nano`. It is not a wiring target. A part whose only other node is then unconnected, such as the Schottky with an open anode, is pruned. No extra conductance is added. The chip's own ports do not appear on the parent's nets: the header port is the net member.
+- The run flattens composites before dispatch, at any depth, including a group inside a board netlist. An instance whose selected behaviour is `composite` is a shell and is not itself a runtime. Leaves are dispatched by behaviour kind and form: `firmware`, a form id, or a `urdf` body with `multibody@1`. A leaf with no runtime sits idle. The diagnostic names the path and the form or kind, with severity `degraded`. A wire endpoint is the instance path, then the port, split at the last `.`, so a world wire can land on a nested exposed port.
+- A part's ports come from one model. A typed part keeps its type's ports. Each name is fixed by the type, and `expose` maps it to an inner ref as before. A composite whose type declares no ports (today, `assembly`) bubbles free nets. A free net is one connected component of the composite's child ports: wires join ports, a child port no wire touches is a net of one pin, and a component an `expose` entry already names is not free. Each free net is one outer port, not one port per pin. Names are assigned in lexicographic order of the net's sorted refs. The preferred name is the lexicographically smallest pin name, so pins that agree stay `GND` or `5V`, and `5V` beats `V+`. The first net keeps that name. A collision takes `<instance>_<pin>` from the earliest ref whose pin is the preferred name, then `_2`, `_3`. A `.` in a generated name becomes `_`, because a ref splits at the last `.`. Source is `type`, `expose`, or `auto`. A port is fixed when its source is `type` or `expose`, or when it has a dependent. Dependents are scanned on every call (projects are small): every wire and `expose` entry in another project part that names `<instance of this part>.<port>`, and every project, personal, or catalog snapshot whose `provenance.from.part` is this part. A cache would key on the hashes of `parts/**` and the snapshot files. An edit that would rename an auto port with dependents, or merge or split its net, writes the old name into `expose` in the same undo step, pointing at the first remaining ref. Undo removes that pin with the rest of the step. A parent wire or `expose` that names a port the child no longer has is dropped. The run continues. The warning is `broken-port`: the parent part, the wire or expose, and the missing port. Adding a wire to a port that is not there is still an error.
+- A circuit part (`resistor@1`, `capacitor@1`, `diode@1`, `ptc-fuse@1`, `pmos-switch@1`, `ldo-regulator@1`, `comparator@1`) belongs to the rail of the supply its nets reach. There is one rail per connected power island: every supply whose grounds meet, and every board on those supplies. A single board is that rail with N = 1, the same element ids and node names. A firmware board adds its stamp and pins. A part that reaches that island and shares no net with the board is still stamped on the board. A supply with those parts and no board stamps them against the supply's positive and ground ports. A circuit part that reaches no supply and no board sits idle; the diagnostic names the path, severity `degraded`, code `unpowered`. Supplies whose grounds stay apart are not one circuit. Several boards and several supplies on one island are that one rail: each supply stamps on the node its positive pin reaches, that board's VBUS, 5V, or VIN, or its own net when the wire reaches no board feed. Wires that join pins already share a node. After the stamps are built, every placed part is in exactly one stamp. Ownership ignores ground nets: a part belongs to the board whose non-ground nets it touches. A shared ground is not an owner. A part whose non-ground nets touch two boards is stamped once, on the island rail, and its nodes are those boards' real node names. A part nested under one board stays in that board's stamp. A scene part `realize` drops is a degraded row, `degraded <path>: not connected in this circuit`. A board netlist child the feed drops on purpose is not. A part reached by two supplies on one island is stamped once on that rail. Several firmware boards share one supply: each board netlist is stamped into that one rail. Pin edges inside a master step are split on every rail, including N = 1. A branch snapshot is stamped like any other circuit part and shares that supply. The supply is always a part. A v1 draft has neither a stamp nor a snapshot, and those pairs still share.
+- An instance string param `urdf` replaces the body file of a part whose body is `urdf`. The path is relative to the project folder.
+- Children are instantiated when the chosen behaviour is a composite. The lockfile still lists children of every class.
+- A `gear-train` stores shaft-side inertia, damping and friction in SI. Teeth are positive integers. `collapse()` reflects them onto the output: armature is Σ n²J, damping is Σ n²B, frictionloss is Σ |n|τ, and n is |ω_shaft / ω_output|, the product of `teethDriven / teethDriver` walking from the output. The run uses that hinge. It does not instance the gear bodies. On the SG90 the train sits on the servo, not on the `gears` child. Those children are instanced only when the behaviour is the class-2 composite, and that composite still has no runtime. When the children run, the `gears` child takes this body over.
+
+### `avr-pin@1` and the ADC
+
+A firmware board carries `avr-pin@1` as numbers on the variant's `params`, not as a `form`. The names are `roh`, `rol`, `rpu` and `rLeak`, in ohms. High is the board's 5V node. Low is 0 V. `rLeak` belongs to the pin element. The rail stamps one pin for every chip pin that has an Arduino bit and whose net contains a circuit part. Each of those pins follows `driveMode` at the master step. The ADC uses the same numbers.
+
+DDR and PORT choose the mode, read when the rail solves and when a conversion starts:
+
+| DDR | PORT | Mode |
+| --- | --- | --- |
+| 1 | 1 | `high` |
+| 1 | 0 | `low` |
+| 0 | 1 | `pullup` |
+| 0 | 0 | `input` |
+
+An input with nothing else on the net is 0 V through `rLeak`. A pull-up with nothing else on it is the board node through `rpu`. A pin that is its own output reads that level unloaded: `high` through `roh`, `low` through `rol`.
+
+The ADC keeps avr8js's conversion time. The count is `floor(V / Vref · 1024)`, clamped to 0..1023, after the sample-and-hold. The hold is exact at 0 Ω.
+
+AVCC (REFS = 01) is the board node at the end of the previous 1 ms step, latched before the CPU runs, so the conversion lags the rail by at most one master step. A board that starts in the same quantum, after the solve, sees that solve. The internal 1.1 V reference (REFS = 11) is the bandgap. AREF (REFS = 00) is 0 V: these boards have no AREF port, and a conversion against it reads 0. A reserved reference (REFS = 10) also reads 0. The AREF pin circuit is omitted.
+
+| MUX | Input |
+| --- | --- |
+| 0–7 | A0–A7, single-ended, from the net |
+| 8 | Temperature, 0.314 V. DS40002061 Table 24-2, typical at 25 °C. A constant. |
+| 14 | Bandgap, 1.1 V. DS40002061 ADC Characteristics, internal reference 1.0 V min, 1.1 V typical, 1.2 V max. |
+| 15 | 0 V |
+
+A0–A5 follow the table above. A6 and A7 are analog only. A net with this board's `5V` reads the board node. `GND` reads 0 V. A power or ground port wins over the pin's own mode. Any other net that is a node of a stamped circuit reads that node's solved voltage at the conversion's master step. The source resistance is the node's Thevenin resistance from the same factor: one extra backsolve with a 1 A injection, and only when a conversion happens. A net that is not in a stamp, including another pin or a part the circuit did not take, reads 0 V through `rLeak`.
+
+Omitted: ADC INL and DNL, ADC noise, the noise canceller, temperature drift, and the AREF pin circuit.
+
+**Model forms** are versioned equations that parts and snapshots fill in:
+- `slew@1`
+- `dc-motor@1` (K, R, L?, efficiency, eSat, quiescent)
+- `thevenin-limit@1`
+- `battery@1` (supply, ports `+` and `-`). `ocv` is a table of `[soc, volts]` knots, monotonic, with soc running from 0 to 1. `rInternal` is resistance in ohms. `capacity` is charge in coulombs. `soc0` is the initial state of charge. `vCutoff` is volts, and it is optional. Each 1 ms master step the terminal is a Thevenin source inside the rail, `V = ocv(soc)` and `R = rInternal`. After the step, `soc` moves by `−I·dt/capacity`, outside the solve. The state is per instance. At `soc = 0`, or when the terminal voltage is at or below `vCutoff`, the next master step stamps `V = ocv(0)` and `R = rInternal`, and the run warns once. The step that first crosses `vCutoff` still reports that crossing voltage. The latch applies from the next master step. The run does not stop. The supply record's `voltage` is the terminal voltage, its `current` is the terminal current, and the record also has `soc`. A recorded frame stores that `soc` beside voltage and current when the supply has a state of charge. Omitted: temperature, Peukert rate capacity, relaxation, and aging. `sfab/battery-3xaa-alkaline@1.0.0` and `sfab/battery-2s-lipo@1.0.0` fill this form.
+- `ideal-voltage@1` (`V`, volts). The rail stamps an ideal voltage source on the supply terminal. There is no series resistance and no current limit.
+- `resistor@1` (`R`, resistance, ohms)
+- `capacitor@1` (`C`, capacitance, farads; `esr`, resistance, ohms, optional). `esr` of 0 is legal and adds no node. `esr` above 0 is a series resistor and an internal node.
+- `diode@1` (`Is`, current, amperes; `N`, dimensionless; `Rs`, resistance, ohms, optional). An LED is this form on a part whose type is `led`.
+- `ptc-fuse@1` (ports `A`, `B`). `rCold` and `rHot` are resistance in ohms, and `rHot` must be greater than `rCold`. `iHold` and `iTrip` are current in amperes. `tripPower` is heat flow in watts. `tau` is time in seconds. `uReset` is dimensionless. The branch stamps `rCold` until the thermal state `u` reaches 1, then `rHot`, and it returns to `rCold` once `u` falls to `uReset`. One step of `u` runs per 1 ms master step, from the current that step solved, outside the solve. Power in that step is `I²` times the resistance the solve stamped. `u` moves toward `I²R / tripPower` with time constant `tau`. The state is per instance, in any stamped circuit. A resistance change drops the factored matrix. `iHold` and `iTrip` are the part's declared currents; the step uses `tripPower`. A static table cannot hold `u`. `sfab/mf-msmf050@1.0.0` fills this form. On the Uno it is F1, between `VBUS` and the P-channel switch.
+- `pmos-switch@1` (ports `S`, `D`, `G`). `rds` is resistance in ohms. `vth` is the gate threshold in volts. The body diode uses `Is`, `N` and `Rs`, the same quantities as `diode@1`, and `Rs` is optional. The diode's anode is `D` and its cathode is `S`. The gate is decided once per master step from the previous solve: the channel is on when `V(G) − V(S) ≤ vth`, and on means `rds` in parallel with the body diode. Off leaves the body diode alone. The channel starts on, because the first solve has no previous gate. A state change drops the factored matrix. A missing gate net is an error. `sfab/fdn340p@1.0.0` fills this form. On the Uno, U5A drives the gate. With VIN open the realization holds that gate at ground, which is U5A low, and the USB path stays on. With VIN driven the gate goes to the comparator's positive rail and the channel turns off.
+- `ldo-regulator@1` (ports `IN`, `OUT`, `GND`). `vOut` is the regulated output in volts. `dropout` is a table of `[amps, volts]` knots, current rising, dropout not falling; outside the first and last knots the voltage is flat. `iGround` is the ground-pin current in amperes. `iLimit` is the output current limit in amperes. `rOut` is an optional output resistance in ohms. In regulation `OUT = vOut − rOut·I`. In dropout `OUT = IN − dropout(I)`. The two meet in a softmin. Past `iLimit`, and below 0 A, a smooth wall holds the pass current. `iGround` flows `IN → GND` while `IN` is above the bias knee. The law is the solve; there is no per-step state. Omitted: line and load transients, PSRR, thermal shutdown and temperature, noise. A reverse path is in the part's omits unless that datasheet gives a DC law. `sfab/ams1117-5v0@1.0.0`, `sfab/ncp1117-5v0@1.0.0`, and `sfab/lp2985-3v3@1.0.0` fill this form.
+- `comparator@1` (ports `P`, `N`, `OUT`, `VP`, `VN`). `vHyst` is optional hysteresis in volts. The output is an ideal source to `VP` or `VN`, chosen once per master step from the previous solve, so the read is 1 ms late. High when `V(P) − V(N)` is above the hysteresis. It starts low. A change drops the factored matrix. `sfab/lmv358@1.0.0` fills this form. On the Uno it is U5A.
+- `logic-in@1`
+- `table@1`
+- `transfer-fn@1`
+- `multibody@1` (a URDF/MJCF body run by MuJoCo; the arm's class-1 behaviour)
+- `hinge@1` (body axis only: `armature` Inertia, `damping` TorquePerAngularVelocity, `frictionloss` Torque). On the behaviour axis it is a load error. A behaviour form on the body axis is a load error.
+- `mlp@1` (later)
+- `ranger@1` (c, rangeMin, rangeMax, beamHalf, trigMin, echoDelay, echoTimeout, working, quiescent, vMin, face)
+- `ground-plane@1` (no params). The catalog part is `sfab/ground-plane@1.0.0`. An instance of it in the root part is the ground plane. No such instance means no ground.
+- `target@1` (no params). The catalog part is `sfab/target@1.0.0`. Shape, size, and the scripted `path` sit on the instance as `target`, and the pose sits on the instance. The run places and ray-casts that target the same way it did a world target.
+
+Catalog supplies on these forms: `sfab/usb2-host-port@1.0.0`, `sfab/usb3-host-port@1.0.0`, `sfab/usb-charger-1a@1.0.0`, and `sfab/bench-supply-2a@1.0.0` (`thevenin-limit@1`); `sfab/battery-3xaa-alkaline@1.0.0` and `sfab/battery-2s-lipo@1.0.0` (`battery@1`). `sfab/usb-port-500ma@1.0.0` and `sfab/bench-supply@1.0.0` are unchanged. Fixed regulators: `sfab/ams1117-5v0@1.0.0`, `sfab/ncp1117-5v0@1.0.0`, and `sfab/lp2985-3v3@1.0.0` (`ldo-regulator@1`). `sfab/lmv358@1.0.0` (`comparator@1`).
+
+Each form declares its params with quantities, its ports, its engine contributions (D-014) and, where one exists, its energy function.
+
+`ranger@1` is the HC-SR04. The part `sfab/hc-sr04@1.0.0` fills the same form twice. Class 0 (`ideal`) casts one ray on the sensor axis. Echo rises 200 µs after Trig falls, the same protocol delay as class 1, so firmware that calls `pulseIn` after the trigger still sees the pin low. The width is exactly `2d/c`. No hit means no pulse. It draws nothing. That delay is part of the module's protocol, not an imperfection, and it is assumed until M3. Class 1 (`datasheet`) casts 41 rays: the axis, then five radial steps out to the 7.5° half-angle and eight azimuths, so the outer ring sits on the cone and two azimuths are horizontal. The nearest hit wins. A hit closer than 2 cm or past 4 m is no echo. Trig must be high for at least 10 µs, and a trigger during a measurement is ignored. Echo rises 200 µs after the falling edge (one 8-cycle 40 kHz burst; assumed until M3) and stays high for `2d/c`, or for 38 ms when nothing returns (assumed until M4). The working current is on the node that feeds `VCC` while a measurement is in progress, and the idle current while powered. Below `vMin`, or with `VCC` unwired, there is no echo and no draw. `c` is 343 m/s. The sheet uses 340 m/s, and the 58 µs/cm rule is 344.8 m/s.
+
+The ray is cast once per accepted trigger, on the physics of the previous master step. The CPU runs before `mj_step`, the same lag as the AVCC latch above. It starts at the transducer plane (`face` metres along the part's local +Y) and goes along +Y, from the part's pose in the scene. That pose is fixed for the run. A sensor on a moving link is not supported yet. When a ranger is in the run, rays see targets and static primitives only. Every other geom, including robots and the ground, is geom group 1, and the ray includes group 0 only, with `flg_static` set and `bodyexclude` −1. A world with no ranger does not change geom groups.
+
+## 4. The part document
+
+The part is the only document ([ADR 0011](decisions/0011-one-document-kind.md)). A run opens a root part: `parts/<publisher>/<name>@<version>.json`, id `publisher/name@version`. The arm example is `examples/arm/parts/sfab/arm-bench@1.0.0.json` because `sfab/arm@1.0.0` is already the robot. Every other example uses `sfab/<world-stem>@1.0.0`. The lock sits beside that file as `<name>@<version>.lock.json`, and `world` in the lock and in the run report is that stem (`arm-bench@1.0.0`).
+
+The root part instances the scene, a ground part when the run stands on a plane, and one target part per target. It carries `play`. Path and net level choices live on `play.levels.paths` and `play.levels.nets`, not on the shared scene: `nano-servo-usb` and `nano-servo-collapsed` both instance `sfab/nano-servo-scene@1.0.0` and choose different levels. The loader unwraps that single scene instance back to `$root`, so a path stays `servo`. An instance `level` still exists and a path rule still beats it.
+
+`play` is read only when that part is the root of the run. A nested part's `play` is kept and ignored. Gravity, seed, and `timestep` (seconds) come from the root. Only `0.001` runs today: any other `play.timestep` warns (`timestep-unsupported`) and the run still steps 1 ms. `play.levels.default` and `types` are the level defaults. `air`, `primitives`, and `stepProps` are optional so a world import does not drop them.
+
+No ground part means no ground. A target instance keeps the same shape, size, pose, and scripted path.
+
+`sfab-bench convert <world.json>` writes the root part and its lock under the project's `parts/` and prints the two project-relative paths.
+
+### Legacy import
+
+A `.world.json` is an import, not a document. The loader converts it in memory on read, then the run reads the run root below, not `WorldFileV2`. That type stays in the contract for the importer, `convert`, and the legacy level-text edit. `bench run` and the server still open a world file. A v1 file is still the hard stop: **World v1 is no longer supported**.
+
+Opening a `.world.json` leaves `report.world` as the file stem (`arm.world`). The in-memory conversion does not pin the synthetic import part, the ground part, or the target part into that lock, so an existing report stays byte-identical. Opening the root part names `report.world` and `report.lock` for that part; those are the fields that differ.
+
+```ts
+type WorldFile = {
+  version: 2;
+  environment: {
+    ground: { plane: boolean };
+    gravity: Vec3;
+    air?: { density: number };
+    targets?: WorldTarget[];
+  };
+  run: {
+    seed: number;                                       // D-008: all randomness from here
+    timestep?: number;                                  // omitted on the examples; only 0.001 runs today
+    levels: {
+      default: LevelSpec;                               // bare number = all three axes (D-023.4)
+      types?: Record<string, LevelSpec>;                // part-type rules
+      paths?: Record<string, LevelSpec>;                // "fleet.rig2.servo"
+      nets?: Record<string, "digital" | "analog">;
+    };
+  };
+  root: { id: string; part: string | PartFile; pose?: Pose; params?: Params };
+};
+type AxisLevel = 0 | 1 | 2 | 3 | { class: 0 | 1 | 2 | 3; variant: string };
+type LevelSpec = 0 | 1 | 2 | 3 | Partial<Record<"behaviour" | "body" | "visual", AxisLevel>>;
+```
+
+**Targets.** A target is a box, sphere or cylinder that moves, and that a ray can hit. It is a MuJoCo mocap body with `contype` and `conaffinity` 0, so it does not push a robot; a mocap body would not move from contact anyway. `path` is `{ t, position }[]`, times in seconds, strictly increasing. The position is linear between keyframes, the first keyframe before its time, and held after the last. With no path the target stays at `pose`. The viewer draws it where it is, and the recording keeps that pose on the robot id `target` (`target/<id>`), the same way a link pose is kept, so scrubbing shows it move. `world_move_target` sets the position from the next master step and records a `move-target` event. A world whose targets only follow `path` stays byte-identical across runs. Dragging a target in the view is later.
+
+**Paths:** the root is `$root` and does not prefix children (`fleet.rig2.servo`).
+
+### Run root
+
+The loader keeps what a run reads:
+
+```ts
+type RunRoot = {
+  document: string;                                    // part id; an import uses sfab/import@1.0.0
+  play: {
+    gravity: Vec3;
+    seed: number;
+    timestep?: number;                                 // absent when an imported world omitted the step
+    levels: PlayBlock["levels"];
+    air?: { density: number };
+    primitives?: unknown[];
+    stepProps?: unknown[];
+  };
+  stage: { id: string; part: string | PartFile; pose?: Pose; params?: Params };
+  unwrapped: boolean;
+  slots: { id: string; part: string; kind: "scene" | "ground" | "target" | "other"; pose?: Pose; type?: string }[];
+  ground: boolean;
+  targets: { id: string; shape: string; size: unknown; pose: Pose; path?: unknown[] }[];
+};
+```
+
+`play` is the open part's block. `slots` is that part's netlist, in file order. One other instance becomes the stage (`unwrapped`), so `$root` is that scene part and paths stay scene-relative. Any other shape is itself the stage. Ground and targets are taken only from that document's netlist. A pose is the instance pose.
+
+`timestep` is absent only when the import flag says the world file did not name `run.timestep`. A part document always records a step, using `0.001` when `play` omits it. `RunPlan.timestep` is set only when the recorded step is `0.001`. Any other named step warns `timestep-unsupported` and the body still steps 1 ms.
+
+### World view
+
+`GET /api/world/view` adds `tree` beside `robots`, `boards`, `supplies`, `parts`, `boxes`, `wires`, and `feeds`. Those fields stay: the stage still draws the robots' URDF, the boards, the boxes, and the environment from them.
+
+```ts
+type WorldViewTree = {
+  part: string;                                        // document part id
+  stage: string;                                       // stage part id
+  play: { gravity: Vec3; seed: number; timestep?: number };
+  nodes: WorldViewNode[];
+};
+type WorldViewNode = {
+  id: string;                                          // run path: nano, fleet.rig2.servo, $root
+  name: string;                                        // instance id; $root uses the stage id
+  part: string;
+  type: string;
+  role: "robot" | "board" | "supply" | "part" | "leaf" | "ground" | "target" | "assembly";
+  pose: Pose;                                          // flat instance pose
+  ports: { name: string; source: "type" | "expose" | "auto"; fixed: boolean }[];
+  params: Params;                                      // instance params, SI
+  wires?: { a: string; b: string }[];                  // assembly netlist, file order
+  levels: {
+    axis: AxisName;
+    options: WorldViewLevelOption[];
+    chosen: { class: LevelClass; variant: string } | null;
+    capture?: { ready: true } | { ready: false; reason: string };
+  }[];
+  children: WorldViewNode[];
+};
+type WorldViewLevelOption = {
+  class: LevelClass;
+  variant: string;
+  label: string;
+  runnable: boolean;                                   // loader static check
+  reason?: string;
+  source?: "part" | "snapshot" | "overlay";
+  ref?: string;                                        // snapshot id, when the variant is a snapshot
+  stale?: string;                                      // why the snapshot no longer matches its part
+  deletable?: true;                                    // a capture the card may delete
+};
+```
+
+`capture` is on the `behaviour` and `body` axes of a placed part, and absent on `visual`, ground and targets. `ready` uses the same lookup and `into` rule as the capture job (the part document's recipe, else the catalog's, then the level that takes the result), so a button that reads `ready: true` does not fail for a missing recipe. `reason` is the sentence to show when it is not ready. `source` says where the option is defined: `part` is the part document and not a snapshot, `snapshot` is a snapshot variant in the part document, and `overlay` is a variant the project's level overlay added (the loader records which variants the merge added). `ref` is the snapshot id of a `snapshot` or `overlay` snapshot variant. `stale` is set only on a snapshot this run loaded, when its recorded hash no longer matches the part. `deletable` is `true` on an `overlay` variant, and on a `snapshot` variant of a project part whose snapshot file is in the project's `snapshots/`; the card shows Delete from it and never from the variant's name.
+
+Children follow the resolved instances, in netlist order, so `fleet.rig2.servo` is a child of `fleet.rig2`. `wires` is that assembly's authored wires, in the same order, and is absent on a leaf. `levels` is one entry per axis the part authors. `runnable` is the loader's static check (a known kind, form, or chip). It does not re-plan this scene. `play` is the open document's block. Every id in the old fields is a node id with that role. A box whose id is not in `parts` or `supplies` is a `leaf`. Ground and targets are nodes from the document netlist. Their ids are instance ids; they are not rows in `report.levels`.
+
+**Level resolution** (D-005, amended by D-023.3):
+1. Per axis, a path rule beats a type rule, which beats the default.
+2. Children of the world root use the world default. The scene composite is a container, not a parent. Below that, a nested instance whose request is still the default takes its parent's resolved behaviour class when the parent has that class, whether the parent is a firmware board or a composite. A parent that only reached its class by fallback does not pass it down. The report source is `parent`. A leaf that lacks the parent's class falls back, and the report says so. A part with no behaviour class stays on the world default.
+3. A missing class falls back to the nearest **cheaper** class.
+4. If there is none, it uses the nearest **deeper** class and reports "capture suggested".
+5. A bare class runs that class's default variant. `{ class, variant }` selects that named variant in that class. A variant the part does not have is a plan error naming the path, axis, class and variant. It does not fall back. The level row shows the variant, and the reason says the rule chose it. A named variant does not inherit a parent class.
+6. Levels are fixed for a run (D-017).
+
+`world_set_level` writes a class number onto one axis. When that axis held a variant rule, the write replaces the rule with the class alone. An optional `variant` with that axis writes `{ class, variant }` instead. The other axes keep their variant objects.
+
+## 4.1 Edit operations
+
+Tools, the socket, and a script change the open document by sending an `EditOp`. Each one names that document by path. The operation is plain JSON. The part file is not written any other way.
+
+```ts
+type EditOp =
+  | { kind: "add-instance"; document: string; id: string; part: string;
+      pose?: Pose; params?: Params; level?: LevelSpec }
+  | { kind: "remove-instance"; document: string; id: string }
+  | { kind: "set-pose"; document: string; id: string; pose?: Pose }
+  | { kind: "set-param"; document: string; id: string; name: string;
+      value?: number | string | boolean }
+  | { kind: "set-level"; document: string;
+      scope: "default" | "type" | "path"; key?: string;
+      axis?: "behaviour" | "body" | "visual"; class: 0 | 1 | 2 | 3 | null;
+      variant?: string }
+  | { kind: "wire"; document: string; a: PortRef; b: PortRef }
+  | { kind: "unwire"; document: string; a: PortRef; b: PortRef }
+  | { kind: "rename-instance"; document: string; id: string; to: string }
+  | { kind: "rename-part"; document: string; to: string }
+  | { kind: "set-play"; document: string;
+      gravity?: [number, number, number]; seed?: number; timestep?: number }
+  | { kind: "batch"; document: string; label: string; ops: EditOp[] };
+```
+
+Every operation may set `confirm: "break"`. Without it, an edit that would drop a fixed port returns needs-confirm and writes nothing: each port, its dependents, and the count N. Stay is not sending it again. Break sends the same edit with `confirm: "break"`. The edit applies. Parents' wires are not rewritten; they become broken ports. `world_edit` takes an optional `part` (a part id; the root is the default) and an optional `break: true`. The socket `edit`, `undo`, and `redo` take the same `part`, and `edit` takes `confirm: "break"`. One history per open part. A catalog part stays read-only.
+
+A port ref is `instance.port`, split at the last dot. `add-instance` adds a child of the document part's composite netlist. `remove-instance` also drops the wires, `expose` entries, and `play.levels.paths` rules that name that instance. `set-param` is SI and is checked against the part's param quantities. `set-level` is the same table edit as `world_set_level`: a class number, or `null` to remove a type or path rule. With `axis` and `variant` it writes `{ class, variant }`. A path variant is checked against that part's variants on the axis. A type does not own variants; the check uses the expanded parts of that type, and refuses when none were expanded. The default cannot be removed. `rename-instance` rewrites wires, `expose`, and path keys in this document. It does not rename the part file. `rename-part` changes the part's name only. Its inverse is a `rename-part` back to the previous name. One step moves the part file, rewrites parents' instance `part` fields, re-pins root locks, and rewrites project snapshots that name the old id. `set-play` may store a timestep other than `0.001`; the run still steps 1 ms and warns. `batch` is one undo step.
+
+The inverse is an `EditOp` that restores the previous part. `remove-instance` inverts to `add-instance` carrying the instance, its wires, its expose entries, and its path rules, including their order. `wire` inverts to `unwire`, and `unwire` remembers the wire's index. `rename-instance` inverts to the swap. `set-pose`, `set-param`, and `set-play` invert to the previous value, or to a clear when the field was absent. `set-level` inverts to the previous `play.levels` table, because a class number cannot restore a variant rule. A batch inverts to its inverses in reverse order, with the same label.
+
+History is two stacks of `{ label, op, inverse, before, after }`. `before` and `after` are the SHA-256 of the part file text. A new edit clears redo. The stack keeps 200 steps. Each open part has its own history. The step also stores the exact text of every file it wrote, so undo and redo put those bytes back.
+
+An edit is applied in memory, serialized, and loaded through an overlay store that serves the new text for that path. The validation writes no temp file. It loads the open part and every project root that uses it. An edit that makes any of them unreadable is rejected. The load builds the lock. The open part is re-pinned when it has a lock, new parts gain rows, and rows nothing resolves any more are dropped. Any other hash drift is refused. A nested edit re-pins only that part's row in the lock of every project root that uses it, in the same step. It does not create a lock for a nested part that has none while a parent lock exists.
+
+When the step is only the part and its own lock, both are written to `*.edit-tmp`. The part marker is renamed onto the part, then the lock marker onto the lock. A crash between those renames leaves the lock marker. The next open of an edit or a run finishes it, before the loader reads the lock. An empty lock marker deletes the lock. A part marker without a lock marker is an edit that never committed: it is removed, and the part on disk stays. When the step also re-pins other locks, each file gets a `*.edit-set` manifest listing the set. Temps are written, the manifests are rewritten with `committed: true` (the commit point), temps are renamed onto their targets, then the manifests are removed. A crash before the commit point deletes the temps and the manifests. A crash after it finishes the remaining renames. Opening any file in the set heals the whole set. Undo and redo restore every file in the step. If any of those files changed outside the session, undo and redo refuse: `the document changed outside this session`. The next open, or the next apply that can read the new file, clears that history. A catalog part is read-only.
+
+## 5. Library and lockfile (D-007, D-023.5)
+
+Lookup order:
+1. `worlds/<w>/parts/`
+2. the personal library
+3. the catalog
+4. the registry
+
+A world part that shadows a catalog part is a warning.
+
+```ts
+type LockFile = {
+  format: "sfab.lock@1";
+  world: string;
+  parts: { id: string; version: string; sha256: string; source: "world" | "library" | "catalog" | "inline"; path: string }[];
+  types: { id: string; sha256: string; source: "world" | "library" | "catalog" | "inline"; path: string }[];
+  snapshots?: { id: string; sha256: string; source: "world" | "library" | "catalog" | "inline"; path: string }[];
+  overlays?: { id: string; sha256: string; path: string }[];   // present when a level overlay adds variants to a library part
+};
+```
+
+The lock sits beside the document. A root part `parts/sfab/arm-bench@1.0.0.json` has `parts/sfab/arm-bench@1.0.0.lock.json`, and `world` is the stem `arm-bench@1.0.0`. A legacy import `arm.world.json` still uses `arm.world.lock.json`, and `world` is `arm.world`.
+
+A part file whose hash no longer matches the lock is an error that names the part. A snapshot file is pinned the same way, and only when the resolved variant actually runs it. The key is omitted when the run uses none.
+
+Snapshot files are looked up like parts, in `snapshots/<publisher>/<name>@<version>.json` under the world, the personal library, then the catalog (`apps/server/catalog/snapshots/`).
+
+### Level overlay
+
+A catalog or library part is read-only, so a capture of one lands in the project as a level overlay: `overlays/<publisher>/<name>@<version>.levels.json`.
+
+```ts
+type LevelOverlay = {
+  format: "sfab.level-overlay@1";
+  part: string;                                          // the library part's id
+  axes: { behaviour?: Record<string, { variants: Record<string, BehaviourImpl> }>;
+          body?:      Record<string, { variants: Record<string, BodyImpl> }>;
+          visual?:    Record<string, { variants: Record<string, VisualImpl> }> };  // keyed by level "0".."3"
+};
+```
+
+The loader adds the overlay's variants to the part before it plans. An overlay never removes a variant and never changes a default, except that a level the library lacks takes its first variant, by name, as the default. A variant name the library already has is an error, not an override. The library file is unchanged and keeps its own `sha256`. The lock pins the overlay in `overlays`, keyed by the part id, and a changed overlay is reported like a changed part. A part in the project needs no overlay: its own file holds the variants.
+
+Captures made from the world socket are numbered per part and axis. The next ref is `snapshots/<publisher>/<name>-<axis>-<n>@<version>.json`, the variant is `capture-<n>`, and `snapshots/.captures.json` keeps the counter so a removed capture's number is not reused. The counter file is not pinned in the lock, so copy it with the project. Without it the next number comes from the snapshot files on disk, and the number of a removed capture can be reused.
+
+## 6. Snapshot
+
+A snapshot is one behaviour or body level of a part. `{kind: "snapshot", ref}` on a variant is loaded like a part (world, then library, then catalog), linted, pinned in the lock when that variant runs, reported with its quality, and run. A snapshot that fails to load or lint is a plan error. It does not fall back. Body rows carry `axis: "body"`.
+
+A part may hold several snapshots. A run row is keyed by path, axis, and ref. The report sets `axis` explicitly.
+
+```ts
+type Snapshot = {
+  format: "sfab.snapshot@1";
+  partType: string;
+  part: string;                                          // exact version, D-007
+  axis: "behaviour" | "body";
+  form: FormId;
+  ports: { inputs: string[]; outputs: string[] };        // port.quantity, from the type
+  params: Record<string, number | string | (number | string)[]>; // behaviour: no joint terms (D-023.1). hinge@1: the joint terms.
+  envelope: {
+    bounds: Record<string, Range>;                       // "port.quantity": [lo, hi] (D-023.2)
+    data?: { kind: "mahalanobis"; mean: number[]; cov: number[][]; limit: number };
+  };
+  error: "none-available" | { metric: "static-max-abs" | "free-run-max-abs" | "free-run-rms" | "step-rise"; quantity: string; value: number;
+                              corner?: "typ" | "min" | "max"; heldOut: "fixture" | "use-like" | "both";
+                              baseline?: { level: string; value: number } }[];
+  quality: "Q0" | "Q1" | "Q2a" | "Q2b" | "Q3";           // set by the linter, never by hand
+  provenance: {
+    source: "captured" | "authored" | "measured" | "imported";
+    from?: { part: string; level: string; hash: string };   // level = class string
+    variant?: string; instance?: string;                    // table@1: the behaviour variant and board instance the hash stamped
+    fixture?: { ref: string; hash: string; seed: number };
+    data?: { file: string; sha256: string; rig?: string };
+    tool?: { name: string; version: string; file?: string };
+    citations?: Citation[];
+    bench: { version: string; mujoco?: string; avr8js?: string };
+    created: string;                                     // from config, never the wall clock
+  };
+};
+```
+
+`table@1` is DC only, one port pair. There is no `transfer-fn@1` yet, and no servo actuator table yet: that table needs `map@1` and the E10 data. A world run does not instance live gear bodies, and it does not add backlash.
+
+### `table@1`
+
+A `table@1` snapshot is one port pair and the current through the first port.
+
+- `across` is `[p, m]`, the port names.
+- `iAxis` is amperes. `iSense` is `1` when that axis is current into `p` from outside, and `-1` when it is current out of `p`. A source's output current is negative (section 2). `iSense` is required. There is no default.
+- `vAxis` is volts: `V(p) − V(m)` at each knot. The current axis is monotone.
+- `ports.inputs` and `ports.outputs` name the same quantities by port (`p.current` in, `p.voltage` out). The linter takes the quantity from the part type's port declarations.
+
+One use. The table is a branch between two of the part's own ports. The supply is always a part in the scene. A snapshot must not carry its fixture's supply: the linter rejects an envelope bound on `supply.*`, a port that is not one of the snapshot's own ports, or a `supplyPort`, `supplyRef`, or `supplyAffine` param.
+
+- **Branch.** The table is a two-terminal branch between the two live nodes, with no current limit and no floor. Outside the knots it extrapolates the end segments, and the envelope warns once. A behaviour variant `{kind: "snapshot", ref}` whose law is `table@1` is this use. It is stamped on its `across` ports, on the rail of the supply those nets reach, the same way as any circuit part.
+
+During a run, every key in `envelope.bounds` whose quantity is observed on the rail is checked. There is at most one warning per path and ref. The warning names the port and the bound. The run continues. It does not fall back mid-run.
+
+### `hinge@1`
+
+A body-axis form. The axis must be `body`, and a body snapshot must be this form. `armature` (Inertia) is finite and greater than 0. `damping` (TorquePerAngularVelocity) and `frictionloss` (Torque) are finite and non-negative. Port quantities come from the type's declarations and are a rotational port's angle, speed or torque. Envelope keys are on that same port. The type's plausible ranges apply. `hobby-servo-3wire` allows Inertia from 1e-9 to 0.01 kg·m² and TorquePerAngularVelocity from 0 to 1 N·m·s/rad, wide enough for a fitted armature and a reflected one, and tight enough to catch a missing prefix.
+
+`step-rise` is |t₁₀₋₉₀(snapshot) − t₁₀₋₉₀(baseline)| in seconds, on the named quantity. Each side's rise is 10% to 90% of that trace's own start-to-end span. A captured free-run row with a baseline earns Q2a, the same rule as `table@1`. `step-rise` does not grant Q2a by itself.
+
+Each master step compares the driven joint's speed and the applied actuator torque with the snapshot's speed and torque bounds. At most one warning per path and ref. The warning names the port and the bound. The run continues.
+
+The servo adapter takes its joint from the selected body: a lumped joint, a `hinge@1` snapshot, or `collapse()` of a gear train. Anything else is a plan error.
+
+### Quality and the linter
+
+| Quality | Meaning |
+| --- | --- |
+| Q0 | parses and lints |
+| Q1 | plausibility checks pass |
+| Q2a | captured, with a measured free-run error against the source |
+| Q2b | measured against a real rig |
+| Q3 | both Q2a and Q2b |
+
+Foreign parts are capped (D-009).
+
+The linter is per form. It rejects, and a snapshot that fails cannot run:
+- missing provenance (a captured snapshot also needs `from`, `fixture`, and `tool`);
+- for `table@1`: an axis that is not monotone; an `across` port that is not on the type; a table that does not cover its envelope (the current knots span the current bound); an envelope that bounds a supply quantity or a port the part does not declare, or a `supplyPort`, `supplyRef`, or `supplyAffine` param (a snapshot must not carry its fixture's supply); a listed port quantity the declarations do not match;
+- for `hinge@1`: an axis other than body; a body snapshot that is not `hinge@1`; a param that is missing, non-finite or negative; `armature` that is not greater than 0; a port quantity that is not angle, speed or torque on a declared rotational port; an envelope key that is not on that port;
+- a missing output that the part type lists in `requiredOutputs` (no such list means no extra output is required);
+- values outside the part type's plausible ranges (a current of 10 A or more is also shown in mA);
+- non-physical output: voltage at a **0 V setpoint**, checked only inside the envelope, and only when that envelope includes 0 V.
+
+Quality in the file is a claim. The linter grants Q0, Q1, Q2a, Q2b, or Q3 from the provenance and the error rows, and a claim above that grant is an error. The loader uses the grant only when the file is clean. A captured free-run row with a baseline earns Q2a. A `static-max-abs` row alone stays Q1.
+
+### Capture
+
+`apps/server/catalog/fixtures/capture.config.json` is a list of entries. Capture dispatches on `form`. A `table@1` entry names the part, the variant, the instance, the `across` pair, the port the current goes through, the sweep, the envelope, the baseline level, and an optional free-run case list. A `hinge@1` entry names the part, the fixture, the baseline and the source class. The runner reads those fields from the entry. It has no part-specific numbers.
+
+A plain-branch capture drives an ideal current source through `p` into `m` on the assembly's stamp and reads `V(p) − V(m)`, with `m` pinned at 0. `provenance.from` holds the part id and the stamp hash. `provenance.variant` and `provenance.instance` record the behaviour variant and the board instance that were stamped. The stale check reads them from the snapshot and reads the catalog config only for a snapshot that lacks them. An entry that asks records `static-max-abs` against its baseline level, the max-abs error between knots. Free-run rows are written when the entry has cases.
+
+Rebuild with `pnpm --filter @sfab-bench/server capture`. The timestamp comes from the config, not the wall clock.
+
+A capture from the world socket picks the recipe the same way: the part's own `capture` field first, else the catalog entry for that part and axis. A project part is stamped from the project (`parts/<publisher>/<name>@<version>.json`) and its capture lands in that part's own document, whether or not the part is the open document. The recipe's `sweep.fixture` is read from `<project>/fixtures/<sweep.fixture>.fixture.json` when that file exists, else from the catalog's `fixtures/`. A part-document recipe has no free-run `cases`, so it writes the table and the static row only.
+
+### Worked examples
+
+**Branch, Nano power input.** `sfab/nano-power-input@1.0.0` is the SS14 from `VBUS` to `5V` and the 10 µF capacitor, as one group. Class 2 is that composite. Class 1 is the snapshot, a branch between two of the part's own ports: `across` `["VBUS", "5V"]`, current into `VBUS`, swept 0 to 0.9 A. The envelope bounds `VBUS.current`. The supply is not in the table. The Nano class-2 netlist instances the group as `power` and wires through `power.5V` and `power.GND`. A path rule can run that child at the snapshot while the rest of the board stays the circuit. The class-1 Nano board netlist instances the same group with `level: { behaviour: 1 }`, so the branch runs even when a type rule would pick class 2. `baseline.level` is the level the error was measured against, and `value` is that level's own error on the same metric, which is 0 for the capture source. The static-max-abs row is the table's interpolation error against that class-2 group.
+
+**Plain branch, Uno power input.** `sfab/uno-power-input@1.0.0` is the USB front end: a `ptc-fuse@1`, a `pmos-switch@1`, the +5V capacitors, and, in the class-2 netlist, the VIN regulator. The class-1 snapshot is that USB path with VIN open: the gate is held at ground and the regulator is not in the stamp. Class 2 is that composite. Class 1 is the snapshot: `across` `["VBUS", "5V"]`, current into `VBUS`, swept from 0 to the fuse's `iHold` (0.5 A). The table cannot hold the fuse's thermal state, so the variant omits fuse trip, thermal state, rail capacitance and temperature, and the envelope stops at that current. Above it the run warns once and continues. `sfab/uno-r3@1.0.0` class 2 instances the group as `power`. The Uno's class 1 (`avr8js`) is its own composite of the chip and this power input.
+
+**Plain branch, any assembly.** `sfab/led-module-red@1.0.0` is 220 Ω and a red LED. Class 1 is the snapshot, `across` `["IN", "GND"]`, swept 0 to 20 mA. `examples/nano/parts/sfab/nano-led-module@1.0.0.json` holds D9 high into that module. At class 1 the record has no inner LED channel.
+
+**Body.** `sfab/sg90@1.0.0` body class 1 default `lumped` is the fitted joint: armature 5e-5 kg·m², damping 0.0025 N·m·s/rad, frictionloss 0.002 N·m. Variant `collapsed` is the snapshot `sfab/sg90-hinge@1.0.0`, the class-2 collapse, so the armature is reflected rather than fitted. Class 2 is the gear train: a 9-tooth pinion, compounds 47:10, 38:8 and 32:7, and a 23-tooth output. Tooth counts are the published brochure figures. Shaft inertias are estimates (a copper rotor cup, POM gear disks). Damping is 70% on the rotor and 30% on the output. Friction is split evenly. The snapshot's ports are `shaft.torque` in and `shaft.angle` out. Its envelope is the speed and torque the fixture reached, clipped to the shaft ratings, so the box covers normal use. `examples/nano/parts/sfab/nano-servo-collapsed@1.0.0.json` selects `{ class: 1, variant: "collapsed" }` on `servo`.
+
+A `hinge@1` capture runs the gear train and the collapsed hinge on the same fixture. The deep side is one MuJoCo hinge per shaft and one joint equality per mesh, with the load inertia on the output, at the 1 ms master step. The snapshot side is one hinge from `collapse()`, with the same load. The error rows compare `shaft.angle`: worst-case free-run max-abs and rms, and the worst `step-rise` across the step cases.
+
+## 7. Fixture
+
+```ts
+type Fixture = {
+  format: "sfab.fixture@1";
+  partType: string;
+  mount: "clamped" | { load: { inertia: number; torque?: number } };
+  sweeps: { port: string; quantity: Quantity; values: number[] }[];   // includes load Inertia / Torque
+  inputs: { port: string; signal: "step" | "chirp" | "prbs"; params: Record<string, number> }[];
+  record: string[];
+  duration: number; seed: number;
+};
+```
+
+Sweeps over `Inertia` or `Torque` replace `mount.load` per run, and sweeps are crossed. Captured and measured snapshots use the same fixture. A real rig runs the same script by hand (E10). The Nano power-input fixture is the current sweep of that group. The supply is a part in the scene, not a bound in the snapshot.
+
+`sfab/sg90-body` is a body fixture. `mount.load.inertia` is 2.15e-5 kg·m², the flag vane about its hinge in `examples/nano`. The inertia sweep is that flag and 1.4384e-4 kg·m², the arm's upper link about the shoulder in `examples/arm`. Inputs are torque steps at several amplitudes up to the shaft's rated torque, in both directions, and a chirp at that amplitude. The pulse widths reach the rated speed without running far past it. The snapshot bounds are that observed range clipped to `ratings.shaft`. It records `shaft.angle`.
+
+## 8. Run report (D-008)
+
+Each run's report contains:
+- a lock summary;
+- the level per instance per axis, with the reason (default / type / instance level / path / parent class / fallback from X / capture suggested);
+- the nets with their level and the reason;
+- the errors, warnings, and degraded parts. A degraded diagnostic is `{ severity: "degraded", code, path, port, quantity, left, right, message }`. `message` is the human sentence: the detail, without the `port … quantity …:` prefix or the trailing `(… vs …)`. `code` is `unpowered`, `missing-file`, `bad-params`, `no-runtime`, `unsupported`, or `idle`. The list is omitted when nothing degraded, so a clean report stays byte-identical. `bench run` prints each one before the serial lines as `degraded <path>: <message>`. The live state carries `severity`, `code`, `path`, and `message`. A board's warning list shows the ones that name that board after any 16 MHz supply warning;
+- the quality of each snapshot used, and when one ran, its path, axis, and ref, its free-run or static error, envelope warnings (an empty list when the run stayed inside), and provenance for the card: `source`, `from` (`part`, `level`, and `hash`), `fixture` (the ref), and `tool` (`name` and `version`). `snapshots[].stale` is `true` when that hash no longer matches the part at `from.level`, recomputed with the capture runner's function (the flattened netlist header for a `table@1`, the gear-train variant for a `hinge@1`). The capture still runs and its frames stay. A measured snapshot, or a level that is neither a stampable netlist nor a gear train, is not checked and is not marked stale: `stale` stays absent. The warning is `stale-capture`, naming the part, the level, and the snapshot file. `bench run` prints `broken-port` and `stale-capture` warnings before the serial lines. A pose-only edit does not change the table hash, because the stamp describes elements, not poses.
+- **not simulated**: the `omits` of each chosen level, one row per instance per axis so each keeps its path;
+- the seed and the number of random draws;
+- the cost per engine;
+- the energy at each engine seam, when the run has one. The list is omitted when the run has no seam, so that report stays byte-identical. A row is `{ path, kind, sent, received, declared, residual, flagged }`, in joules. `kind` is `motor` for the circuit-to-body cut of a `dc-motor@1` servo. `sent` is `k·ω·I·dt` with the ω and the winding current the rail used. `dt` is the body's timestep, and a 250 ms window is `round(0.25 / dt)` of those steps. `received` is `ctrl·ω̄·dt`, where `ω̄` is the average of the joint speed before the body step and after it: the actuator torque is held for the step and the speed moves from one to the other, so the trapezoid is the work that arrived. `declared` is `(k·I − ctrl)·ω·dt`, the gearbox efficiency and the torque clamp, priced at the rail's ω. `residual` is `sent − received − declared`, which is the coupling lag `ctrl·(ω − ω̄)·dt`. A pin's drive mode is not a seam: the MCU sets the mode and the circuit carries the energy. A `hinge@1` body snapshot replaces the joint's armature, damping, and friction; it does not open a second cut. The battery's state of charge moves inside the circuit engine.
+- A seam is **flagged** when the absolute residual in the latest full 250 ms window exceeds both 1 mJ and 5 % of the absolute energy sent in that window, and exceeds the absolute residual of the first full window. The flag is a warning, code `seam-residual-growing`, path the instance, port `shaft`, quantity `Energy`. It is not a degraded row and it does not stop the run. The message is `<path>: the motor seam residual grew to <mJ> in the last 250 ms (<percent> % of <mJ> sent)`, with millijoules shown to 1 decimal under 10 mJ and as an integer at 10 mJ and above. `bench run` prints one line per seam after the serial lines and before the summary, from the ledger after the last step, so an open window is included: `seam <path> <kind>: sent <6 decimals> J, received <6 decimals> J, declared <6 decimals> J, residual <1 significant figure, exponential> J`, with ` flagged` appended when the seam is flagged. The live state's `seams` array is rebuilt only when a window closes.
+
+Its `format` is `sfab.run-report@1`. It is byte-identical across runs with the same inputs. The run keeps it and sends it on the state message: the first snapshot after load, again when an envelope warning is added, and at most once per 250 ms seam window. A world that ran no snapshot still has `snapshots: []` and `snapshotQuality` of `no snapshot used; selected levels are authored forms, firmware, or composites`, and its lock summary omits `snapshots`.
+
+## 9. Nearest standards (D-011)
+
+| Bench format | Nearest standard | Lost there |
+| --- | --- | --- |
+| Part type | FMI `modelDescription` variables with units; Modelica connectors; KiCad symbol pins | roles, ratings tiers, buses, plausible ranges |
+| Part | one FMU per behaviour level; Modelica `replaceable`; URDF/MJCF body; glTF visual | level ladder, `omits`, `foreign` |
+| World v2 | SSP `SystemStructure.ssd` | level rules, non-signal domains |
+| Snapshot | IBIS-style tables; FMU; Modelica record | envelope, error, quality, provenance |
+| Fixture | SSP + a co-simulation master script | sweep and seed semantics |
+| Lockfile, run report | none | — |
+
+Export rule (D-011): every part exports as an FMU, and every world as an SSP composition, even when these extras are lost.
+
+## 10. Proposed for v1.1 (from the circuit experiments)
+
+These came out of the motor/rail and pin experiments. They are proposals, not yet part of v1.
+
+- **`thevenin-limit@1`** (supply): `V` (open-circuit setpoint, V), `Rs` (Ω), `Ilim` (A, one-sided). While the load current is under `Ilim`, `v = V − Rs·I`; above it the branch holds `I = Ilim` and the terminal voltage follows the load. `supply.voltage` is `V`, never the terminal voltage.
+- **`battery@1`** (supply, ports `+` and `-`): `ocv` is `[soc, volts]`, monotonic, soc from 0 to 1. `rInternal` is ohms. `capacity` is coulombs. `soc0` is the initial state of charge. `vCutoff` is volts, optional. Each 1 ms master step the terminal is `V = ocv(soc)`, `R = rInternal`. After the step, `soc` moves by `−I·dt/capacity`, outside the solve. At `soc = 0`, or when the terminal is at or below `vCutoff`, the next master step stamps `V = ocv(0)` and `R = rInternal`, and the run warns once. The step that first crosses `vCutoff` still reports that crossing voltage. The latch applies from the next master step. The run does not stop. The supply record's `voltage` is the terminal voltage, `current` is the terminal current, and `soc` is on the record. A recorded frame stores that `soc` beside voltage and current when the supply has a state of charge. Omitted: temperature, Peukert, relaxation, and aging.
+- **`dc-motor@1`** on the circuit is `R`, `L` (optional, 0 is legal) and `K`, with ω an input held for the master step. `efficiency`, `eSat`, `quiescent` and the torque limit stay in the behaviour law and do not enter the circuit.
+- **`averaged-hbridge@1`**: ports are the rail and the motor's electrical port. `V_motor = s·V_rail`, `I_rail = s·I_motor`, plus `quiescent` as a current source on the rail. `s` is the behaviour law's output, not a stored parameter. The engine may fuse the bridge and the winding into one branch.
+- **`run.coupling`** on the world, not the part: `scheme` ∈ `explicit | substep | implicit-damping`, `substeps` (default 10), `bemfDamping` ∈ `body | circuit`. Default for a hobby servo is `substep`. A joint with `dt·B/J > 2` selects `implicit-damping`, which puts the derived `B(s) = η·K²/(R + Rs·s²)` on the joint's damping. `B(s)` is derived, never a parameter.
+- **Braking current** returns to the rail (`I_rail = s·I` may be negative). The rail clips it at 0; the measured bench (E10) decides which the SG90 part keeps.
+- **Pin element `avr-pin@1`** (landed, §3): `roh`, `rol`, `rpu` and `rLeak` on the firmware variant. High is the board node. DDR and PORT select the mode at the master step.
+- **ADC** (landed, §3): AVCC is the board node from the end of the previous 1 ms step. The count is `floor(V/Vref·1024)`, clamped to 1023. The sample-and-hold is a closed form, not a live 14 pF node. A channel whose net is a stamped circuit node reads that node's solved voltage, and `rSource` is the node's Thevenin resistance from the same factor. A net outside a stamp keeps the wire rules in §3. INL, DNL, noise, the noise canceller and temperature drift are omitted.
+- **Current-limit floor**: a `thevenin-limit@1` rail feeding regenerating motors needs a clamp (the bridge's body diodes) so the terminal voltage cannot go negative.
+- **Run report** `seams` (landed, §8) is the passivity sum at each circuit/body cut, in joules, flagged when it grows.
+- **Board power path:** a supply port with `connector: "usb"` (the catalog `usb-a-port` pin `5V`) wired to an Uno `5V` is the USB cable. The Uno board netlist has the power-input group (PTC fuse, P-channel switch, the +5V capacitors, and the VIN regulator when that pin is driven), the board load (full current down to 1 V, then linear to 0 A at 0 V), and every servo on that node. The cable's Thevenin attaches to the internal `VBUS`. The same connector wired to a Nano `5V` is the cable into the Nano's USB connector. At class 2 the board netlist stamps the power-input group (the Schottky from `VBUS` to +5V, the 10 µF capacitor, and the AMS1117 when VIN is driven), the other +5V capacitors, the board load, the D13 LED and the reset network, and servos on `nano.5V` load that node. The cable's Thevenin attaches to `VBUS`. A bench supply on that `5V` attaches to `5V`, and the Schottky is pruned because its anode is open. At class 1 the board netlist stamps the power group at behaviour class 1, which is that group's branch snapshot, plus the board load. It has no +5V capacitors, so the stamp is algebraic. A usb feed attaches the cable's Thevenin to `VBUS`, the same as class 2, including a port outside any one capture point. A bench supply on `5V` attaches to `5V`, and the branch is pruned because `VBUS` is open. Circuit parts wired on the board's pins, such as a breadboard LED, still stamp. A bench supply on an Uno `5V` is the header. It attaches at `5V`, leaves `VBUS` unfed, and keeps the capacitors on `5V`. Several boards on one supply are that one rail: one source, and each board's netlist, node, brownout, reset and pins. A supply with circuit parts and no firmware board is its own rail: the supply's Thevenin and those parts, ground at 0 V. The supply record's `current` is the terminal current and its `voltage` is the terminal voltage. The board record's `voltage` is the 5V node, and `minVoltage` is that node's minimum over the frame. `leds` maps each LED instance path on that rail to its forward current in amperes, the time-weighted mean over that frame's circuit steps (a 0.1 ms sub-step and a 1 ms master step each count for their own length). `ledCurrent` is the deprecated alias of `leds["<board>.led"]`, the same frame mean. A part with a power port reports `voltage` as V+ relative to GND. With no cable the board node equals the supply terminal, and both are reported.
+- **Brownout** reads the board node: the lowest board-node voltage over that millisecond's sub-steps. With no cable the board node is the supply terminal.
+
+## Open for v2
+
+- The transaction level for buses.
+- The checkpoint format (D-003, D-019).
+- Registry governance: who publishes parts, and whether they are signed.
+- Visual levels beyond box, mesh and cutaway.
+- `transfer-fn@1` once a deep level has state (E4).

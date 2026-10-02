@@ -1,0 +1,62 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/usb-charger-1a@1.0.0",
+  "type": "usb-a-port",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Apple 5W USB Power Adapter",
+      "ref": "The adapter output is 5 V at 1 A. V is 5. Ilimit is 1 A, that rated output. USB Battery Charging 1.2 requires at least 1.5 A from a dedicated charging port, which is a different part, so this preset follows the 1 A adapter."
+    },
+    {
+      "title": "Series resistance, assumed",
+      "ref": "Rs is 0.2 ohm, assumed. The adapter sheet does not state a source resistance."
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "ideal",
+        "variants": {
+          "ideal": {
+            "kind": "form",
+            "form": "ideal-voltage@1",
+            "params": { "V": 5 },
+            "omits": ["series resistance", "current limit", "sag"]
+          }
+        }
+      },
+      "1": {
+        "default": "thevenin",
+        "variants": {
+          "thevenin": {
+            "kind": "form",
+            "form": "thevenin-limit@1",
+            "params": { "V": 5, "Rs": 0.2, "Ilimit": 1 },
+            "omits": ["enumeration", "cable inductance", "heat"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": { "kind": "none", "omits": ["adapter body"] }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.04, 0.035, 0.02],
+            "omits": ["shell shape"]
+          }
+        }
+      }
+    }
+  }
+}

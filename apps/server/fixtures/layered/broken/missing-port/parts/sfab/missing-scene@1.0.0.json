@@ -1,0 +1,63 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/missing-scene@1.0.0",
+  "type": "assembly",
+  "foreign": false,
+  "axes": {
+    "behaviour": {
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": ["no snapshot of this assembly"],
+            "netlist": {
+              "instances": {
+                "supply": {
+                  "part": "sfab/usb-port-500ma@1.0.0"
+                },
+                "uno": {
+                  "part": "sfab/uno-r3@1.0.0",
+                  "params": {
+                    "firmware": "examples/arm/firmware/hold/hold.hex"
+                  }
+                },
+                "servo": {
+                  "part": "sfab/sg90@1.0.0"
+                }
+              },
+              "wires": [
+                ["supply.5V", "uno.5V"],
+                ["supply.GND", "uno.GND"],
+                ["uno.D9", "servo.missing"]
+              ],
+              "expose": {}
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["wrapper adds no body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["wrapper adds no visual"]
+          }
+        }
+      }
+    }
+  }
+}

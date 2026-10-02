@@ -1,0 +1,168 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/sg90-scale@1.0.0",
+  "type": "hobby-servo-3wire",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "Broken on purpose",
+      "ref": "stall current written as 700 A instead of 0.7 A"
+    }
+  ],
+  "ratings": {
+    "V+": {
+      "voltage": [4.8, 6],
+      "absMaxVoltage": [0, 6.5],
+      "current": [0, 700]
+    },
+    "signal": {
+      "frequency": [40, 200],
+      "absMaxVoltage": [-0.3, 6],
+      "logic": {
+        "vil": 0.9,
+        "vih": 2
+      }
+    },
+    "shaft": {
+      "torque": [-0.176, 0.176],
+      "speed": [-10.472, 10.472]
+    }
+  },
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "slew",
+        "variants": {
+          "slew": {
+            "kind": "form",
+            "form": "slew@1",
+            "params": {
+              "omega": 10.472
+            },
+            "omits": [
+              "back-EMF",
+              "supply current",
+              "torque-speed curve",
+              "gear backlash",
+              "motor inductance",
+              "winding heat"
+            ]
+          }
+        }
+      },
+      "1": {
+        "default": "datasheet",
+        "variants": {
+          "datasheet": {
+            "kind": "form",
+            "form": "dc-motor@1",
+            "params": {
+              "K": 0.458,
+              "R": 7.1,
+              "efficiency": 0.57,
+              "eSat": 0.3,
+              "quiescent": 0.01
+            },
+            "omits": ["gear backlash", "motor inductance", "winding heat"]
+          }
+        }
+      },
+      "2": {
+        "default": "netlist",
+        "variants": {
+          "netlist": {
+            "kind": "composite",
+            "omits": [
+              "magnetic saturation",
+              "gear tooth compliance",
+              "winding heat"
+            ],
+            "netlist": {
+              "instances": {
+                "motor": {
+                  "part": "sfab/sg90-motor@1.0.0"
+                },
+                "gears": {
+                  "part": "sfab/sg90-gears@1.0.0"
+                },
+                "pot": {
+                  "part": "sfab/sg90-pot@1.0.0"
+                },
+                "control": {
+                  "part": "sfab/sg90-control@1.0.0"
+                }
+              },
+              "wires": [
+                ["control.M+", "motor.A"],
+                ["control.M-", "motor.B"],
+                ["motor.shaft", "gears.input"],
+                ["gears.output", "pot.shaft"],
+                ["control.sense", "pot.W"],
+                ["pot.A", "control.V+"],
+                ["pot.B", "control.GND"]
+              ],
+              "expose": {
+                "V+": "control.V+",
+                "GND": "control.GND",
+                "signal": "control.signal",
+                "shaft": "gears.output",
+                "mount": "gears.housing"
+              }
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "1": {
+        "default": "lumped",
+        "variants": {
+          "lumped": {
+            "kind": "lumped",
+            "mass": 0.009,
+            "com": [0, 0, 0],
+            "inertia": [7.4238e-7, 0.0000010275, 5.0838e-7, 0, 0, 0],
+            "joint": {
+              "armature": 0.00005,
+              "frictionloss": 0.002,
+              "damping": 0.0025
+            },
+            "omits": ["gear-stage bodies", "case flex"]
+          }
+        }
+      },
+      "2": {
+        "default": "children",
+        "variants": {
+          "children": {
+            "kind": "children",
+            "omits": ["gear tooth compliance"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.023, 0.0122, 0.029],
+            "omits": ["case shape", "horn"]
+          }
+        }
+      },
+      "1": {
+        "default": "mesh",
+        "variants": {
+          "mesh": {
+            "kind": "mesh",
+            "placeholder": true,
+            "omits": ["horn", "cable"],
+            "files": ["placeholder:sg90.glb"]
+          }
+        }
+      }
+    }
+  }
+}

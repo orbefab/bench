@@ -7,7 +7,8 @@ import {
 import { useRef } from "react";
 import * as THREE from "three";
 
-import { store } from "@/state/store";
+import { sceneStore } from "@/state/scene";
+import { xrUiStore } from "@/state/xr";
 import { wristObject } from "@/xr/hands/HandRig";
 import {
   type CardReg,
@@ -100,8 +101,8 @@ function jointDist(
 export function XRGrab() {
   // Actions are stable; the grabbed group is read per call so the frame loop
   // never subscribes to the store.
-  const { setHandGrab, setHandHold, setWorldGrabbing, setModelScale } =
-    store.getState();
+  const { setHandGrab, setHandHold, setWorldGrabbing } = xrUiStore.getState();
+  const { setModelScale } = sceneStore.getState();
   const left = useXRInputSourceState("controller", "left");
   const right = useXRInputSourceState("controller", "right");
   const leftHand = useXRInputSourceState("hand", "left");
@@ -178,8 +179,12 @@ export function XRGrab() {
   });
 
   const startHold = (source: XRInputSource) => {
-    const obj = store.getState().placed;
-    if (!obj || squeezing.current.has(source) || store.getState().cardDragging)
+    const obj = sceneStore.getState().placed;
+    if (
+      !obj ||
+      squeezing.current.has(source) ||
+      xrUiStore.getState().cardDragging
+    )
       return;
     const space = spaceFor(source);
     if (!space) return;
@@ -217,7 +222,7 @@ export function XRGrab() {
     setWorldGrabbing(squeezing.current.size > 0);
     twoHand.current = squeezing.current.size === 2 ? twoHand.current : null;
     if (grab.current?.source === source) grab.current = null;
-    const held = store.getState().placed;
+    const held = sceneStore.getState().placed;
     if (held) setModelScale(held.scale.x);
     if (squeezing.current.size === 1 && held) {
       const remaining = squeezing.current.values().next().value;
@@ -247,7 +252,7 @@ export function XRGrab() {
     "all",
     "squeezestart",
     (event) => {
-      if (event.inputSource.hand || store.getState().cardDragging) return;
+      if (event.inputSource.hand || xrUiStore.getState().cardDragging) return;
       startHold(event.inputSource);
     },
     []
@@ -283,8 +288,8 @@ export function XRGrab() {
   useFrame(() => {
     const frame = gl.xr.getFrame?.();
     const refSpace = gl.xr.getReferenceSpace?.();
-    const cardDrag = store.getState().cardDragging;
-    const worldGrab = store.getState().worldGrabbing;
+    const cardDrag = xrUiStore.getState().cardDragging;
+    const worldGrab = xrUiStore.getState().worldGrabbing;
     if (cardDrag && !nearHold.current.left && !nearHold.current.right) {
       if (ready.current.left || grabbing.current.left) clearSide("left");
       if (ready.current.right || grabbing.current.right) clearSide("right");
@@ -543,7 +548,7 @@ export function XRGrab() {
       }
     }
 
-    const obj = store.getState().placed;
+    const obj = sceneStore.getState().placed;
     if (!obj) return;
     const two = twoHand.current;
     if (two && squeezing.current.size === 2) {

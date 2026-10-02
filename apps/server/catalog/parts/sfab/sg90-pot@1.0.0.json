@@ -1,0 +1,13 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/sg90-pot@1.0.0",
+  "type": "potentiometer",
+  "foreign": false,
+  "declaredOnly": true,
+  "sources": [
+    {
+      "title": "SG90 feedback potentiometer",
+      "ref": "declared-only child"
+    }
+  ]
+}

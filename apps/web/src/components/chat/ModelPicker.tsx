@@ -28,7 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { useHarnesses } from "@/hooks/useHarnesses";
 import { HARNESS_IDS, HARNESS_LABEL, type HarnessId } from "@/lib/harness";
 import { cn } from "@/lib/utils";
-import { useStore } from "@/state/store";
+import { usePrefs } from "@/state/prefs";
 
 type HarnessCatalog = ReturnType<typeof useHarnesses>;
 
@@ -79,9 +79,9 @@ function StatusDot({ status }: { status: string }) {
 }
 
 export function ModelPicker({ catalog }: { catalog: HarnessCatalog }) {
-  const chatHarness = useStore((s) => s.chatHarness);
-  const chatModel = useStore((s) => s.chatModel);
-  const setChatSelection = useStore((s) => s.setChatSelection);
+  const chatHarness = usePrefs((s) => s.chatHarness);
+  const chatModel = usePrefs((s) => s.chatModel);
+  const setChatSelection = usePrefs((s) => s.setChatSelection);
   const { harnesses, ready, error, refresh } = catalog;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");

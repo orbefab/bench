@@ -11,7 +11,7 @@ import { pickAlongRay } from "@/cad/highlights";
 import { buildScene } from "@/cad/loadStepPackage";
 import type { CadReview } from "@/cad/review";
 import { viewerSnapshot } from "@/cad/viewer-snapshot";
-import { store } from "@/state/store";
+import { viewerStore } from "@/state/viewer";
 
 /**
  * Tier 4a — the scene, not the package.
@@ -412,7 +412,7 @@ for (const [name, { review, assembly }] of scenes) {
  * discussing a part that is not in the file.
  */
 for (const [name, { review, assembly }] of scenes) {
-  store.setState({
+  viewerStore.setState({
     url: `/api/pkg/${name}/`,
     review,
     selectedId: null,
@@ -451,7 +451,7 @@ for (const [name, { review, assembly }] of scenes) {
 
   // And a selection has to come back out as the ref it went in as.
   const part = review.parts[review.parts.length - 1]!;
-  store.setState({ selectedId: part.id, pickedRef: part.cadRef ?? null });
+  viewerStore.setState({ selectedId: part.id, pickedRef: part.cadRef ?? null });
   const selected = viewerSnapshot();
   if (selected.selected !== part.cadRef) {
     note(
@@ -485,14 +485,14 @@ for (const [name, { review, world }] of scenes) {
       const pick = pickAlongRay(review, rayFrom(target.at, dir));
       if (!pick) continue;
 
-      store.setState({
+      viewerStore.setState({
         review,
         url: `/api/pkg/${name}/`,
         selectedId: null,
         pickedRef: null,
       });
-      store.getState().selectByRef(pick.cadRef);
-      const after = store.getState();
+      viewerStore.getState().selectByRef(pick.cadRef);
+      const after = viewerStore.getState();
 
       if (after.selectedId === null) {
         note(
@@ -523,22 +523,22 @@ for (const [name, { review, world }] of scenes) {
 /** A ref for something that is not in this model must select nothing, quietly. */
 {
   const { review } = scenes.get("bracket_assembly")!;
-  store.setState({
+  viewerStore.setState({
     review,
     url: "/api/pkg/x/",
     selectedId: 0,
     pickedRef: "#o1.1",
   });
-  store.getState().selectByRef("#o9.9.f1");
-  if (store.getState().selectedId !== null) {
+  viewerStore.getState().selectByRef("#o9.9.f1");
+  if (viewerStore.getState().selectedId !== null) {
     note(
-      `a ref for a part that does not exist selected part ${store.getState().selectedId}`
+      `a ref for a part that does not exist selected part ${viewerStore.getState().selectedId}`
     );
   }
-  store.getState().selectByRef(null);
+  viewerStore.getState().selectByRef(null);
   if (
-    store.getState().selectedId !== null ||
-    store.getState().pickedRef !== null
+    viewerStore.getState().selectedId !== null ||
+    viewerStore.getState().pickedRef !== null
   ) {
     note("selectByRef(null) did not clear the selection");
   }

@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   FIT_HOME_DIR,
   fitDirectionFor,
@@ -20,10 +21,6 @@ import {
   measureScreenScale,
   perspectiveWorldPerCssPx,
 } from "./measure";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(
   FIT_HOME_DIR[0] === 0.6 && FIT_HOME_DIR[1] === 0.5 && FIT_HOME_DIR[2] === 0.7,

@@ -15,12 +15,12 @@ import {
   harnessSupportsEffort,
   isChatEffort,
 } from "@/lib/harness";
-import { useStore } from "@/state/store";
+import { usePrefs } from "@/state/prefs";
 
 export function EffortSelect() {
-  const harness = useStore((s) => s.chatHarness);
-  const effort = useStore((s) => s.chatEffort);
-  const setChatEffort = useStore((s) => s.setChatEffort);
+  const harness = usePrefs((s) => s.chatHarness);
+  const effort = usePrefs((s) => s.chatEffort);
+  const setChatEffort = usePrefs((s) => s.setChatEffort);
   const supported = harnessSupportsEffort(harness);
   if (!supported) {
     return (

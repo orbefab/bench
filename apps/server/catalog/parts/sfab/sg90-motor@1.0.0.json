@@ -1,0 +1,13 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/sg90-motor@1.0.0",
+  "type": "dc-motor-terminals",
+  "foreign": false,
+  "declaredOnly": true,
+  "sources": [
+    {
+      "title": "SG90 internal motor",
+      "ref": "declared-only child of sfab/sg90@1.0.0"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { ok as expect } from "node:assert/strict";
 import {
   catalogEmptyReason,
   filesRailToggleTitle,
@@ -5,10 +6,6 @@ import {
   serializeFileTreeExpansion,
   shouldReloadOpenFile,
 } from "./files-rail";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 expect(filesRailToggleTitle(true, "show") === "Show files (⌘B)", "show title");
 expect(filesRailToggleTitle(false) === "Toggle files (Ctrl+B)", "toggle title");

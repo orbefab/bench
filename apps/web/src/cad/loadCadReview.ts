@@ -10,6 +10,7 @@ import {
   makeReview,
 } from "@/cad/review";
 import { apiFetch } from "@/lib/api";
+import { readOpenDocument } from "@/lib/document-query";
 import { messageFromHttpBody } from "@/lib/load-copy";
 
 function partColor(obj: THREE.Object3D): THREE.Color {
@@ -46,7 +47,7 @@ export function repoCadPath(url: string): string | null {
   return null;
 }
 
-function projectFileUrl(rel: string): string {
+export function projectFileUrl(rel: string): string {
   const path = rel
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
@@ -172,20 +173,6 @@ export function fileLabel(url: string): string {
 
 export function modelUrl(): string {
   if (typeof window === "undefined") return "";
-  const q = new URLSearchParams(window.location.search);
-  return q.get("file") ?? "";
-}
-
-/** Keep ?file= in sync with the loaded artifact so refresh stays on it. */
-export function syncFileQuery(path: string) {
-  if (typeof window === "undefined") return;
-  const next = new URL(window.location.href);
-  next.searchParams.delete("file");
-  if (path) {
-    next.searchParams.set("file", path);
-  }
-  const want = next.pathname + next.search + next.hash;
-  const have =
-    window.location.pathname + window.location.search + window.location.hash;
-  if (want !== have) window.history.replaceState(null, "", want);
+  const doc = readOpenDocument(window.location.search);
+  return doc.kind === "file" ? doc.path : "";
 }

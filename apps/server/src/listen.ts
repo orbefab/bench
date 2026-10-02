@@ -15,6 +15,7 @@ import { handleRequest } from "./http";
 import { printJoinBanner } from "./join-banner";
 import { bootProject, subscribeProjectChange } from "./projects";
 import { hydrateSession } from "./session";
+import { tryUpgradeWorld } from "./world/live";
 import { tryUpgradeSession } from "./ws";
 
 const isDev = process.env.SFAB_BENCH_DEV === "1";
@@ -71,7 +72,9 @@ async function main() {
       void handleRequest(req, res).catch((err) => onError(err, res));
     });
     server.on("upgrade", (req, socket, head) => {
-      if (!tryUpgradeSession(req, socket, head)) socket.destroy();
+      if (tryUpgradeSession(req, socket, head)) return;
+      if (tryUpgradeWorld(req, socket, head)) return;
+      socket.destroy();
     });
     server.requestTimeout = 0;
     server.on("error", (err) => onListenError(err, DEV_API_HOST, port));
@@ -91,7 +94,9 @@ async function main() {
     );
   });
   server.on("upgrade", (req, socket, head) => {
-    if (!tryUpgradeSession(req, socket, head)) socket.destroy();
+    if (tryUpgradeSession(req, socket, head)) return;
+    if (tryUpgradeWorld(req, socket, head)) return;
+    socket.destroy();
   });
   server.requestTimeout = 0;
   server.on("error", (err) => onListenError(err, "0.0.0.0", port));

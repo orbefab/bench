@@ -1,0 +1,54 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/diode-1n4148@1.0.0",
+  "type": "diode",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "1N4148",
+      "ref": "Published Shockley parameters shared with the ngspice decks: Is 2.52e-9 A, N 1.752, Rs 0.568 ohm, 25 C. circuits.ts D1N4148"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "shockley",
+        "variants": {
+          "shockley": {
+            "kind": "form",
+            "form": "diode@1",
+            "params": {
+              "Is": 2.52e-9,
+              "N": 1.752,
+              "Rs": 0.568
+            },
+            "omits": ["temperature", "capacitance", "reverse recovery"]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.005, 0.002, 0.002],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -8,7 +8,7 @@ import { useProjectSession } from "@/hooks/useProjectSession";
 import { APP_DISPLAY_NAME, APP_VERSION } from "@/lib/crash-report";
 import { folderName } from "@/lib/project";
 import { copyText, formatDebugReport } from "@/lib/settings";
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
 
 type CopyFlash = "copied" | "failed" | null;
 
@@ -16,8 +16,8 @@ export function AboutSection({ host }: { host: boolean }) {
   const { theme } = useTheme();
   const { textSize } = useAppearancePrefs();
   const projectPath = useProjectSession().project.path;
-  const title = useStore((s) => s.title);
-  const error = useStore((s) => s.error);
+  const title = useViewer((s) => s.title);
+  const error = useViewer((s) => s.error);
   const { harnesses } = useHarnesses();
   const [flash, setFlash] = useState<CopyFlash>(null);
 

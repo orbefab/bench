@@ -1,0 +1,66 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/ams1117-5v0@1.0.0",
+  "type": "ldo-regulator",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "AMS1117-5.0",
+      "ref": "Advanced Monolithic Systems DS1117. Features: operates down to 1 V dropout, load regulation 0.4% max, output current of 1 A. Electrical characteristics: dropout at Iout = 0.8 A is 1.1 V typical (1.3 V max, measured at delta Vout = 1%). Quiescent current of the fixed 5.0 V part is 0.005 A typical (0.01 A max)"
+    },
+    {
+      "title": "Dropout knots and load resistance",
+      "ref": "Assumed. The 0 A end of dropout is 1.0 V, from the features line, not a table cell. rOut is 0.025 ohm: 0.4% of 5.0 V over 0.8 A. The current span of that 0.4% is not stated. iLimit 1.5 A is not a table cell; the features list rates the part at 1 A, so the limit sits above that"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "fixed",
+        "variants": {
+          "fixed": {
+            "kind": "form",
+            "form": "ldo-regulator@1",
+            "params": {
+              "vOut": 5,
+              "dropout": [[0, 1], [0.8, 1.1]],
+              "iGround": 0.005,
+              "iLimit": 1.5,
+              "rOut": 0.025
+            },
+            "omits": [
+              "line and load transients",
+              "PSRR",
+              "thermal shutdown and temperature",
+              "noise",
+              "output-to-input reverse path"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.006, 0.004, 0.002],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}

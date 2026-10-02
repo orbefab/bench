@@ -143,7 +143,7 @@ export function ChatOrbHud() {
           )}
           {error ? (
             <Text fontSize={11} color={theme.danger} wordBreak="break-word">
-              {asciiSafe(error.message)}
+              {asciiSafe(error)}
             </Text>
           ) : null}
           {voice.error && !voice.active ? (

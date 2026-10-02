@@ -8,9 +8,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { modelUrl } from "@/cad/loadCadReview";
 import { closeToast, showToast } from "@/components/ui/toast";
 import { getDeviceToken, jsonApi } from "@/lib/api";
+import {
+  ignoreDocumentHistory,
+  isWorldFilePath,
+  readOpenDocument,
+} from "@/lib/document-query";
 import {
   CONNECTION_GRACE_MS,
   CONNECTION_RELOAD_AFTER_MS,
@@ -34,7 +38,10 @@ import type {
   SessionSnapshot,
 } from "@/lib/session";
 import { emitFolderError } from "@/lib/welcome";
-import { store } from "@/state/store";
+import { showPartFile } from "@/state/part-tabs";
+import { prefsStore } from "@/state/prefs";
+import { viewerStore } from "@/state/viewer";
+import { worldStore } from "@/state/world";
 
 type SessionValue = {
   ready: boolean;
@@ -78,16 +85,22 @@ export function ProjectSessionProvider({
   const applyLibrary = useCallback((path: string, recents: string[]) => {
     const pathChanged = lastPath.current !== path;
     if (pathChanged) {
-      const { url, error, progress } = store.getState();
-      // Clear a leftover ?file=-only boot, or the previous folder's document.
-      if (lastPath.current || url || error || progress !== null) {
-        void store.getState().loadModel("");
+      const { url, error, progress } = viewerStore.getState();
+      // Clear a leftover document boot, or the previous folder's document.
+      if (
+        lastPath.current ||
+        url ||
+        worldStore.getState().path ||
+        error ||
+        progress !== null
+      ) {
+        void viewerStore.getState().loadModel("");
       }
     }
     lastPath.current = path;
     setProject({ path });
     setFileRecents(recents);
-    store.getState().setRecentFiles(recents);
+    prefsStore.getState().setRecentFiles(recents);
     window.dispatchEvent(new Event(LIBRARY_FILES_EVENT));
   }, []);
 
@@ -96,18 +109,23 @@ export function ProjectSessionProvider({
       applyLibrary(path, recents);
       if (!path) {
         if (
-          modelUrl() ||
-          store.getState().url ||
-          store.getState().progress !== null
+          readOpenDocument(window.location.search).kind !== "none" ||
+          viewerStore.getState().url ||
+          worldStore.getState().path ||
+          viewerStore.getState().progress !== null
         ) {
-          void store.getState().loadModel("");
+          void viewerStore.getState().loadModel("");
         }
         return;
       }
       if (!appliedDeepLink.current) {
         appliedDeepLink.current = true;
-        const deep = modelUrl();
-        if (deep) void store.getState().loadModel(deep);
+        const doc = readOpenDocument(window.location.search);
+        if (doc.kind === "world") {
+          showPartFile(doc.path, { origin: "boot", history: "replace" });
+        } else if (doc.kind === "file") {
+          void viewerStore.getState().loadModel(doc.path);
+        }
       }
     },
     [applyLibrary]
@@ -159,11 +177,25 @@ export function ProjectSessionProvider({
       if (path === lastPath.current) return;
       loadTabLibrary(path);
     };
+    const onPopDocument = () => {
+      ignoreDocumentHistory(() => {
+        const doc = readOpenDocument(window.location.search);
+        if (doc.kind === "world") {
+          showPartFile(doc.path, { origin: "pop", history: "replace" });
+        } else {
+          void viewerStore
+            .getState()
+            .loadModel(doc.kind === "file" ? doc.path : "");
+        }
+      });
+    };
     window.addEventListener("sfab-project", onUrl);
     window.addEventListener("popstate", onUrl);
+    window.addEventListener("popstate", onPopDocument);
     return () => {
       window.removeEventListener("sfab-project", onUrl);
       window.removeEventListener("popstate", onUrl);
+      window.removeEventListener("popstate", onPopDocument);
     };
   }, [loadTabLibrary]);
 
@@ -280,11 +312,25 @@ export function ProjectSessionProvider({
   }, [applySnapshot, adoptTab]);
 
   const setDoc = useCallback(async (file: string | null, reload = false) => {
-    const { url, error, loadModel } = store.getState();
     const next = file ?? "";
+    if (isWorldFilePath(next)) {
+      const world = worldStore.getState();
+      const failed =
+        world.assetIssues.length > 0 ||
+        Boolean(world.runMessage) ||
+        world.runErrors.length > 0;
+      if (!reload && !shouldReloadOpenFile(next, world.path, failed)) return;
+      showPartFile(next, {
+        origin: "sidebar",
+        history: "push",
+        ...(reload || failed ? { force: true } : {}),
+      });
+      return;
+    }
+    const { url, error, loadModel } = viewerStore.getState();
     if (!reload && next && !shouldReloadOpenFile(next, url, Boolean(error)))
       return;
-    await loadModel(next);
+    await loadModel(next, { history: "push" });
     if (file) {
       void jsonApi.recents.$post({ json: { path: file } });
     }

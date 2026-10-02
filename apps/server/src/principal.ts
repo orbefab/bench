@@ -1,12 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { IncomingMessage } from "node:http";
 
-import { lookupDevice } from "./pairing";
+import type { ClientPrincipal } from "@sfab-bench/contract";
 
-export type ClientPrincipal =
-  | { kind: "loopback" }
-  | { kind: "paired"; deviceId: string; label: string }
-  | { kind: "account"; userId: string; deviceId: string };
+import { lookupDevice } from "./pairing";
 
 const als = new AsyncLocalStorage<ClientPrincipal>();
 

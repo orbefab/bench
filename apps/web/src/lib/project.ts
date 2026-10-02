@@ -1,12 +1,7 @@
+import type { ProjectRow } from "@sfab-bench/contract";
+
 import { jsonApi } from "@/lib/api";
 import { projectUrl, syncProjectQuery } from "@/lib/project-query";
-
-export type ProjectRow = {
-  path: string;
-  name: string;
-  lastFile: string | null;
-  openedAt: number;
-};
 
 export type ProjectInfo = {
   project: ProjectRow | null;

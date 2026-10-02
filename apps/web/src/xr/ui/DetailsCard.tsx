@@ -3,7 +3,7 @@ import { Eye, EyeOff, Focus, Undo2 } from "@react-three/uikit-lucide";
 import { useShallow } from "zustand/react/shallow";
 
 import { formatMm, measureDelta } from "@/lib/measure";
-import { useStore } from "@/state/store";
+import { useViewer } from "@/state/viewer";
 import { ToolBtn } from "@/xr/ui/ToolBtn";
 import { useXrTheme } from "@/xr/ui/theme";
 
@@ -19,7 +19,7 @@ export function DetailsCard() {
     measure,
     undoMeasure,
     clearMeasure,
-  } = useStore(
+  } = useViewer(
     useShallow((s) => ({
       review: s.review,
       selectedId: s.selectedId,

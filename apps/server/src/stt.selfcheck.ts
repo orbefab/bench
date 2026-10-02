@@ -1,8 +1,5 @@
+import { ok as expect } from "node:assert/strict";
 import { resolveSttApiKey } from "./stt";
-
-function expect(cond: boolean, label: string) {
-  if (!cond) throw new Error(label);
-}
 
 const stored = resolveSttApiKey("settings-key", {});
 expect(

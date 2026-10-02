@@ -13,6 +13,8 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
+import { isPartDocumentPath } from "@sfab-bench/contract";
+
 import { cacheDir } from "./config";
 import { buildStepPackage } from "./occt/build";
 import { insideRoot, posixRel } from "./projects";
@@ -63,8 +65,14 @@ function existingFile(rootReal: string, abs: string): string | null {
   }
 }
 
-/** Map a show_artifact / ?file= value to a STEP or GLB inside `root`. */
-export function resolveArtifact(input: string, root: string): ResolvedArtifact {
+/**
+ * A file inside `root`, after symlink resolution. The same escape rule as
+ * `resolveArtifact`: `..`, a link that climbs out, and a missing path fail.
+ */
+export function openInsideProject(
+  input: string,
+  root: string
+): { rel: string; abs: string } | { error: string } {
   let raw = input.trim().replace(/\\/g, "/");
   if (!raw) return { error: "empty path" };
   if (raw.startsWith("file://")) raw = fileURLToPath(raw);
@@ -101,9 +109,15 @@ export function resolveArtifact(input: string, root: string): ResolvedArtifact {
   const abs = direct ?? existingFile(base, resolve(base, rel));
   if (!abs) return { error: `no file at ${rel}` };
   rel = posixRel(base, abs);
+  return { rel, abs };
+}
 
-  if (STEP_RE.test(rel)) return { kind: "step", rel, abs };
-  if (GLB_RE.test(rel)) return { kind: "glb", rel, abs };
+/** Map a show_artifact / ?file= value to a STEP or GLB inside `root`. */
+export function resolveArtifact(input: string, root: string): ResolvedArtifact {
+  const opened = openInsideProject(input, root);
+  if ("error" in opened) return opened;
+  if (STEP_RE.test(opened.rel)) return { kind: "step", ...opened };
+  if (GLB_RE.test(opened.rel)) return { kind: "glb", ...opened };
   return { error: `not a STEP or GLB: ${input}` };
 }
 
@@ -198,6 +212,21 @@ function mimeFor(file: string) {
   return "application/octet-stream";
 }
 
+/**
+ * World JSON, URDF, meshes, and a board's read-only `.ino`.
+ * STL is `model/stl`. Firmware images and other files stay unserved.
+ */
+function worldAssetType(rel: string): string | null {
+  if (/\.world\.json$/i.test(rel) || isPartDocumentPath(rel)) {
+    return "application/json";
+  }
+  if (/\.urdf$/i.test(rel)) return "application/xml";
+  if (/\.stl$/i.test(rel)) return "model/stl";
+  if (/\.obj$/i.test(rel)) return "text/plain";
+  if (/\.ino$/i.test(rel)) return "text/plain; charset=utf-8";
+  return null;
+}
+
 /** Serve /api/cad-pkg/<project-rel-step>/{assembly.json,components/*.tess}. */
 export async function handleCadPkg(
   req: Request,
@@ -242,7 +271,11 @@ export async function handleCadPkg(
   return fileResponse(absFile, mimeFor(file), req.method === "HEAD");
 }
 
-/** Serve a GLB/GLTF from the named project (paired clients cannot hit disk otherwise). */
+/**
+ * Serve a GLB, or a world file the viewer will fetch: the `.world.json`,
+ * its URDF, and the meshes. Anything else stays off this route. Recents
+ * still record only a GLB — opening a world is the next unit.
+ */
 export async function handleProjectFile(
   req: Request,
   root: string
@@ -256,13 +289,13 @@ export async function handleProjectFile(
   } catch {
     return jsonResponse(400, { error: "bad path" });
   }
-  const resolved = resolveArtifact(rel, root);
-  if ("error" in resolved) return jsonResponse(404, { error: resolved.error });
-  if (resolved.kind !== "glb") return jsonResponse(400, { error: "not a GLB" });
-  rememberOpenedFile(resolved.rel, root);
-  return fileResponse(
-    resolved.abs,
-    mimeFor(resolved.abs),
-    req.method === "HEAD"
-  );
+  const opened = openInsideProject(rel, root);
+  if ("error" in opened) return jsonResponse(404, { error: opened.error });
+  if (GLB_RE.test(opened.rel)) {
+    rememberOpenedFile(opened.rel, root);
+    return fileResponse(opened.abs, mimeFor(opened.abs), req.method === "HEAD");
+  }
+  const worldType = worldAssetType(opened.rel);
+  if (!worldType) return jsonResponse(404, { error: "file not found" });
+  return fileResponse(opened.abs, worldType, req.method === "HEAD");
 }

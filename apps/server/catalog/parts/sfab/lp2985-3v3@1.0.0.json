@@ -1,0 +1,66 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/lp2985-3v3@1.0.0",
+  "type": "ldo-regulator",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "TI LP2985-33",
+      "ref": "Arduino Uno Rev3 schematic, arduino.cc, CC-BY-SA (A000066). Rev3e bill arduino_Uno_Rev3-02-TH. U2 is LP2985-33DBVR, the 3.3 V regulator. vOut 3.3 V is that fixed version"
+    },
+    {
+      "title": "Assumed electricals",
+      "ref": "Assumed from the legacy LP2985 (SNVS522), not read as a table cell here. Dropout 0.28 V at 0.15 A. Ground pin current 65 uA at no load. Short-circuit current 0.4 A. rOut is 0: no load-regulation row was used. The comparator reference draws about nothing, so the output is 3.3 V either way"
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "fixed",
+        "variants": {
+          "fixed": {
+            "kind": "form",
+            "form": "ldo-regulator@1",
+            "params": {
+              "vOut": 3.3,
+              "dropout": [[0.15, 0.28]],
+              "iGround": 0.000065,
+              "iLimit": 0.4,
+              "rOut": 0
+            },
+            "omits": [
+              "line and load transients",
+              "PSRR",
+              "thermal shutdown and temperature",
+              "noise",
+              "output-to-input reverse path"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.003, 0.003, 0.001],
+            "omits": ["marking", "leads"]
+          }
+        }
+      }
+    }
+  }
+}

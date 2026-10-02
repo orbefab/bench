@@ -5,12 +5,14 @@ import { viewerSnapshot } from "@/cad/viewer-snapshot";
 import {
   findPendingGetViewer,
   GET_VIEWER_TOOL,
+  getViewerFillReady,
   latestShownArtifact,
   shownFromPart,
   viewerIsReady,
 } from "@/chat/get-viewer";
 import type { GalleryChatMessage } from "@/components/chat/mock-chat-messages";
-import { store } from "@/state/store";
+import { viewerStore } from "@/state/viewer";
+import { worldStore } from "@/state/world";
 
 function lastAssistantHasPendingTools(messages: GalleryChatMessage[]) {
   const last = messages.at(-1);
@@ -28,23 +30,29 @@ function lastAssistantHasPendingTools(messages: GalleryChatMessage[]) {
   return false;
 }
 
+function documentReady(target: string | null): boolean {
+  const world = worldStore.getState();
+  if (world.path) return world.connection !== "connecting";
+  return viewerIsReady(viewerStore.getState(), target);
+}
+
 function waitUntilReady(
   target: string | null,
   isCancelled: () => boolean
 ): Promise<void> {
-  if (isCancelled() || viewerIsReady(store.getState(), target))
-    return Promise.resolve();
+  if (isCancelled() || documentReady(target)) return Promise.resolve();
   return new Promise((resolve) => {
-    const unsub = store.subscribe((state) => {
-      if (isCancelled() || viewerIsReady(state, target)) {
-        unsub();
-        resolve();
-      }
-    });
-    if (isCancelled() || viewerIsReady(store.getState(), target)) {
-      unsub();
+    let viewerUnsub = () => {};
+    let worldUnsub = () => {};
+    const finish = () => {
+      if (!isCancelled() && !documentReady(target)) return;
+      viewerUnsub();
+      worldUnsub();
       resolve();
-    }
+    };
+    viewerUnsub = viewerStore.subscribe(finish);
+    worldUnsub = worldStore.subscribe(finish);
+    finish();
   });
 }
 
@@ -72,17 +80,28 @@ export function useLiveViewerTools(
           );
           if (!shown || seen.current.has(shown.key)) return;
           seen.current.add(shown.key);
-          void store.getState().loadModel(shown.file);
+          void viewerStore
+            .getState()
+            .loadModel(shown.file, { history: "push" });
         });
       }
     }
 
     const pending = findPendingGetViewer(messages);
+    // Wait until this turn's stream has released the folder lock. Filling
+    // as soon as the tool part arrives posts the continuation too early.
+    if (!getViewerFillReady({ pending: pending !== null, streaming })) {
+      return;
+    }
     if (!pending) return;
 
     const target = latestShownArtifact(messages);
-    if (target && store.getState().url !== target) {
-      void store.getState().loadModel(target);
+    if (
+      target &&
+      viewerStore.getState().url !== target &&
+      !worldStore.getState().path
+    ) {
+      void viewerStore.getState().loadModel(target, { history: "push" });
     }
 
     if (inFlight.current === pending.toolCallId) return;
