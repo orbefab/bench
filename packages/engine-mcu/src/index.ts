@@ -10,6 +10,7 @@ export {
   type AnalogSource,
   BANDGAP_V,
   type BoardAdcHooks,
+  INTERNAL_2V56_V,
   TEMP_25_V,
 } from "./board-adc";
 export {

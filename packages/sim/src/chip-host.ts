@@ -44,6 +44,36 @@ export type ExposedGpio = { name: string; chip: string };
  * are not in the chip's GPIO table. The chip's port and bit stay on
  * `ChipSpec.pins`; this list is only names.
  */
+/**
+ * ADC channel to the header name that reaches that chip pin.
+ *
+ * The map is the board's expose, not a fixed A0–A7 table. An empty expose
+ * is a bare chip: the label is the chip pin name (`PC0`, `PF7`). A channel
+ * the board does not bring out is absent, and the run reads 0 V there.
+ */
+export function adcHeaderLabels(
+  chipName: string,
+  exposure: ReadonlyMap<string, string>
+): Record<number, string> {
+  const adcPins = chipSpec(chipName)?.adcPins ?? {};
+  const labels: Record<number, string> = {};
+  for (const [key, chipPin] of Object.entries(adcPins)) {
+    const channel = Number(key);
+    if (!Number.isInteger(channel)) continue;
+    if (exposure.size === 0) {
+      labels[channel] = chipPin;
+      continue;
+    }
+    for (const [name, pin] of exposure) {
+      if (pin === chipPin) {
+        labels[channel] = name;
+        break;
+      }
+    }
+  }
+  return labels;
+}
+
 export function gpioPinsOf(
   chipName: string,
   exposure: ReadonlyMap<string, string>

@@ -357,7 +357,9 @@ function noteAdc(s: SessionState, boardId: string, sample: AdcConversion) {
 
 /**
  * AVCC is the latched board node. AREF is 0: the shipped boards have no
- * AREF port, and the pin circuit is omitted. Channels 0–7 read their net.
+ * AREF port, and the pin circuit is omitted. A planned board names each
+ * channel from its expose. A hand-built plan keeps `A` plus the index,
+ * and only channels 0–5 have a GPIO (`PC0`–`PC5`).
  */
 function attachAnalog(s: SessionState, board: AvrBoard) {
   const spec = s.runPlan?.boards.find((item) => item.id === board.id);
@@ -368,12 +370,25 @@ function attachAnalog(s: SessionState, board: AvrBoard) {
     channel: (channel) => {
       const plan = s.runPlan;
       if (!plan) return { voltage: 0, rSource: spec.pin.rLeak };
-      const bit = channel < 6 ? spec.wire.indexOf(`PC${channel}`) : -1;
+      const labels = spec.adcLabels;
+      const port = labels?.[channel];
+      // No label: the channel is not on this board. A missing map is the
+      // old A-index path, not an unexposed channel.
+      if (labels && port === undefined) {
+        return { voltage: 0, rSource: 0, mux: `adc${channel}` };
+      }
+      const chipPin = labels
+        ? board.chip?.adcPins[channel]
+        : channel < 6
+          ? `PC${channel}`
+          : undefined;
+      const bit = chipPin ? spec.wire.indexOf(chipPin) : -1;
       const mode = bit < 0 ? "analog" : board.driveMode(bit);
-      return analogRead({
+      const read = analogRead({
         plan,
         boardId: board.id,
         channel,
+        ...(port ? { port } : {}),
         mode,
         pin: spec.pin,
         boardVolts: (boardId: string) => latchedBoardNode(s, boardId),
@@ -381,9 +396,10 @@ function attachAnalog(s: SessionState, board: AvrBoard) {
         stamped: (ch) => {
           const supplyId = s.boardPower.get(board.id)?.supplyId;
           const circuit = supplyId ? s.rails.get(supplyId)?.circuit : undefined;
-          return circuit?.probePort(`A${ch}`, board.id) ?? null;
+          return circuit?.probePort(port ?? `A${ch}`, board.id) ?? null;
         },
       });
+      return port ? { ...read, mux: port } : read;
     },
     ...(s.adcTrace
       ? { converted: (sample: AdcConversion) => noteAdc(s, board.id, sample) }

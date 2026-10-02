@@ -37,7 +37,13 @@ import {
   type Wire,
   type WireEnd,
 } from "@sfab-bench/parts";
-import { boardGpio, boardHostOf, chipExposure, chipFactsOf } from "./chip-host";
+import {
+  adcHeaderLabels,
+  boardGpio,
+  boardHostOf,
+  chipExposure,
+  chipFactsOf,
+} from "./chip-host";
 import {
   type AssignedPart,
   assignNodes,
@@ -139,6 +145,11 @@ export type RunBoard = {
   pinOrder: readonly string[];
   /** Chip pin name for each `pinOrder` entry. Same length, same order. */
   wire: readonly string[];
+  /**
+   * ADC channel to the header label from this board's expose. Absent on a
+   * hand-built plan, which keeps the `A` plus channel-index names.
+   */
+  adcLabels?: Readonly<Record<number, string>>;
   /**
    * Volts. A running chip above its brownout level and below this is outside
    * its specification. Null when the chip part gives no such band.
@@ -1045,6 +1056,7 @@ function build(
         resetFraction: facts.resetFraction,
         pinOrder: gpio.map((pin) => pin.name),
         wire: gpio.map((pin) => pin.chip),
+        adcLabels: adcHeaderLabels(behaviour.chip, exposure),
         minOperatingVoltage: facts.minOperatingVoltage,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
