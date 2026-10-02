@@ -140,7 +140,8 @@ function settle(
   let margin = Number.POSITIVE_INFINITY;
   for (let i = 0; i < SETTLE; i++) {
     circuit.solve();
-    if (circuit.resetMarginMin < margin) margin = circuit.resetMarginMin;
+    const reset = circuit.boardReading("nano").resetMargin;
+    if (reset !== null && reset < margin) margin = reset;
   }
   return { margin };
 }

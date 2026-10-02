@@ -1,6 +1,6 @@
 /** The board card: pins, LEDs, serial console and firmware source for one live board. */
 
-import type { WorldPinState } from "@sfab-bench/contract";
+import { onboardLedPath, type WorldPinState } from "@sfab-bench/contract";
 import { SerialConsole } from "@/components/SerialConsole";
 import { SourceView } from "@/components/SourceView";
 import { sendBoardSerial } from "@/hooks/useWorldRun";
@@ -130,7 +130,7 @@ function PinTable({
 function extraLeds(boardId: string, leds: Record<string, number> | undefined) {
   if (!leds) return null;
   const rows = Object.entries(leds).filter(
-    ([path]) => path !== `${boardId}.led`
+    ([path]) => path !== onboardLedPath(boardId)
   );
   if (rows.length === 0) return null;
   return rows.map(([path, amps]) => (

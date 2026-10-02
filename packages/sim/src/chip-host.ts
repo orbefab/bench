@@ -80,7 +80,7 @@ export function adcHeaderLabels(
  * are not in the chip's GPIO table. The chip's port and bit stay on
  * `ChipSpec.pins`; this list is only names.
  */
-export function gpioPinsOf(
+function gpioPinsOf(
   chipName: string,
   exposure: ReadonlyMap<string, string>
 ): ExposedGpio[] {
@@ -108,4 +108,22 @@ export function boardGpio(
     return Object.keys(pins).map((name) => ({ name, chip: name }));
   }
   return gpioPinsOf(chipName, exposure);
+}
+
+/**
+ * The board's reset port: the header port the board exposes onto the
+ * chip's `resetPort` (`RST` on the Pro Micro, `RESET` on the Nano). A chip
+ * that is its own board keeps its own name. Null when the chip has no
+ * reset port or the board does not bring it out (the Uno).
+ */
+export function boardResetPort(
+  resetPort: string | undefined,
+  chip: LiveInstance,
+  host: LiveInstance,
+  exposure: ReadonlyMap<string, string>
+): string | null {
+  if (!resetPort) return null;
+  if (host === chip) return resetPort;
+  for (const [name, pin] of exposure) if (pin === resetPort) return name;
+  return null;
 }

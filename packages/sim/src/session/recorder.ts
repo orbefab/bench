@@ -3,6 +3,7 @@ import {
   DEFAULT_TIMESTEP_S,
   emptyPinState,
   type JointLimitKind,
+  onboardLedPath,
   pastLimitAmount,
   pinWordCount,
   RECORD_FRAME_MS,
@@ -258,7 +259,7 @@ function fillRecorder(s: SessionState, full: boolean) {
     if (rec.ledOn[i]) {
       const supplyId = id ? s.boardPower.get(id)?.supplyId : undefined;
       const frame = supplyId ? ledFrameOf(supplyId) : undefined;
-      const key = `${id}.led`;
+      const key = onboardLedPath(id);
       rec.ledCurrent[i] = !id
         ? 0
         : frame && key in frame.leds
@@ -347,7 +348,7 @@ export function openRecorder(s: SessionState) {
     boardLed: boardIds.map((id) => {
       const supplyId = s.boardPower.get(id)?.supplyId;
       const group = supplyId ? s.rails.get(supplyId) : undefined;
-      return group?.circuit.ledPaths.includes(`${id}.led`) ?? false;
+      return group?.circuit.ledPaths.includes(onboardLedPath(id)) ?? false;
     }),
     leds: boardIds.flatMap((id) => {
       const supplyId = s.boardPower.get(id)?.supplyId;

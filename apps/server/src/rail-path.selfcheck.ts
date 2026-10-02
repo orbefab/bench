@@ -82,7 +82,7 @@ function read(circuit: RailCircuit): string {
     circuit.boardMinVoltage,
     circuit.ledCurrent,
     circuit.substeps,
-    circuit.resetVoltage,
+    circuit.boardReading("nano").resetMargin,
     circuit.lastPieceCount,
   ].join(",");
 }

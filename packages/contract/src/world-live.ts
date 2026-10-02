@@ -160,7 +160,7 @@ export type WorldBoardState = {
    */
   leds?: Record<string, number>;
   /**
-   * Frame mean through the onboard LED at `leds[`${id}.led`]`.
+   * Frame mean through the onboard LED at `leds[onboardLedPath(id)]`.
    * @deprecated Read `leds` instead. Kept for the D13 card and the gauge.
    */
   ledCurrent?: number;
@@ -181,6 +181,15 @@ export type WorldBoardWarning = {
 export type ChipClock = { label: string; hz: number };
 
 /** `the ATmega328P needs at 16 MHz`, for the chip that is running. */
+/**
+ * The onboard LED's instance path: the board's child named `led`. Its
+ * current is the board's `ledCurrent`, and the card reads it apart from
+ * the board's other LEDs.
+ */
+export function onboardLedPath(boardId: string): string {
+  return `${boardId}.led`;
+}
+
 export function soaNeed(chip: ChipClock): string {
   return `the ${chip.label} needs at ${chip.hz / 1e6} MHz`;
 }
@@ -686,7 +695,7 @@ export type RecordedFrame = {
        */
       leds?: Record<string, number>;
       /**
-       * Frame mean through `leds[`${id}.led`]`.
+       * Frame mean through `leds[onboardLedPath(id)]`.
        * @deprecated Read `leds`. Kept for the D13 card and the gauge.
        */
       ledCurrent?: number;

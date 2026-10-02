@@ -1,6 +1,10 @@
 /** Rails: the supply-to-board lookups, binding the rail circuits, the degraded notes, and the node latches the CPUs read. */
 
-import { type Diagnostic, pinIndex } from "@sfab-bench/contract";
+import {
+  type Diagnostic,
+  onboardLedPath,
+  pinIndex,
+} from "@sfab-bench/contract";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 import { splitPortRef } from "@sfab-bench/parts";
 import type { RunBoard, RunPlan } from "../plan";
@@ -411,7 +415,7 @@ function bindRails(s: SessionState) {
       ...supplyTerms(primary),
       motors: motorsOf(members),
       pin: only.pin,
-      ledAlias: `${only.id}.led`,
+      ledAlias: onboardLedPath(only.id),
       stamp: only.stamp,
       feed: "vin",
       ...(usb && vbus ? { keep: [vbus] } : {}),
@@ -464,7 +468,7 @@ function bindRails(s: SessionState) {
           ...supplyTerms(supply),
           motors: motorsOf(members),
           ...(stamped.length === 1 && fed
-            ? { pin: fed.pin, ledAlias: `${fed.id}.led` }
+            ? { pin: fed.pin, ledAlias: onboardLedPath(fed.id) }
             : {}),
           ...(sharedSpans ? { spans: sharedSpans } : {}),
           boards: stamped.map((board) => {
@@ -488,7 +492,7 @@ function bindRails(s: SessionState) {
       : createRailCircuit({
           ...supplyTerms(supply),
           motors: motorsOf(members),
-          ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
+          ...(fed ? { pin: fed.pin, ledAlias: onboardLedPath(fed.id) } : {}),
           ...(attached.stamp && (fed?.vinFeed || attached.feed)
             ? {
                 stamp: attached.stamp,

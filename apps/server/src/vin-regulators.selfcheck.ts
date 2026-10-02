@@ -16,7 +16,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { PartFile, RecordingRead, WorldState } from "@sfab-bench/contract";
+import {
+  onboardLedPath,
+  type PartFile,
+  type RecordingRead,
+  type WorldState,
+} from "@sfab-bench/contract";
 import {
   AVR_PIN,
   Comparator,
@@ -431,7 +436,8 @@ async function runProject(
         (frame) => frame.boards[board]?.voltage ?? Number.NaN
       ),
       leds: read.frames.map(
-        (frame) => frame.boards[board]?.leds?.[`${board}.led`] ?? Number.NaN
+        (frame) =>
+          frame.boards[board]?.leds?.[onboardLedPath(board)] ?? Number.NaN
       ),
       resets: seen.state.boards[board]?.resets ?? 0,
       frames: read.frames,

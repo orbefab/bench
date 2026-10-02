@@ -42,6 +42,7 @@ import {
   adcHeaderLabels,
   boardGpio,
   boardHostOf,
+  boardResetPort,
   chipClock,
   chipExposure,
   chipFactsOf,
@@ -1072,12 +1073,7 @@ function build(
         groundPin: groundName,
         current: quiescent ?? 0,
         hasNetlist: host.path !== inst.path,
-        resetPort:
-          host === inst
-            ? (behaviour.resetPort ?? null)
-            : ([...exposure.entries()].find(
-                ([, pin]) => pin === behaviour.resetPort
-              )?.[0] ?? null),
+        resetPort: boardResetPort(behaviour.resetPort, inst, host, exposure),
         resetFraction: facts.resetFraction,
         pinOrder: header.map((pin) => pin.name),
         ...(driven.length === header.length

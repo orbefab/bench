@@ -90,7 +90,7 @@ export type RecordSpec = {
    * of at most 32 pins has always used.
    */
   pinWords?: number[];
-  /** Parallel to `boards`. True when that board records `leds[`${id}.led`]`. */
+  /** Parallel to `boards`. True when that board records `leds[onboardLedPath(id)]`. */
   boardLed?: boolean[];
   /** LED paths on each board. Each frame stores that LED's mean current. */
   leds?: { board: string; path: string }[];

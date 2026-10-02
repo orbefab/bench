@@ -195,14 +195,11 @@ export class RailCircuit {
   get driveBits(): readonly number[] {
     return this.drives.map((row) => row.bit);
   }
-  /** Volts on the RESET node. 0 when this rail has no Nano path. */
-  resetVoltage = 0;
   /**
    * Lowest `V_reset − resetFraction·V_board` over this step's sub-steps,
-   * across every board on the rail. Positive means RESET stayed above the
-   * external threshold. Each board's own value is `boardReading().resetMargin`.
+   * when one board is on the rail. Read it through `boardReading()`.
    */
-  resetMarginMin = 0;
+  private resetMarginMin = 0;
   private readonly engine: Engine;
   private readonly load: CurrentLoad;
   private readonly motors: BridgeMotor[];
@@ -568,7 +565,6 @@ export class RailCircuit {
     if (!this.resetNode) return;
     const board = this.engine.voltage(this.boardNode);
     const reset = this.engine.voltage(this.resetNode);
-    this.resetVoltage = reset;
     if (this.resetFraction === null) return;
     const margin = reset - this.resetFraction * board;
     if (margin < this.resetMarginMin) this.resetMarginMin = margin;
@@ -687,9 +683,7 @@ export class RailCircuit {
       if (!boardNode || reset.fraction === null) continue;
       const board = this.engine.voltage(boardNode);
       const volts = this.engine.voltage(reset.node);
-      this.resetVoltage = volts;
       const margin = volts - reset.fraction * board;
-      if (margin < this.resetMarginMin) this.resetMarginMin = margin;
       const soFar = this.resetMins.get(id);
       if (soFar === undefined || margin < soFar) this.resetMins.set(id, margin);
     }

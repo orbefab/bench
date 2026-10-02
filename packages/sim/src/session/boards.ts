@@ -1,6 +1,6 @@
 /** Boards: boot, load, reload, flush, fault, serial, the ADC attachment, brownout, and one CPU step. */
 
-import type { WorldSender } from "@sfab-bench/contract";
+import { onboardLedPath, type WorldSender } from "@sfab-bench/contract";
 import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   type AdcConversion,
@@ -199,7 +199,7 @@ export function bindInputNets(s: SessionState, plan: RunPlan) {
   applyInputNets(s);
 }
 
-/** Onboard LED current. Present when this rail stamped `${board}.led`. */
+/** Onboard LED current. Present when this rail stamped `onboardLedPath(board)`. */
 export function ledCurrentOf(
   s: SessionState,
   boardId: string
@@ -208,7 +208,7 @@ export function ledCurrentOf(
   if (!supplyId) return undefined;
   const group = s.rails.get(supplyId);
   if (!group) return undefined;
-  const key = `${boardId}.led`;
+  const key = onboardLedPath(boardId);
   if (!group.circuit.ledPaths.includes(key)) return undefined;
   return group.circuit.leds[key] ?? 0;
 }
@@ -237,7 +237,7 @@ export function ledReading(
     leds: card.leds,
     ...(current === undefined
       ? {}
-      : { ledCurrent: card.leds[`${boardId}.led`] ?? 0 }),
+      : { ledCurrent: card.leds[onboardLedPath(boardId)] ?? 0 }),
   };
 }
 

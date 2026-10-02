@@ -5,6 +5,7 @@
 import {
   type BehaviourImpl,
   type LevelClass,
+  onboardLedPath,
   PART_FORMAT,
   PART_TYPE_FORMAT,
   type PartFile,
@@ -42,7 +43,13 @@ import {
   type TableLaw,
   tableLawOf,
 } from "@sfab-bench/parts";
-import { boardGpio, boardHostOf, chipFactsOf } from "./chip-host";
+import {
+  boardGpio,
+  boardHostOf,
+  boardResetPort,
+  chipExposure,
+  chipFactsOf,
+} from "./chip-host";
 import type { StampEnv } from "./env";
 import { formAdapter, stampDiode } from "./forms";
 import type { RailFeed } from "./power-path";
@@ -110,7 +117,7 @@ export type BoardStamp = {
   /** The regulator input's node. Null when the board has none on a net. */
   regulatorNode: string | null;
   resetNode: string | null;
-  /** `${boardId}.led` when that part is an LED. The rail copies it onto `ledCurrent`. */
+  /** `onboardLedPath(boardId)` when that part is an LED. The rail copies it onto `ledCurrent`. */
   ledAlias: string | null;
   /**
    * The pin that drives `ledAlias`: on the LED's net, or one resistor
@@ -377,7 +384,8 @@ export function stampBoard(input: {
     if (node) portNodes[port] = node;
   }
   const led = assigned.find(
-    (part) => part.path === `${input.boardId}.led` && part.typeId === "led"
+    (part) =>
+      part.path === onboardLedPath(input.boardId) && part.typeId === "led"
   );
   const ledAlias = led?.path ?? null;
   return {
@@ -998,7 +1006,14 @@ function stampOf(
     powerPort = across[0];
   }
   const resetPort =
-    behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
+    behaviour?.kind === "firmware"
+      ? boardResetPort(
+          behaviour.resetPort,
+          chip ?? board,
+          board,
+          chip ? chipExposure(chip, board) : new Map()
+        )
+      : null;
   const chipBehaviour = chip?.axes.behaviour.impl as BehaviourImpl | null;
   const gpio =
     chip && chipBehaviour?.kind === "firmware"
