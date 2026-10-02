@@ -49,7 +49,7 @@ function nodeAt(fraction: number, connected: boolean): number {
     feed: "usb",
   });
   circuit.setFixed(NANO_BOARD_A + law.quiescent);
-  circuit.setD13("input");
+  circuit.setPin("D13", "input");
   circuit.setMotor(0, fraction, 0, connected);
   for (let i = 0; i < 80; i++) circuit.solve();
   return circuit.boardVoltage;

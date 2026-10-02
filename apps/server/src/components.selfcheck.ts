@@ -123,7 +123,7 @@ function ledDeck(board: number): number {
     feed: "header",
   });
   rail.setFixed(NANO_BOARD_A);
-  rail.setD13("high");
+  rail.setPin("D13", "high");
   for (let i = 0; i < 40; i++) rail.solve();
   const alias = rail.leds["nano.led"];
   expect(alias !== undefined, "header rail has no nano.led");

@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { ResetLimits } from "@sfab-bench/sim";
+import type { ResetLimits } from "@sfab-bench/sim/power";
 
 type ChipParams = {
   brownoutAssertVoltage: number;

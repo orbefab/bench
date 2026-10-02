@@ -135,7 +135,7 @@ function settle(
   mode: "high" | "low" | "input"
 ): { margin: number } {
   circuit.setFixed(NANO_BOARD_A + law.quiescent);
-  circuit.setD13(mode);
+  circuit.setPin("D13", mode);
   circuit.setMotor(0, fraction, 0, connected);
   let margin = Number.POSITIVE_INFINITY;
   for (let i = 0; i < SETTLE; i++) {

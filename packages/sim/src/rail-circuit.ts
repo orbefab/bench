@@ -511,9 +511,9 @@ export class RailCircuit {
     return { voltage, rSource: r ?? 0 };
   }
 
-  /** The pin named D13. Same as `setDrive` for that pin's index. */
-  setD13(mode: PinMode): void {
-    const found = this.drives.find((row) => row.port === "D13");
+  /** The stamped pin named `port`. Same as `setDrive` for that pin's index. */
+  setPin(port: string, mode: PinMode): void {
+    const found = this.drives.find((row) => row.port === port);
     found?.pin.setMode(mode);
   }
 

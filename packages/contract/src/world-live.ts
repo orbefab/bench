@@ -50,9 +50,7 @@ export function emptyPinState(words = 1): WorldPinState {
 }
 
 /** A bare number is one legacy word, from a reader that still has the old mask. */
-export function asPinWords(
-  value: number | readonly number[]
-): readonly number[] {
+function asPinWords(value: number | readonly number[]): readonly number[] {
   return typeof value === "number" ? [value >>> 0] : value;
 }
 

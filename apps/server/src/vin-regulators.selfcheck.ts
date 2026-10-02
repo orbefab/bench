@@ -144,7 +144,7 @@ function nanoRail(volts: number) {
     pin: AVR_PIN,
   });
   circuit.setFixed(NANO_BOARD_A);
-  circuit.setD13("low");
+  circuit.setPin("D13", "low");
   for (let i = 0; i < 5; i++) circuit.solve();
   return circuit;
 }
@@ -155,10 +155,10 @@ function nanoRail(volts: number) {
   const want = ldoRegulated(ams, reg.voltage, pass);
   const d = Math.abs(reg.boardVoltage - want);
   expect(d <= 1e-6, `nano 9 V Δ ${d}`);
-  reg.setD13("high");
+  reg.setPin("D13", "high");
   reg.solve();
   const ledOn = reg.ledCurrent;
-  reg.setD13("low");
+  reg.setPin("D13", "low");
   reg.solve();
   const ledOff = reg.ledCurrent;
   expect(ledOn > 0.001 && ledOff < ledOn * 0.1, `D13 ${ledOn} / ${ledOff}`);
@@ -232,7 +232,7 @@ function nanoRail(volts: number) {
     battery: built.params,
   });
   circuit.setFixed(NANO_BOARD_A);
-  circuit.setD13("low");
+  circuit.setPin("D13", "low");
   const sample = (steps: number) => {
     for (let i = 0; i < steps; i++) circuit.solve();
     return { v: circuit.boardVoltage, soc: circuit.soc ?? Number.NaN };

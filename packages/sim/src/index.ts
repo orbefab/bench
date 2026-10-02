@@ -72,29 +72,15 @@ export {
   noLoadSpeedRad,
   type RailMotor,
   type ResetCause,
-  type ResetLimits,
-  type ResetPhase,
-  type ResetState,
-  runningReset,
   servoElectrical,
   solveRail,
   stallCurrent,
   stallTorque,
-  stepReset,
 } from "./power";
 export {
   BOARD_LOAD_KNEE_V,
-  NANO_BOARD_A,
   type RailFeed,
   railAttachment,
-  UNO_BOARD_NODE,
-  UNO_DECOUPLE_C,
-  UNO_PC2_C,
-  UNO_PC2_ESR,
-  UNO_SW_NODE,
-  UNO_T1_DIODE,
-  UNO_T1_RDS,
-  UNO_TERM_NODE,
 } from "./power-path";
 export { type ProbeIndex, probeTracks } from "./probe";
 export {

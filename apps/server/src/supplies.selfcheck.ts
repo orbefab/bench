@@ -204,7 +204,7 @@ function nanoLine(): string {
     feed: "header",
   });
   rail.setFixed(NANO_BOARD_A);
-  rail.setD13("high");
+  rail.setPin("D13", "high");
   for (let k = 0; k < 1000; k++) rail.solve();
   const v1 = rail.boardVoltage;
   const i1 = rail.ledCurrent;

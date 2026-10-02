@@ -110,7 +110,7 @@ function read(circuit: RailCircuit): string {
   });
   const step = (circuit: RailCircuit) => {
     circuit.setFixed(NANO_BOARD_A);
-    circuit.setD13("low");
+    circuit.setPin("D13", "low");
     circuit.solve();
     circuit.solve([
       { dt: 0.0005, drive: [{ bit, mode: "low" }] },

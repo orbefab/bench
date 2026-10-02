@@ -386,7 +386,7 @@ export function maxBoardDelta(
     const mode = sample.d13;
     neu.setFixed(spec.fixed);
     ref.setFixed(spec.fixed);
-    neu.setD13(mode);
+    neu.setPin("D13", mode);
     ref.setD13(mode);
     const connected = sample.fraction > 0;
     neu.setMotor(0, sample.fraction, 0, connected);
