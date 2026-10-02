@@ -172,6 +172,11 @@ export class EditSession {
     return this.redoStack.length > 0;
   }
 
+  /** A new edit elsewhere in the same undo order ends this redo. */
+  dropRedo(): void {
+    this.redoStack = [];
+  }
+
   /** Point this session at the file it now edits. The server re-keys the map. */
   adopt(file: string, names: readonly string[]): void {
     this.filePath = file;
