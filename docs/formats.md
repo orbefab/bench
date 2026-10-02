@@ -194,7 +194,7 @@ type Netlist = {
 
 ### `avr-pin@1` and the ADC
 
-A firmware board carries `avr-pin@1` as numbers on the variant's `params`, not as a `form`. The names are `roh`, `rol`, `rpu` and `rLeak`, in ohms. High is the board's 5V node. Low is 0 V. `rLeak` belongs to the pin element. The rail stamps one pin for every chip pin that has an Arduino bit and whose net contains a circuit part. Each of those pins follows `driveMode` at the master step. The ADC uses the same numbers.
+A firmware board carries `avr-pin@1` as numbers on the variant's `params`, not as a `form`. The names are `roh`, `rol`, `rpu` and `rLeak`, in ohms. High is the board's 5V node. Low is 0 V. `rLeak` belongs to the pin element. The rail stamps one pin for every exposed GPIO pin whose net contains a circuit part. Each of those pins follows `driveMode` at the master step. The ADC uses the same numbers.
 
 DDR and PORT choose the mode, read when the rail solves and when a conversion starts:
 

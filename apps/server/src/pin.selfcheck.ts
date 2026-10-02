@@ -165,18 +165,18 @@ try {
   const uno = pinsOf(hold, "uno");
   expect(
     maskHasPin(uno.ddr, "D9"),
-    `D9 is an output, ddr ${uno.ddr.toString(2)}`
+    `D9 is an output, ddr ${(uno.ddr[0] ?? 0).toString(2)}`
   );
   expect(
     maskHasPin(uno.toggled, "D9"),
-    `D9 toggled, toggled ${uno.toggled.toString(2)}`
+    `D9 toggled, toggled ${(uno.toggled[0] ?? 0).toString(2)}`
   );
   expect(
     !maskHasPin(uno.ddr, "D13"),
-    `D13 is an input, ddr ${uno.ddr.toString(2)}`
+    `D13 is an input, ddr ${(uno.ddr[0] ?? 0).toString(2)}`
   );
   console.log(
-    `fixture pins: D9 out+activity, D13 in, ddr ${uno.ddr.toString(2)}`
+    `fixture pins: D9 out+activity, D13 in, ddr ${(uno.ddr[0] ?? 0).toString(2)}`
   );
 
   const pairRoot = mkdtempSync(join(tmpdir(), "sfab-pins-"));

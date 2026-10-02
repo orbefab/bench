@@ -1,6 +1,6 @@
 /** Rails: the supply-to-board lookups, binding the rail circuits, the degraded notes, and the node latches the CPUs read. */
 
-import { arduinoPinBit, type Diagnostic } from "@sfab-bench/contract";
+import { type Diagnostic, pinIndex } from "@sfab-bench/contract";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 import { splitPortRef } from "@sfab-bench/parts";
 import type { RunBoard, RunPlan } from "../plan";
@@ -145,7 +145,10 @@ export function bindPower(s: SessionState, plan: RunPlan) {
       const jointId =
         actuatorId === undefined ? -1 : (trnid[actuatorId * 2] ?? -1);
       if (actuatorId !== undefined && jointId >= 0) {
-        const bit = signal ? arduinoPinBit(signal.pin) : undefined;
+        const names = signal
+          ? plan.boards.find((item) => item.id === signal.boardId)?.pinOrder
+          : undefined;
+        const bit = signal && names ? pinIndex(names, signal.pin) : undefined;
         const board = signal
           ? s.boards.find((item) => item.id === signal.boardId)
           : undefined;

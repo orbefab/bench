@@ -40,7 +40,16 @@ const STEP = 0.001;
   expect(parsed.ok, parsed.ok ? "" : parsed.error);
   if (!parsed.ok) throw new Error("unreachable");
   const mcu: Engine = new McuEngine();
-  mcu.init({ firmware: parsed.bytes, brownoutVoltage: 2.7 });
+  const pins = [
+    ...Array.from({ length: 14 }, (_, n) => `D${n}`),
+    ...Array.from({ length: 6 }, (_, n) => `A${n}`),
+  ];
+  const wire = [
+    ...Array.from({ length: 8 }, (_, n) => `PD${n}`),
+    ...Array.from({ length: 6 }, (_, n) => `PB${n}`),
+    ...Array.from({ length: 6 }, (_, n) => `PC${n}`),
+  ];
+  mcu.init({ firmware: parsed.bytes, brownoutVoltage: 2.7, pins, wire });
   mcu.write("supply", "voltage", 5);
   mcu.advance(0.001);
   let line = "";

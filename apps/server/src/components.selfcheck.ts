@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  arduinoPinBit,
+  pinIndex,
   type RecordingRead,
   type SnapshotFile,
   type WorldState,
@@ -162,7 +162,7 @@ function ledDeck(board: number): number {
     boxes.some((box) => box.id === "led"),
     "led box missing"
   );
-  const bit = arduinoPinBit("D9");
+  const bit = pinIndex(board.pinOrder, "D9");
   expect(bit !== undefined, "D9 has no bit");
   const rail = createRailCircuit({
     vNom: 5,
@@ -290,7 +290,7 @@ async function runLed(
     const board1 = planned1.plan.boards.find((item) => item.id === "nano");
     expect(board1?.stamp?.netlist === true, "class 1 lost the board netlist");
     if (!board1?.stamp) throw new Error("class 1 lost the board netlist");
-    const bit = arduinoPinBit("D9");
+    const bit = pinIndex(board1.pinOrder, "D9");
     expect(bit !== undefined, "D9 has no bit");
     const snap = createRailCircuit({
       vNom: 5,

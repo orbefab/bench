@@ -22,6 +22,11 @@ export type WorldViewBoard = {
   size: [number, number, number];
   /** Volts. The card's brownout line uses this, not a client-side catalog. */
   brownoutVoltage: number;
+  /**
+   * Exposed GPIO header names, in the order `WorldPinState` bits use.
+   * Sent with the view. A later state tick does not repeat the list.
+   */
+  pins: readonly string[];
 };
 
 export type WorldViewSupply = {

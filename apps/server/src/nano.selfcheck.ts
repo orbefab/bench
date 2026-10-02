@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  arduinoPinBit,
+  pinBitSet,
   type RecordingRead,
   type WorldState,
 } from "@sfab-bench/contract";
@@ -60,17 +60,17 @@ const nanoDir = fileURLToPath(
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
-const D13 = 1 << (arduinoPinBit("D13") ?? 13);
+/** D13 is GPIO index 13 on the Nano expose order (D0–D13, A0–A5). */
+const D13 = 13;
 
 function driveSamples(
   read: RecordingRead
 ): { fraction: number; d13: "high" | "low" | "input" }[] {
-  const bit = 1 << (arduinoPinBit("D13") ?? 13);
   return read.frames.map((frame) => {
     const pulse = frame.parts.servo?.pulseUs ?? 0;
     const pins = frame.boards.nano?.pins;
-    const driving = pins ? (pins.ddr & bit) !== 0 : false;
-    const high = pins ? (pins.level & bit) !== 0 : false;
+    const driving = pins ? pinBitSet(pins.ddr, D13) : false;
+    const high = pins ? pinBitSet(pins.level, D13) : false;
     const fraction =
       pulse > 0 ? Math.min(1, Math.max(0, (pulse - 1000) / 1000)) : 0;
     return {
@@ -668,8 +668,8 @@ try {
     const pins = board?.pins;
     const led = board?.ledCurrent;
     if (!pins || led === undefined) continue;
-    const driving = (pins.ddr & D13) !== 0;
-    const high = (pins.level & D13) !== 0;
+    const driving = pinBitSet(pins.ddr, D13);
+    const high = pinBitSet(pins.level, D13);
     if (!driving) continue;
     if (high) {
       on += 1;

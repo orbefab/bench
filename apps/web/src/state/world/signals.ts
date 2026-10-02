@@ -155,6 +155,12 @@ function sameSupplies(
   return true;
 }
 
+function sameWords(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 function samePins(
   a: Record<string, WorldPinState>,
   b: Record<string, WorldPinState>
@@ -167,9 +173,9 @@ function samePins(
     if (
       !left ||
       !right ||
-      left.ddr !== right.ddr ||
-      left.level !== right.level ||
-      left.toggled !== right.toggled
+      !sameWords(left.ddr, right.ddr) ||
+      !sameWords(left.level, right.level) ||
+      !sameWords(left.toggled, right.toggled)
     ) {
       return false;
     }

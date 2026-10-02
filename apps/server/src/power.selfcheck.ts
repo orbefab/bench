@@ -473,7 +473,7 @@ const stallRows = await sample(
       `usart ${snap.regs.UCSR0A.toString(16)} ${snap.regs.UCSR0C.toString(16)}`
     );
     expect(
-      snap.pins.ddr === 0 && snap.pins.level === 0,
+      snap.pins.ddr[0] === 0 && snap.pins.level[0] === 0,
       `pins before the first instruction ddr ${snap.pins.ddr} level ${snap.pins.level}`
     );
     console.log(
@@ -554,8 +554,8 @@ for (const row of stallRows) {
   const pins = row.state.boards.uno?.pins;
   expect(
     row.state.boards.uno?.brownout === true &&
-      pins?.ddr === 0 &&
-      pins.level === 0,
+      pins?.ddr[0] === 0 &&
+      pins.level[0] === 0,
     `driven during reset at ${row.state.simTime}`
   );
 }

@@ -1,6 +1,6 @@
 /** Boards: boot, load, reload, flush, fault, serial, the ADC attachment, brownout, and one CPU step. */
 
-import { arduinoPinBit, type WorldSender } from "@sfab-bench/contract";
+import type { WorldSender } from "@sfab-bench/contract";
 import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   type AdcConversion,
@@ -94,7 +94,7 @@ function boardSpecsOf(plan: RunPlan): BoardSpec[] {
     chip: board.chip,
     firmware: board.firmware,
     minOperatingVoltage: board.minOperatingVoltage,
-    ...(board.wire ? { wire: board.wire } : {}),
+    wire: board.wire,
   }));
 }
 
@@ -366,8 +366,8 @@ function attachAnalog(s: SessionState, board: AvrBoard) {
     channel: (channel) => {
       const plan = s.runPlan;
       if (!plan) return { voltage: 0, rSource: spec.pin.rLeak };
-      const bit = channel < 6 ? arduinoPinBit(`A${channel}`) : undefined;
-      const mode = bit === undefined ? "analog" : board.driveMode(bit);
+      const bit = channel < 6 ? spec.wire.indexOf(`PC${channel}`) : -1;
+      const mode = bit < 0 ? "analog" : board.driveMode(bit);
       return analogRead({
         plan,
         boardId: board.id,

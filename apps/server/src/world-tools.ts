@@ -142,7 +142,9 @@ function capTail<T>(items: T[]): { items: T[]; truncated: boolean } {
 }
 
 function drivenPins(
-  pins: { ddr: number; level: number } | undefined
+  pins:
+    | { ddr: number | readonly number[]; level: number | readonly number[] }
+    | undefined
 ): string[] {
   if (!pins) return [];
   const out: string[] = [];

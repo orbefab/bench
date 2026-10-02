@@ -19,20 +19,73 @@ export type WorldLinkPose = {
 };
 
 /**
- * Arduino pins in one number. Bit 0 is D0 … bit 13 is D13, bit 14 is A0 …
- * bit 19 is A5. PORTB6–7 and PORTC6–7 are not part of the mask.
+ * One board's GPIO at the state tick. Bit `i` of that board's pin list
+ * (the header names on the board view) is word `i >> 5`, bit `i & 31`.
+ * A board can have more than 32 pins: each field is a little-endian
+ * list of words, not one 32-bit mask. Names are not copied here; the
+ * tick runs often and the list changes only when the plan does.
  *
  * Collected at the state tick: port listeners OR the bits that changed,
  * and the tick reads DDR, PORT, and PIN. Nothing walks instructions.
  */
 export type WorldPinState = {
   /** 1 = output (DDR). */
-  ddr: number;
+  ddr: readonly number[];
   /** PORT when the pin is an output, PIN when it is an input. */
-  level: number;
+  level: readonly number[];
   /** 1 if that pin changed since the previous state tick. */
-  toggled: number;
+  toggled: readonly number[];
 };
+
+/** Words needed for `pinCount` bits. Empty boards still carry one zero word. */
+export function pinWordCount(pinCount: number): number {
+  return Math.max(1, Math.ceil(pinCount / 32));
+}
+
+/** A stopped board, or a board with no exposed GPIO. */
+export function emptyPinState(words = 1): WorldPinState {
+  const n = Math.max(1, words);
+  const zeros = () => Array.from({ length: n }, () => 0);
+  return { ddr: zeros(), level: zeros(), toggled: zeros() };
+}
+
+/** A bare number is one legacy word, from a reader that still has the old mask. */
+export function asPinWords(
+  value: number | readonly number[]
+): readonly number[] {
+  return typeof value === "number" ? [value >>> 0] : value;
+}
+
+/** True when bit `index` of the pin list is set. */
+export function pinBitSet(
+  words: number | readonly number[],
+  index: number
+): boolean {
+  if (index < 0) return false;
+  const list = asPinWords(words);
+  const word = list[index >>> 5] ?? 0;
+  return (word & (1 << (index & 31))) !== 0;
+}
+
+/** Index of `name` in the board's pin list, or undefined. */
+export function pinIndex(
+  names: readonly string[],
+  name: string
+): number | undefined {
+  const index = names.indexOf(name);
+  return index < 0 ? undefined : index;
+}
+
+/** True when the named pin is set. The names are that board's pin list. */
+export function pinHas(
+  words: number | readonly number[],
+  names: readonly string[],
+  name: string
+): boolean {
+  const index = pinIndex(names, name);
+  if (index === undefined) return false;
+  return pinBitSet(words, index);
+}
 
 /** D0–D13, then A0–A5. The pin table and the mask use this order. */
 export const ARDUINO_PINS: readonly string[] = [
@@ -58,7 +111,11 @@ export const ARDUINO_PINS: readonly string[] = [
   "A5",
 ];
 
-/** Bit index in `WorldPinState`, or undefined when `pin` is not D0–D13 or A0–A5. */
+/**
+ * Bit index of an Arduino header name. The web and the agent tools still
+ * read pins through this until they take the board view's pin list.
+ * It matches a board whose GPIO order is D0–D13, A0–A5.
+ */
 export function arduinoPinBit(pin: string): number | undefined {
   const digital = /^D(\d+)$/.exec(pin);
   if (digital) {
@@ -75,10 +132,18 @@ export function arduinoPinBit(pin: string): number | undefined {
   return undefined;
 }
 
-export function maskHasPin(mask: number, pin: string): boolean {
+/**
+ * Read one Arduino-named pin. `mask` may be the old 20-bit number or the
+ * word list. The index is `arduinoPinBit`, so this is right while that
+ * board's pin list is D0–D13, A0–A5. Prefer `pinHas` with the board's names.
+ */
+export function maskHasPin(
+  mask: number | readonly number[],
+  pin: string
+): boolean {
   const bit = arduinoPinBit(pin);
   if (bit === undefined) return false;
-  return (mask & (1 << bit)) !== 0;
+  return pinBitSet(mask, bit);
 }
 
 /**
@@ -134,7 +199,7 @@ export type WorldSupplyState = {
   soc?: number;
 };
 
-/** One board in the shared run. `pins` is the 20-bit snapshot for this tick. */
+/** One board in the shared run. `pins` is this tick's GPIO words. */
 export type WorldBoardState = {
   /**
    * The firmware image is loaded. While the run is paused the CPU does

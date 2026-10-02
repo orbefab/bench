@@ -16,7 +16,6 @@
  * ω = 0 and add B(s) on the joint.
  */
 
-import { arduinoPinBit } from "@sfab-bench/contract";
 import {
   AVR_PIN,
   type AvrPinParams,
@@ -179,7 +178,7 @@ export class RailCircuit {
    */
   leds: Record<string, number> = {};
   readonly ledPaths: readonly string[];
-  /** Arduino bits that have a pin element on this rail. */
+  /** Pin indexes that have a pin element on this rail. */
   get driveBits(): readonly number[] {
     return this.drives.map((row) => row.bit);
   }
@@ -201,6 +200,7 @@ export class RailCircuit {
   private readonly ldos: LdoRegulator[];
   private readonly drives: {
     bit: number;
+    port: string;
     pin: { setMode(mode: PinMode): void };
   }[];
   private readonly ledDiodes: { path: string; diode: Diode }[];
@@ -491,11 +491,10 @@ export class RailCircuit {
     return { voltage, rSource: r ?? 0 };
   }
 
-  /** D13. Same as `setDrive` for that bit. */
+  /** The pin named D13. Same as `setDrive` for that pin's index. */
   setD13(mode: PinMode): void {
-    const bit = arduinoPinBit("D13");
-    if (bit === undefined) return;
-    this.setDrive(bit, mode);
+    const found = this.drives.find((row) => row.port === "D13");
+    found?.pin.setMode(mode);
   }
 
   /**
@@ -735,7 +734,11 @@ type Assembled = {
   channels: PmosChannel[];
   comparators: Comparator[];
   ldos: LdoRegulator[];
-  drives: { bit: number; pin: { setMode(mode: PinMode): void } }[];
+  drives: {
+    bit: number;
+    port: string;
+    pin: { setMode(mode: PinMode): void };
+  }[];
   ledDiodes: { path: string; diode: Diode }[];
   ledAlias: string;
   resetFraction: number | null;
@@ -863,7 +866,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   const boardNodes = new Map<string, string>();
   const boardDrives = new Map<
     string,
-    { bit: number; pin: { setMode(mode: PinMode): void } }[]
+    { bit: number; port: string; pin: { setMode(mode: PinMode): void } }[]
   >();
   const boardResets = new Map<
     string,
@@ -872,7 +875,11 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   const boardPorts = new Map<string, Readonly<Record<string, string>>>();
   const feedOf = new Map<string, string>();
   const ledDiodes: { path: string; diode: Diode }[] = [];
-  const drives: { bit: number; pin: { setMode(mode: PinMode): void } }[] = [];
+  const drives: {
+    bit: number;
+    port: string;
+    pin: { setMode(mode: PinMode): void };
+  }[] = [];
   const loads: CurrentLoad[] = [];
   let stamped: Element[] = [];
   let capacitive = false;

@@ -1,4 +1,4 @@
-import { arduinoPinBit, type PowerFeeds } from "@sfab-bench/contract";
+import { type PowerFeeds, pinIndex } from "@sfab-bench/contract";
 import { splitPortRef, UnionFind } from "@sfab-bench/parts";
 
 import type { RunPin, RunPlan } from "./plan";
@@ -103,7 +103,7 @@ export function gpioInputNets(plan: RunPlan): GpioInputNet[] {
   for (const board of plan.boards) {
     for (const pin of Object.keys(board.pins)) {
       if (!board.pins[pin]?.digital) continue;
-      const bit = arduinoPinBit(pin);
+      const bit = pinIndex(board.pinOrder, pin);
       if (bit === undefined) continue;
       gpio.set(`${board.id}.${pin}`, { boardId: board.id, bit });
     }

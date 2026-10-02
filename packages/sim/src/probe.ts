@@ -5,9 +5,9 @@
  */
 
 import {
-  arduinoPinBit,
-  maskHasPin,
   parsePortProbeId,
+  pinHas,
+  pinIndex,
   portTrackId,
   type RecordedFrame,
   type RecordingRead,
@@ -18,6 +18,8 @@ import {
 export type ProbeIndex = {
   /** Servo instance to the `robot/joint` it turns. */
   shafts: Record<string, string>;
+  /** Board id to exposed GPIO names, in pin-state order. */
+  pins: Record<string, readonly string[]>;
 };
 
 type Kind = "servo" | "ranger" | "supply" | "board" | "robot";
@@ -135,14 +137,15 @@ function channelsOf(
         },
       ];
     }
-    if (arduinoPinBit(port) === undefined) return [];
+    const names = index.pins[instance];
+    if (!names || pinIndex(names, port) === undefined) return [];
     return [
       {
         unit: "V",
         pick: (f) => {
           const board = f.boards[instance];
           if (!board) return null;
-          return maskHasPin(board.pins.level, port) ? board.voltage : 0;
+          return pinHas(board.pins.level, names, port) ? board.voltage : 0;
         },
       },
     ];

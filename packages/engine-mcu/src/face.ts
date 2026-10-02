@@ -1,17 +1,17 @@
 // L2 face over AvrBoard. avr8js stays behind this package.
-import {
-  ATMEGA328P_BROWNOUT_V,
-  arduinoPinBit,
-  type Engine,
-} from "@sfab-bench/contract";
+import { ATMEGA328P_BROWNOUT_V, type Engine } from "@sfab-bench/contract";
 import { AvrBoard } from "./board";
 import { requireChipSpec } from "./chips";
 
-/** Flash image and the brownout threshold. Supply starts at 5 V. */
+/** Flash image, brownout threshold, and the board pin list. Supply starts at 5 V. */
 export type McuEngineSpec = {
   firmware: Uint8Array;
   /** Volts. The CPU is held in reset below this. Default 2.7. */
   brownoutVoltage?: number;
+  /** Chip pin per exposed header, in pin-state order. Absent is no GPIO. */
+  wire?: readonly string[];
+  /** Header names in that same order. `read` and `write` use these. */
+  pins?: readonly string[];
 };
 
 const LOGIC_HIGH = 0.6;
@@ -29,6 +29,7 @@ export class McuEngine implements Engine {
   private brownoutVoltage = ATMEGA328P_BROWNOUT_V;
   private ms = 0;
   private pendingTx = "";
+  private pins: readonly string[] = [];
   private readonly pinVolts = new Map<number, number>();
 
   constructor(id = "mcu") {
@@ -41,8 +42,13 @@ export class McuEngine implements Engine {
     this.supply = 5;
     this.ms = 0;
     this.pendingTx = "";
+    this.pins = parsed.pins ?? [];
     this.pinVolts.clear();
-    const board = new AvrBoard(this.id, requireChipSpec("atmega328p"));
+    const board = new AvrBoard(
+      this.id,
+      requireChipSpec("atmega328p"),
+      parsed.wire ?? []
+    );
     this.board = board;
     board.load(parsed.firmware);
     this.applySupply();
@@ -68,7 +74,7 @@ export class McuEngine implements Engine {
       return byte;
     }
     if (port === "supply" && quantity === "voltage") return this.supply;
-    const bit = pinBit(port);
+    const bit = this.pinBit(port);
     if (quantity !== "voltage") {
       throw new Error(`mcu engine has no quantity ${quantity}`);
     }
@@ -92,7 +98,7 @@ export class McuEngine implements Engine {
       board.pushRx(String.fromCharCode(byte));
       return;
     }
-    const bit = pinBit(port);
+    const bit = this.pinBit(port);
     if (quantity !== "voltage") {
       throw new Error(`mcu engine cannot write ${port}.${quantity}`);
     }
@@ -122,12 +128,12 @@ export class McuEngine implements Engine {
     if (!this.board) throw new Error("mcu engine is not initialised");
     return this.board;
   }
-}
 
-function pinBit(port: string): number {
-  const bit = arduinoPinBit(port);
-  if (bit === undefined) throw new Error(`mcu engine has no port ${port}`);
-  return bit;
+  private pinBit(port: string): number {
+    const bit = this.pins.indexOf(port);
+    if (bit < 0) throw new Error(`mcu engine has no port ${port}`);
+    return bit;
+  }
 }
 
 function mcuSpec(spec: unknown): McuEngineSpec {

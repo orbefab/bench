@@ -3,8 +3,10 @@ import {
   ATMEGA328P_BROWNOUT_V,
   atmega328pSoaWarning,
   DEFAULT_TIMESTEP_S,
+  emptyPinState,
   type JointLimitKind,
   pastLimitAmount,
+  pinWordCount,
   RECORD_FRAME_MS,
   type RecordingManifest,
   type RecordingPartCatalog,
@@ -208,10 +210,7 @@ function fillRecorder(s: SessionState, full: boolean) {
     for (let i = 0; i < lay.boards.length; i++) {
       const id = lay.boards[i];
       const board = s.boards.find((item) => item.id === id);
-      const pins = board?.peekPins() ?? { ddr: 0, level: 0, toggled: 0 };
-      rec.ddr[i] = pins.ddr;
-      rec.level[i] = pins.level;
-      rec.toggled[i] = pins.toggled;
+      rec.setPins(i, board?.peekPins() ?? emptyPinState());
       rec.running[i] = board?.running ? 1 : 0;
     }
   }
@@ -342,6 +341,11 @@ export function openRecorder(s: SessionState) {
     partRanger: [...parts.map(() => false), ...s.rangers.map(() => true)],
     supplies: s.supplySpecs.map((supply) => supply.id),
     boards: boardIds,
+    pinWords: boardIds.map((id) =>
+      pinWordCount(
+        s.runPlan?.boards.find((board) => board.id === id)?.pinOrder.length ?? 0
+      )
+    ),
     boardLed: boardIds.map((id) => {
       const supplyId = s.boardPower.get(id)?.supplyId;
       const group = supplyId ? s.rails.get(supplyId) : undefined;
@@ -476,7 +480,10 @@ export function record(s: SessionState, query: RecordQuery): RecordBody {
     for (const load of s.loads) {
       if (load.drive) shafts[load.partId] = load.drive.jointName;
     }
-    const probed = probeTracks(read, query.tracks, { shafts });
+    const pins: Record<string, readonly string[]> = {};
+    for (const board of s.runPlan?.boards ?? [])
+      pins[board.id] = board.pinOrder;
+    const probed = probeTracks(read, query.tracks, { shafts, pins });
     return {
       op: "timeline",
       id: info.id,

@@ -1,6 +1,7 @@
 /** A firmware chip, the board it runs as, and the electrical facts it carries. */
 
-import { arduinoPinBit, type BehaviourImpl } from "@sfab-bench/contract";
+import type { BehaviourImpl } from "@sfab-bench/contract";
+import { chipSpec } from "@sfab-bench/engine-mcu";
 
 export { boardHostOf, chipExposure } from "@sfab-bench/parts";
 
@@ -32,17 +33,23 @@ export function chipFactsOf(behaviour: FirmwareBehaviour): ChipFacts | null {
   };
 }
 
+/** One exposed GPIO: the header name, and the chip pin it reaches. */
+export type ExposedGpio = { name: string; chip: string };
+
 /**
- * The 20 wire bits as chip pins: each Arduino header name that the board
- * exposes from its chip is that bit's pin.
+ * Header ports the board exposes onto a chip pin the emulator knows,
+ * in expose order. Power, reset, and analog-only ports drop out: they
+ * are not in the chip's GPIO table. The chip's port and bit stay on
+ * `ChipSpec.pins`; this list is only names.
  */
-export function wireOf(
+export function gpioPinsOf(
+  chipName: string,
   exposure: ReadonlyMap<string, string>
-): (string | null)[] {
-  const wire: (string | null)[] = Array.from({ length: 20 }, () => null);
-  for (const [port, pin] of exposure) {
-    const bit = arduinoPinBit(port);
-    if (bit !== undefined) wire[bit] = pin;
+): ExposedGpio[] {
+  const pins = chipSpec(chipName)?.pins ?? {};
+  const out: ExposedGpio[] = [];
+  for (const [name, chip] of exposure) {
+    if (pins[chip]) out.push({ name, chip });
   }
-  return wire;
+  return out;
 }

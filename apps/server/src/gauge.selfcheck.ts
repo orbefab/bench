@@ -19,9 +19,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  arduinoPinBit,
   emptySnapshot,
   type LockFile,
+  pinBitSet,
   type RecordingRead,
   type RunReport,
   type WorldSender,
@@ -69,12 +69,11 @@ const fixtureDir = fileURLToPath(
 function driveSamples(
   read: RecordingRead
 ): { fraction: number; d13: "high" | "low" | "input" }[] {
-  const bit = 1 << (arduinoPinBit("D13") ?? 13);
   return read.frames.map((frame) => {
     const pulse = frame.parts.servo?.pulseUs ?? 0;
     const pins = frame.boards.nano?.pins;
-    const driving = pins ? (pins.ddr & bit) !== 0 : false;
-    const high = pins ? (pins.level & bit) !== 0 : false;
+    const driving = pins ? pinBitSet(pins.ddr, 13) : false;
+    const high = pins ? pinBitSet(pins.level, 13) : false;
     const fraction =
       pulse > 0 ? Math.min(1, Math.max(0, (pulse - 1000) / 1000)) : 0;
     return {

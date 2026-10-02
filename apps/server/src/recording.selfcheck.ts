@@ -147,7 +147,10 @@ expect(
 );
 close(closed?.supplies.usb?.minVoltage ?? 0, 1.2, "min voltage");
 close(closed?.supplies.usb?.voltage ?? 0, 5, "the value at t recovered");
-expect(closed?.boards.uno?.pins.ddr === 10, "pins are the sample at the frame");
+expect(
+  closed?.boards.uno?.pins.ddr[0] === 10,
+  "pins are the sample at the frame"
+);
 console.log("recorder: 10 ms frames, frameAt, and the 1 ms dip");
 
 const shaped = unitRecorder();
@@ -184,10 +187,16 @@ close(
   0.4,
   "the skipped frame keeps its minimum voltage"
 );
-expect(first?.boards.uno?.pins.ddr === 2, "the pin mask is the picked frame's");
+expect(
+  first?.boards.uno?.pins.ddr[0] === 2,
+  "the pin mask is the picked frame's"
+);
 expect(msOf(second?.t ?? -1) === 30, "the second bucket picks the last frame");
 expect(second?.parts.servo?.worst === "stall", "the skipped stall is kept");
-expect(second?.boards.uno?.pins.ddr === 4, "the later pin mask is not blended");
+expect(
+  second?.boards.uno?.pins.ddr[0] === 4,
+  "the later pin mask is not blended"
+);
 console.log("recorder: downsample picks frames and keeps extremes");
 
 const bounded = unitRecorder(30);
@@ -492,8 +501,8 @@ try {
     const board = frame.boards.uno;
     expect(
       board?.brownout === true &&
-        board.pins.ddr === 0 &&
-        board.pins.level === 0,
+        board.pins.ddr[0] === 0 &&
+        board.pins.level[0] === 0,
       `driven at ${frame.t.toFixed(3)} s`
     );
   }

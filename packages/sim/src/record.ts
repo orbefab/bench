@@ -29,6 +29,7 @@ import {
   type TimelineMarker,
   type TimelineTrack,
   type WorldPartMotion,
+  type WorldPinState,
   type WorldSender,
 } from "@sfab-bench/contract";
 
@@ -84,6 +85,11 @@ export type RecordSpec = {
   partRanger?: boolean[];
   supplies: string[];
   boards: string[];
+  /**
+   * Words of pin state per board. Absent is one word, the layout a board
+   * of at most 32 pins has always used.
+   */
+  pinWords?: number[];
   /** Parallel to `boards`. True when that board records `leds[`${id}.led`]`. */
   boardLed?: boolean[];
   /** LED paths on each board. Each frame stores that LED's mean current. */
@@ -208,6 +214,10 @@ export class RunRecorder {
   private readonly hasRanger: boolean;
   private readonly supplies: { id: string; track: string }[];
   private readonly boards: { id: string; track: string }[];
+  /** Words stored for each board. One while every board has at most 32 pins. */
+  private readonly pinWords: readonly number[];
+  /** Max of `pinWords`. Channel `board * pinStride + word` is that word. */
+  private readonly pinStride: number;
   private readonly minV: Float64Array;
   private readonly maxSupply: Float64Array;
   private readonly minBoardV: Float64Array;
@@ -245,6 +255,13 @@ export class RunRecorder {
       track: supplyTrackId(id),
     }));
     this.boards = spec.boards.map((id) => ({ id, track: boardTrackId(id) }));
+    this.pinWords = spec.boards.map((_, index) =>
+      Math.max(1, spec.pinWords?.[index] ?? 1)
+    );
+    this.pinStride = this.pinWords.reduce(
+      (max, words) => Math.max(max, words),
+      1
+    );
     const nJ = this.joints.length;
     const nB = this.bodies.length;
     const nP = this.parts.length;
@@ -272,9 +289,10 @@ export class RunRecorder {
     this.ledOn = spec.boardLed ?? this.boards.map(() => false);
     this.ledPaths = spec.leds ?? [];
     this.ledAmps = new Float64Array(this.ledPaths.length);
-    this.ddr = new Uint32Array(nD);
-    this.level = new Uint32Array(nD);
-    this.toggled = new Uint32Array(nD);
+    const nPins = nD * this.pinStride;
+    this.ddr = new Uint32Array(nPins);
+    this.level = new Uint32Array(nPins);
+    this.toggled = new Uint32Array(nPins);
     this.running = new Uint8Array(nD);
     this.brownout = new Uint8Array(nD);
     this.belowSoa = new Uint8Array(nD);
@@ -494,9 +512,13 @@ export class RunRecorder {
       chunk.supplySoc[channel(i, slot)] = this.supplySoc[i] ?? Number.NaN;
     }
     for (let i = 0; i < this.boards.length; i++) {
-      chunk.ddr[channel(i, slot)] = this.ddr[i] ?? 0;
-      chunk.level[channel(i, slot)] = this.level[i] ?? 0;
-      chunk.toggled[channel(i, slot)] = this.toggled[i] ?? 0;
+      const words = this.pinWords[i] ?? 1;
+      for (let w = 0; w < words; w++) {
+        const index = i * this.pinStride + w;
+        chunk.ddr[channel(index, slot)] = this.ddr[index] ?? 0;
+        chunk.level[channel(index, slot)] = this.level[index] ?? 0;
+        chunk.toggled[channel(index, slot)] = this.toggled[index] ?? 0;
+      }
       chunk.running[channel(i, slot)] = this.running[i] ?? 0;
       chunk.brownout[channel(i, slot)] = this.brownout[i] ?? 0;
       chunk.brownoutAny[channel(i, slot)] = this.brownAny[i] ?? 0;
@@ -517,6 +539,33 @@ export class RunRecorder {
     chunk.count += 1;
   }
 
+  /** Copy this board's pin words. `i` is the board, not the word. */
+  setPins(i: number, pins: WorldPinState): void {
+    const words = this.pinWords[i] ?? 1;
+    for (let w = 0; w < words; w++) {
+      const at = i * this.pinStride + w;
+      this.ddr[at] = pins.ddr[w] ?? 0;
+      this.level[at] = pins.level[w] ?? 0;
+      this.toggled[at] = pins.toggled[w] ?? 0;
+    }
+  }
+
+  private storedPins(chunk: Chunk, board: number, slot: number): WorldPinState {
+    const words = this.pinWords[board] ?? 1;
+    const take = (field: Uint32Array) => {
+      const out: number[] = [];
+      for (let w = 0; w < words; w++) {
+        out.push(field[channel(board * this.pinStride + w, slot)] ?? 0);
+      }
+      return out;
+    };
+    return {
+      ddr: take(chunk.ddr),
+      level: take(chunk.level),
+      toggled: take(chunk.toggled),
+    };
+  }
+
   private counts() {
     return {
       joints: this.joints.length,
@@ -524,6 +573,7 @@ export class RunRecorder {
       parts: this.parts.length,
       supplies: this.supplies.length,
       boards: this.boards.length,
+      pinStride: this.pinStride,
       boardLed: this.ledOn.some(Boolean),
       leds: this.ledPaths.length,
       ranger: this.hasRanger,
@@ -834,11 +884,7 @@ export class RunRecorder {
       const spec = this.boards[i];
       if (!spec || !want(spec.track)) continue;
       boards[spec.id] = {
-        pins: {
-          ddr: slot.chunk.ddr[channel(i, slot.slot)] ?? 0,
-          level: slot.chunk.level[channel(i, slot.slot)] ?? 0,
-          toggled: slot.chunk.toggled[channel(i, slot.slot)] ?? 0,
-        },
+        pins: this.storedPins(slot.chunk, i, slot.slot),
         running: (slot.chunk.running[channel(i, slot.slot)] ?? 0) !== 0,
         brownout: (slot.chunk.brownout[channel(i, slot.slot)] ?? 0) !== 0,
         brownoutAny: (slot.chunk.brownoutAny[channel(i, slot.slot)] ?? 0) !== 0,
@@ -861,11 +907,7 @@ export class RunRecorder {
       if (!spec || boards[spec.id]) continue;
       const at = channel(i, slot.slot);
       boards[spec.id] = {
-        pins: {
-          ddr: slot.chunk.ddr[at] ?? 0,
-          level: slot.chunk.level[at] ?? 0,
-          toggled: slot.chunk.toggled[at] ?? 0,
-        },
+        pins: this.storedPins(slot.chunk, i, slot.slot),
         running: (slot.chunk.running[at] ?? 0) !== 0,
         brownout: (slot.chunk.brownout[at] ?? 0) !== 0,
         brownoutAny: (slot.chunk.brownoutAny[at] ?? 0) !== 0,
@@ -1003,6 +1045,8 @@ function createChunk(counts: {
   parts: number;
   supplies: number;
   boards: number;
+  /** Words per board. Absent is one, so a 32-pin board keeps the old stride. */
+  pinStride?: number;
   boardLed?: boolean;
   leds?: number;
   ranger?: boolean;
@@ -1036,9 +1080,9 @@ function createChunk(counts: {
       ? new Float32Array(counts.parts * CHUNK)
       : null,
     rangerHit: counts.ranger ? new Uint8Array(counts.parts * CHUNK) : null,
-    ddr: new Uint32Array(counts.boards * CHUNK),
-    level: new Uint32Array(counts.boards * CHUNK),
-    toggled: new Uint32Array(counts.boards * CHUNK),
+    ddr: new Uint32Array(counts.boards * (counts.pinStride ?? 1) * CHUNK),
+    level: new Uint32Array(counts.boards * (counts.pinStride ?? 1) * CHUNK),
+    toggled: new Uint32Array(counts.boards * (counts.pinStride ?? 1) * CHUNK),
     running: new Uint8Array(counts.boards * CHUNK),
     brownout: new Uint8Array(counts.boards * CHUNK),
     brownoutAny: new Uint8Array(counts.boards * CHUNK),

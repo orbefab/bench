@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
-import { arduinoPinBit, type RecordingRead } from "@sfab-bench/contract";
+import type { RecordingRead } from "@sfab-bench/contract";
 import { AVR_PIN } from "@sfab-bench/engine-circuit";
 import { sha256Bytes } from "@sfab-bench/parts";
 import { Sim } from "@sfab-bench/sim/sim";
@@ -65,7 +65,7 @@ const emptyAxes = {
 };
 
 const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };
-const bit = arduinoPinBit("D13");
+const bit = stampOf("d13").pins.find((pin) => pin.port === "D13")?.bit;
 if (bit === undefined) throw new Error("D13");
 
 function stampOf(id: string) {

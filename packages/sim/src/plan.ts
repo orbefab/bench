@@ -1,13 +1,13 @@
 /** The run's plan, built from loadWorldV2 (layered-sim E7, 318b899). */
 
 import {
-  arduinoPinBit,
   type BehaviourImpl,
   type BodyImpl,
   DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type PortDecl,
   type Pose,
+  pinIndex,
   ROOT_PATH,
   type RunReport,
   SUPPLY_FORMS,
@@ -37,7 +37,12 @@ import {
   type Wire,
   type WireEnd,
 } from "@sfab-bench/parts";
-import { boardHostOf, chipExposure, chipFactsOf, wireOf } from "./chip-host";
+import {
+  boardHostOf,
+  chipExposure,
+  chipFactsOf,
+  gpioPinsOf,
+} from "./chip-host";
 import {
   type AssignedPart,
   assignNodes,
@@ -133,11 +138,12 @@ export type RunBoard = {
   /** V_RST / VCC, from the chip part. */
   resetFraction: number;
   /**
-   * Wire bit to the chip pin the board's header port reaches through its
-   * `expose` table. Absent on a board that is its own chip: the default
-   * Arduino header applies.
+   * Exposed GPIO header names, in pin-state order. Empty when this board
+   * exposes no chip pin the emulator knows.
    */
-  wire?: (string | null)[];
+  pinOrder: readonly string[];
+  /** Chip pin name for each `pinOrder` entry. Same length, same order. */
+  wire: readonly string[];
   /**
    * Volts. A running chip above its brownout level and below this is outside
    * its specification. Null when the chip part gives no such band.
@@ -612,7 +618,7 @@ function digitalPeer(
   inst: LiveInstance,
   port: string,
   loaded: LoadResult,
-  boardPaths: ReadonlySet<string>
+  boards: readonly RunBoard[]
 ): { boardId: string; bit: number } | null {
   for (const wire of loaded.wires) {
     const other =
@@ -622,8 +628,9 @@ function digitalPeer(
           ? wire.a
           : null;
     if (!other) continue;
-    if (!boardPaths.has(other.path)) continue;
-    const bit = arduinoPinBit(other.port);
+    const board = boards.find((item) => item.id === other.path);
+    if (!board) continue;
+    const bit = pinIndex(board.pinOrder, other.port);
     if (bit === undefined) continue;
     return { boardId: other.path, bit };
   }
@@ -915,16 +922,6 @@ function build(
   // collapse of a gear train; form ranger@1. Anything else is a plan
   // error that names the path.
   const byPath = new Map(loaded.resolved.map((item) => [item.path, item]));
-  // A board is a firmware part, or the composite a firmware chip runs as.
-  const boardPaths = new Set(
-    loaded.resolved
-      .filter(
-        (item) =>
-          (item.axes.behaviour.impl as BehaviourImpl | null)?.kind ===
-          "firmware"
-      )
-      .map((item) => boardHostOf(item, byPath, ROOT_PATH).path)
-  );
   for (const inst of loaded.resolved) {
     // A composite root is a shell. A leaf opened as the root is the
     // instance: its body is planned, or it sits idle with a diagnostic.
@@ -1018,6 +1015,7 @@ function build(
         facts.railVoltage,
       ];
       const source = inst.params.source;
+      const gpio = gpioPinsOf(behaviour.chip, exposure);
       // The board's own load rides on the chip instance: it counts the parts
       // the chip part does not carry (the USB bridge, the power LED).
       const quiescent =
@@ -1048,7 +1046,8 @@ function build(
                 ([, pin]) => pin === behaviour.resetPort
               )?.[0] ?? null),
         resetFraction: facts.resetFraction,
-        ...(host === inst ? {} : { wire: wireOf(exposure) }),
+        pinOrder: gpio.map((pin) => pin.name),
+        wire: gpio.map((pin) => pin.chip),
         minOperatingVoltage: facts.minOperatingVoltage,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
@@ -1145,8 +1144,8 @@ function build(
         model: shortName(inst.part.id),
         pose: poseOf(inst),
         law: rangerLaw(numbers),
-        trig: digitalPeer(inst, "Trig", loaded, boardPaths),
-        echo: digitalPeer(inst, "Echo", loaded, boardPaths),
+        trig: digitalPeer(inst, "Trig", loaded, boards),
+        echo: digitalPeer(inst, "Echo", loaded, boards),
       });
       pushBox(boxes, inst, "part");
       continue;
@@ -1327,6 +1326,7 @@ function build(
       resetPort: board.resetPort,
       usbPort: connectorPort(inst.type.ports, "usb"),
       resetFraction: board.resetFraction,
+      pins: board.pinOrder,
       parts: stampParts.filter((part) => {
         const hit = owners.get(part.path) ?? [];
         if (hit.length >= 2) return false;

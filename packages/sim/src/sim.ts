@@ -9,8 +9,6 @@
  * stay direct so the millisecond loop does not grow a wrapper.
  */
 import {
-  ATMEGA328P_BROWNOUT_V,
-  arduinoPinBit,
   atmega328pSoaWarning,
   DEFAULT_TIMESTEP_S,
   type Diagnostic,

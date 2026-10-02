@@ -1,5 +1,5 @@
 import { ok as expect } from "node:assert/strict";
-import { maskHasPin } from "@sfab-bench/contract";
+import { pinHas } from "@sfab-bench/contract";
 import { AVR_PIN } from "@sfab-bench/engine-circuit";
 import { AvrBoard, FLASH_BYTES, requireChipSpec } from "@sfab-bench/engine-mcu";
 import { assemble } from "avr8js/dist/esm/utils/assembler.js";
@@ -24,6 +24,17 @@ const VCC: RunPin = {
   digital: false,
   pwm: false,
 };
+
+/** Uno/Nano header. D2 is index 2, the same bit `setDriven(2)` drives. */
+const HEADER_PINS = [
+  ...Array.from({ length: 14 }, (_, n) => `D${n}`),
+  ...Array.from({ length: 6 }, (_, n) => `A${n}`),
+];
+const HEADER_WIRE = [
+  ...Array.from({ length: 8 }, (_, n) => `PD${n}`),
+  ...Array.from({ length: 6 }, (_, n) => `PB${n}`),
+  ...Array.from({ length: 6 }, (_, n) => `PC${n}`),
+];
 
 /** A plan with only the pins these nets touch. */
 function gpioPlan(
@@ -67,6 +78,8 @@ function gpioPlan(
       operatingVoltage: 5,
       supply: { min: 5, max: 5 },
       pin: AVR_PIN,
+      pinOrder: HEADER_PINS,
+      wire: HEADER_WIRE,
     })),
     supplies: supplyIds.map((id) => ({
       id,
@@ -110,7 +123,7 @@ const image = new Uint8Array(FLASH_BYTES);
 image.fill(0xff);
 image.set(assembled.bytes);
 
-const board = new AvrBoard("uno", requireChipSpec("atmega328p"));
+const board = new AvrBoard("uno", requireChipSpec("atmega328p"), HEADER_WIRE);
 board.load(image);
 expect(board.running, "pull-up program did not load");
 board.stepMillis();
@@ -118,7 +131,7 @@ const read = board.peekByte(17);
 expect(read !== null && (read & 0x04) !== 0, `digitalRead D2 was ${read}`);
 const high = board.peekPins();
 expect(
-  !maskHasPin(high.ddr, "D2") && maskHasPin(high.level, "D2"),
+  !pinHas(high.ddr, HEADER_PINS, "D2") && pinHas(high.level, HEADER_PINS, "D2"),
   `D2 pin table ddr ${high.ddr} level ${high.level}`
 );
 console.log("pull-up: D2 reads HIGH, pin table in H");
@@ -132,7 +145,7 @@ expect(
 );
 const low = board.peekPins();
 expect(
-  !maskHasPin(low.ddr, "D2") && !maskHasPin(low.level, "D2"),
+  !pinHas(low.ddr, HEADER_PINS, "D2") && !pinHas(low.level, HEADER_PINS, "D2"),
   "a wired output low reads L"
 );
 
@@ -174,7 +187,7 @@ function loadProgram(id: string, source: string): AvrBoard {
   const image = new Uint8Array(FLASH_BYTES);
   image.fill(0xff);
   image.set(assembled.bytes);
-  const board = new AvrBoard(id, requireChipSpec("atmega328p"));
+  const board = new AvrBoard(id, requireChipSpec("atmega328p"), HEADER_WIRE);
   board.load(image);
   expect(board.running, `${id} did not load`);
   return board;
@@ -223,10 +236,10 @@ bindNets([same], gpioPlan(["uno"], [["uno.D2", "uno.D3"]]), () => {
   const level = same.outputLevel(3);
   if (level === null) return;
   const pins = same.peekPins();
-  expect(!maskHasPin(pins.ddr, "D2"), "D2 became an output");
+  expect(!pinHas(pins.ddr, HEADER_PINS, "D2"), "D2 became an output");
   expect(
-    maskHasPin(pins.level, "D2") === level,
-    `same-port D2 ${maskHasPin(pins.level, "D2")} vs D3 ${level}`
+    pinHas(pins.level, HEADER_PINS, "D2") === level,
+    `same-port D2 ${pinHas(pins.level, HEADER_PINS, "D2")} vs D3 ${level}`
   );
   sameLevels.push(level);
 });
@@ -267,10 +280,10 @@ bindNets(
     const level = driver.outputLevel(3);
     if (level === null) return;
     const pins = peer.peekPins();
-    expect(!maskHasPin(pins.ddr, "D2"), "peer D2 became an output");
+    expect(!pinHas(pins.ddr, HEADER_PINS, "D2"), "peer D2 became an output");
     expect(
-      maskHasPin(pins.level, "D2") === level,
-      `cross-board D2 ${maskHasPin(pins.level, "D2")} vs D3 ${level}`
+      pinHas(pins.level, HEADER_PINS, "D2") === level,
+      `cross-board D2 ${pinHas(pins.level, HEADER_PINS, "D2")} vs D3 ${level}`
     );
     crossLevels.push(level);
   }
@@ -278,7 +291,8 @@ bindNets(
 peer.stepMillis();
 const pulled = peer.peekPins();
 expect(
-  !maskHasPin(pulled.ddr, "D2") && maskHasPin(pulled.level, "D2"),
+  !pinHas(pulled.ddr, HEADER_PINS, "D2") &&
+    pinHas(pulled.level, HEADER_PINS, "D2"),
   "peer D2 pull-up was not high before the driver wrote"
 );
 driver.stepMillis();
@@ -308,15 +322,16 @@ resetPeer.stepMillis();
 resetDriver.stepMillis();
 const drivenLow = resetPeer.peekPins();
 expect(
-  !maskHasPin(drivenLow.ddr, "D2") && !maskHasPin(drivenLow.level, "D2"),
+  !pinHas(drivenLow.ddr, HEADER_PINS, "D2") &&
+    !pinHas(drivenLow.level, HEADER_PINS, "D2"),
   "peer did not follow the driver low"
 );
 resetDriver.holdInReset();
 applyGpioDrives(resetNets, [resetDriver, resetPeer]);
 const releasedByReset = resetPeer.peekPins();
 expect(
-  !maskHasPin(releasedByReset.ddr, "D2") &&
-    maskHasPin(releasedByReset.level, "D2"),
+  !pinHas(releasedByReset.ddr, HEADER_PINS, "D2") &&
+    pinHas(releasedByReset.level, HEADER_PINS, "D2"),
   "peer did not return to its pull-up while the driver is in reset"
 );
 console.log("pull-up: reset driver releases the peer");
@@ -324,11 +339,15 @@ console.log("pull-up: reset driver releases the peer");
 const sticky = loadProgram("uno", peerSource);
 sticky.setDriven(2, true);
 sticky.stepMillis();
-expect(maskHasPin(sticky.peekPins().level, "D2"), "external high missing");
+expect(
+  pinHas(sticky.peekPins().level, HEADER_PINS, "D2"),
+  "external high missing"
+);
 expect(sticky.reboot(), "reboot failed");
 const cleared = sticky.peekPins();
 expect(
-  !maskHasPin(cleared.ddr, "D2") && !maskHasPin(cleared.level, "D2"),
+  !pinHas(cleared.ddr, HEADER_PINS, "D2") &&
+    !pinHas(cleared.level, HEADER_PINS, "D2"),
   "reboot kept a stale driven high before the first instruction"
 );
 console.log("pull-up: reboot clears driven");
@@ -338,7 +357,8 @@ bindNets([grounded], gpioPlan(["uno"], [["uno.D2", "uno.GND"]]), () => {});
 grounded.stepMillis();
 const groundedPins = grounded.peekPins();
 expect(
-  !maskHasPin(groundedPins.ddr, "D2") && !maskHasPin(groundedPins.level, "D2"),
+  !pinHas(groundedPins.ddr, HEADER_PINS, "D2") &&
+    !pinHas(groundedPins.level, HEADER_PINS, "D2"),
   "D2 pull-up won against GND"
 );
 console.log("pull-up: GND drives an input low");
@@ -350,7 +370,7 @@ rjmp loop
 const supplied = loadProgram("uno", idleSource);
 const beforeSupply = supplied.peekPins();
 expect(
-  !maskHasPin(beforeSupply.level, "D2"),
+  !pinHas(beforeSupply.level, HEADER_PINS, "D2"),
   "D2 was high before the supply wire"
 );
 applyGpioDrives(
@@ -359,7 +379,8 @@ applyGpioDrives(
 );
 const suppliedPins = supplied.peekPins();
 expect(
-  !maskHasPin(suppliedPins.ddr, "D2") && maskHasPin(suppliedPins.level, "D2"),
+  !pinHas(suppliedPins.ddr, HEADER_PINS, "D2") &&
+    pinHas(suppliedPins.level, HEADER_PINS, "D2"),
   "supply positive did not drive D2 high"
 );
 console.log("pull-up: a supply positive drives an input high");

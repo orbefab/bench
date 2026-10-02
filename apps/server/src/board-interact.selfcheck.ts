@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 import type { EditOp, WorldState } from "@sfab-bench/contract";
 import { EditSession } from "@sfab-bench/parts";
 
-import { canon } from "./board-digest";
+import { canon, r5bBoards } from "./board-digest";
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
 import { absolutePath, nodeStore } from "./world/node-store";
@@ -217,7 +217,7 @@ function stateView(state: WorldState) {
     simTime: state.simTime,
     poses: state.poses,
     joints: state.joints,
-    boards: state.boards,
+    boards: r5bBoards(state.boards),
     parts: state.parts,
     supplies: state.supplies,
     diagnostics: (state.diagnostics ?? []).map((row) => ({
@@ -262,7 +262,7 @@ async function play(root: string, world: World): Promise<Row> {
     if (body.op !== "read") throw new Error(`${world.name}: no recording`);
     for (const frame of body.read.frames) {
       frames += 1;
-      hash.update(`f${canon(frame)}\n`);
+      hash.update(`f${canon({ ...frame, boards: r5bBoards(frame.boards) })}\n`);
     }
     for (const event of body.read.events) {
       if (event.kind === "reset") resets += 1;

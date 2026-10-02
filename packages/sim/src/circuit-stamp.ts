@@ -3,7 +3,6 @@
  * same step: its children are parts, and `buildNets` names the nodes.
  */
 import {
-  arduinoPinBit,
   type BehaviourImpl,
   type LevelClass,
   PART_FORMAT,
@@ -43,7 +42,12 @@ import {
   type TableLaw,
   tableLawOf,
 } from "@sfab-bench/parts";
-import { boardHostOf, chipFactsOf } from "./chip-host";
+import {
+  boardHostOf,
+  chipExposure,
+  chipFactsOf,
+  gpioPinsOf,
+} from "./chip-host";
 import type { StampEnv } from "./env";
 import { formAdapter, stampDiode } from "./forms";
 import type { RailFeed } from "./power-path";
@@ -121,7 +125,7 @@ export type BoardStamp = {
 
 export type RealizedCircuit = {
   elements: Element[];
-  pins: { bit: number; pin: Pin }[];
+  pins: { bit: number; port: string; pin: Pin }[];
   leds: { path: string; diode: Diode }[];
   feedNode: string;
   boardNode: string;
@@ -225,6 +229,11 @@ export function stampBoard(input: {
   usbPort: string | null;
   /** V_RST / VCC. Null when this stamp has no reset threshold. */
   resetFraction: number | null;
+  /**
+   * Exposed GPIO header names, in pin-state order. A port that is not
+   * in this list is not a chip pin. Absent stamps no GPIO.
+   */
+  pins?: readonly string[];
   parts: readonly CircuitInst[];
   /**
    * Parts on this supply that share no net with the board. They still
@@ -293,11 +302,12 @@ export function stampBoard(input: {
     return nodeByFull.get(full) ?? null;
   };
 
+  const order = input.pins ?? [];
   const pins: StampedPin[] = [];
   for (const [port, decl] of Object.entries(input.ports)) {
     if (decl.internal) continue;
-    const bit = arduinoPinBit(port);
-    if (bit === undefined) continue;
+    const bit = order.indexOf(port);
+    if (bit < 0) continue;
     const full = boardFull(port);
     const net = netContaining(input.nets, full);
     if (!net) continue;
@@ -439,6 +449,7 @@ export function realize(
   const pins = withPins
     ? stamp.pins.map((row) => ({
         bit: row.bit,
+        port: row.port,
         pin: new Pin(
           opts?.pinId?.(row.port) ?? `pin.${row.port}`,
           row.node,
@@ -935,6 +946,11 @@ function stampOf(
   }
   const resetPort =
     behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
+  const chipBehaviour = chip?.axes.behaviour.impl as BehaviourImpl | null;
+  const gpio =
+    chip && chipBehaviour?.kind === "firmware"
+      ? gpioPinsOf(chipBehaviour.chip, chipExposure(chip, board))
+      : [];
   const stamp = stampBoard({
     boardId,
     netlist: isFirmware,
@@ -944,6 +960,7 @@ function stampOf(
     resetPort,
     usbPort: connectorPort(board.type.ports, "usb"),
     resetFraction,
+    pins: gpio.map((pin) => pin.name),
     parts: circuitParts,
     nets: liveNets(built.nets),
   });

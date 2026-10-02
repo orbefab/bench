@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 
 import type { RecordedFrame, RecordingEvent } from "@sfab-bench/contract";
 
-import { byOrder, canon, num } from "./board-digest";
+import { byOrder, canon, num, r5bBoards, r5bPins } from "./board-digest";
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
 
@@ -57,8 +57,8 @@ function frameView(frame: RecordedFrame) {
     poses: frame.poses,
     parts: frame.parts,
     supplies: frame.supplies,
-    boards: byOrder(frame.boards).map((board) => ({
-      ...board,
+    boards: byOrder(r5bBoards(frame.boards)).map((board) => ({
+      ...r5bPins(board),
       leds: byOrder(board.leds),
     })),
   };
@@ -155,8 +155,8 @@ async function replay(target: {
         simTime: state.simTime,
         poses: state.poses,
         joints: state.joints,
-        boards: byOrder(state.boards).map((board) => ({
-          ...board,
+        boards: byOrder(r5bBoards(state.boards)).map((board) => ({
+          ...r5bPins(board),
           leds: byOrder(board.leds),
         })),
         parts: state.parts,

@@ -1,4 +1,9 @@
-import type { PinMode, WorldPinState } from "@sfab-bench/contract";
+import {
+  emptyPinState,
+  type PinMode,
+  pinWordCount,
+  type WorldPinState,
+} from "@sfab-bench/contract";
 import {
   AVRIOPort,
   type AVRPortConfig,
@@ -39,9 +44,10 @@ export const RX_BACKLOG = 4 * 1024;
  * instruction may pass that budget; `overshoot` is how many extra cycles it
  * used, and the next millisecond runs that many fewer.
  *
- * The pin mapping here is still the Arduino Uno's (D0–D7 on port D, D8–D13
- * on B, A0–A5 on C). A chip whose ports are not B, C and D needs the
- * native pin table first.
+ * The caller passes the board's pin list: each entry is a chip pin name
+ * (`PB5`), and its index is that pin's bit in the pin state. The chip's
+ * own table says which port and bit that name is. An omitted list is no
+ * GPIO.
  */
 export class AvrBoard {
   readonly id: string;
@@ -67,24 +73,25 @@ export class AvrBoard {
   /**
    * Bits that changed since the last `takePins`. Port listeners OR these
    * in; the state tick is the only place that reads the registers.
+   * Word `i >> 5` holds pin `i`.
    */
-  private toggled = 0;
-  /** Arduino bits whose rising and falling edges are timed. */
-  private edgeMask = 0;
+  private toggled: Uint32Array;
+  /** Pin indexes whose rising and falling edges are timed. */
+  private edgeMask: Uint32Array;
   /** Cycle count at the start of the current `stepMillis`. */
   stepOrigin = 0;
   /** Port-bit changes during the current `stepMillis`, in order. */
   pinChanges: { bit: number; high: boolean; cycle: number }[] = [];
-  /** Cycle count at the rising edge, keyed by Arduino bit. */
+  /** Cycle count at the rising edge, keyed by pin index. */
   private riseAt = new Map<number, number>();
   private pulses: { bit: number; us: number }[] = [];
   private rx: number[] = [];
   private tx = "";
   /**
-   * Per Arduino bit: 0 = nothing else drives the wire, 1 = driven low,
+   * Per pin index: 0 = nothing else drives the wire, 1 = driven low,
    * 2 = driven high. A driven level wins over the pin's pull-up.
    */
-  private driven = new Uint8Array(20);
+  private driven: Uint8Array;
   /**
    * The wiring layer fills `driven` when another output on the net
    * changes. Pull-ups themselves are applied here.
@@ -107,23 +114,23 @@ export class AvrBoard {
    */
   private analog: BoardAdcHooks | null = null;
 
-  /** Wire bit to the chip's own pin name, or null for a bit no pin reaches. */
-  private readonly wire: readonly (string | null)[];
+  /** Chip pin name for each pin-state index, from the board's expose table. */
+  private readonly wire: readonly string[];
 
   /**
    * `chip` comes from `chipSpec`. A chip the emulator does not know is
-   * null: the caller stops the board with its own message. `wire` says which
-   * chip pin each of the 20 wire bits reaches; the planner builds it from the
-   * board's `expose` table. The default is the Uno and Nano header.
+   * null: the caller stops the board with its own message. `wire` is the
+   * board's exposed GPIO as chip pin names, in pin-state order. Omitted
+   * means this board has no GPIO.
    */
-  constructor(
-    id: string,
-    chip: ChipSpec | null,
-    wire: readonly (string | null)[] = ARDUINO_WIRE
-  ) {
+  constructor(id: string, chip: ChipSpec | null, wire: readonly string[] = []) {
     this.id = id;
     this.chip = chip;
     this.wire = wire;
+    const words = pinWordCount(wire.length);
+    this.toggled = new Uint32Array(words);
+    this.edgeMask = new Uint32Array(words);
+    this.driven = new Uint8Array(wire.length);
   }
 
   /** CPU clock, hertz. 0 on a board with no chip. */
@@ -166,7 +173,7 @@ export class AvrBoard {
     this.peripherals = [];
     this.ports = new Map();
     this.slots = [];
-    this.toggled = 0;
+    this.toggled.fill(0);
     this.riseAt.clear();
     this.pulses = [];
     this.rx = [];
@@ -210,7 +217,7 @@ export class AvrBoard {
       ports.set(letter, new AVRIOPort(cpu, portConfigOf(chip, letter)));
     }
     const slots = this.wire.map((name) => {
-      const pin = name === null ? undefined : chip.pins[name];
+      const pin = chip.pins[name];
       const port = pin ? ports.get(pin.port) : undefined;
       return pin && port ? { port, index: pin.bit } : null;
     });
@@ -223,7 +230,7 @@ export class AvrBoard {
     }
     this.ports = ports;
     this.slots = slots;
-    this.toggled = 0;
+    this.toggled.fill(0);
     this.riseAt.clear();
     this.pulses = [];
     const peripherals: unknown[] = [
@@ -265,7 +272,7 @@ export class AvrBoard {
     this.peripherals = [];
     this.ports = new Map();
     this.slots = [];
-    this.toggled = 0;
+    this.toggled.fill(0);
     this.riseAt.clear();
     this.pulses = [];
     this.rx = [];
@@ -274,8 +281,8 @@ export class AvrBoard {
   }
 
   /**
-   * DDR, level, and toggles for D0–D13 and A0–A5. Clears the toggle mask.
-   * Call once per state tick. A stopped board reports zeros.
+   * DDR, level, and toggles for the board's pin list. Clears the toggle
+   * words. Call once per state tick. A stopped board reports zeros.
    */
   takePins(): WorldPinState {
     return this.readPins(true);
@@ -295,15 +302,14 @@ export class AvrBoard {
   }
 
   private readPins(clear: boolean): WorldPinState {
-    const toggled = this.toggled;
-    if (clear) this.toggled = 0;
+    const toggled = Array.from(this.toggled);
+    if (clear) this.toggled.fill(0);
     const cpu = this.cpu;
-    if (!cpu || this.slots.length === 0) {
-      return { ddr: 0, level: 0, toggled: 0 };
-    }
+    const words = this.toggled.length;
+    if (!cpu || this.slots.length === 0) return emptyPinState(words);
     const regs = new Map<AVRIOPort, { ddr: number; level: number }>();
-    let ddr = 0;
-    let level = 0;
+    const ddr = Array.from({ length: words }, () => 0);
+    const level = Array.from({ length: words }, () => 0);
     this.slots.forEach((slot, bit) => {
       if (!slot) return;
       let row = regs.get(slot.port);
@@ -311,20 +317,25 @@ export class AvrBoard {
         row = portRegs(cpu, slot.port);
         regs.set(slot.port, row);
       }
-      if ((row.ddr >> slot.index) & 1) ddr |= 1 << bit;
-      if ((row.level >> slot.index) & 1) level |= 1 << bit;
+      const word = bit >>> 5;
+      const mask = 1 << (bit & 31);
+      if ((row.ddr >> slot.index) & 1)
+        ddr[word] = ((ddr[word] ?? 0) | mask) >>> 0;
+      if ((row.level >> slot.index) & 1) {
+        level[word] = ((level[word] ?? 0) | mask) >>> 0;
+      }
     });
     return { ddr, level, toggled };
   }
 
   /**
-   * Time edges on this Arduino bit. The port listener already runs on a
+   * Time edges on this pin index. The port listener already runs on a
    * pin write; this adds no per-instruction work. A servo is two edges
    * per 20 ms frame.
    */
   watchEdge(bit: number) {
-    if (bit < 0 || bit > 19) return;
-    this.edgeMask |= 1 << bit;
+    if (bit < 0 || bit >= this.wire.length) return;
+    orBit(this.edgeMask, bit);
   }
 
   /** Completed pulses since the last take. Empty most milliseconds. */
@@ -343,7 +354,7 @@ export class AvrBoard {
       for (const [index, bit] of wired) {
         if (((value ^ oldValue) & (1 << index)) === 0) continue;
         const high = ((value >> index) & 1) === 1;
-        this.toggled |= 1 << bit;
+        orBit(this.toggled, bit);
         this.noteEdge(bit, high);
         if (cycles !== undefined) {
           this.pinChanges.push({ bit, high, cycle: cycles });
@@ -388,7 +399,7 @@ export class AvrBoard {
    */
   private noteEdge(bit: number, high: boolean) {
     const cpu = this.cpu;
-    if (!cpu || (this.edgeMask & (1 << bit)) === 0) return;
+    if (!cpu || !bitOn(this.edgeMask, bit)) return;
     if (high) {
       this.riseAt.set(bit, cpu.cycles);
       return;
@@ -433,7 +444,7 @@ export class AvrBoard {
   }
 
   setDriven(bit: number, level: boolean | null) {
-    if (bit < 0 || bit > 19) return;
+    if (bit < 0 || bit >= this.driven.length) return;
     const next = level === null ? 0 : level ? 2 : 1;
     if (this.driven[bit] === next) return;
     this.driven[bit] = next;
@@ -480,7 +491,7 @@ export class AvrBoard {
   }
 
   /**
-   * Output level of an Arduino bit, or null when the pin is an input
+   * Output level of a pin index, or null when the pin is an input
    * or the CPU is down. DDR bits use the port listener's value when
    * one is cached: avr8js has not written PIN yet at that point.
    */
@@ -545,16 +556,14 @@ export class AvrBoard {
   }
 }
 
-/**
- * The wire's 20 bits on an Arduino Uno or Nano: D0 to D7 on port D, D8 to D13
- * on port B, A0 to A5 on port C. A board built from its `expose` table passes
- * its own.
- */
-export const ARDUINO_WIRE: readonly (string | null)[] = [
-  ...Array.from({ length: 8 }, (_, n) => `PD${n}`),
-  ...Array.from({ length: 6 }, (_, n) => `PB${n}`),
-  ...Array.from({ length: 6 }, (_, n) => `PC${n}`),
-];
+function orBit(words: Uint32Array, bit: number) {
+  const word = bit >>> 5;
+  words[word] = ((words[word] ?? 0) | (1 << (bit & 31))) >>> 0;
+}
+
+function bitOn(words: Uint32Array, bit: number): boolean {
+  return ((words[bit >>> 5] ?? 0) & (1 << (bit & 31))) !== 0;
+}
 
 function portConfigOf(chip: ChipSpec, letter: string): AVRPortConfig {
   const config = chip.ports[letter];

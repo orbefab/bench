@@ -16,7 +16,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { SnapshotFile, WorldState } from "@sfab-bench/contract";
+import {
+  pinBitSet,
+  type SnapshotFile,
+  type WorldState,
+} from "@sfab-bench/contract";
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { assemblyStampOf } from "./world/circuit-stamp";
@@ -68,7 +72,7 @@ async function runWorld(dir: string, world: string): Promise<WorldState> {
 function pinHigh(state: WorldState, bit: number): boolean {
   const pins = state.boards.nano?.pins;
   if (!pins) return false;
-  return ((pins.ddr >> bit) & 1) === 1 && ((pins.level >> bit) & 1) === 1;
+  return pinBitSet(pins.ddr, bit) && pinBitSet(pins.level, bit);
 }
 
 {
