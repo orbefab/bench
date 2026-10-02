@@ -57,12 +57,12 @@ import { analogRead } from "./analog-pin";
 import type { PlanEnv } from "./env";
 import { planWorld, type RunBoard, type RunPlan } from "./plan";
 import {
-  type BrownoutState,
   DISPLAY_STALL_DEG_PER_SEC,
   displayMotion,
   type MotorLaw,
-  runningBrownout,
-  stepBrownout,
+  type ResetState,
+  runningReset,
+  stepReset,
 } from "./power";
 import { railAttachment } from "./power-path";
 import { probeTracks } from "./probe";
@@ -384,7 +384,7 @@ function createSession(host: SimHost) {
     const already = new Set<string>();
     for (const board of s.boards) {
       const power = s.boardPower.get(board.id);
-      if (!power?.supplyId || power.brownout.phase !== "run") continue;
+      if (!power?.supplyId || power.reset.phase !== "run") continue;
       stepBoard(s, board);
       already.add(board.id);
     }
@@ -395,8 +395,8 @@ function createSession(host: SimHost) {
       const power = s.boardPower.get(board.id);
       if (!power?.supplyId || board.fault) continue;
       const voltage = brownoutOf(s, board.id);
-      const stepped = stepBrownout(
-        power.brownout,
+      const stepped = stepReset(
+        power.reset,
         voltage,
         stepEndMs,
         {
@@ -406,8 +406,8 @@ function createSession(host: SimHost) {
         },
         resetPinLowOf(s, board.id)
       );
-      const ended = power.brownout.cause;
-      power.brownout = {
+      const ended = power.reset.cause;
+      power.reset = {
         phase: stepped.phase,
         releaseAtMs: stepped.releaseAtMs,
         cause: stepped.cause,
@@ -446,7 +446,7 @@ function createSession(host: SimHost) {
     for (const board of s.boards) {
       if (already.has(board.id)) continue;
       const power = s.boardPower.get(board.id);
-      if (!power || power.brownout.phase !== "run") continue;
+      if (!power || power.reset.phase !== "run") continue;
       stepBoard(s, board);
     }
     // A reboot this step may have produced the first pulses. Latch them

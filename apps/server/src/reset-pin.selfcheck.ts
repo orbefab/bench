@@ -25,7 +25,7 @@ import {
   EXTERNAL_RESET,
   FIRMWARE_RELOADED,
 } from "@sfab-bench/engine-mcu";
-import { runningBrownout, stepBrownout } from "@sfab-bench/sim/power";
+import { runningReset, stepReset } from "@sfab-bench/sim/power";
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
 import { planWorld } from "./world/plan";
@@ -35,34 +35,34 @@ const LIMITS = { assertV: 2.675, releaseV: 2.725, holdMs: 66 };
 // The state machine: a low pin asserts on a healthy rail, holds through
 // a healthy rail, and its release waits `holdMs` like a brownout's.
 {
-  const asserted = stepBrownout(runningBrownout(), 5, 10, LIMITS, true);
+  const asserted = stepReset(runningReset(), 5, 10, LIMITS, true);
   expect(
     asserted.assertReset && asserted.phase === "held",
     "a low RESET asserts on a 5 V rail"
   );
   expect(asserted.cause === "pin", `cause ${asserted.cause}`);
-  const sag = stepBrownout(runningBrownout(), 2.6, 10, LIMITS, true);
+  const sag = stepReset(runningReset(), 2.6, 10, LIMITS, true);
   expect(sag.cause === "brownout", "a sag is a brownout even with the pin low");
-  const still = stepBrownout(asserted, 5, 11, LIMITS, true);
+  const still = stepReset(asserted, 5, 11, LIMITS, true);
   expect(
     still.phase === "held" && still.releaseAtMs === null,
     "a low RESET stays held"
   );
-  const released = stepBrownout(still, 5, 12, LIMITS, false);
+  const released = stepReset(still, 5, 12, LIMITS, false);
   expect(
     released.phase === "delay" && released.releaseAtMs === 12,
     "releasing RESET starts the time-out"
   );
-  const again = stepBrownout(released, 5, 40, LIMITS, true);
+  const again = stepReset(released, 5, 40, LIMITS, true);
   expect(
     again.phase === "held" && again.releaseAtMs === null,
     "a low RESET inside the time-out starts it over"
   );
-  const early = stepBrownout(released, 5, 77, LIMITS, false);
+  const early = stepReset(released, 5, 77, LIMITS, false);
   expect(early.phase === "delay" && !early.reboot, "65 ms is still held");
-  const boot = stepBrownout(released, 5, 78, LIMITS, false);
+  const boot = stepReset(released, 5, 78, LIMITS, false);
   expect(boot.phase === "run" && boot.reboot, "66 ms after release boots");
-  const steady = stepBrownout(runningBrownout(), 5, 10, LIMITS, false);
+  const steady = stepReset(runningReset(), 5, 10, LIMITS, false);
   expect(
     !steady.assertReset && steady.cause === null,
     "a high RESET on a 5 V rail stays running"

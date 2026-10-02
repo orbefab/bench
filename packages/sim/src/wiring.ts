@@ -231,10 +231,10 @@ export function powerFeedsOf(plan: RunPlan): PowerFeeds {
       feed = supplyOn(plan, reachedFrom(`${board.id}.${pin}`, adjacent));
       if (feed) break;
     }
-    if (!feed && board.vinPin) {
+    if (!feed && board.regulatorPin) {
       feed = supplyOn(
         plan,
-        reachedFrom(`${board.id}.${board.vinPin}`, adjacent)
+        reachedFrom(`${board.id}.${board.regulatorPin}`, adjacent)
       );
     }
     boards[board.id] = feed;

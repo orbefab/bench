@@ -70,8 +70,8 @@ deepStrictEqual(spec.io, {
   SREG: 0x5f,
   TCCR1A: 0x80,
   TCCR1B: 0x81,
-  UCSR0A: 0xc0,
-  UCSR0C: 0xc2,
+  UCSRnA: 0xc0,
+  UCSRnC: 0xc2,
 });
 
 // Native pins: every one names a real port and a bit inside it, and the
@@ -194,8 +194,8 @@ deepStrictEqual(u4.io, {
   SREG: 0x5f,
   TCCR1A: 0x80,
   TCCR1B: 0x81,
-  UCSR0A: 0xc8,
-  UCSR0C: 0xca,
+  UCSRnA: 0xc8,
+  UCSRnC: 0xca,
 });
 const u4Names = Object.keys(u4.pins);
 expect(u4Names.length === 26, "bonded GPIO only");

@@ -563,7 +563,7 @@ export class RailCircuit {
    * sample equals the mean. The operating point passes `dt` 0 and does
    * not enter the mean.
    */
-  private noteNano(dt: number): void {
+  private noteBoard(dt: number): void {
     this.foldLeds(dt);
     if (!this.resetNode) return;
     const board = this.engine.voltage(this.boardNode);
@@ -619,7 +619,7 @@ export class RailCircuit {
       if (!many) {
         const v = this.engine.voltage(this.boardNode);
         if (v < min) min = v;
-        this.noteNano(dt);
+        this.noteBoard(dt);
         return;
       }
       for (const id of this.boardOrder) {
@@ -733,7 +733,7 @@ function mapNodes(
     ...stamp,
     boardNode: node(stamp.boardNode),
     vbusNode: stamp.vbusNode ? node(stamp.vbusNode) : null,
-    vinNode: stamp.vinNode ? node(stamp.vinNode) : null,
+    regulatorNode: stamp.regulatorNode ? node(stamp.regulatorNode) : null,
     resetNode: stamp.resetNode ? node(stamp.resetNode) : null,
     portNodes: Object.fromEntries(
       Object.entries(stamp.portNodes).map(([key, value]) => [key, node(value)])
@@ -857,16 +857,18 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     const usb = sorted[0]?.feed === "usb";
     const vin = sorted[0]?.feed === "vin";
     const mapped = sorted.map((board) => {
-      const vinNode = board.stamp.vinNode;
+      const regulatorNode = board.stamp.regulatorNode;
       const stamp = usb
         ? mapNodes(board.stamp, (node) =>
             node === board.stamp.vbusNode ? TERM : node
           )
         : vin
-          ? mapNodes(board.stamp, (node) => (node === vinNode ? TERM : node))
+          ? mapNodes(board.stamp, (node) =>
+              node === regulatorNode ? TERM : node
+            )
           : board.stamp;
       remember(board.stamp.vbusNode, stamp.vbusNode);
-      remember(vinNode, stamp.vinNode);
+      remember(regulatorNode, stamp.regulatorNode);
       remember(board.stamp.boardNode, stamp.boardNode);
       return { ...board, stamp };
     });

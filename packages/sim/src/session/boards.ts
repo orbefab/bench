@@ -11,7 +11,7 @@ import {
 } from "@sfab-bench/engine-mcu";
 import { analogRead } from "../analog-pin";
 import type { RunPlan } from "../plan";
-import { type ResetCause, runningBrownout } from "../power";
+import { type ResetCause, runningReset } from "../power";
 import { applyGpioDrives, gpioInputNets, powerFeedsOf } from "../wiring";
 import { rearmRangers, rearmServos } from "./actuators";
 import { post, simMs, thrownMessage } from "./common";
@@ -26,7 +26,7 @@ import { solveSupplies } from "./solve";
 import type { BoardSpec, SessionState } from "./state";
 
 export function boardInSoa(s: SessionState, board: AvrBoard): boolean {
-  if (!board.running || board.brownout || board.fault) return false;
+  if (!board.running || board.inReset || board.fault) return false;
   const spec = s.specs.find((item) => item.id === board.id);
   if (spec?.minOperatingVoltage == null) return false;
   const power = s.boardPower.get(board.id);
@@ -172,7 +172,7 @@ export function fillBoardPower(s: SessionState, plan: RunPlan) {
       releaseVoltage: board.brownoutReleaseVoltage,
       holdMs: board.resetHoldMs,
       resets: 0,
-      brownout: runningBrownout(),
+      reset: runningReset(),
     });
   }
 }
@@ -408,7 +408,7 @@ function attachAnalog(s: SessionState, board: AvrBoard) {
 }
 
 /**
- * What `stepBrownout` sees: the board node at its lowest sub-step.
+ * What `stepReset` sees: the board node at its lowest sub-step.
  * With no Uno cable the board node is the supply terminal.
  */
 export function brownoutOf(s: SessionState, boardId: string): number {
@@ -435,11 +435,11 @@ export function holdBeforeRun(
         ? "pin"
         : null;
   if (!cause) {
-    power.brownout = runningBrownout();
+    power.reset = runningReset();
     return null;
   }
   board.holdInReset();
-  power.brownout = { phase: "held", releaseAtMs: null, cause };
+  power.reset = { phase: "held", releaseAtMs: null, cause };
   return cause;
 }
 

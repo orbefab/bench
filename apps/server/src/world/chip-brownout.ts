@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { BrownoutLimits } from "@sfab-bench/sim";
+import type { ResetLimits } from "@sfab-bench/sim";
 
 type ChipParams = {
   brownoutAssertVoltage: number;
@@ -37,7 +37,7 @@ export const BOD_RELEASE_V = params.brownoutReleaseVoltage;
 /** `resetHoldS` in milliseconds, rounded so the step compare stays exact. */
 export const RESET_HOLD_MS = Math.round(params.resetHoldS * 1000);
 
-export const BROWNOUT_LIMITS: BrownoutLimits = {
+export const BROWNOUT_LIMITS: ResetLimits = {
   assertV: BOD_ASSERT_V,
   releaseV: BOD_RELEASE_V,
   holdMs: RESET_HOLD_MS,

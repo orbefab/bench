@@ -107,7 +107,7 @@ export function latchServos(s: SessionState) {
     const drive = load.drive;
     if (!drive?.board) continue;
     const cpu = drive.board;
-    const driven = Boolean(cpu.running && !cpu.brownout);
+    const driven = Boolean(cpu.running && !cpu.inReset);
     const taken = driven ? s.stepPulses.get(cpu.id) : undefined;
     const widths = taken
       ? taken
@@ -133,7 +133,7 @@ export function applyTorque(s: SessionState) {
     if (!drive || !sample) continue;
     const cpu = drive.board;
     const powered = load.supplyId !== null;
-    const held = cpu !== null && (!cpu.running || cpu.brownout);
+    const held = cpu !== null && (!cpu.running || cpu.inReset);
     // The sample is the current already charged to the rail, including
     // the step that asserts reset. A board already in reset was latched
     // limp, so its sample carries no torque.

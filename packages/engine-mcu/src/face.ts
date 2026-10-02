@@ -62,7 +62,7 @@ export class McuEngine implements Engine {
     const target = Math.round(toSeconds * 1000);
     while (this.ms < target) {
       this.applySupply();
-      if (!board.brownout) board.stepMillis();
+      if (!board.inReset) board.stepMillis();
       this.ms += 1;
     }
   }
@@ -121,10 +121,10 @@ export class McuEngine implements Engine {
     const board = this.board;
     if (!board) return;
     if (this.supply < this.brownoutVoltage) {
-      if (!board.brownout) board.holdInReset();
+      if (!board.inReset) board.holdInReset();
       return;
     }
-    if (board.brownout) board.reboot();
+    if (board.inReset) board.reboot();
   }
 
   private need(): AvrBoard {

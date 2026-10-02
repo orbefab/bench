@@ -29,15 +29,18 @@ export type ChipGap = {
   message: string;
 };
 
-/** Data-space addresses the reset check reads. Names are the 328P's. */
+/**
+ * Data-space addresses the reset check reads. `UCSRnA` and `UCSRnC` are
+ * the console USART's (USART0 on the 328P, USART1 on the 32U4).
+ */
 export type ChipIo = {
   DDRB: number;
   PORTB: number;
   SREG: number;
   TCCR1A: number;
   TCCR1B: number;
-  UCSR0A: number;
-  UCSR0C: number;
+  UCSRnA: number;
+  UCSRnC: number;
 };
 
 /**
@@ -115,8 +118,8 @@ const ATMEGA328P: ChipSpec = {
     SREG: 0x5f,
     TCCR1A: 0x80,
     TCCR1B: 0x81,
-    UCSR0A: 0xc0,
-    UCSR0C: 0xc2,
+    UCSRnA: 0xc0,
+    UCSRnC: 0xc2,
   },
   pins: pinTable({ B: 8, C: 7, D: 8 }),
   adcPins: {

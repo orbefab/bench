@@ -31,19 +31,19 @@ export const DISPLAY_STALL_HOLD_MS = 20;
  * release is the rising one, and `holdMs` is how long reset stays
  * after the rail has released (tTOUT plus the clock cycles).
  */
-export type BrownoutLimits = {
+export type ResetLimits = {
   assertV: number;
   releaseV: number;
   holdMs: number;
 };
 
-export type BrownoutPhase = "run" | "held" | "delay";
+export type ResetPhase = "run" | "held" | "delay";
 
 /** What asserted a reset: the rail under the brownout level, or the RESET pin. */
 export type ResetCause = "brownout" | "pin";
 
-export type BrownoutState = {
-  phase: BrownoutPhase;
+export type ResetState = {
+  phase: ResetPhase;
   /**
    * Sim millisecond of the step whose rail and RESET pin both released.
    * Null while either still holds.
@@ -56,7 +56,7 @@ export type BrownoutState = {
   cause: ResetCause | null;
 };
 
-export function runningBrownout(): BrownoutState {
+export function runningReset(): ResetState {
   return { phase: "run", releaseAtMs: null, cause: null };
 }
 
@@ -76,13 +76,13 @@ function clamp(value: number, lo: number, hi: number): number {
  * `limits.holdMs` after release; the hold it ends is `state.cause`.
  * `limits` are that chip's params.
  */
-export function stepBrownout(
-  state: BrownoutState,
+export function stepReset(
+  state: ResetState,
   voltage: number,
   stepEndMs: number,
-  limits: BrownoutLimits,
+  limits: ResetLimits,
   resetPinLow = false
-): BrownoutState & { assertReset: boolean; reboot: boolean } {
+): ResetState & { assertReset: boolean; reboot: boolean } {
   const sag = voltage < limits.assertV;
   if (state.phase === "run") {
     if (sag || resetPinLow) {

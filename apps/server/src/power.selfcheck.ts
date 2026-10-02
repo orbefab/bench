@@ -20,12 +20,12 @@ import { BROWNOUT_RESET } from "@sfab-bench/engine-mcu";
 import {
   displayMotion,
   noLoadSpeedRad,
-  runningBrownout,
+  runningReset,
   servoElectrical,
   solveRail,
   stallCurrent,
   stallTorque,
-  stepBrownout,
+  stepReset,
 } from "@sfab-bench/sim/power";
 import { viewOf } from "@sfab-bench/sim/view";
 import { powerFeedsOf } from "@sfab-bench/sim/wiring";
@@ -223,41 +223,31 @@ expect(
   "20 ms of stall shows stall"
 );
 
-const reset = runningBrownout();
-const held = stepBrownout(reset, BOD_ASSERT_V - 0.001, 10, BROWNOUT_LIMITS);
+const reset = runningReset();
+const held = stepReset(reset, BOD_ASSERT_V - 0.001, 10, BROWNOUT_LIMITS);
 expect(held.assertReset && held.phase === "held", "2.674 V asserts");
 expect(
-  !stepBrownout(reset, BOD_ASSERT_V, 10, BROWNOUT_LIMITS).assertReset,
+  !stepReset(reset, BOD_ASSERT_V, 10, BROWNOUT_LIMITS).assertReset,
   "2.675 V does not assert"
 );
-const waiting = stepBrownout(held, BOD_RELEASE_V, 11, BROWNOUT_LIMITS);
+const waiting = stepReset(held, BOD_RELEASE_V, 11, BROWNOUT_LIMITS);
 expect(
   waiting.phase === "held" && waiting.releaseAtMs === null,
   "2.725 V stays held"
 );
-const released = stepBrownout(held, BOD_RELEASE_V + 0.001, 12, BROWNOUT_LIMITS);
+const released = stepReset(held, BOD_RELEASE_V + 0.001, 12, BROWNOUT_LIMITS);
 expect(
   released.phase === "delay" && released.releaseAtMs === 12,
   "2.726 V starts the delay"
 );
-const early = stepBrownout(
-  released,
-  5,
-  12 + RESET_HOLD_MS - 1,
-  BROWNOUT_LIMITS
-);
+const early = stepReset(released, 5, 12 + RESET_HOLD_MS - 1, BROWNOUT_LIMITS);
 expect(!early.reboot && early.phase === "delay", "65 ms is still in reset");
-const booted = stepBrownout(released, 5, 12 + RESET_HOLD_MS, BROWNOUT_LIMITS);
+const booted = stepReset(released, 5, 12 + RESET_HOLD_MS, BROWNOUT_LIMITS);
 expect(
   booted.reboot && booted.phase === "run",
   "66 ms is the first instruction"
 );
-const dipped = stepBrownout(
-  released,
-  BOD_ASSERT_V - 0.001,
-  20,
-  BROWNOUT_LIMITS
-);
+const dipped = stepReset(released, BOD_ASSERT_V - 0.001, 20, BROWNOUT_LIMITS);
 expect(
   dipped.phase === "held" && dipped.releaseAtMs === null && !dipped.assertReset,
   "a dip during the delay restarts the hold"
@@ -489,8 +479,8 @@ const stallRows = await sample(
       `reset regs ${JSON.stringify(snap.regs)}`
     );
     expect(
-      snap.regs.UCSR0A === 0x20 && snap.regs.UCSR0C === 0x06,
-      `usart ${snap.regs.UCSR0A.toString(16)} ${snap.regs.UCSR0C.toString(16)}`
+      snap.regs.UCSRnA === 0x20 && snap.regs.UCSRnC === 0x06,
+      `usart ${snap.regs.UCSRnA.toString(16)} ${snap.regs.UCSRnC.toString(16)}`
     );
     expect(
       snap.pins.ddr[0] === 0 && snap.pins.level[0] === 0,

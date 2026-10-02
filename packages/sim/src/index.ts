@@ -48,7 +48,7 @@ export {
   stampBoard,
   touches,
 } from "./circuit-stamp";
-export { type PlanEnv, type StampEnv } from "./env";
+export type { PlanEnv, StampEnv } from "./env";
 export {
   type PlanResult,
   planWorld,
@@ -64,9 +64,6 @@ export {
   WORLD_V1_MESSAGE,
 } from "./plan";
 export {
-  type BrownoutLimits,
-  type BrownoutPhase,
-  type BrownoutState,
   DISPLAY_MOVE_DEG,
   DISPLAY_STALL_DEG_PER_SEC,
   DISPLAY_STALL_HOLD_MS,
@@ -75,12 +72,15 @@ export {
   noLoadSpeedRad,
   type RailMotor,
   type ResetCause,
-  runningBrownout,
+  type ResetLimits,
+  type ResetPhase,
+  type ResetState,
+  runningReset,
   servoElectrical,
   solveRail,
   stallCurrent,
   stallTorque,
-  stepBrownout,
+  stepReset,
 } from "./power";
 export {
   BOARD_LOAD_KNEE_V,

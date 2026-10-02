@@ -13,7 +13,7 @@ import type {
 import type { CompiledWorld } from "@sfab-bench/engine-body";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 import type { BatteryParams } from "@sfab-bench/parts";
-import type { BrownoutState, MotorLaw } from "../power";
+import type { MotorLaw, ResetState } from "../power";
 import type { RailCircuit } from "../rail-circuit";
 import type { RangerRuntime } from "../ranger";
 import type { ServoTrack } from "../servo";
@@ -112,7 +112,7 @@ export type BoardPower = {
   /** Milliseconds reset stays after the rail releases. */
   holdMs: number;
   resets: number;
-  brownout: BrownoutState;
+  reset: ResetState;
 };
 
 export type SupplySpec = {

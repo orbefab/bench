@@ -81,7 +81,7 @@ export function sample(s: SessionState): WorldState | null {
       brownoutVoltage != null &&
       clock &&
       board.running &&
-      !board.brownout &&
+      !board.inReset &&
       !board.fault &&
       !unpowered
         ? soaWarning(node, brownoutVoltage, minVoltage, clock)
@@ -92,7 +92,7 @@ export function sample(s: SessionState): WorldState | null {
         : { running: board.running, pins }),
       ...(unpowered ? { unpowered: true as const } : {}),
       resets: power?.resets ?? 0,
-      brownout: board.brownout,
+      brownout: board.inReset,
       ...(power?.supplyId ? { voltage: node } : {}),
       ...ledReading(s, board.id),
       ...(() => {
@@ -265,7 +265,7 @@ function fillRecorder(s: SessionState, full: boolean) {
           ? (frame.leds[key] ?? 0)
           : (ledCurrentOf(s, id) ?? 0);
     }
-    rec.brownout[i] = board?.brownout ? 1 : 0;
+    rec.brownout[i] = board?.inReset ? 1 : 0;
     rec.belowSoa[i] = board && boardInSoa(s, board) ? 1 : 0;
   }
   for (let k = 0; k < rec.ledPaths.length; k++) {

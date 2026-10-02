@@ -17,11 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
 import { Engine, MF_MSMF050, PtcFuseElement } from "@sfab-bench/engine-circuit";
-import {
-  runningBrownout,
-  solveRail,
-  stepBrownout,
-} from "@sfab-bench/sim/power";
+import { runningReset, solveRail, stepReset } from "@sfab-bench/sim/power";
 import {
   railAttachment,
   UNO_F1_IHOLD,
@@ -336,7 +332,7 @@ expect(
     feed: "usb",
   });
   trip.setFixed(2);
-  let bo = runningBrownout();
+  let bo = runningReset();
   let trippedAt = -1;
   let assertAt = -1;
   let terminalAtAssert = 0;
@@ -352,7 +348,7 @@ expect(
       trip.setFixed(RECOVER_A);
       dropped = true;
     }
-    const stepped = stepBrownout(bo, trip.boardMinVoltage, ms, BROWNOUT_LIMITS);
+    const stepped = stepReset(bo, trip.boardMinVoltage, ms, BROWNOUT_LIMITS);
     bo = {
       phase: stepped.phase,
       releaseAtMs: stepped.releaseAtMs,

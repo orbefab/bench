@@ -22,8 +22,8 @@ export type CpuResetRegs = {
   SREG: number;
   TCCR1A: number;
   TCCR1B: number;
-  UCSR0A: number;
-  UCSR0C: number;
+  UCSRnA: number;
+  UCSRnC: number;
 };
 
 /** Written into that board's ring when its `.hex` is loaded again. */
@@ -38,7 +38,7 @@ export const BROWNOUT_RESET = "— brownout reset —\n";
 /** The same, when the RESET pin held the chip and the rail did not sag. */
 export const EXTERNAL_RESET = "— external reset —\n";
 
-/** Pending USART0 RX bytes. A send that does not fit is refused whole. */
+/** Pending console USART RX bytes. A send that does not fit is refused whole. */
 export const RX_BACKLOG = 4 * 1024;
 
 /**
@@ -58,10 +58,10 @@ export class AvrBoard {
   readonly chip: ChipSpec | null;
   running = false;
   fault?: string;
-  /** Held in reset because the supply is under the chip's brownout voltage. */
-  brownout = false;
+  /** Held in reset: the supply under the chip's brownout voltage, or a low RESET pin. */
+  inReset = false;
   overshoot = 0;
-  /** Bytes passed to USART0, one at a time, at the baud the firmware set. */
+  /** Bytes passed to the console USART, one at a time, at the baud the firmware set. */
   rxAccepted = 0;
   /** Firmware image kept so a brownout can boot the same program again. */
   private image: Uint8Array | null = null;
@@ -168,7 +168,7 @@ export class AvrBoard {
    * and any serial not yet flushed stay, so `reboot` can start over.
    */
   holdInReset() {
-    this.brownout = true;
+    this.inReset = true;
     this.running = false;
     this.fault = undefined;
     this.cpu = null;
@@ -261,7 +261,7 @@ export class AvrBoard {
     this.overshoot = 0;
     this.rxAccepted = 0;
     this.fault = undefined;
-    this.brownout = false;
+    this.inReset = false;
     this.running = true;
     this.applyInputLevels();
   }
@@ -269,7 +269,7 @@ export class AvrBoard {
   stop(fault: string) {
     this.running = false;
     this.fault = fault;
-    this.brownout = false;
+    this.inReset = false;
     this.image = null;
     this.cpu = null;
     this.usart = null;
@@ -300,7 +300,7 @@ export class AvrBoard {
     return this.readPins(false);
   }
 
-  /** USART0 TX not yet taken. The recording reads the growth between flushes. */
+  /** Console USART TX not yet taken. The recording reads the growth between flushes. */
   peekTx(): string {
     return this.tx;
   }
@@ -482,8 +482,8 @@ export class AvrBoard {
       SREG: cpu.data[io.SREG] ?? 0,
       TCCR1A: cpu.data[io.TCCR1A] ?? 0,
       TCCR1B: cpu.data[io.TCCR1B] ?? 0,
-      UCSR0A: cpu.data[io.UCSR0A] ?? 0,
-      UCSR0C: cpu.data[io.UCSR0C] ?? 0,
+      UCSRnA: cpu.data[io.UCSRnA] ?? 0,
+      UCSRnC: cpu.data[io.UCSRnC] ?? 0,
     };
   }
 

@@ -108,7 +108,7 @@ export type BoardStamp = {
   /** Null when the type has no USB connector port on a net. */
   vbusNode: string | null;
   /** The regulator input's node. Null when the board has none on a net. */
-  vinNode: string | null;
+  regulatorNode: string | null;
   resetNode: string | null;
   /** `${boardId}.led` when that part is an LED. The rail copies it onto `ledCurrent`. */
   ledAlias: string | null;
@@ -274,7 +274,7 @@ export function stampBoard(input: {
   /** Internal port with `connector: "usb"`. Null when the type has none. */
   usbPort: string | null;
   /** The regulator input (`regulatorInputPort`). Null when the type has none. */
-  vinPort: string | null;
+  regulatorPort: string | null;
   /** V_RST / VCC. Null when this stamp has no reset threshold. */
   resetFraction: number | null;
   /**
@@ -384,7 +384,7 @@ export function stampBoard(input: {
     netlist: input.netlist,
     boardNode,
     vbusNode: input.usbPort ? named(input.usbPort) : null,
-    vinNode: input.vinPort ? named(input.vinPort) : null,
+    regulatorNode: input.regulatorPort ? named(input.regulatorPort) : null,
     resetNode: input.resetPort ? named(input.resetPort) : null,
     ledAlias,
     ledPin: led
@@ -475,18 +475,21 @@ export function realize(
     pinId?: (port: string) => string;
   }
 ): RealizedCircuit {
-  const vinNode = stamp.vinNode ?? undefined;
+  const regulatorNode = stamp.regulatorNode ?? undefined;
   const feedNode =
     feed === "usb" && stamp.vbusNode
       ? stamp.vbusNode
-      : feed === "vin" && vinNode
-        ? vinNode
+      : feed === "vin" && regulatorNode
+        ? regulatorNode
         : stamp.boardNode;
   const anchors = new Set<string>(["0", feedNode, stamp.boardNode]);
   for (const node of opts?.keep ?? []) anchors.add(node);
   const withPins = opts?.pins !== false;
   for (const pin of stamp.pins) anchors.add(pin.node);
-  const alive = prune(dropOpenVin(stamp.parts, vinNode, anchors), anchors);
+  const alive = prune(
+    dropOpenVin(stamp.parts, regulatorNode, anchors),
+    anchors
+  );
   const made: Element[] = [];
   const leds: { path: string; diode: Diode }[] = [];
   let capacitive = false;
@@ -1009,7 +1012,7 @@ function stampOf(
     powerPort,
     resetPort,
     usbPort: connectorPort(board.type.ports, "usb"),
-    vinPort: regulatorInputPort(
+    regulatorPort: regulatorInputPort(
       board.type.ports,
       isFirmware ? [powerPort] : (opts.across ?? [])
     ),

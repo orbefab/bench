@@ -136,7 +136,7 @@ export type RunBoard = {
    * The regulator input (`VIN` on the Nano and Uno, `RAW` on the Pro Micro),
    * from `regulatorInputPort`. Null when the board has none.
    */
-  vinPin: string | null;
+  regulatorPin: string | null;
   groundPin: string;
   /** Amperes drawn by the board, independent of voltage. */
   current: number;
@@ -899,7 +899,7 @@ function stampSupply(
     powerPort: supply.positivePin,
     resetPort: null,
     usbPort: null,
-    vinPort: null,
+    regulatorPort: null,
     resetFraction: null,
     parts,
     nets,
@@ -1068,7 +1068,7 @@ function build(
         powerInputs: [powerName],
         vinFeed: false,
         voltagePin: powerName,
-        vinPin: regulatorInputPort(host.type.ports, [powerName]),
+        regulatorPin: regulatorInputPort(host.type.ports, [powerName]),
         groundPin: groundName,
         current: quiescent ?? 0,
         hasNetlist: host.path !== inst.path,
@@ -1319,7 +1319,9 @@ function build(
     suppliesOnPort(wiring, board.id, port)[0] ?? null;
   for (const board of boards) {
     const onRail = supplyOnPort(board, board.voltagePin);
-    const onVin = board.vinPin ? supplyOnPort(board, board.vinPin) : null;
+    const onVin = board.regulatorPin
+      ? supplyOnPort(board, board.regulatorPin)
+      : null;
     // The regulator input (VIN, or the Pro Micro's RAW) feeds the regulator.
     // Parts on the regulated port take this supply in the feed walk; their
     // load sits on the regulated node.
@@ -1329,7 +1331,7 @@ function build(
   for (const board of boards) {
     const supplyId =
       supplyOnPort(board, board.voltagePin) ??
-      (board.vinPin ? supplyOnPort(board, board.vinPin) : null);
+      (board.regulatorPin ? supplyOnPort(board, board.regulatorPin) : null);
     if (!supplyId) continue;
     const list = boardsOn.get(supplyId) ?? [];
     list.push(board);
@@ -1369,7 +1371,7 @@ function build(
       powerPort: board.voltagePin,
       resetPort: board.resetPort,
       usbPort: connectorPort(inst.type.ports, "usb"),
-      vinPort: board.vinPin,
+      regulatorPort: board.regulatorPin,
       resetFraction: board.resetFraction,
       pins: board.driveOrder ?? board.pinOrder,
       parts: stampParts.filter((part) => {
