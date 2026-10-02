@@ -153,6 +153,19 @@ function firstIssue(
   return first.message;
 }
 
+/**
+ * An edit request read by the socket's own `edit` schema. The agent's
+ * `world_edit` tool reads its ops here too, so both paths refuse the
+ * same input with the same sentence.
+ */
+export function parseEditRequest(
+  value: unknown
+): z.output<typeof schemas.edit> | { error: string } {
+  const read = schemas.edit.safeParse(value);
+  if (read.success) return read.data;
+  return { error: firstIssue(schemas.edit, read.error.issues) };
+}
+
 /** A message the socket refused. `refuses` and `board` say who is told. */
 export type ParseFailure =
   | { error: string }

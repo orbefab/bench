@@ -1,7 +1,6 @@
 import {
   boardTrackId,
   type ChipClock,
-  type EditOp,
   extractUrdfJointsAndMeshes,
   type JointLimitKind,
   jointLimitWarning,
@@ -19,11 +18,16 @@ import {
   type WorldSender,
   type WorldState,
 } from "@sfab-bench/contract";
-import { confirmSentence, readEditOp } from "@sfab-bench/parts";
+import { confirmSentence } from "@sfab-bench/parts";
 import { tool } from "ai";
 import { z } from "zod";
 import { viewerProjectRoot, WORLD_ARG } from "./viewer-context";
-import { applyDocumentEdit, redoDocument, undoDocument } from "./world/edit";
+import {
+  applyDocumentEdit,
+  type EditError,
+  redoDocument,
+  undoDocument,
+} from "./world/edit";
 import { readerFor } from "./world/files";
 import {
   ensureWorldRun,
@@ -38,6 +42,7 @@ import {
   stepWorld,
   worldRunView,
 } from "./world/host";
+import { parseEditRequest } from "./world/live-message";
 import { planWorld, type RunPlan, WORLD_V1_MESSAGE } from "./world/plan";
 import { commandDegFromPulse } from "./world/servo";
 import { powerFeedsOf, servoSignalDrives } from "./world/wiring";
@@ -981,6 +986,23 @@ function commandAck(view: {
   };
 }
 
+/**
+ * What the agent reads when an edit, undo, or redo did not finish. A run
+ * fault means the file was written and the history moved; only the
+ * restart after it failed. A refusal changed nothing.
+ */
+export function editFailure(
+  failed: EditError
+): Omit<EditError, "runFault"> & { written?: true } {
+  if (failed.runFault) {
+    return {
+      error: `The file was written, but the run did not restart: ${failed.error}`,
+      written: true,
+    };
+  }
+  return failed;
+}
+
 export const worldTools = {
   world_status: tool({
     description: `Read a world's shared run. ${WORLD_ARG} Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.`,
@@ -1136,28 +1158,32 @@ export const worldTools = {
     execute: async ({ world, ops, label, part, break: breaking }) => {
       const found = await openRun(world);
       if ("error" in found) return found;
-      const parsed: EditOp[] = [];
-      for (const item of ops) {
-        const read = readEditOp({
+      // The socket's own edit schema; an op without a document edits the
+      // part this call names.
+      const request = parseEditRequest({
+        type: "edit",
+        ops: ops.map((item) => ({
           ...item,
           document:
             typeof item.document === "string"
               ? item.document
               : (part ?? found.world),
-        });
-        if ("error" in read) return read;
-        parsed.push(read);
-      }
+        })),
+        ...(label !== undefined ? { label } : {}),
+        ...(part !== undefined ? { part } : {}),
+        ...(breaking ? { confirm: "break" } : {}),
+      });
+      if ("error" in request) return request;
       const applied = await applyDocumentEdit(
         found.root,
         found.world,
-        parsed,
-        label,
-        part,
-        breaking ? "break" : undefined
+        request.ops,
+        request.label,
+        request.part,
+        request.confirm
       );
       if ("needsConfirm" in applied) return confirmSentence(applied.ports);
-      if ("error" in applied) return applied;
+      if ("error" in applied) return editFailure(applied);
       return applied.sentence;
     },
   }),
@@ -1171,7 +1197,7 @@ export const worldTools = {
       const found = await openRun(world);
       if ("error" in found) return found;
       const applied = await undoDocument(found.root, found.world, part);
-      if ("error" in applied) return applied;
+      if ("error" in applied) return editFailure(applied);
       return applied.sentence;
     },
   }),
@@ -1185,7 +1211,7 @@ export const worldTools = {
       const found = await openRun(world);
       if ("error" in found) return found;
       const applied = await redoDocument(found.root, found.world, part);
-      if ("error" in applied) return applied;
+      if ("error" in applied) return editFailure(applied);
       return applied.sentence;
     },
   }),
@@ -1231,7 +1257,7 @@ export const worldTools = {
       ]);
       if ("needsConfirm" in applied)
         return { error: confirmSentence(applied.ports) };
-      if ("error" in applied) return applied;
+      if ("error" in applied) return editFailure(applied);
       return {
         rows: levelRows(
           applied.report,
