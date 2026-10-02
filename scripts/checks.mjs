@@ -34,7 +34,7 @@ const run = spawnSync(
   [
     "--disable-warning=ExperimentalWarning",
     "--test",
-    "--test-isolation=none",
+    "--experimental-test-isolation=none",
     "--test-force-exit",
     ...reporters,
     ...files,
