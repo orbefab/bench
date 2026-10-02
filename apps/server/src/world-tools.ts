@@ -113,9 +113,9 @@ type AgentFrame = {
       pins?: string[];
       running?: boolean;
       brownout?: boolean;
-      /** 5V node at t. */
+      /** Board node at t. */
       voltage?: number;
-      /** Lowest 5V-node voltage in the window. */
+      /** Lowest board-node voltage in the window. */
       minVoltage?: number;
       /** Amperes through the board's onboard LED (the view's `ledPin`). Absent when that board has no LED stamp. */
       ledCurrent?: number;
@@ -363,7 +363,7 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       resets: number;
       brownout: boolean;
       pins: string[];
-      /** Volts on the 5V node. Null when no supply reaches the board. */
+      /** Volts on the board node. Null when no supply reaches the board. */
       voltage: number | null;
       /** Amperes through the board's onboard LED (the view's `ledPin`). Absent when that board has no LED stamp. */
       ledCurrent?: number;

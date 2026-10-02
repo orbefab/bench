@@ -590,8 +590,10 @@ try {
       expect(typeof redone === "string", JSON.stringify(redone));
       console.log(`world_redo: ${redone}`);
 
-      // The agent reads its ops with the socket's schema: the same op is
-      // refused with the same sentence on both paths.
+      // The agent reads its ops with the socket's schema, so the two paths
+      // cannot drift: the same op is refused with the same sentence. (Before
+      // the tool shared the schema it repeated the same per-op read, so no
+      // input differed; this guards the one path, it was not failing first.)
       const badOp = { kind: "set-pose", document: USB, id: "scene" };
       const agentBad = await call(worldTools.world_edit, {
         world: USB,
