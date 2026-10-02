@@ -75,6 +75,7 @@ function gpioPlan(
       brownoutVoltage: 2.7,
       brownoutAssertVoltage: 2.675,
       brownoutReleaseVoltage: 2.725,
+      resetHoldMs: 66,
       operatingVoltage: 5,
       supply: { min: 5, max: 5 },
       pin: AVR_PIN,

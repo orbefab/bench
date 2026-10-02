@@ -27,21 +27,23 @@ export const DISPLAY_MOVE_DEG = 0.5;
 export const DISPLAY_STALL_HOLD_MS = 20;
 
 /**
- * ATmega328P BODLEVEL 2.7 V typical, with 50 mV hysteresis.
- * Reset asserts below `BOD_ASSERT_V` and the delay starts above
- * `BOD_RELEASE_V`. `RESET_HOLD_MS` is tTOUT 65 ms plus 16K CK.
+ * The chip part's brownout band. Assert is the falling threshold,
+ * release is the rising one, and `holdMs` is how long reset stays
+ * after the rail has released (tTOUT plus the clock cycles).
  */
-export const BOD_ASSERT_V = 2.675;
-export const BOD_RELEASE_V = 2.725;
-export const RESET_HOLD_MS = 66;
+export type BrownoutLimits = {
+  assertV: number;
+  releaseV: number;
+  holdMs: number;
+};
 
 export type BrownoutPhase = "run" | "held" | "delay";
 
 export type BrownoutState = {
   phase: BrownoutPhase;
   /**
-   * Sim millisecond of the step whose rail rose above `BOD_RELEASE_V`.
-   * Null while the rail has not released.
+   * Sim millisecond of the step whose rail rose above the release
+   * voltage. Null while the rail has not released.
    */
   releaseAtMs: number | null;
 };
@@ -59,15 +61,17 @@ function clamp(value: number, lo: number, hi: number): number {
 /**
  * One step of the brown-out state machine. `stepEndMs` is the sim time
  * this step is recorded at. `assertReset` is the falling edge.
- * `reboot` is the first instruction, `RESET_HOLD_MS` after release.
+ * `reboot` is the first instruction, `limits.holdMs` after release.
+ * `limits` are that chip's params.
  */
 export function stepBrownout(
   state: BrownoutState,
   voltage: number,
-  stepEndMs: number
+  stepEndMs: number,
+  limits: BrownoutLimits
 ): BrownoutState & { assertReset: boolean; reboot: boolean } {
   if (state.phase === "run") {
-    if (voltage < BOD_ASSERT_V) {
+    if (voltage < limits.assertV) {
       return {
         phase: "held",
         releaseAtMs: null,
@@ -77,7 +81,7 @@ export function stepBrownout(
     }
     return { ...state, assertReset: false, reboot: false };
   }
-  if (!(voltage > BOD_RELEASE_V)) {
+  if (!(voltage > limits.releaseV)) {
     return {
       phase: "held",
       releaseAtMs: null,
@@ -86,7 +90,7 @@ export function stepBrownout(
     };
   }
   const releaseAtMs = state.releaseAtMs ?? stepEndMs;
-  if (stepEndMs - releaseAtMs >= RESET_HOLD_MS) {
+  if (stepEndMs - releaseAtMs >= limits.holdMs) {
     return {
       phase: "run",
       releaseAtMs: null,

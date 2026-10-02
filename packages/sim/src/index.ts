@@ -64,8 +64,7 @@ export {
   WORLD_V1_MESSAGE,
 } from "./plan";
 export {
-  BOD_ASSERT_V,
-  BOD_RELEASE_V,
+  type BrownoutLimits,
   type BrownoutPhase,
   type BrownoutState,
   DISPLAY_MOVE_DEG,
@@ -75,7 +74,6 @@ export {
   type MotorLaw,
   noLoadSpeedRad,
   type RailMotor,
-  RESET_HOLD_MS,
   runningBrownout,
   servoElectrical,
   solveRail,

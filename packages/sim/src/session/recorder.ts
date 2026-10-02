@@ -1,6 +1,5 @@
 /** Recorder: the live state sample, the recording layout and manifest, and the recorded query answers. */
 import {
-  ATMEGA328P_BROWNOUT_V,
   atmega328pSoaWarning,
   DEFAULT_TIMESTEP_S,
   emptyPinState,
@@ -76,17 +75,15 @@ export function sample(s: SessionState): WorldState | null {
     const minVoltage = s.specs.find(
       (item) => item.id === board.id
     )?.minOperatingVoltage;
+    const brownoutVoltage = power?.brownoutVoltage;
     const soa =
       minVoltage != null &&
+      brownoutVoltage != null &&
       board.running &&
       !board.brownout &&
       !board.fault &&
       !unpowered
-        ? atmega328pSoaWarning(
-            node,
-            power?.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V,
-            minVoltage
-          )
+        ? atmega328pSoaWarning(node, brownoutVoltage, minVoltage)
         : null;
     boardState[board.id] = {
       ...(board.fault

@@ -24,6 +24,11 @@ import {
 } from "@sfab-bench/contract";
 import { SS14, thermalVoltage } from "@sfab-bench/engine-circuit";
 import { closeRootWatches } from "./projects";
+import {
+  BOD_ASSERT_V,
+  BOD_RELEASE_V,
+  RESET_HOLD_MS,
+} from "./world/chip-brownout";
 import { boardStampOf } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,
@@ -33,7 +38,6 @@ import {
 } from "./world/host";
 import { maxBoardDelta } from "./world/nano-reference";
 import { planWorld } from "./world/plan";
-import { BOD_ASSERT_V, BOD_RELEASE_V, RESET_HOLD_MS } from "./world/power";
 import { NANO_BOARD_A } from "./world/power-path";
 import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 

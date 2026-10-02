@@ -161,6 +161,8 @@ export function fillBoardPower(s: SessionState, plan: RunPlan) {
       draw: supplyId ? board.current : 0,
       brownoutVoltage: board.brownoutVoltage,
       assertVoltage: board.brownoutAssertVoltage,
+      releaseVoltage: board.brownoutReleaseVoltage,
+      holdMs: board.resetHoldMs,
       resets: 0,
       brownout: runningBrownout(),
     });

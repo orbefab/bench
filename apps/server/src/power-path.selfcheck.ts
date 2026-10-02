@@ -18,6 +18,12 @@ import { fileURLToPath } from "node:url";
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
 import { Engine, MF_MSMF050, PtcFuseElement } from "@sfab-bench/engine-circuit";
 import { closeRootWatches } from "./projects";
+import {
+  BOD_ASSERT_V,
+  BOD_RELEASE_V,
+  BROWNOUT_LIMITS,
+  RESET_HOLD_MS,
+} from "./world/chip-brownout";
 import { boardStampOf } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,
@@ -25,14 +31,7 @@ import {
   readRecording,
   stopWorld,
 } from "./world/host";
-import {
-  BOD_ASSERT_V,
-  BOD_RELEASE_V,
-  RESET_HOLD_MS,
-  runningBrownout,
-  solveRail,
-  stepBrownout,
-} from "./world/power";
+import { runningBrownout, solveRail, stepBrownout } from "./world/power";
 import {
   railAttachment,
   UNO_F1_IHOLD,
@@ -346,7 +345,7 @@ expect(
       trip.setFixed(RECOVER_A);
       dropped = true;
     }
-    const stepped = stepBrownout(bo, trip.boardMinVoltage, ms);
+    const stepped = stepBrownout(bo, trip.boardMinVoltage, ms, BROWNOUT_LIMITS);
     bo = { phase: stepped.phase, releaseAtMs: stepped.releaseAtMs };
     if (stepped.assertReset) {
       assertAt = ms;

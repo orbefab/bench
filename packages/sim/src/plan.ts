@@ -157,6 +157,8 @@ export type RunBoard = {
   brownoutVoltage: number;
   brownoutAssertVoltage: number;
   brownoutReleaseVoltage: number;
+  /** Milliseconds reset stays after the rail releases. From `resetHoldS`. */
+  resetHoldMs: number;
   operatingVoltage: number;
   supply: { min: number; max: number };
   /** `avr-pin@1`. High is the board node. The ADC and the Nano D13 stamp use it. */
@@ -1054,6 +1056,10 @@ function build(
           params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,
         brownoutReleaseVoltage:
           params.brownoutReleaseVoltage ?? Number.POSITIVE_INFINITY,
+        resetHoldMs:
+          typeof params.resetHoldS === "number"
+            ? Math.round(params.resetHoldS * 1000)
+            : Number.POSITIVE_INFINITY,
         operatingVoltage: rail[0],
         supply: { min: rail[0], max: rail[1] },
         pin: avrPinParams(params),

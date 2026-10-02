@@ -105,6 +105,9 @@ export type BoardPower = {
   /** Nominal BOD level, for the out-of-SOA warning. */
   brownoutVoltage: number;
   assertVoltage: number;
+  releaseVoltage: number;
+  /** Milliseconds reset stays after the rail releases. */
+  holdMs: number;
   resets: number;
   brownout: BrownoutState;
 };

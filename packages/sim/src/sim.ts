@@ -364,10 +364,11 @@ function createSession(host: SimHost) {
   /**
    * One millisecond. Boards that are already running execute first, so this
    * step's pulses are the command. The rail is solved from that command and
-   * the joint velocity. A rail below 2.675 V asserts reset on this step.
-   * The torque still matches the current charged for the step; the pins
-   * are Hi-Z for the recording. After the rail rises above 2.725 V the
-   * CPU stays in reset for 66 ms, then the first instruction runs.
+   * the joint velocity. A rail below the chip's assert voltage asserts
+   * reset on this step. The torque still matches the current charged for
+   * the step; the pins are Hi-Z for the recording. After the rail rises
+   * above the chip's release voltage the CPU stays in reset for the chip's
+   * hold, then the first instruction runs.
    */
   function advanceOne() {
     if (!s.sim) return;
@@ -391,7 +392,11 @@ function createSession(host: SimHost) {
       const power = s.boardPower.get(board.id);
       if (!power?.supplyId || board.fault) continue;
       const voltage = brownoutOf(s, board.id);
-      const stepped = stepBrownout(power.brownout, voltage, stepEndMs);
+      const stepped = stepBrownout(power.brownout, voltage, stepEndMs, {
+        assertV: power.assertVoltage,
+        releaseV: power.releaseVoltage,
+        holdMs: power.holdMs,
+      });
       power.brownout = {
         phase: stepped.phase,
         releaseAtMs: stepped.releaseAtMs,

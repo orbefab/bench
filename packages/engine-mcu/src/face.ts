@@ -1,12 +1,15 @@
 // L2 face over AvrBoard. avr8js stays behind this package.
-import { ATMEGA328P_BROWNOUT_V, type Engine } from "@sfab-bench/contract";
+import type { Engine } from "@sfab-bench/contract";
 import { AvrBoard } from "./board";
 import { requireChipSpec } from "./chips";
 
 /** Flash image, brownout threshold, and the board pin list. Supply starts at 5 V. */
 export type McuEngineSpec = {
   firmware: Uint8Array;
-  /** Volts. The CPU is held in reset below this. Default 2.7. */
+  /**
+   * Volts. The CPU is held in reset below this. The caller passes the
+   * chip's `brownoutVoltage`. Omitted means this engine does not brown out.
+   */
   brownoutVoltage?: number;
   /** Chip pin per exposed header, in pin-state order. Absent is no GPIO. */
   wire?: readonly string[];
@@ -26,7 +29,7 @@ export class McuEngine implements Engine {
   readonly id: string;
   private board: AvrBoard | null = null;
   private supply = 5;
-  private brownoutVoltage = ATMEGA328P_BROWNOUT_V;
+  private brownoutVoltage = Number.POSITIVE_INFINITY;
   private ms = 0;
   private pendingTx = "";
   private pins: readonly string[] = [];
@@ -38,7 +41,7 @@ export class McuEngine implements Engine {
 
   init(spec: unknown): void {
     const parsed = mcuSpec(spec);
-    this.brownoutVoltage = parsed.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V;
+    this.brownoutVoltage = parsed.brownoutVoltage ?? Number.POSITIVE_INFINITY;
     this.supply = 5;
     this.ms = 0;
     this.pendingTx = "";
