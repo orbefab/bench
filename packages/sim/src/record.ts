@@ -148,6 +148,7 @@ type StoredEvent = {
   by?: WorldSender;
   id?: string;
   position?: [number, number, number];
+  cause?: "pin";
 };
 
 type Slot = { chunk: Chunk; slot: number; timeMs: number };
@@ -992,12 +993,12 @@ function publishEvent(event: StoredEvent): RecordingEvent | null {
       message: event.message ?? "",
     };
   }
-  if (
-    (event.kind === "reset" ||
-      event.kind === "reboot" ||
-      event.kind === "reload") &&
-    event.board
-  ) {
+  if (event.kind === "reset" && event.board) {
+    return event.cause
+      ? { t, kind: "reset", board: event.board, cause: event.cause }
+      : { t, kind: "reset", board: event.board };
+  }
+  if ((event.kind === "reboot" || event.kind === "reload") && event.board) {
     return { t, kind: event.kind, board: event.board };
   }
   if (

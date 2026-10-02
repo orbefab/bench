@@ -82,6 +82,8 @@ type AgentEvent = {
   message?: string;
   id?: string;
   position?: [number, number, number];
+  /** On a reset: `pin` when the RESET pin asserted it, absent for a brownout. */
+  cause?: "pin";
 };
 
 type AgentFrame = {
@@ -833,7 +835,18 @@ function agentEvents(events: RecordingEvent[]): {
   const capped = capSerial(kept);
   const slim: AgentEvent[] = [];
   for (const event of capped.events) {
-    if (event.kind === "reset" || event.kind === "reload") {
+    if (event.kind === "reset") {
+      slim.push(
+        event.cause
+          ? {
+              t: event.t,
+              kind: "reset",
+              board: event.board,
+              cause: event.cause,
+            }
+          : { t: event.t, kind: "reset", board: event.board }
+      );
+    } else if (event.kind === "reload") {
       slim.push({ t: event.t, kind: event.kind, board: event.board });
     } else if (event.kind === "fault") {
       slim.push({
@@ -1034,7 +1047,7 @@ export const worldTools = {
     },
   }),
   read_recording: tool({
-    description: `Read a world's recording for an agent. ${WORLD_ARG} Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, supply:usb.voltage (the terminal), and board:uno.voltage (the 5V node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets, reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose 5V node was in the 16 MHz out-of-SOA band, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.`,
+    description: `Read a world's recording for an agent. ${WORLD_ARG} Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, supply:usb.voltage (the terminal), and board:uno.voltage (the 5V node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets (cause "pin" when the RESET pin held the chip, absent for a brownout), reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose 5V node was in the 16 MHz out-of-SOA band, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.`,
     inputSchema: z.object({
       world: z.string(),
       from: z.number().optional(),

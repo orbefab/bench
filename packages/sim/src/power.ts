@@ -39,6 +39,9 @@ export type BrownoutLimits = {
 
 export type BrownoutPhase = "run" | "held" | "delay";
 
+/** What asserted a reset: the rail under the brownout level, or the RESET pin. */
+export type ResetCause = "brownout" | "pin";
+
 export type BrownoutState = {
   phase: BrownoutPhase;
   /**
@@ -59,34 +62,45 @@ function clamp(value: number, lo: number, hi: number): number {
 }
 
 /**
- * One step of the brown-out state machine. `stepEndMs` is the sim time
- * this step is recorded at. `assertReset` is the falling edge.
- * `reboot` is the first instruction, `limits.holdMs` after release.
- * `limits` are that chip's params.
+ * One step of the reset state machine. `stepEndMs` is the sim time this
+ * step is recorded at. `resetPinLow` is the RESET pin below the chip's
+ * V_RST at any point of the step. Either source holds the chip, and the
+ * release waits for both. `assertReset` is the falling edge, and `cause`
+ * says which source made it (the rail wins when both do). `reboot` is the
+ * first instruction, `limits.holdMs` after release. `limits` are that
+ * chip's params.
  */
 export function stepBrownout(
   state: BrownoutState,
   voltage: number,
   stepEndMs: number,
-  limits: BrownoutLimits
-): BrownoutState & { assertReset: boolean; reboot: boolean } {
+  limits: BrownoutLimits,
+  resetPinLow = false
+): BrownoutState & {
+  assertReset: boolean;
+  reboot: boolean;
+  cause: ResetCause | null;
+} {
   if (state.phase === "run") {
-    if (voltage < limits.assertV) {
+    const sag = voltage < limits.assertV;
+    if (sag || resetPinLow) {
       return {
         phase: "held",
         releaseAtMs: null,
         assertReset: true,
         reboot: false,
+        cause: sag ? "brownout" : "pin",
       };
     }
-    return { ...state, assertReset: false, reboot: false };
+    return { ...state, assertReset: false, reboot: false, cause: null };
   }
-  if (!(voltage > limits.releaseV)) {
+  if (!(voltage > limits.releaseV) || resetPinLow) {
     return {
       phase: "held",
       releaseAtMs: null,
       assertReset: false,
       reboot: false,
+      cause: null,
     };
   }
   const releaseAtMs = state.releaseAtMs ?? stepEndMs;
@@ -96,6 +110,7 @@ export function stepBrownout(
       releaseAtMs: null,
       assertReset: false,
       reboot: true,
+      cause: null,
     };
   }
   return {
@@ -103,6 +118,7 @@ export function stepBrownout(
     releaseAtMs,
     assertReset: false,
     reboot: false,
+    cause: null,
   };
 }
 

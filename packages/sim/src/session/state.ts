@@ -217,7 +217,12 @@ export type SessionState = {
   inputNets: ReturnType<typeof gpioInputNets>;
   applyingInputs: boolean;
   readonly txSeen: Map<string, number>;
-  readonly pendingNotes: { kind: "reset" | "reboot"; board: string }[];
+  /** `cause` is set only on a reset the RESET pin asserted. */
+  readonly pendingNotes: {
+    kind: "reset" | "reboot";
+    board: string;
+    cause?: "pin";
+  }[];
   layout: RecLayout | null;
   /** Drive mode of each stamped pin at the start of this millisecond. */
   readonly driveAtStart: Map<string, Map<number, PinMode>>;

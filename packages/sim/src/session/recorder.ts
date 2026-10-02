@@ -422,7 +422,12 @@ export function recordStep(s: SessionState) {
     s.txSeen.set(board.id, seen);
   }
   for (const note of s.pendingNotes) {
-    rec.noteEvent({ timeMs: ms, kind: note.kind, board: note.board });
+    rec.noteEvent({
+      timeMs: ms,
+      kind: note.kind,
+      board: note.board,
+      ...(note.cause ? { cause: note.cause } : {}),
+    });
   }
   s.pendingNotes.length = 0;
   rec.commit(ms);

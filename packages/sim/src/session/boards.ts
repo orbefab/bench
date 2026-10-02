@@ -425,6 +425,16 @@ export function brownoutOf(s: SessionState, boardId: string): number {
   return s.rails.get(supplyId)?.circuit.boardReading(boardId).min ?? 0;
 }
 
+/** RESET went below the chip's V_RST at some point of the last solve. */
+export function resetPinLowOf(s: SessionState, boardId: string): boolean {
+  const supplyId = s.boardPower.get(boardId)?.supplyId;
+  if (!supplyId) return false;
+  const margin = s.rails
+    .get(supplyId)
+    ?.circuit.boardReading(boardId).resetMargin;
+  return margin != null && margin < 0;
+}
+
 export function stepBoard(s: SessionState, board: AvrBoard) {
   if (!board.running || board.fault) return;
   try {

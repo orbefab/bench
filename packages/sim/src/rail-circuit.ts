@@ -141,6 +141,19 @@ export type RailCircuitSpec = {
 const MASTER_S = 0.001;
 const SUBSTEPS = 10;
 
+/** One board's node after a solve. */
+export type BoardReading = {
+  voltage: number;
+  /** Lowest board-node volts over the step's sub-steps. */
+  min: number;
+  /**
+   * Lowest `V_reset − resetFraction·V_board` over the step. Negative means
+   * RESET went below the chip's V_RST. Null when the board has no reset
+   * node on this rail or no reset fraction.
+   */
+  resetMargin: number | null;
+};
+
 /** One slice of a master step, between pin edges. */
 type RailPiece = {
   dt: number;
@@ -239,10 +252,9 @@ export class RailCircuit {
     string,
     { bit: number; pin: { setMode(mode: PinMode): void } }[]
   >();
-  private readonly readings = new Map<
-    string,
-    { voltage: number; min: number }
-  >();
+  private readonly readings = new Map<string, BoardReading>();
+  /** Lowest reset margin of each board this step, when it has a reset node. */
+  private readonly resetMins = new Map<string, number>();
   private readonly boardOrder: string[] = [];
   private readonly boardResets = new Map<
     string,
@@ -410,13 +422,17 @@ export class RailCircuit {
 
   /**
    * This board's node. One board on the rail is `boardVoltage` /
-   * `boardMinVoltage`.
+   * `boardMinVoltage` / `resetMarginMin`.
    */
-  boardReading(id: string): { voltage: number; min: number } {
+  boardReading(id: string): BoardReading {
     return (
       this.readings.get(id) ?? {
         voltage: this.boardVoltage,
         min: this.boardMinVoltage,
+        resetMargin:
+          this.resetNode && this.resetFraction !== null
+            ? this.resetMarginMin
+            : null,
       }
     );
   }
@@ -591,6 +607,7 @@ export class RailCircuit {
       for (const id of this.boardOrder) mins.set(id, Number.POSITIVE_INFINITY);
     }
     this.resetMarginMin = Number.POSITIVE_INFINITY;
+    this.resetMins.clear();
     const note = (dt: number) => {
       if (!many) {
         const v = this.engine.voltage(this.boardNode);
@@ -636,6 +653,7 @@ export class RailCircuit {
         this.readings.set(id, {
           voltage: this.engine.voltage(node),
           min: mins.get(id) ?? this.engine.voltage(node),
+          resetMargin: this.resetMins.get(id) ?? null,
         });
       }
     } else {
@@ -665,6 +683,8 @@ export class RailCircuit {
       this.resetVoltage = volts;
       const margin = volts - reset.fraction * board;
       if (margin < this.resetMarginMin) this.resetMarginMin = margin;
+      const soFar = this.resetMins.get(id);
+      if (soFar === undefined || margin < soFar) this.resetMins.set(id, margin);
     }
   }
 

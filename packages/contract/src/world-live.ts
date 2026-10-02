@@ -712,7 +712,11 @@ export type RecordingEvent =
       by: WorldSender;
     }
   | { t: number; kind: "fault"; board: string; message: string }
-  | { t: number; kind: "reset"; board: string }
+  /**
+   * The chip went into reset. `cause` is `pin` when the RESET pin asserted
+   * it; absent for a brownout, so older recordings read the same.
+   */
+  | { t: number; kind: "reset"; board: string; cause?: "pin" }
   | { t: number; kind: "reboot"; board: string }
   | { t: number; kind: "reload"; board: string }
   | { t: number; kind: "play"; by: WorldSender }

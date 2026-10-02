@@ -85,6 +85,7 @@ import {
   applyInputNets,
   bindInputNets,
   brownoutOf,
+  resetPinLowOf,
   fillBoardPower,
   loadBoards,
   postState,
@@ -391,11 +392,17 @@ function createSession(host: SimHost) {
       const power = s.boardPower.get(board.id);
       if (!power?.supplyId || board.fault) continue;
       const voltage = brownoutOf(s, board.id);
-      const stepped = stepBrownout(power.brownout, voltage, stepEndMs, {
-        assertV: power.assertVoltage,
-        releaseV: power.releaseVoltage,
-        holdMs: power.holdMs,
-      });
+      const stepped = stepBrownout(
+        power.brownout,
+        voltage,
+        stepEndMs,
+        {
+          assertV: power.assertVoltage,
+          releaseV: power.releaseVoltage,
+          holdMs: power.holdMs,
+        },
+        resetPinLowOf(s, board.id)
+      );
       power.brownout = {
         phase: stepped.phase,
         releaseAtMs: stepped.releaseAtMs,
@@ -403,7 +410,11 @@ function createSession(host: SimHost) {
       if (stepped.assertReset) {
         board.holdInReset();
         applyInputNets(s);
-        s.pendingNotes.push({ kind: "reset", board: board.id });
+        s.pendingNotes.push(
+          stepped.cause === "pin"
+            ? { kind: "reset", board: board.id, cause: "pin" }
+            : { kind: "reset", board: board.id }
+        );
         continue;
       }
       if (!stepped.reboot) continue;
