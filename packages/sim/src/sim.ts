@@ -86,6 +86,7 @@ import {
   bindInputNets,
   brownoutOf,
   fillBoardPower,
+  holdBeforeRun,
   loadBoards,
   postState,
   reloadBoard,
@@ -570,8 +571,22 @@ function createSession(host: SimHost) {
     bindRangers(s, s.runPlan);
     // The ranger's idle current is on the node the first CPU step reads.
     solveSupplies(s);
-    latchSupplyNodes(s);
     openRecorder(s);
+    // A chip that powers up into a sagging rail or a low RESET never runs
+    // its first instruction. The reset lands on the first recorded step.
+    let held = false;
+    for (const board of s.boards) {
+      const cause = holdBeforeRun(s, board);
+      if (!cause) continue;
+      held = true;
+      s.pendingNotes.push(
+        cause === "pin"
+          ? { kind: "reset", board: board.id, cause }
+          : { kind: "reset", board: board.id }
+      );
+    }
+    if (held) applyInputNets(s);
+    latchSupplyNodes(s);
     post(s, {
       type: "ready",
       generation: s.generation,

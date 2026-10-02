@@ -1,12 +1,14 @@
 /**
  * An external RESET held below the chip's V_RST keeps the chip in reset
- * (Atmel DS40002061 §11.2.3, External Reset). Releasing it starts the same
- * time-out as a brownout release (`resetHoldS`), then the first instruction.
+ (ATmega328P datasheet DS40002061, "External Reset"). Releasing it starts
+ * the same time-out as a brownout release (`resetHoldS`), then the first
+ * instruction.
  *
  * The Nano runs blink at class 1 and class 2. With `nano.RESET` wired to
  * `nano.GND`, D13 never becomes an output, the board reads in reset, and
  * the one reset event names the pin as its cause. Without that wire the
- * same scene boots.
+ * same scene boots. The `hold` sketch prints `10` within its first
+ * millisecond, so an empty console proves the held chip ran nothing.
  */
 
 import { ok as expect } from "node:assert/strict";
@@ -60,9 +62,13 @@ const LIMITS = { assertV: 2.675, releaseV: 2.725, holdMs: 66 };
   );
 }
 
-const blink = fileURLToPath(
-  new URL("../../../examples/nano/firmware/blink/blink.hex", import.meta.url)
-);
+const firmware = (name: string) =>
+  fileURLToPath(
+    new URL(
+      `../../../examples/nano/firmware/${name}/${name}.hex`,
+      import.meta.url
+    )
+  );
 
 const none = (label: string) => ({
   "0": {
@@ -79,7 +85,8 @@ function writeWorld(
   dir: string,
   level: 1 | 2,
   held: boolean,
-  pair = false
+  pair = false,
+  image = "blink.hex"
 ): string {
   const wires = [
     ["usb.5V", "nano.5V"],
@@ -89,7 +96,7 @@ function writeWorld(
   const instances: Record<string, unknown> = {
     nano: {
       part: "sfab/nano-ch340@1.0.0",
-      params: { firmware: "blink.hex" },
+      params: { firmware: image },
     },
     usb: { part: "sfab/usb-port-500ma@1.0.0" },
   };
@@ -130,13 +137,20 @@ function writeWorld(
       },
     },
   };
-  const name = `reset-pin-${level}-${held ? "held" : "free"}${pair ? "-pair" : ""}.world.json`;
+  const name = `reset-pin-${level}-${held ? "held" : "free"}${pair ? "-pair" : ""}-${image.replace(".hex", "")}.world.json`;
   writeFileSync(join(dir, name), JSON.stringify(doc));
   return name;
 }
 
-async function run(dir: string, level: 1 | 2, held: boolean, pair = false) {
-  const world = writeWorld(dir, level, held, pair);
+async function run(
+  dir: string,
+  level: 1 | 2,
+  held: boolean,
+  pair = false,
+  image = "blink.hex",
+  reload = false
+) {
+  const world = writeWorld(dir, level, held, pair, image);
   const planned = planWorld(dir, world);
   if (!planned.ok) {
     throw new Error(planned.errors.map((item) => item.message).join("; "));
@@ -148,6 +162,11 @@ async function run(dir: string, level: 1 | 2, held: boolean, pair = false) {
     const loaded = await sim.load({ project: dir, world, generation: 1 });
     expect(loaded.ok, `class ${level} reset world loads`);
     await sim.step(150);
+    if (reload) {
+      // A new image while RESET is low stays held as well.
+      await sim.accept({ type: "reloadBoard", board: "nano", generation: 1 });
+      await sim.step(150);
+    }
     const state = sim.state();
     const live = state?.boards.nano;
     expect(live?.pins, `class ${level} nano has no pins`);
@@ -155,7 +174,12 @@ async function run(dir: string, level: 1 | 2, held: boolean, pair = false) {
     if (body.op !== "read") throw new Error("no recording");
     const resets = body.read.events.filter((event) => event.kind === "reset");
     const other = state?.boards.free;
+    const serial = body.read.events
+      .filter((event) => event.kind === "serial" && event.board === "nano")
+      .map((event) => (event.kind === "serial" ? event.text : ""))
+      .join("");
     return {
+      serial,
       other: other?.pins
         ? {
             d13Output: pinBitSet(other.pins.ddr, bit ?? -1),
@@ -175,7 +199,8 @@ async function run(dir: string, level: 1 | 2, held: boolean, pair = false) {
 
 const dir = mkdtempSync(join(tmpdir(), "sfab-reset-pin-"));
 try {
-  copyFileSync(blink, join(dir, "blink.hex"));
+  copyFileSync(firmware("blink"), join(dir, "blink.hex"));
+  copyFileSync(firmware("hold"), join(dir, "hold.hex"));
   for (const level of [1, 2] as const) {
     const free = await run(dir, level, false);
     expect(free.d13Output, `class ${level}: blink makes D13 an output`);
@@ -192,6 +217,22 @@ try {
         held.resets[0]?.kind === "reset" &&
         held.resets[0].cause === "pin",
       `class ${level}: reset events ${JSON.stringify(held.resets)}`
+    );
+    // Not one instruction: the sketch that prints at once prints nothing.
+    const quiet = await run(dir, level, true, false, "hold.hex");
+    expect(
+      quiet.serial === "" && quiet.inReset,
+      `class ${level}: a held chip printed ${JSON.stringify(quiet.serial)}`
+    );
+    const reloaded = await run(dir, level, true, false, "hold.hex", true);
+    expect(
+      !reloaded.serial.includes("10") && reloaded.inReset,
+      `class ${level}: a reload under a low RESET printed ${JSON.stringify(reloaded.serial)}`
+    );
+    const talks = await run(dir, level, false, false, "hold.hex");
+    expect(
+      talks.serial.startsWith("10"),
+      `class ${level}: a free chip prints ${JSON.stringify(talks.serial)}`
     );
     // Two boards on one rail: only the grounded RESET holds its chip.
     const pair = await run(dir, level, true, true);

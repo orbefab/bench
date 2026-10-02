@@ -198,8 +198,9 @@ export class RailCircuit {
   /** Volts on the RESET node. 0 when this rail has no Nano path. */
   resetVoltage = 0;
   /**
-   * Lowest `V_reset − 0.9·V_board` over this step's sub-steps.
-   * Positive means RESET stayed above the external threshold.
+   * Lowest `V_reset − resetFraction·V_board` over this step's sub-steps,
+   * across every board on the rail. Positive means RESET stayed above the
+   * external threshold. Each board's own value is `boardReading().resetMargin`.
    */
   resetMarginMin = 0;
   private readonly engine: Engine;

@@ -11,7 +11,7 @@ import {
 } from "@sfab-bench/engine-mcu";
 import { analogRead } from "../analog-pin";
 import type { RunPlan } from "../plan";
-import { runningBrownout } from "../power";
+import { type ResetCause, runningBrownout } from "../power";
 import { applyGpioDrives, gpioInputNets, powerFeedsOf } from "../wiring";
 import { rearmRangers, rearmServos } from "./actuators";
 import { post, simMs, thrownMessage } from "./common";
@@ -273,20 +273,10 @@ export function reloadBoard(s: SessionState, id: string) {
   rearmRangers(s, id, next);
   // The new image has not run, and this board's servos are idle. Publish
   // the rail those currents actually draw. A sag still under the assert
-  // threshold holds the new CPU in reset. A firmware reload is not a
-  // brown-out delay: once the rail is up, the image runs.
+  // threshold, or a low RESET, holds the new CPU in reset. A firmware
+  // reload is not a brown-out delay: once both are up, the image runs.
   solveSupplies(s);
-  const power = s.boardPower.get(id);
-  if (power?.supplyId && !next.fault) {
-    const voltage = brownoutOf(s, id);
-    if (voltage < power.assertVoltage) {
-      next.holdInReset();
-      power.brownout = { phase: "held", releaseAtMs: null };
-      applyInputNets(s);
-    } else {
-      power.brownout = runningBrownout();
-    }
-  }
+  if (holdBeforeRun(s, next)) applyInputNets(s);
   s.rxSent.delete(id);
   s.faulted.delete(id);
   if (s.runPlan) bindInputNets(s, s.runPlan);
@@ -423,6 +413,32 @@ export function brownoutOf(s: SessionState, boardId: string): number {
   const supplyId = s.boardPower.get(boardId)?.supplyId;
   if (!supplyId) return 0;
   return s.rails.get(supplyId)?.circuit.boardReading(boardId).min ?? 0;
+}
+
+/**
+ * Before a fresh image runs: a chip whose rail is under the brownout
+ * assert, or whose RESET is low, never fetches its first instruction. Reads
+ * the last solve. Returns what holds it, or null when it may run.
+ */
+export function holdBeforeRun(
+  s: SessionState,
+  board: AvrBoard
+): ResetCause | null {
+  const power = s.boardPower.get(board.id);
+  if (!power?.supplyId || board.fault || !board.running) return null;
+  const cause: ResetCause | null =
+    brownoutOf(s, board.id) < power.assertVoltage
+      ? "brownout"
+      : resetPinLowOf(s, board.id)
+        ? "pin"
+        : null;
+  if (!cause) {
+    power.brownout = runningBrownout();
+    return null;
+  }
+  board.holdInReset();
+  power.brownout = { phase: "held", releaseAtMs: null };
+  return cause;
 }
 
 /** RESET went below the chip's V_RST at some point of the last solve. */
