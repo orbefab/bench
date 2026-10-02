@@ -178,7 +178,6 @@ export type WorldBoardWarning = {
 /** The running chip's datasheet name and CPU clock, for warning text. */
 export type ChipClock = { label: string; hz: number };
 
-/** `the ATmega328P needs at 16 MHz`, for the chip that is running. */
 /**
  * The onboard LED's instance path: the board's child named `led`. Its
  * current is the board's `ledCurrent`, and the card reads it apart from
@@ -188,6 +187,7 @@ export function onboardLedPath(boardId: string): string {
   return `${boardId}.led`;
 }
 
+/** `the ATmega328P needs at 16 MHz`, for the chip that is running. */
 export function soaNeed(chip: ChipClock): string {
   return `the ${chip.label} needs at ${chip.hz / 1e6} MHz`;
 }
@@ -384,7 +384,7 @@ export type WorldServerMessage =
    * only that sender shows the line.
    */
   | { type: "board-error"; board: string; message: string; nonce?: string }
-  /** USART0 TX since the previous event. `next` is the ring offset after `text`. */
+  /** Console USART TX since the previous event. `next` is the ring offset after `text`. */
   | { type: "serial"; board: string; text: string; next: number }
   | {
       type: "serial-sent";
