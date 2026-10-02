@@ -152,12 +152,14 @@ function call(
   return Promise.resolve(execute(input as never, {} as never));
 }
 
+// Other checks share this process; count workers from here.
+const workersBefore = worldWorkerCount();
+
 try {
   expect(
     typeof worldTools.world_status.execute === "function",
     "world_status runs on the server"
   );
-  expect(worldWorkerCount() === 0, "a worker was already up");
   const closed = await call(worldTools.world_status, {
     world: "parts/sfab/arm-bench@1.0.0.json",
   });
@@ -173,7 +175,7 @@ try {
     errorOf(closedRead) === "no project open",
     `closed read ${JSON.stringify(closedRead)}`
   );
-  expect(worldWorkerCount() === 0, "no project started a worker");
+  expect(worldWorkerCount() === workersBefore, "no project started a worker");
 
   await runViewerContext(
     {
@@ -223,7 +225,10 @@ try {
           `track ${track}: ${JSON.stringify(bad)}`
         );
       }
-      expect(worldWorkerCount() === 0, "an unknown track started a worker");
+      expect(
+        worldWorkerCount() === workersBefore,
+        "an unknown track started a worker"
+      );
       expect(
         !worldDocumentOpen(root, "parts/sfab/arm-bench@1.0.0.json"),
         "an unknown track opened the arm"
@@ -244,7 +249,7 @@ try {
           `ms out of range ${JSON.stringify(bad)}`
         );
       }
-      expect(worldWorkerCount() === 0, "an error started a worker");
+      expect(worldWorkerCount() === workersBefore, "an error started a worker");
       expect(
         !worldDocumentOpen(root, "parts/sfab/arm-bench@1.0.0.json"),
         "an error opened the arm"
@@ -761,5 +766,5 @@ try {
   rmSync(root, { recursive: true, force: true });
 }
 
-expect(worldWorkerCount() === 0, "a world worker was left behind");
+expect(worldWorkerCount() === workersBefore, "a world worker was left behind");
 console.log("world-tools.selfcheck ok");
