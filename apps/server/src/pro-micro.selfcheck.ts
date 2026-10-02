@@ -28,6 +28,7 @@ import {
 import { viewOf } from "@sfab-bench/sim/view";
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
+import { boardStampOf } from "./world/circuit-stamp";
 import { planWorld } from "./world/plan";
 
 const project = fileURLToPath(
@@ -323,6 +324,13 @@ expect(channels.includes(7) && channels.includes(8), `channels ${channels}`);
 expect(count7 === adcCount(2.5, 5), `ADC7 ${count7}`);
 expect(count8 === adcCount(1, 5), `ADC8 ${count8}`);
 expect(countRef === adcCount(2.5, INTERNAL_2V56_V), `2.56 V ref ${countRef}`);
+
+// The header calls the chip's RESET pin RST. A stamp outside a world
+// names the reset node the way the planner does.
+const stamp = boardStampOf("sfab/pro-micro@1.0.0", "circuits", {
+  boardId: "pm",
+});
+expect(stamp.resetNode === "pm.RST", `reset node ${stamp.resetNode}`);
 
 closeRootWatches();
 console.log(
