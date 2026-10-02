@@ -248,4 +248,6 @@ const none = new AvrBoard("t", null);
 none.load(new Uint8Array(spec.flashBytes));
 expect(!none.running && none.fault === "board has no chip", "no chip, no boot");
 
-console.log("chips: atmega328p record matches the constants it replaced");
+console.log(
+  "chips: atmega328p record matches the constants it replaced; atmega32u4 record, PLL lock and refusals"
+);

@@ -81,8 +81,8 @@ const otherLine = recordedSoaLine(
   soaFacts
 );
 expect(
-  otherLine !== soa && !otherLine.includes("3.20"),
-  `an in-spec node was quoted as the sag: ${otherLine}`
+  otherLine === "supply was below the 3.78 V the ATmega328P needs at 16 MHz",
+  `an in-spec node is not quoted as the sag: ${otherLine}`
 );
 const promicroLine = recordedSoaLine(
   true,
