@@ -9,13 +9,16 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "test": "node ../../scripts/checks.mjs test/solref.selfcheck.ts"
   },
   "dependencies": {
     "@mujoco/mujoco": "3.14.0",
     "@sfab-bench/contract": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.2"
   }
 }

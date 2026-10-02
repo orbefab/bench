@@ -6,8 +6,8 @@
 
 import { ok as expect } from "node:assert/strict";
 
-import type { RunPlan } from "./world/plan";
-import { powerFeedsOf } from "./world/wiring";
+import type { RunPlan } from "../src/plan";
+import { powerFeedsOf } from "../src/wiring";
 
 const pin = (kind: "gpio" | "power" | "ground" | "signal") => ({
   kind,

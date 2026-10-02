@@ -1,8 +1,5 @@
 import { ok as expect } from "node:assert/strict";
-import {
-  clampSolrefTimeconst,
-  urdfSolrefLimits,
-} from "@sfab-bench/engine-body";
+import { clampSolrefTimeconst, urdfSolrefLimits } from "../src/index";
 
 /**
  * A negative solreflimit time constant stays negative. Zero and a

@@ -2,7 +2,7 @@
 import { ok as expect } from "node:assert/strict";
 
 import type { FormParam } from "@sfab-bench/contract";
-import { mergeFormParams, splitPortRef, UnionFind } from "@sfab-bench/parts";
+import { mergeFormParams, splitPortRef, UnionFind } from "../src/index";
 
 {
   const uf = new UnionFind();

@@ -6,7 +6,7 @@ import {
   parseIntelHex,
   SERIAL_CAP,
   SerialRing,
-} from "@sfab-bench/engine-mcu";
+} from "../src/index";
 
 function record(type: number, addr: number, data: number[]): string {
   const bytes = [data.length, (addr >> 8) & 0xff, addr & 0xff, type, ...data];

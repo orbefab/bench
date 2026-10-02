@@ -28,7 +28,8 @@
     "./sim": "./src/sim.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "test": "node ../../scripts/checks.mjs test/feeds-hub.selfcheck.ts test/pullup.selfcheck.ts test/supply-feed.selfcheck.ts"
   },
   "dependencies": {
     "@mujoco/mujoco": "3.14.0",
@@ -39,6 +40,9 @@
     "@sfab-bench/parts": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.20.2",
+    "avr8js": "0.21.1",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.2"
   }
 }

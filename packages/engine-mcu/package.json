@@ -9,13 +9,16 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "test": "node ../../scripts/checks.mjs test/board.selfcheck.ts test/chips.selfcheck.ts"
   },
   "dependencies": {
     "@sfab-bench/contract": "workspace:*",
     "avr8js": "0.21.1"
   },
   "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.2"
   }
 }

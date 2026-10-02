@@ -3,8 +3,8 @@ import { pinHas } from "@sfab-bench/contract";
 import { AVR_PIN } from "@sfab-bench/engine-circuit";
 import { AvrBoard, FLASH_BYTES, requireChipSpec } from "@sfab-bench/engine-mcu";
 import { assemble } from "avr8js/dist/esm/utils/assembler.js";
-import type { RunPin, RunPlan } from "./world/plan";
-import { applyGpioDrives, gpioInputNets } from "./world/wiring";
+import type { RunPin, RunPlan } from "../src/plan";
+import { applyGpioDrives, gpioInputNets } from "../src/wiring";
 
 const GPIO: RunPin = {
   kind: "gpio",
