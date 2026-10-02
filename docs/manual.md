@@ -45,6 +45,8 @@ A world file from before this change (`.world.json`) converts once into a part: 
 
 Authoring stays **outside** Bench for now. Meshes, STEP, URDF, and firmware come from a CAD tool, a toolchain, a person, or the agent running a tool in the folder. Bench watches those files and reloads when they change. Part CAD and a microcontroller IDE inside Bench are later.
 
+The library includes the Arduino Nano, the Arduino Uno, and the SparkFun Pro Micro (5 V, 16 MHz, ATmega32U4). On the Pro Micro, timer 4 PWM and the USB serial port are not simulated. The board card names each of those once when the board runs. Prints from that board come from `Serial1`, the hardware UART.
+
 ---
 
 ## Naming (instance vs file vs ports)
