@@ -42,12 +42,7 @@ import {
   type TableLaw,
   tableLawOf,
 } from "@sfab-bench/parts";
-import {
-  boardHostOf,
-  chipExposure,
-  chipFactsOf,
-  gpioPinsOf,
-} from "./chip-host";
+import { boardGpio, boardHostOf, chipFactsOf } from "./chip-host";
 import type { StampEnv } from "./env";
 import { formAdapter, stampDiode } from "./forms";
 import type { RailFeed } from "./power-path";
@@ -885,7 +880,11 @@ function stampOf(
   }
   const { instances } = resolveLevels(lib, compileRules(lib.run));
   const board = instances.find((inst) => inst.path === boardId);
-  if (!board || !netlistOf(board)) {
+  const firmwareSelf =
+    (board?.axes.behaviour.impl as BehaviourImpl | null)?.kind === "firmware"
+      ? board
+      : undefined;
+  if (!board || (!netlistOf(board) && !firmwareSelf)) {
     throw new Error(
       firmwareOnly
         ? `${partId} variant ${variant} is not a firmware board`
@@ -946,10 +945,11 @@ function stampOf(
   }
   const resetPort =
     behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
-  const chipBehaviour = chip?.axes.behaviour.impl as BehaviourImpl | null;
+  const runner = chip ?? firmwareSelf;
+  const chipBehaviour = runner?.axes.behaviour.impl as BehaviourImpl | null;
   const gpio =
-    chip && chipBehaviour?.kind === "firmware"
-      ? gpioPinsOf(chipBehaviour.chip, chipExposure(chip, board))
+    runner && chipBehaviour?.kind === "firmware"
+      ? boardGpio(chipBehaviour.chip, runner, board)
       : [];
   const stamp = stampBoard({
     boardId,

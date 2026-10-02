@@ -2,8 +2,10 @@
 
 import type { BehaviourImpl } from "@sfab-bench/contract";
 import { chipSpec } from "@sfab-bench/engine-mcu";
+import { chipExposure, type LiveInstance } from "@sfab-bench/parts";
 
-export { boardHostOf, chipExposure } from "@sfab-bench/parts";
+export { boardHostOf } from "@sfab-bench/parts";
+export { chipExposure };
 
 export type FirmwareBehaviour = Extract<BehaviourImpl, { kind: "firmware" }>;
 
@@ -52,4 +54,22 @@ export function gpioPinsOf(
     if (pins[chip]) out.push({ name, chip });
   }
   return out;
+}
+
+/**
+ * GPIO for the board this firmware runs as.
+ * A bare chip authors no expose table. Each pin in the chip spec is
+ * then its own header name, in that spec's order.
+ */
+export function boardGpio(
+  chipName: string,
+  chip: LiveInstance,
+  host: LiveInstance
+): ExposedGpio[] {
+  const exposure = chipExposure(chip, host);
+  if (host === chip && exposure.size === 0) {
+    const pins = chipSpec(chipName)?.pins ?? {};
+    return Object.keys(pins).map((name) => ({ name, chip: name }));
+  }
+  return gpioPinsOf(chipName, exposure);
 }

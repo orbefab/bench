@@ -3,6 +3,13 @@
 import type { BehaviourImpl } from "@sfab-bench/contract";
 import { behaviourNetlist, type LiveInstance } from "./levels";
 
+/** `publisher/name@version` → `name`. */
+function partStem(id: string): string {
+  const slash = id.lastIndexOf("/");
+  const at = id.lastIndexOf("@");
+  return id.slice(slash + 1, at > slash ? at : undefined);
+}
+
 /**
  * The instance a firmware part runs as.
  *
@@ -32,16 +39,27 @@ export function boardHostOf(
 }
 
 /**
- * The header ports a composite board exposes from its chip child, as host
- * port to chip pin. Empty when the chip is its own board. The `expose` table is
- * the board's pin map.
+ * Header port to chip pin.
+ *
+ * A composite board uses the expose table of the level that is running.
+ * A firmware level that is its own board has no chip child. The pin map
+ * is a fact of the board, not of that level, so the lowest composite
+ * class on the same part (then the variant name) supplies the table.
+ * Empty when the part authors no such expose: a bare chip.
  */
 export function chipExposure(
   chip: LiveInstance,
   host: LiveInstance
 ): Map<string, string> {
+  if (host !== chip) return selectedExpose(chip, host);
+  return authoredPinMap(host);
+}
+
+function selectedExpose(
+  chip: LiveInstance,
+  host: LiveInstance
+): Map<string, string> {
   const out = new Map<string, string>();
-  if (host === chip) return out;
   const netlist = behaviourNetlist(
     host.part,
     host.axes.behaviour.impl as BehaviourImpl | null
@@ -53,4 +71,29 @@ export function chipExposure(
     }
   }
   return out;
+}
+
+function authoredPinMap(host: LiveInstance): Map<string, string> {
+  const behaviour = host.axes.behaviour.impl as BehaviourImpl | null;
+  const chipName = behaviour?.kind === "firmware" ? behaviour.chip : null;
+  const axes = host.part.axes?.behaviour;
+  if (!chipName || !axes) return new Map();
+  for (const key of ["0", "1", "2", "3"] as const) {
+    const variants = axes[key]?.variants;
+    if (!variants) continue;
+    for (const name of Object.keys(variants).sort()) {
+      const impl = variants[name];
+      if (!impl || impl.kind !== "composite") continue;
+      const map = new Map<string, string>();
+      for (const [port, target] of Object.entries(impl.netlist.expose)) {
+        const dot = target.lastIndexOf(".");
+        if (dot < 0) continue;
+        const child = impl.netlist.instances[target.slice(0, dot)];
+        if (!child || partStem(child.part) !== chipName) continue;
+        map.set(port, target.slice(dot + 1));
+      }
+      if (map.size > 0) return map;
+    }
+  }
+  return new Map();
 }

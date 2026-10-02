@@ -37,12 +37,7 @@ import {
   type Wire,
   type WireEnd,
 } from "@sfab-bench/parts";
-import {
-  boardHostOf,
-  chipExposure,
-  chipFactsOf,
-  gpioPinsOf,
-} from "./chip-host";
+import { boardGpio, boardHostOf, chipExposure, chipFactsOf } from "./chip-host";
 import {
   type AssignedPart,
   assignNodes,
@@ -1017,7 +1012,7 @@ function build(
         facts.railVoltage,
       ];
       const source = inst.params.source;
-      const gpio = gpioPinsOf(behaviour.chip, exposure);
+      const gpio = boardGpio(behaviour.chip, inst, host);
       // The board's own load rides on the chip instance: it counts the parts
       // the chip part does not carry (the USB bridge, the power LED).
       const quiescent =
