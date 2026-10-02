@@ -1,7 +1,4 @@
 import { Container, Input, Text } from "@react-three/uikit";
-import { useContext, useEffect, useMemo, useState } from "react";
-
-import { harnessModelName, useHarnesses } from "@/hooks/useHarnesses";
 import {
   CHAT_EFFORT_LABEL,
   CHAT_EFFORTS,
@@ -10,7 +7,9 @@ import {
   type HarnessId,
   type HarnessModel,
   harnessSupportsEffort,
-} from "@/lib/harness";
+} from "@sfab-bench/contract";
+import { useContext, useEffect, useMemo, useState } from "react";
+import { harnessModelName, useHarnesses } from "@/hooks/useHarnesses";
 import { usePrefs } from "@/state/prefs";
 import { FeedbackContext, ToolBtn } from "@/xr/ui/ToolBtn";
 import { useXrTheme } from "@/xr/ui/theme";

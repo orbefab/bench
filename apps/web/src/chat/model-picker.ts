@@ -1,4 +1,4 @@
-import { type HarnessId, isHarnessId } from "@/lib/harness";
+import { type HarnessId, isHarnessId } from "@sfab-bench/contract";
 
 export const HARNESS_REFETCH_THROTTLE_MS = 10_000;
 export const MODEL_FAVORITES_KEY = "sfab-bench.model-favorites";

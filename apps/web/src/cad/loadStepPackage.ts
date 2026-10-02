@@ -1,3 +1,4 @@
+import type { StepAssemblyNode, StepPackage } from "@sfab-bench/contract";
 import * as THREE from "three";
 import { buildBoundsTrees } from "@/cad/bvh";
 import { type ComponentMesh, decodeTess } from "@/cad/decodeTess";
@@ -7,7 +8,6 @@ import {
   cssColor,
   makeReview,
 } from "@/cad/review";
-import type { StepAssemblyNode, StepPackage } from "@/cad/stepPackage";
 import { apiFetch } from "@/lib/api";
 
 function cadMatrix(values: number[]): THREE.Matrix4 {

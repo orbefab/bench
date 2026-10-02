@@ -1,10 +1,3 @@
-import { useStore as useZustandStore } from "zustand";
-import {
-  createJSONStorage,
-  persist,
-  type StateStorage,
-} from "zustand/middleware";
-import { createStore } from "zustand/vanilla";
 import {
   type ChatEffort,
   DEFAULT_CHAT_EFFORT,
@@ -13,7 +6,14 @@ import {
   type HarnessId,
   isChatEffort,
   isHarnessId,
-} from "@/lib/harness";
+} from "@sfab-bench/contract";
+import { useStore as useZustandStore } from "zustand";
+import {
+  createJSONStorage,
+  persist,
+  type StateStorage,
+} from "zustand/middleware";
+import { createStore } from "zustand/vanilla";
 import { CHAT_DEFAULT_WIDTH, clampStoredChatWidth } from "@/lib/layout";
 
 const DESKTOP_PREFS_KEY = "sfab-bench.desktop";

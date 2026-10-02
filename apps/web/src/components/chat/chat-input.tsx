@@ -1,3 +1,4 @@
+import { HARNESS_LABEL } from "@sfab-bench/contract";
 import type { ChatStatus } from "ai";
 import { Hash, Mic } from "lucide-react";
 import {
@@ -53,7 +54,6 @@ import { InputGroupAddon } from "@/components/ui/input-group";
 import { useFirstSetupHint } from "@/hooks/useFirstSetupHint";
 import { useHarnesses } from "@/hooks/useHarnesses";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
-import { HARNESS_LABEL } from "@/lib/harness";
 import { partLabelFileStem } from "@/lib/part-label";
 import {
   compactChatSheetOpen,

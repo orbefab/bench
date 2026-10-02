@@ -1,3 +1,4 @@
+import type { CatalogEntry } from "@sfab-bench/contract";
 import { Check, Search } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -30,7 +31,6 @@ import { requestCloseFolder } from "@/lib/motion";
 import { folderName, shortPath } from "@/lib/project";
 import { isMacPlatform, matchesShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-import type { CatalogEntry } from "@/lib/viewer-snapshot";
 import { prefsStore, usePrefs } from "@/state/prefs";
 import { useViewer } from "@/state/viewer";
 import { useWorld } from "@/state/world";

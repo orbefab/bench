@@ -1,16 +1,15 @@
 import { Container, Text } from "@react-three/uikit";
 import { ChevronDown, Globe } from "@react-three/uikit-lucide";
-import { useContext, useEffect, useMemo, useState } from "react";
-
-import { useCatalog } from "@/hooks/useCatalog";
-import { useProjectSession } from "@/hooks/useProjectSession";
 import {
   type CatalogEntry,
   type CatalogNode,
   catalogAncestors,
   catalogSections,
   catalogTree,
-} from "@/lib/viewer-snapshot";
+} from "@sfab-bench/contract";
+import { useContext, useEffect, useMemo, useState } from "react";
+import { useCatalog } from "@/hooks/useCatalog";
+import { useProjectSession } from "@/hooks/useProjectSession";
 import { usePrefs } from "@/state/prefs";
 import { useViewer } from "@/state/viewer";
 import { useWorld } from "@/state/world";

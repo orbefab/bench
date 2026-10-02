@@ -1,4 +1,13 @@
 import {
+  type ChatEffort,
+  DEFAULT_CHAT_EFFORT,
+  DEFAULT_HARNESS,
+  DEFAULT_HARNESS_MODEL,
+  type HarnessId,
+  isChatEffort,
+  isHarnessId,
+} from "@sfab-bench/contract";
+import {
   createContext,
   type ReactNode,
   useCallback,
@@ -14,15 +23,6 @@ import type { GalleryChatMessage } from "@/components/chat/mock-chat-messages";
 import { showNetworkErrorToast } from "@/components/ui/toast";
 import { useProjectSession } from "@/hooks/useProjectSession";
 import { jsonApi } from "@/lib/api";
-import {
-  type ChatEffort,
-  DEFAULT_CHAT_EFFORT,
-  DEFAULT_HARNESS,
-  DEFAULT_HARNESS_MODEL,
-  type HarnessId,
-  isChatEffort,
-  isHarnessId,
-} from "@/lib/harness";
 import { prefsStore, usePrefs } from "@/state/prefs";
 import { useXrUi } from "@/state/xr";
 

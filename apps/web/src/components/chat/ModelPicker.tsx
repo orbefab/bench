@@ -1,6 +1,10 @@
+import {
+  HARNESS_IDS,
+  HARNESS_LABEL,
+  type HarnessId,
+} from "@sfab-bench/contract";
 import { ChevronDown, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
 import {
   groupPickerModels,
   harnessStatusTitle,
@@ -26,7 +30,6 @@ import {
 } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { useHarnesses } from "@/hooks/useHarnesses";
-import { HARNESS_IDS, HARNESS_LABEL, type HarnessId } from "@/lib/harness";
 import { cn } from "@/lib/utils";
 import { usePrefs } from "@/state/prefs";
 

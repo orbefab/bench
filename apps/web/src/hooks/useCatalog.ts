@@ -1,5 +1,5 @@
+import type { CatalogEntry } from "@sfab-bench/contract";
 import { useCallback, useEffect, useRef, useState } from "react";
-
 import { showNetworkErrorToast } from "@/components/ui/toast";
 import { useProjectSession } from "@/hooks/useProjectSession";
 import { jsonApi } from "@/lib/api";
@@ -10,7 +10,6 @@ import {
 } from "@/lib/feedback";
 import { messageFromHttpBody } from "@/lib/load-copy";
 import { LIBRARY_FILES_EVENT, REFRESH_FILES_EVENT } from "@/lib/motion";
-import type { CatalogEntry } from "@/lib/viewer-snapshot";
 
 export type CatalogState = {
   files: CatalogEntry[];

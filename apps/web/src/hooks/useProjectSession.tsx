@@ -1,3 +1,9 @@
+import type {
+  ProjectSession,
+  SessionClient,
+  SessionEvent,
+  SessionSnapshot,
+} from "@sfab-bench/contract";
 import {
   createContext,
   type ReactNode,
@@ -31,12 +37,6 @@ import { LIBRARY_FILES_EVENT } from "@/lib/motion";
 import { registerAndOpenTab } from "@/lib/project";
 import { projectUrl } from "@/lib/project-query";
 import { redact } from "@/lib/redact";
-import type {
-  ProjectSession,
-  SessionClient,
-  SessionEvent,
-  SessionSnapshot,
-} from "@/lib/session";
 import { emitFolderError } from "@/lib/welcome";
 import { showPartFile } from "@/state/part-tabs";
 import { prefsStore } from "@/state/prefs";

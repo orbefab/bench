@@ -1,4 +1,4 @@
-import type { HarnessId } from "@/lib/harness";
+import type { HarnessId } from "@sfab-bench/contract";
 
 type MarkPath = { d: string; evenodd?: boolean };
 
