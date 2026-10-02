@@ -1,0 +1,151 @@
+{
+  "format": "sfab.lock@1",
+  "parts": [
+    {
+      "id": "sfab/ams1117-5v0@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/ams1117-5v0@1.0.0.json",
+      "sha256": "c281e6eb07d81239ece3c741c7159a87bc06a929817e371df963c12081f4c1d5",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/atmega32u4@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/atmega32u4@1.0.0.json",
+      "sha256": "4338a8b113e2274eb6d6efb6a603b2ba09d5858e1e44cfdd8061cd837804ac8d",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/bench-supply@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/bench-supply@1.0.0.json",
+      "sha256": "c7156ad0f9958bb1f50c08debe3922dc84e21fbb6a05210bb5db4029c791c524",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/capacitor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/capacitor@1.0.0.json",
+      "sha256": "4cd09ef3beba925f97d238c6078aec4b927cc94621011cb534bb313140b60e8e",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/diode-ss14@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/diode-ss14@1.0.0.json",
+      "sha256": "fce139f01a88f129dc3bb08187ec91a7bc5c6b84c3b3a8ec2e08a785837cc059",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/ground-plane@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/ground-plane@1.0.0.json",
+      "sha256": "5cc420e61c09a8ba6fa67e94c8fa03cf2f900815b609c9adc3a9e390d0778705",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/led-red@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/led-red@1.0.0.json",
+      "sha256": "009dffe0e8b10c328b94459ec7eb1396ddb330fef5c95f92d7f74cf50981d9c2",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/nano-power-input@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/nano-power-input@1.0.0.json",
+      "sha256": "ef18c2c2c99e144010837c110869aaaa5ce717276f93f7922de41ce66c6d2cf8",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/pro-micro-blink@1.0.0",
+      "path": "inline",
+      "sha256": "439800007db4ddf8fb7a49876569be154bc781f9d94e908cae4ee29c5675b03b",
+      "source": "inline",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/pro-micro@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/pro-micro@1.0.0.json",
+      "sha256": "84d9c0dca28eb629720cae17134c7ee1e8eb376cd0a56ccee5e4ee080dd26ccb",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/resistor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/resistor@1.0.0.json",
+      "sha256": "4b38e5fa1fd847a3e8d52bfa23d65699a13bc9a9d2c62b20cf901ee222d6361a",
+      "source": "catalog",
+      "version": "1.0.0"
+    }
+  ],
+  "types": [
+    {
+      "id": "assembly",
+      "path": "../../apps/server/catalog/types/assembly.json",
+      "sha256": "d3d12a01bb5564827caab4bf45b624199124264c89dc582d46f4775b83a34c41",
+      "source": "catalog"
+    },
+    {
+      "id": "atmega32u4",
+      "path": "../../apps/server/catalog/types/atmega32u4.json",
+      "sha256": "3574ba12e2c8d8dabc31f5f3f945a9562ff21120fe19110ee03c0ad507f2e233",
+      "source": "catalog"
+    },
+    {
+      "id": "bench-supply-cv-cc",
+      "path": "../../apps/server/catalog/types/bench-supply-cv-cc.json",
+      "sha256": "00d2e6b537f5412b0da315b03461dae6d47709523039c7b26a6fde9e98bee0b4",
+      "source": "catalog"
+    },
+    {
+      "id": "capacitor",
+      "path": "../../apps/server/catalog/types/capacitor.json",
+      "sha256": "cb8a7070edcaad83051a688cc5fefdca8a5800e597892d549cbfbccfdbb3ef13",
+      "source": "catalog"
+    },
+    {
+      "id": "diode",
+      "path": "../../apps/server/catalog/types/diode.json",
+      "sha256": "2acc095e3190263e167b598d47f2917d373f1275d1adc18f8be244738794dce4",
+      "source": "catalog"
+    },
+    {
+      "id": "ground-plane",
+      "path": "../../apps/server/catalog/types/ground-plane.json",
+      "sha256": "7b70fb6dbc50d1c03f6b4673b8950070c1e5dcf58402b6990f133e0d5767487b",
+      "source": "catalog"
+    },
+    {
+      "id": "ldo-regulator",
+      "path": "../../apps/server/catalog/types/ldo-regulator.json",
+      "sha256": "b1528afe2e4f4af1e5bc9e6203b7be8d21b1b8af8f0ab41d1cf743792c51cad7",
+      "source": "catalog"
+    },
+    {
+      "id": "led",
+      "path": "../../apps/server/catalog/types/led.json",
+      "sha256": "9a85dfd184a8511510d43d79cede9e2f01d69f3113e02b250c4c790cb47e385f",
+      "source": "catalog"
+    },
+    {
+      "id": "power-input",
+      "path": "../../apps/server/catalog/types/power-input.json",
+      "sha256": "c2f57cf7a811e28b1c6cf44aefc7a5797cf1edbf729b09696f9ed10f331ef808",
+      "source": "catalog"
+    },
+    {
+      "id": "resistor",
+      "path": "../../apps/server/catalog/types/resistor.json",
+      "sha256": "bd300d9ec35ce882fb73a75fd9afb9739844b5567ec263ed41d8d7416eee04e6",
+      "source": "catalog"
+    },
+    {
+      "id": "sparkfun-pro-micro",
+      "path": "../../apps/server/catalog/types/sparkfun-pro-micro.json",
+      "sha256": "3e47bed215fdebaf0c1fe2dbbc985ecdda1d91fa6bc03c35d9c73ac81764f367",
+      "source": "catalog"
+    }
+  ],
+  "world": "pro-micro-blink@1.0.0"
+}

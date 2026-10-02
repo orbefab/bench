@@ -1,0 +1,15 @@
+examples/pro-micro — fixture world
+
+The .hex file under firmware/ is built from the sibling .ino source:
+
+  arduino-cli compile --fqbn arduino:avr:leonardo --output-dir <dir>
+
+Tool versions used for that image:
+
+  arduino-cli 1.5.1
+  arduino:avr core 1.8.8
+
+The Arduino AVR core is LGPL-2.1, so the .hex file is LGPL-2.1-derived
+object code. It is fixture data. Bench does not link it.
+
+The .ino source is under the repository license (MIT).

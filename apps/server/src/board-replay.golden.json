@@ -178,5 +178,15 @@
     "serialLines": 29,
     "resets": 0,
     "finalVolts": [4.713260318]
+  },
+  {
+    "world": "examples/pro-micro/parts/sfab/pro-micro-blink@1.0.0.json",
+    "ms": 3000,
+    "digest": "f446ba45f495e63a8410657b58cecd76ffbb9236f92dedb0225695061e6abb97",
+    "frames": 301,
+    "boards": 1,
+    "serialLines": 8,
+    "resets": 0,
+    "finalVolts": [4.998932438]
   }
 ]
