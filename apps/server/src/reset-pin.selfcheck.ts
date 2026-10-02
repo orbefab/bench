@@ -71,12 +71,32 @@ const none = (label: string) => ({
   },
 });
 
-function writeWorld(dir: string, level: 1 | 2, held: boolean): string {
+/**
+ * `pair` adds a second Nano, `free`, on the same USB supply with its RESET
+ * left alone, so the rail carries two reset nodes.
+ */
+function writeWorld(
+  dir: string,
+  level: 1 | 2,
+  held: boolean,
+  pair = false
+): string {
   const wires = [
     ["usb.5V", "nano.5V"],
     ["usb.GND", "nano.GND"],
   ];
   if (held) wires.push(["nano.RESET", "nano.GND"]);
+  const instances: Record<string, unknown> = {
+    nano: {
+      part: "sfab/nano-ch340@1.0.0",
+      params: { firmware: "blink.hex" },
+    },
+    usb: { part: "sfab/usb-port-500ma@1.0.0" },
+  };
+  if (pair) {
+    instances.free = instances.nano;
+    wires.push(["usb.5V", "free.5V"], ["usb.GND", "free.GND"]);
+  }
   const doc = {
     version: 2,
     environment: { ground: { plane: true }, gravity: [0, 0, -9.81] },
@@ -96,13 +116,7 @@ function writeWorld(dir: string, level: 1 | 2, held: boolean): string {
                   kind: "composite",
                   omits: ["test scene"],
                   netlist: {
-                    instances: {
-                      nano: {
-                        part: "sfab/nano-ch340@1.0.0",
-                        params: { firmware: "blink.hex" },
-                      },
-                      usb: { part: "sfab/usb-port-500ma@1.0.0" },
-                    },
+                    instances,
                     wires,
                     expose: {},
                   },
@@ -116,13 +130,13 @@ function writeWorld(dir: string, level: 1 | 2, held: boolean): string {
       },
     },
   };
-  const name = `reset-pin-${level}-${held ? "held" : "free"}.world.json`;
+  const name = `reset-pin-${level}-${held ? "held" : "free"}${pair ? "-pair" : ""}.world.json`;
   writeFileSync(join(dir, name), JSON.stringify(doc));
   return name;
 }
 
-async function run(dir: string, level: 1 | 2, held: boolean) {
-  const world = writeWorld(dir, level, held);
+async function run(dir: string, level: 1 | 2, held: boolean, pair = false) {
+  const world = writeWorld(dir, level, held, pair);
   const planned = planWorld(dir, world);
   if (!planned.ok) {
     throw new Error(planned.errors.map((item) => item.message).join("; "));
@@ -140,7 +154,14 @@ async function run(dir: string, level: 1 | 2, held: boolean) {
     const body = sim.record({ op: "read", from: 0, to: state?.simTime ?? 0 });
     if (body.op !== "read") throw new Error("no recording");
     const resets = body.read.events.filter((event) => event.kind === "reset");
+    const other = state?.boards.free;
     return {
+      other: other?.pins
+        ? {
+            d13Output: pinBitSet(other.pins.ddr, bit ?? -1),
+            inReset: other.brownout === true,
+          }
+        : null,
       d13Output: pinBitSet(live.pins.ddr, bit ?? -1),
       inReset: live.brownout === true,
       reboots: live.resets ?? 0,
@@ -171,6 +192,17 @@ try {
         held.resets[0]?.kind === "reset" &&
         held.resets[0].cause === "pin",
       `class ${level}: reset events ${JSON.stringify(held.resets)}`
+    );
+    // Two boards on one rail: only the grounded RESET holds its chip.
+    const pair = await run(dir, level, true, true);
+    expect(!pair.d13Output && pair.inReset, `class ${level}: nano held`);
+    expect(
+      pair.other?.d13Output === true && pair.other.inReset === false,
+      `class ${level}: the other Nano on the rail runs ${JSON.stringify(pair.other)}`
+    );
+    expect(
+      pair.resets.length === 1 && pair.resets[0]?.board === "nano",
+      `class ${level}: pair resets ${JSON.stringify(pair.resets)}`
     );
     console.log(
       `class ${level} Nano: RESET to GND holds the chip at ${held.voltage.toFixed(2)} V; free RESET boots`
