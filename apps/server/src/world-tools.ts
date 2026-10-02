@@ -117,7 +117,7 @@ type AgentFrame = {
       voltage?: number;
       /** Lowest 5V-node voltage in the window. */
       minVoltage?: number;
-      /** Amperes through the D13 LED. Absent when that board has no LED stamp. */
+      /** Amperes through the board's onboard LED (the view's `ledPin`). Absent when that board has no LED stamp. */
       ledCurrent?: number;
     }
   >;
@@ -365,7 +365,7 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       pins: string[];
       /** Volts on the 5V node. Null when no supply reaches the board. */
       voltage: number | null;
-      /** Amperes through the D13 LED. Absent when that board has no LED stamp. */
+      /** Amperes through the board's onboard LED (the view's `ledPin`). Absent when that board has no LED stamp. */
       ledCurrent?: number;
       level?: number | null;
       variant?: string | null;
@@ -1005,7 +1005,7 @@ export function editFailure(
 
 export const worldTools = {
   world_status: tool({
-    description: `Read a world's shared run. ${WORLD_ARG} Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.`,
+    description: `Read a world's shared run. ${WORLD_ARG} Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its board node, ledCurrent in amperes through its onboard LED when that board stamps one (D13 on the Nano, RXLED on the Pro Micro), driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose node is above its brownout but below its chip's minimum operating voltage at its clock, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.`,
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);
@@ -1056,7 +1056,7 @@ export const worldTools = {
     },
   }),
   read_recording: tool({
-    description: `Read a world's recording for an agent. ${WORLD_ARG} Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, supply:usb.voltage (the terminal), and board:uno.voltage (the 5V node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets, reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose 5V node was in the 16 MHz out-of-SOA band, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.`,
+    description: `Read a world's recording for an agent. ${WORLD_ARG} Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, supply:usb.voltage (the terminal), and board:uno.voltage (the board node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets, reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose node was above its brownout but below its chip's minimum operating voltage, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.`,
     inputSchema: z.object({
       world: z.string(),
       from: z.number().optional(),
