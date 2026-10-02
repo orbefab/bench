@@ -88,7 +88,7 @@ function powerBoardOf(plan: RunPlan, partId: string): string | null {
         if (
           onBoard &&
           (end.port === board.voltagePin ||
-            end.port === "VIN" ||
+            end.port === board.vinPin ||
             end.port === "VBUS")
         ) {
           found.add(board.id);
@@ -264,8 +264,10 @@ function bindRails(s: SessionState) {
         a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
       const reachedBy = (supplyId: string) =>
         boardsSorted.filter((board) =>
-          [board.voltagePin, "VIN", "VBUS"].some((port) =>
-            suppliesOnPort(plan, board.id, port).includes(supplyId)
+          [board.voltagePin, board.vinPin, "VBUS"].some(
+            (port) =>
+              port !== null &&
+              suppliesOnPort(plan, board.id, port).includes(supplyId)
           )
         );
       const claimed = new Set<string>();
@@ -306,7 +308,10 @@ function bindRails(s: SessionState) {
         if (!supply || !board || !stamp) {
           return supplyPositiveNode(plan, supplyId);
         }
-        const onVin = suppliesOnPort(plan, board.id, "VIN").includes(supplyId);
+        const vinNode = stamp.vinNode;
+        const onVin =
+          board.vinPin !== null &&
+          suppliesOnPort(plan, board.id, board.vinPin).includes(supplyId);
         const onVbus = suppliesOnPort(plan, board.id, "VBUS").includes(
           supplyId
         );
@@ -316,16 +321,14 @@ function bindRails(s: SessionState) {
           board.voltagePin
         ).includes(supplyId);
         if (onVbus && stamp.vbusNode) return stamp.vbusNode;
-        if (onVin && !onRail && stamp.portNodes.VIN) {
-          return stamp.portNodes.VIN;
-        }
+        if (onVin && !onRail && vinNode) return vinNode;
         if (supply.connector === "usb" && onRail && stamp.vbusNode) {
           return stamp.vbusNode;
         }
         if (onRail) {
           return stamp.portNodes[board.voltagePin] ?? stamp.boardNode;
         }
-        if (onVin && stamp.portNodes.VIN) return stamp.portNodes.VIN;
+        if (onVin && vinNode) return vinNode;
         return stamp.boardNode;
       };
       const primaryNode = nodeFor(primary.id);
@@ -383,12 +386,14 @@ function bindRails(s: SessionState) {
       builtIsland.add(island.id);
       continue;
     }
-    const onVin = suppliesOnPort(plan, only.id, "VIN")[0] ?? null;
+    const onVin = only.vinPin
+      ? (suppliesOnPort(plan, only.id, only.vinPin)[0] ?? null)
+      : null;
     const onRail = suppliesOnPort(plan, only.id, only.voltagePin)[0] ?? null;
     const railSupply = plan.supplies.find((item) => item.id === onRail);
     const vinSupply = plan.supplies.find((item) => item.id === onVin);
     const vbus = only.stamp.vbusNode;
-    const vinNode = only.stamp.portNodes.VIN ?? null;
+    const vinNode = only.stamp.vinNode;
     if (
       !railSupply ||
       !vinSupply ||

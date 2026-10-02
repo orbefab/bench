@@ -107,6 +107,8 @@ export type BoardStamp = {
   boardNode: string;
   /** Null when the type has no USB connector port on a net. */
   vbusNode: string | null;
+  /** The regulator input's node. Null when the board has none on a net. */
+  vinNode: string | null;
   resetNode: string | null;
   /** `${boardId}.led` when that part is an LED. The rail copies it onto `ledCurrent`. */
   ledAlias: string | null;
@@ -184,6 +186,29 @@ export function railPowerPorts(
   return names;
 }
 
+/**
+ * The regulator input: the one power input left once the rail (and, for a
+ * capture, its across pair) is taken out. The Nano and Uno call it `VIN`, the
+ * Pro Micro `RAW`, the power-input module `VIN`. USB connector ports and
+ * internal ports are not candidates. Null when none, or more than one, is left.
+ */
+export function regulatorInputPort(
+  ports: Record<string, PortDecl>,
+  taken: readonly string[]
+): string | null {
+  const left = Object.entries(ports)
+    .filter(
+      ([name, decl]) =>
+        !decl.internal &&
+        !decl.connector &&
+        decl.role === "power" &&
+        decl.direction === "in" &&
+        !taken.includes(name)
+    )
+    .map(([name]) => name);
+  return left.length === 1 ? (left[0] ?? null) : null;
+}
+
 /** Ground ports a wire can land on. Sorted, so the choice is stable. */
 export function groundPorts(ports: Record<string, PortDecl>): string[] {
   return Object.entries(ports)
@@ -222,6 +247,8 @@ export function stampBoard(input: {
   resetPort: string | null;
   /** Internal port with `connector: "usb"`. Null when the type has none. */
   usbPort: string | null;
+  /** The regulator input (`regulatorInputPort`). Null when the type has none. */
+  vinPort: string | null;
   /** V_RST / VCC. Null when this stamp has no reset threshold. */
   resetFraction: number | null;
   /**
@@ -300,7 +327,8 @@ export function stampBoard(input: {
   const order = input.pins ?? [];
   const pins: StampedPin[] = [];
   for (const [port, decl] of Object.entries(input.ports)) {
-    if (decl.internal) continue;
+    // An internal port the drive order names (the Pro Micro RX and TX
+    // LEDs) still gets a pin element.
     const bit = order.indexOf(port);
     if (bit < 0) continue;
     const full = boardFull(port);
@@ -330,6 +358,7 @@ export function stampBoard(input: {
     netlist: input.netlist,
     boardNode,
     vbusNode: input.usbPort ? named(input.usbPort) : null,
+    vinNode: input.vinPort ? named(input.vinPort) : null,
     resetNode: input.resetPort ? named(input.resetPort) : null,
     ledAlias,
     resetFraction: input.resetFraction,
@@ -403,8 +432,8 @@ function dropOpenVin(
 /**
  * Drop a part that has a node nothing else drives. A USB feed anchors
  * `VBUS`, so the Schottky stays. A header feed anchors `5V` only, so
- * that diode's open anode drops it. A VIN feed anchors `VIN`. No extra
- * conductance is added.
+ * that diode's open anode drops it. A regulator-input feed anchors that
+ * input (`VIN`, or the Pro Micro's `RAW`). No extra conductance is added.
  */
 export function realize(
   stamp: BoardStamp,
@@ -417,20 +446,18 @@ export function realize(
     pinId?: (port: string) => string;
   }
 ): RealizedCircuit {
+  const vinNode = stamp.vinNode ?? undefined;
   const feedNode =
     feed === "usb" && stamp.vbusNode
       ? stamp.vbusNode
-      : feed === "vin" && stamp.portNodes.VIN
-        ? stamp.portNodes.VIN
+      : feed === "vin" && vinNode
+        ? vinNode
         : stamp.boardNode;
   const anchors = new Set<string>(["0", feedNode, stamp.boardNode]);
   for (const node of opts?.keep ?? []) anchors.add(node);
   const withPins = opts?.pins !== false;
   for (const pin of stamp.pins) anchors.add(pin.node);
-  const alive = prune(
-    dropOpenVin(stamp.parts, stamp.portNodes.VIN, anchors),
-    anchors
-  );
+  const alive = prune(dropOpenVin(stamp.parts, vinNode, anchors), anchors);
   const made: Element[] = [];
   const leds: { path: string; diode: Diode }[] = [];
   let capacitive = false;
@@ -953,6 +980,10 @@ function stampOf(
     powerPort,
     resetPort,
     usbPort: connectorPort(board.type.ports, "usb"),
+    vinPort: regulatorInputPort(
+      board.type.ports,
+      isFirmware ? [powerPort] : (opts.across ?? [])
+    ),
     resetFraction,
     pins: gpio.map((pin) => pin.name),
     parts: circuitParts,

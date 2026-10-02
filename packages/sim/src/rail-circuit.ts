@@ -706,6 +706,7 @@ function mapNodes(
     ...stamp,
     boardNode: node(stamp.boardNode),
     vbusNode: stamp.vbusNode ? node(stamp.vbusNode) : null,
+    vinNode: stamp.vinNode ? node(stamp.vinNode) : null,
     resetNode: stamp.resetNode ? node(stamp.resetNode) : null,
     portNodes: Object.fromEntries(
       Object.entries(stamp.portNodes).map(([key, value]) => [key, node(value)])
@@ -829,17 +830,16 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     const usb = sorted[0]?.feed === "usb";
     const vin = sorted[0]?.feed === "vin";
     const mapped = sorted.map((board) => {
+      const vinNode = board.stamp.vinNode;
       const stamp = usb
         ? mapNodes(board.stamp, (node) =>
             node === board.stamp.vbusNode ? TERM : node
           )
         : vin
-          ? mapNodes(board.stamp, (node) =>
-              node === board.stamp.portNodes.VIN ? TERM : node
-            )
+          ? mapNodes(board.stamp, (node) => (node === vinNode ? TERM : node))
           : board.stamp;
       remember(board.stamp.vbusNode, stamp.vbusNode);
-      remember(board.stamp.portNodes.VIN, stamp.portNodes.VIN);
+      remember(vinNode, stamp.vinNode);
       remember(board.stamp.boardNode, stamp.boardNode);
       return { ...board, stamp };
     });

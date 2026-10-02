@@ -56,6 +56,7 @@ import {
   ldoLaw,
   liveNets,
   railPowerPorts,
+  regulatorInputPort,
   stampBoard,
 } from "./circuit-stamp";
 import type { PlanEnv, StampEnv } from "./env";
@@ -129,6 +130,11 @@ export type RunBoard = {
    */
   vinFeed: boolean;
   voltagePin: string;
+  /**
+   * The regulator input (`VIN` on the Nano and Uno, `RAW` on the Pro Micro),
+   * from `regulatorInputPort`. Null when the board has none.
+   */
+  vinPin: string | null;
   groundPin: string;
   /** Amperes drawn by the board, independent of voltage. */
   current: number;
@@ -140,10 +146,16 @@ export type RunBoard = {
   resetFraction: number;
   /**
    * Exposed GPIO header names, in pin-state order. Empty when this board
-   * exposes no chip pin the emulator knows.
+   * exposes no chip pin the emulator knows. Internal pins (an onboard
+   * LED) are not in this list; they are appended on `driveOrder`.
    */
   pinOrder: readonly string[];
-  /** Chip pin name for each `pinOrder` entry. Same length, same order. */
+  /**
+   * Header names in CPU pin-state order, including internal pins the
+   * stamp drives. `pinOrder` is the prefix. Absent when the two match.
+   */
+  driveOrder?: readonly string[];
+  /** Chip pin name for each drive-order entry. Same length, same order. */
   wire: readonly string[];
   /**
    * ADC channel to the header label from this board's expose. Absent on a
@@ -883,6 +895,7 @@ function stampSupply(
     powerPort: supply.positivePin,
     resetPort: null,
     usbPort: null,
+    vinPort: null,
     resetFraction: null,
     parts,
     nets,
@@ -1024,6 +1037,13 @@ function build(
       ];
       const source = inst.params.source;
       const gpio = boardGpio(behaviour.chip, inst, host);
+      const internalPin = (name: string) =>
+        host.type.ports[name]?.internal === true;
+      const header = gpio.filter((pin) => !internalPin(pin.name));
+      const driven = [
+        ...header,
+        ...gpio.filter((pin) => internalPin(pin.name)),
+      ];
       // The board's own load rides on the chip instance: it counts the parts
       // the chip part does not carry (the USB bridge, the power LED).
       const quiescent =
@@ -1044,6 +1064,7 @@ function build(
         powerInputs: [powerName],
         vinFeed: false,
         voltagePin: powerName,
+        vinPin: regulatorInputPort(host.type.ports, [powerName]),
         groundPin: groundName,
         current: quiescent ?? 0,
         hasNetlist: host.path !== inst.path,
@@ -1054,8 +1075,11 @@ function build(
                 ([, pin]) => pin === behaviour.resetPort
               )?.[0] ?? null),
         resetFraction: facts.resetFraction,
-        pinOrder: gpio.map((pin) => pin.name),
-        wire: gpio.map((pin) => pin.chip),
+        pinOrder: header.map((pin) => pin.name),
+        ...(driven.length === header.length
+          ? {}
+          : { driveOrder: driven.map((pin) => pin.name) }),
+        wire: driven.map((pin) => pin.chip),
         adcLabels: adcHeaderLabels(behaviour.chip, exposure),
         minOperatingVoltage: facts.minOperatingVoltage,
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
@@ -1290,15 +1314,17 @@ function build(
     suppliesOnPort(wiring, board.id, port)[0] ?? null;
   for (const board of boards) {
     const onRail = supplyOnPort(board, board.voltagePin);
-    const onVin = supplyOnPort(board, "VIN");
-    // VIN feeds the regulator. Parts on the regulated port take this
-    // supply in the feed walk; their load sits on the 5V node.
+    const onVin = board.vinPin ? supplyOnPort(board, board.vinPin) : null;
+    // The regulator input (VIN, or the Pro Micro's RAW) feeds the regulator.
+    // Parts on the regulated port take this supply in the feed walk; their
+    // load sits on the regulated node.
     board.vinFeed = onRail === null && onVin !== null;
   }
   const boardsOn = new Map<string, RunBoard[]>();
   for (const board of boards) {
     const supplyId =
-      supplyOnPort(board, board.voltagePin) ?? supplyOnPort(board, "VIN");
+      supplyOnPort(board, board.voltagePin) ??
+      (board.vinPin ? supplyOnPort(board, board.vinPin) : null);
     if (!supplyId) continue;
     const list = boardsOn.get(supplyId) ?? [];
     list.push(board);
@@ -1338,8 +1364,9 @@ function build(
       powerPort: board.voltagePin,
       resetPort: board.resetPort,
       usbPort: connectorPort(inst.type.ports, "usb"),
+      vinPort: board.vinPin,
       resetFraction: board.resetFraction,
-      pins: board.pinOrder,
+      pins: board.driveOrder ?? board.pinOrder,
       parts: stampParts.filter((part) => {
         const hit = owners.get(part.path) ?? [];
         if (hit.length >= 2) return false;

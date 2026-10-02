@@ -126,6 +126,13 @@ function bootBoard(s: SessionState, spec: BoardSpec): AvrBoard {
     return board;
   }
   board.load(parsed.bytes);
+  // Named once, after a successful load. A missing image or a dead supply
+  // returns above and does not announce a gap the run never reached.
+  if (board.running) {
+    for (const gap of chip.gaps ?? []) {
+      noteDegraded(s, spec.id, gap.code, gap.message);
+    }
+  }
   return board;
 }
 

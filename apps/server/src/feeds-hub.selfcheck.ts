@@ -24,6 +24,7 @@ function planOf(wires: [string, string][]): RunPlan {
         pins: { "5V": pin("power"), VIN: pin("power"), GND: pin("ground") },
         powerInputs: ["5V"],
         vinFeed: true,
+        vinPin: "VIN",
       },
     ],
     parts: [
