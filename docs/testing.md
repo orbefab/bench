@@ -9,8 +9,8 @@ A check that tests one package lives in that package's `test/` folder and may
 read files under `examples/`; checks that need the server or the catalog stay
 in `apps/server/src`. Each package's `pnpm test` runs its list in one process:
 `scripts/checks.mjs` hands the files to node's test runner
-(`--test-isolation=none`) through `tsx`, or plain `node` when every file is
-`.js` or `.mjs`.
+(`--experimental-test-isolation=none`, so the checks need Node 22.8 or newer)
+through `tsx`, or plain `node` when every file is `.js` or `.mjs`.
 The files run one after another in name order, each as one test. A failure
 does not stop the files after it, and the run fails at the end. Because checks
 share a process, a check restores what it changes (env, `console`) and reads a
