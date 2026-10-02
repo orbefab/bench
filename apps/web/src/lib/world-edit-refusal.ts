@@ -4,7 +4,7 @@
  * edit line shows only that. Every other refusal shows the message as sent.
  */
 
-import type { WorldServerMessage } from "@sfab-bench/contract";
+import { EXTERNAL_EDIT, type WorldServerMessage } from "@sfab-bench/contract";
 
 type EditRefused = Extract<WorldServerMessage, { type: "edit-refused" }>;
 
@@ -15,7 +15,17 @@ export function editRefusalText(
   return refusal?.code ? refusal.detail : refused.message;
 }
 
-/** The quiet line for undo or redo with nothing to step to. */
-export function historyRefusalTitle(kind: "undo" | "redo"): string {
+/**
+ * The quiet line for a refused undo or redo. A step whose files changed
+ * outside this session is there but refused, and says so; anything else
+ * had nothing to step to.
+ */
+export function historyRefusalTitle(
+  kind: "undo" | "redo",
+  message: string
+): string {
+  if (message === EXTERNAL_EDIT) {
+    return `Not ${kind === "redo" ? "redone" : "undone"}: ${EXTERNAL_EDIT}.`;
+  }
   return kind === "redo" ? "Nothing to redo." : "Nothing to undo.";
 }

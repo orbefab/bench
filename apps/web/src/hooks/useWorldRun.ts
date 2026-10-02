@@ -393,7 +393,10 @@ export function useWorldRun(
         worldStore
           .getState()
           .refuseHistory(message.kind, message.part ?? pending?.part);
-        showToast({ type: "info", title: historyRefusalTitle(message.kind) });
+        showToast({
+          type: "info",
+          title: historyRefusalTitle(message.kind, message.message),
+        });
         return;
       }
       if (message.type === "error") {

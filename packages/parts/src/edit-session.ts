@@ -6,12 +6,13 @@
  * lock change. The next open of an edit or a run finishes a torn write.
  */
 
-import type {
-  EditOp,
-  EditRefusal,
-  LockFile,
-  PartFile,
-  RunReport,
+import {
+  type EditOp,
+  type EditRefusal,
+  EXTERNAL_EDIT,
+  type LockFile,
+  type PartFile,
+  type RunReport,
 } from "@sfab-bench/contract";
 
 import {
@@ -53,7 +54,7 @@ import type { Store } from "./store";
 
 const LOCK_SUFFIX = ".lock.json";
 
-export const EXTERNAL_EDIT = "the document changed outside this session";
+export { EXTERNAL_EDIT };
 
 type SavedFile = {
   path: string;
