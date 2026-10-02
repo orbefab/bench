@@ -9,7 +9,6 @@
  * stay direct so the millisecond loop does not grow a wrapper.
  */
 import {
-  atmega328pSoaWarning,
   DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type JointLimitKind,

@@ -71,6 +71,10 @@ expect(
   "Nano SOA floor is on the view"
 );
 expect(nanoBoard?.brownoutVoltage === 2.7, "Nano brownout is on the view");
+expect(
+  nanoBoard?.ledPin === "D13",
+  `the Nano LED is on D13, got ${nanoBoard?.ledPin}`
+);
 const nanoMcu = nodeAt(nano.tree.nodes, "nano.mcu");
 const nanoHost = nodeAt(nano.tree.nodes, "nano");
 expectForward(nanoMcu, "firmware", "nano", "firmware");

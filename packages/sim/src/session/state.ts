@@ -1,6 +1,7 @@
 /** The session's shared state: one typed object every domain module reads and writes. */
 
 import type {
+  ChipClock,
   Diagnostic,
   JointLimitKind,
   RunReport,
@@ -44,6 +45,8 @@ export type BoardSpec = {
   firmware: string;
   /** The chip part's SOA band floor, volts. Null: no band. */
   minOperatingVoltage: number | null;
+  /** The chip's name and clock for the SOA warning. Null: not registered. */
+  clock: ChipClock | null;
   /** Chip pin name per pin-state index, from the board's `expose`. */
   wire: readonly string[];
 };

@@ -1,4 +1,4 @@
-import type { UrdfInfo, WorldViewFeeds } from "@sfab-bench/contract";
+import type { ChipClock, UrdfInfo, WorldViewFeeds } from "@sfab-bench/contract";
 
 export type WorldOutlineJoint = {
   name: string;
@@ -36,6 +36,10 @@ export type WorldOutlineBoard = {
    * null when the chip publishes none.
    */
   minOperatingVoltage?: number | null;
+  /** The onboard LED's pin. Absent or null when the view names none. */
+  ledPin?: string | null;
+  /** The chip's name and clock. Absent or null when the view names none. */
+  clock?: ChipClock | null;
 };
 
 export type WorldOutlineWire = {
@@ -87,6 +91,8 @@ export type WorldOutlineInput = {
     brownoutVoltage?: number;
     pins?: readonly string[];
     minOperatingVoltage?: number | null;
+    ledPin?: string | null;
+    clock?: ChipClock | null;
   }[];
   parts?: readonly {
     id: string;
@@ -236,6 +242,8 @@ export function buildWorldOutline(
       ...(board.minOperatingVoltage !== undefined
         ? { minOperatingVoltage: board.minOperatingVoltage }
         : {}),
+      ...(board.ledPin !== undefined ? { ledPin: board.ledPin } : {}),
+      ...(board.clock !== undefined ? { clock: board.clock } : {}),
     })),
     supplies: supplyFeeds(world),
     targets: (world.targets ?? []).map((target) => target.id),

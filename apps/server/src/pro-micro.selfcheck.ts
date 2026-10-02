@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { adcCount, type WorldViewNode } from "@sfab-bench/contract";
+import { adcCount, soaWarning, type WorldViewNode } from "@sfab-bench/contract";
 import {
   AvrBoard,
   INTERNAL_2V56_V,
@@ -120,6 +120,20 @@ expect(
 expect(
   same(view.boards.find((item) => item.id === "promicro")?.pins ?? [], HEADER),
   "the view pin list is the header"
+);
+expect(
+  view.boards.find((item) => item.id === "promicro")?.ledPin === "RXLED",
+  "the onboard LED is the RX LED, not D13"
+);
+const clock = view.boards.find((item) => item.id === "promicro")?.clock;
+expect(
+  clock?.label === "ATmega32U4" && clock.hz === 16_000_000,
+  `the view names the chip and clock, got ${JSON.stringify(clock)}`
+);
+expect(
+  soaWarning(3.5, 2.6, 4.5, clock ?? { label: "?", hz: 0 })?.message ===
+    "supply 3.50 V is below the 4.50 V the ATmega32U4 needs at 16 MHz; real boards may misbehave",
+  "the SOA line names the 32U4, not the 328P"
 );
 const behaviour = nodes
   .find((node) => node.id === "promicro")

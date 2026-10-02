@@ -252,6 +252,7 @@ function gpio(
 
 export const ATMEGA32U4: ChipSpec = {
   chip: "atmega32u4",
+  label: "ATmega32U4",
   hz: 16_000_000,
   flashBytes: 32 * 1024,
   /** 2.5 KB, data space 0x0100–0x0AFF. */

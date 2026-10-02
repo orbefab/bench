@@ -94,6 +94,7 @@ function boardSpecsOf(plan: RunPlan): BoardSpec[] {
     chip: board.chip,
     firmware: board.firmware,
     minOperatingVoltage: board.minOperatingVoltage,
+    clock: board.clock,
     wire: board.wire,
   }));
 }

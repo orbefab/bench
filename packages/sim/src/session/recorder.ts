@@ -1,6 +1,5 @@
 /** Recorder: the live state sample, the recording layout and manifest, and the recorded query answers. */
 import {
-  atmega328pSoaWarning,
   DEFAULT_TIMESTEP_S,
   emptyPinState,
   type JointLimitKind,
@@ -9,6 +8,7 @@ import {
   RECORD_FRAME_MS,
   type RecordingManifest,
   type RecordingPartCatalog,
+  soaWarning,
   type WorldPartState,
   type WorldState,
 } from "@sfab-bench/contract";
@@ -72,18 +72,19 @@ export function sample(s: SessionState): WorldState | null {
     const power = s.boardPower.get(board.id);
     const unpowered = !power?.supplyId;
     const node = power?.supplyId ? boardVolts(s, board.id) : 0;
-    const minVoltage = s.specs.find(
-      (item) => item.id === board.id
-    )?.minOperatingVoltage;
+    const spec = s.specs.find((item) => item.id === board.id);
+    const minVoltage = spec?.minOperatingVoltage;
+    const clock = spec?.clock;
     const brownoutVoltage = power?.brownoutVoltage;
     const soa =
       minVoltage != null &&
       brownoutVoltage != null &&
+      clock &&
       board.running &&
       !board.brownout &&
       !board.fault &&
       !unpowered
-        ? atmega328pSoaWarning(node, brownoutVoltage, minVoltage)
+        ? soaWarning(node, brownoutVoltage, minVoltage, clock)
         : null;
     boardState[board.id] = {
       ...(board.fault

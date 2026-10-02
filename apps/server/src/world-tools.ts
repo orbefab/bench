@@ -1,6 +1,6 @@
 import {
-  atmega328pSoaWarning,
   boardTrackId,
+  type ChipClock,
   type EditOp,
   extractUrdfJointsAndMeshes,
   type JointLimitKind,
@@ -13,6 +13,8 @@ import {
   type RecordingManifest,
   type RecordingRead,
   type RecordingTracks,
+  soaNeed,
+  soaWarning,
   supplyTrackId,
   type WorldSender,
   type WorldState,
@@ -163,11 +165,11 @@ function pinOrdersOf(plan: RunPlan): Map<string, readonly string[]> {
 function chipBand(
   loaded: Loaded,
   id: string
-): { brownout: number; floor: number } | null {
+): { brownout: number; floor: number; clock: ChipClock } | null {
   const board = loaded.plan.boards.find((row) => row.id === id);
   const floor = board?.minOperatingVoltage;
-  if (!board || floor == null) return null;
-  return { brownout: board.brownoutVoltage, floor };
+  if (!board || floor == null || !board.clock) return null;
+  return { brownout: board.brownoutVoltage, floor, clock: board.clock };
 }
 
 function loadPlan(project: string, world: string): RunPlan | { error: string } {
@@ -279,10 +281,11 @@ function rangeWarnings(
         row.minVoltage > band.brownout && row.minVoltage < band.floor
           ? row.minVoltage
           : row.voltage;
-      const warning = atmega328pSoaWarning(
+      const warning = soaWarning(
         candidate,
         band.brownout,
-        band.floor
+        band.floor,
+        band.clock
       );
       if (!warning) continue;
       const prev = soaVoltage.get(id);
@@ -303,11 +306,9 @@ function rangeWarnings(
     const warning =
       voltage === undefined
         ? null
-        : atmega328pSoaWarning(voltage, band.brownout, band.floor);
+        : soaWarning(voltage, band.brownout, band.floor, band.clock);
     const floor = band.floor.toFixed(2);
-    const fallback =
-      `${id}: supply was below the ${floor} V` +
-      " the ATmega328P needs at 16 MHz";
+    const fallback = `${id}: supply was below the ${floor} V ${soaNeed(band.clock)}`;
     out.push(warning ? `${id}: ${warning.message}` : fallback);
   }
   for (const [joint, amount] of past) {

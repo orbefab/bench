@@ -3,6 +3,7 @@
 import {
   type BehaviourImpl,
   type BodyImpl,
+  type ChipClock,
   DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type PortDecl,
@@ -41,6 +42,7 @@ import {
   adcHeaderLabels,
   boardGpio,
   boardHostOf,
+  chipClock,
   chipExposure,
   chipFactsOf,
 } from "./chip-host";
@@ -167,6 +169,8 @@ export type RunBoard = {
    * its specification. Null when the chip part gives no such band.
    */
   minOperatingVoltage: number | null;
+  /** The chip's name and clock for warning text. Null: not in the registry. */
+  clock: ChipClock | null;
   /**
    * Circuit parts on this board's nets, including its board netlist.
    * Absent when there are none.
@@ -1082,6 +1086,7 @@ function build(
         wire: driven.map((pin) => pin.chip),
         adcLabels: adcHeaderLabels(behaviour.chip, exposure),
         minOperatingVoltage: facts.minOperatingVoltage,
+        clock: chipClock(behaviour.chip),
         brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
         brownoutAssertVoltage:
           params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,

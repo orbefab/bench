@@ -7,7 +7,8 @@ import { sendBoardSerial } from "@/hooks/useWorldRun";
 import { ampsText } from "@/lib/amps-text";
 import {
   boardStatusLabel,
-  boardWarningLine,
+  boardWarningLines,
+  ledLabel,
   recordedSoaLine,
   scrubbedBoardStatus,
 } from "@/lib/board-status";
@@ -219,19 +220,22 @@ export function BoardBody({
         <Field label="Min" value={voltsText(recorded.minVoltage)} />
       ) : null}
       {ledCurrent === undefined ? null : (
-        <Field label="D13 LED" value={ampsText(ledCurrent)} />
+        <Field label={ledLabel(info?.ledPin)} value={ampsText(ledCurrent)} />
       )}
       {extraLeds(id, scrub.playhead !== null ? recorded?.leds : live?.leds)}
-      <SoaLine
-        text={
-          recorded
-            ? recordedSoaLine(recorded.belowSoa, recorded, {
-                brownoutVoltage: info?.brownoutVoltage,
-                minOperatingVoltage: info?.minOperatingVoltage,
-              })
-            : boardWarningLine(live?.warnings)
-        }
-      />
+      {recorded ? (
+        <SoaLine
+          text={recordedSoaLine(recorded.belowSoa, recorded, {
+            brownoutVoltage: info?.brownoutVoltage,
+            minOperatingVoltage: info?.minOperatingVoltage,
+            clock: info?.clock,
+          })}
+        />
+      ) : (
+        boardWarningLines(live?.warnings).map((line) => (
+          <SoaLine key={line} text={line} />
+        ))
+      )}
       <Field label="Resets" value={resets} />
       <div className="mb-3 flex h-36 flex-col overflow-hidden rounded-md border border-border">
         <SerialConsole

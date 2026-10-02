@@ -1,7 +1,8 @@
 import { ok as expect } from "node:assert/strict";
 import {
   boardStatusLabel,
-  boardWarningLine,
+  boardWarningLines,
+  ledLabel,
   recordedSoaLine,
   scrubbedBoardStatus,
 } from "./board-status";
@@ -43,11 +44,29 @@ expect(
 const soa =
   "supply 3.20 V is below the 3.78 V the ATmega328P needs at 16 MHz; real boards may misbehave";
 expect(
-  boardWarningLine([{ message: soa }]) === soa,
+  boardWarningLines([{ message: soa }]).join() === soa,
   "the board status line is the SOA warning"
 );
-expect(boardWarningLine(undefined) === "", "no warning is a blank line");
-const soaFacts = { brownoutVoltage: 2.7, minOperatingVoltage: 3.78 };
+expect(boardWarningLines(undefined).length === 0, "no warning is no line");
+const timer4 =
+  "ATmega32U4 timer 4 is not emulated: PWM on that timer stays GPIO";
+const usb = "ATmega32U4 USB is not emulated";
+expect(
+  boardWarningLines([
+    { message: timer4 },
+    { message: usb },
+    { message: timer4 },
+  ]).join("|") === `${timer4}|${usb}`,
+  "every distinct warning gets its own line, in order"
+);
+expect(ledLabel("D13") === "D13 LED", "a header pin names the LED");
+expect(ledLabel("RXLED") === "RXLED", "an LED pin is not doubled");
+expect(ledLabel(null) === "LED", "no pin is a plain label");
+const soaFacts = {
+  brownoutVoltage: 2.7,
+  minOperatingVoltage: 3.78,
+  clock: { label: "ATmega328P", hz: 16_000_000 },
+};
 expect(
   recordedSoaLine(true, { voltage: 3.2, minVoltage: 3.2 }, soaFacts) === soa,
   "a scrubbed frame uses this board's 5V node"
@@ -64,6 +83,30 @@ const otherLine = recordedSoaLine(
 expect(
   otherLine !== soa && !otherLine.includes("3.20"),
   `an in-spec node was quoted as the sag: ${otherLine}`
+);
+const promicroLine = recordedSoaLine(
+  true,
+  { voltage: 5, minVoltage: 5 },
+  {
+    brownoutVoltage: 2.6,
+    minOperatingVoltage: 4.5,
+    clock: { label: "ATmega32U4", hz: 16_000_000 },
+  }
+);
+expect(
+  promicroLine === "supply was below the 4.50 V the ATmega32U4 needs at 16 MHz",
+  `the scrubbed line names the running chip: ${promicroLine}`
+);
+expect(
+  recordedSoaLine(
+    true,
+    { voltage: 3.2, minVoltage: 3.2 },
+    {
+      brownoutVoltage: 2.7,
+      minOperatingVoltage: 3.78,
+    }
+  ) === "",
+  "no chip clock on the view is no line"
 );
 expect(
   scrubbedBoardStatus({ running: false, fault: "bad checksum" }) === "stopped",

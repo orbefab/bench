@@ -104,6 +104,7 @@ function stampOf(parts: AssignedPart[], node: string): BoardStamp {
     vinNode: null,
     resetNode: null,
     ledAlias: null,
+    ledPin: null,
     resetFraction: null,
     portNodes: {},
     parts,

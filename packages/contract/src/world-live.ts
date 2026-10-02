@@ -177,23 +177,32 @@ export type WorldBoardWarning = {
   message: string;
 };
 
+/** The running chip's datasheet name and CPU clock, for warning text. */
+export type ChipClock = { label: string; hz: number };
+
+/** `the ATmega328P needs at 16 MHz`, for the chip that is running. */
+export function soaNeed(chip: ChipClock): string {
+  return `the ${chip.label} needs at ${chip.hz / 1e6} MHz`;
+}
+
 /**
  * Warning while `voltage` is above the chip's brownout level and below
  * `minVoltage`. Null outside that band, including brownout itself.
- * Callers pass both thresholds from the chip; this function does not
- * look up a board.
+ * Callers pass both thresholds and the chip's name and clock; this
+ * function does not look up a board.
  */
-export function atmega328pSoaWarning(
+export function soaWarning(
   voltage: number,
   brownoutVoltage: number,
-  minVoltage: number
+  minVoltage: number,
+  chip: ChipClock
 ): WorldBoardWarning | null {
   if (!(voltage > brownoutVoltage) || !(voltage < minVoltage)) {
     return null;
   }
   return {
     code: "below-16mhz-soa",
-    message: `supply ${voltage.toFixed(2)} V is below the ${minVoltage.toFixed(2)} V the ATmega328P needs at 16 MHz; real boards may misbehave`,
+    message: `supply ${voltage.toFixed(2)} V is below the ${minVoltage.toFixed(2)} V ${soaNeed(chip)}; real boards may misbehave`,
   };
 }
 

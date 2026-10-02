@@ -1,4 +1,4 @@
-import { atmega328pSoaWarning } from "@sfab-bench/contract";
+import { type ChipClock, soaNeed, soaWarning } from "@sfab-bench/contract";
 
 type BoardStatusInput = {
   running: boolean;
@@ -34,18 +34,30 @@ export function scrubbedBoardStatus(
   return "running";
 }
 
-/** One line under the board status. Empty when the supply is in spec. */
-export function boardWarningLine(
+/**
+ * Lines under the board status, one per distinct warning: the supply
+ * band and each gap the chip names (the Pro Micro's timer 4 and USB CDC).
+ * Empty when there is none.
+ */
+export function boardWarningLines(
   warnings: readonly { message: string }[] | undefined
-): string {
-  return warnings?.[0]?.message ?? "";
+): string[] {
+  return [...new Set((warnings ?? []).map((row) => row.message))];
 }
 
-/** Brownout and SOA floor from the board view. Both are volts. */
+/** Card label for the onboard LED, from the pin the view names. */
+export function ledLabel(pin: string | null | undefined): string {
+  if (!pin) return "LED";
+  return pin.endsWith("LED") ? pin : `${pin} LED`;
+}
+
+/** Brownout and SOA floor from the board view, volts, and the chip. */
 export type SoaFacts = {
   brownoutVoltage?: number;
   /** Null when the chip publishes no floor. */
   minOperatingVoltage?: number | null;
+  /** The chip's name and clock. Null when the view names none. */
+  clock?: ChipClock | null;
 };
 
 /**
@@ -61,15 +73,16 @@ export function recordedSoaLine(
   if (!belowSoa) return "";
   const brownout = facts?.brownoutVoltage;
   const floor = facts?.minOperatingVoltage;
-  if (brownout === undefined || floor == null) return "";
+  const clock = facts?.clock;
+  if (brownout === undefined || floor == null || !clock) return "";
   if (board) {
     const voltage =
       board.minVoltage > brownout && board.minVoltage < floor
         ? board.minVoltage
         : board.voltage;
-    const warning = atmega328pSoaWarning(voltage, brownout, floor);
+    const warning = soaWarning(voltage, brownout, floor, clock);
     if (warning) return warning.message;
   }
   const shown = floor.toFixed(2);
-  return `supply was below the ${shown} V the ATmega328P needs at 16 MHz`;
+  return `supply was below the ${shown} V ${soaNeed(clock)}`;
 }

@@ -112,6 +112,11 @@ export type BoardStamp = {
   resetNode: string | null;
   /** `${boardId}.led` when that part is an LED. The rail copies it onto `ledCurrent`. */
   ledAlias: string | null;
+  /**
+   * The pin that drives `ledAlias`: on the LED's net, or one resistor
+   * away (`D13` on the Nano, `RXLED` on the Pro Micro). Null otherwise.
+   */
+  ledPin: string | null;
   /** V_RST / VCC for this chip. Null when the chip is unknown here. */
   resetFraction: number | null;
   /** Board port → node. Absent when that port is not on a net. */
@@ -234,6 +239,27 @@ export function connectorPort(
  * port on the feeding supply's GND net. Other nodes take the first
  * sorted port name on that net.
  */
+function ledPinOf(
+  led: AssignedPart,
+  pins: readonly StampedPin[],
+  parts: readonly AssignedPart[],
+  rails: ReadonlySet<string>
+): string | null {
+  // Walk only from the LED's signal end, so a pull-up or pull-down on the
+  // rail it shares does not name an unrelated pin.
+  const ends = Object.values(led.nodes).filter((node) => !rails.has(node));
+  const direct = pins.find((pin) => ends.includes(pin.node));
+  if (direct) return direct.port;
+  const far = new Set<string>();
+  for (const part of parts) {
+    if (part.form !== "resistor@1") continue;
+    const nodes = Object.values(part.nodes);
+    if (!nodes.some((node) => ends.includes(node))) continue;
+    for (const node of nodes) if (!rails.has(node)) far.add(node);
+  }
+  return pins.find((pin) => far.has(pin.node))?.port ?? null;
+}
+
 export function stampBoard(input: {
   boardId: string;
   netlist: boolean;
@@ -350,10 +376,10 @@ export function stampBoard(input: {
     const node = named(port);
     if (node) portNodes[port] = node;
   }
-  const ledAlias =
-    assigned.find(
-      (part) => part.path === `${input.boardId}.led` && part.typeId === "led"
-    )?.path ?? null;
+  const led = assigned.find(
+    (part) => part.path === `${input.boardId}.led` && part.typeId === "led"
+  );
+  const ledAlias = led?.path ?? null;
   return {
     netlist: input.netlist,
     boardNode,
@@ -361,6 +387,9 @@ export function stampBoard(input: {
     vinNode: input.vinPort ? named(input.vinPort) : null,
     resetNode: input.resetPort ? named(input.resetPort) : null,
     ledAlias,
+    ledPin: led
+      ? ledPinOf(led, pins, assigned, new Set(["0", boardNode]))
+      : null,
     resetFraction: input.resetFraction,
     portNodes,
     parts: assigned,

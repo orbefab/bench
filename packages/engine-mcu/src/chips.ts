@@ -52,6 +52,8 @@ export type ChipIo = {
  */
 export type ChipSpec = {
   chip: string;
+  /** Datasheet name for user-facing text, for example `ATmega328P`. */
+  label: string;
   /** CPU clock, hertz. */
   hz: number;
   /** Flash, bytes. */
@@ -94,6 +96,7 @@ function pinTable(
 
 const ATMEGA328P: ChipSpec = {
   chip: "atmega328p",
+  label: "ATmega328P",
   hz: 16_000_000,
   flashBytes: 32 * 1024,
   sramBytes: 2048,

@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  atmega328pSoaWarning,
+  soaWarning,
   type WorldServerMessage,
   type WorldState,
 } from "@sfab-bench/contract";
@@ -267,7 +267,8 @@ console.log("brownout: assert 2.675 V, release 2.725 V, hold 66 ms");
 
 const brownoutV = 2.7;
 const floorV = 3.78;
-const inBand = atmega328pSoaWarning(3.2, brownoutV, floorV);
+const atmega328p = { label: "ATmega328P", hz: 16_000_000 };
+const inBand = soaWarning(3.2, brownoutV, floorV, atmega328p);
 expect(
   inBand?.code === "below-16mhz-soa" &&
     inBand.message ===
@@ -275,16 +276,16 @@ expect(
   `soa message ${inBand?.message}`
 );
 expect(
-  atmega328pSoaWarning(3.78, brownoutV, floorV) === null,
+  soaWarning(3.78, brownoutV, floorV, atmega328p) === null,
   "3.78 V is in spec"
 );
-expect(atmega328pSoaWarning(5, brownoutV, floorV) === null, "5 V is in spec");
+expect(soaWarning(5, brownoutV, floorV, atmega328p) === null, "5 V is in spec");
 expect(
-  atmega328pSoaWarning(2.7, brownoutV, floorV) === null,
+  soaWarning(2.7, brownoutV, floorV, atmega328p) === null,
   "brownout edge is not SOA"
 );
 expect(
-  atmega328pSoaWarning(2.5, brownoutV, floorV) === null,
+  soaWarning(2.5, brownoutV, floorV, atmega328p) === null,
   "brownout is not SOA"
 );
 console.log("soa: 3.20 V warns, 2.70 V and 3.78 V do not");

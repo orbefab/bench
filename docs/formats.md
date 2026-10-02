@@ -334,7 +334,7 @@ type RunRoot = {
 
 ### World view
 
-`GET /api/world/view` adds `tree` beside `robots`, `boards`, `supplies`, `parts`, `boxes`, `wires`, and `feeds`. Those fields stay: the stage still draws the robots' URDF, the boards, the boxes, and the environment from them. `boards` is `WorldViewBoard[]`. `pins` is that board's exposed GPIO names, in the order the live pin words use. A later state tick does not repeat the list. `minOperatingVoltage` is the chip part's minimum operating voltage in volts, or null when the chip does not publish one. The scrubbed SOA line reads it and `brownoutVoltage` from this view.
+`GET /api/world/view` adds `tree` beside `robots`, `boards`, `supplies`, `parts`, `boxes`, `wires`, and `feeds`. Those fields stay: the stage still draws the robots' URDF, the boards, the boxes, and the environment from them. `boards` is `WorldViewBoard[]`. `pins` is that board's exposed GPIO names, in the order the live pin words use. A later state tick does not repeat the list. `minOperatingVoltage` is the chip part's minimum operating voltage in volts, or null when the chip does not publish one. `clock` is the chip's datasheet name and CPU clock from the chip registry (`{ label: "ATmega32U4", hz: 16000000 }`), or null for a chip the registry does not know; the SOA sentence names that chip and clock. The scrubbed SOA line reads it, `minOperatingVoltage` and `brownoutVoltage` from this view. `ledPin` is the pin the onboard LED (`<board>.led`) hangs on, directly or through one resistor (`D13` on the Nano and the Uno, `RXLED` on the Pro Micro), or null when the running level stamps no onboard LED. The card labels the LED current with it. Every live board warning shows on its own line under the status: the SOA band and each gap the chip names.
 
 ```ts
 type WorldViewBoard = {
@@ -346,7 +346,9 @@ type WorldViewBoard = {
   size: [number, number, number];
   brownoutVoltage: number;                          // volts; the card's brownout line
   minOperatingVoltage: number | null;               // volts; chip SOA floor, or null
+  clock: { label: string; hz: number } | null;      // chip name and clock, or null
   pins: readonly string[];                          // exposed GPIO, live pin-word order
+  ledPin: string | null;                            // pin the onboard LED hangs on
 };
 type WorldViewTree = {
   part: string;                                        // document part id

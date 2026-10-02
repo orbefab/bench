@@ -12,6 +12,7 @@ import type {
   Pose,
 } from "./layered";
 import type { WorldPrimitive, WorldStepProp, WorldTarget } from "./world";
+import type { ChipClock } from "./world-live";
 
 export type WorldViewRobot = {
   id: string;
@@ -34,11 +35,19 @@ export type WorldViewBoard = {
    * Null when the chip does not publish one.
    */
   minOperatingVoltage: number | null;
+  /** The chip's datasheet name and clock, for the SOA line. Null: unknown. */
+  clock: ChipClock | null;
   /**
    * Exposed GPIO header names, in the order `WorldPinState` bits use.
    * Sent with the view. A later state tick does not repeat the list.
    */
   pins: readonly string[];
+  /**
+   * The pin the onboard LED hangs on (`D13` on the Nano, `RXLED` on the
+   * Pro Micro). The card labels the LED current with it. Null when the
+   * running level stamps no onboard LED.
+   */
+  ledPin: string | null;
 };
 
 export type WorldViewSupply = {

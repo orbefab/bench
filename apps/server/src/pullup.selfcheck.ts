@@ -73,6 +73,7 @@ function gpioPlan(
       resetPort: null,
       resetFraction: 0.9,
       minOperatingVoltage: 3.78,
+      clock: { label: "ATmega328P", hz: 16_000_000 },
       brownoutVoltage: 2.7,
       brownoutAssertVoltage: 2.675,
       brownoutReleaseVoltage: 2.725,

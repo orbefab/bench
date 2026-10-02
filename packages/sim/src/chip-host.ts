@@ -1,10 +1,16 @@
 /** A firmware chip, the board it runs as, and the electrical facts it carries. */
 
-import type { BehaviourImpl } from "@sfab-bench/contract";
+import type { BehaviourImpl, ChipClock } from "@sfab-bench/contract";
 import { chipSpec } from "@sfab-bench/engine-mcu";
 import { chipExposure, type LiveInstance } from "@sfab-bench/parts";
 
 export { boardHostOf } from "@sfab-bench/parts";
+
+/** The chip's datasheet name and clock. Null when the registry lacks it. */
+export function chipClock(chip: string): ChipClock | null {
+  const spec = chipSpec(chip);
+  return spec ? { label: spec.label, hz: spec.hz } : null;
+}
 export { chipExposure };
 
 export type FirmwareBehaviour = Extract<BehaviourImpl, { kind: "firmware" }>;
