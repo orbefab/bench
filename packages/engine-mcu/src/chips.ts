@@ -78,6 +78,11 @@ export type ChipSpec = {
   adcPins: Readonly<Record<number, string>>;
   /** Write hooks and other setup for a fresh CPU. Absent on the 328P. */
   onCpu?: (cpu: CPU) => void;
+  /**
+   * Runs once avr8js's ADC is attached, for a register layout avr8js
+   * reads differently (the 32U4's MUX5). Absent on the 328P.
+   */
+  onAdc?: (cpu: CPU) => void;
   /** Named once per boot. Absent when the record emulates what it claims. */
   gaps?: readonly ChipGap[];
 };

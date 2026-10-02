@@ -45,12 +45,6 @@ export function chipFactsOf(behaviour: FirmwareBehaviour): ChipFacts | null {
 export type ExposedGpio = { name: string; chip: string };
 
 /**
- * Header ports the board exposes onto a chip pin the emulator knows,
- * in expose order. Power, reset, and analog-only ports drop out: they
- * are not in the chip's GPIO table. The chip's port and bit stay on
- * `ChipSpec.pins`; this list is only names.
- */
-/**
  * ADC channel to the header name that reaches that chip pin.
  *
  * The map is the board's expose, not a fixed A0–A7 table. An empty expose
@@ -80,6 +74,12 @@ export function adcHeaderLabels(
   return labels;
 }
 
+/**
+ * Header ports the board exposes onto a chip pin the emulator knows,
+ * in expose order. Power, reset, and analog-only ports drop out: they
+ * are not in the chip's GPIO table. The chip's port and bit stay on
+ * `ChipSpec.pins`; this list is only names.
+ */
 export function gpioPinsOf(
   chipName: string,
   exposure: ReadonlyMap<string, string>

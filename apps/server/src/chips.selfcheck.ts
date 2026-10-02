@@ -28,6 +28,7 @@ expect(spec.hz === 16_000_000, "clock is 16 MHz");
 expect(spec.flashBytes === 32 * 1024, "flash is 32 KiB");
 expect(spec.sramBytes === 2048, "SRAM is 2 KiB");
 expect(spec.onCpu === undefined, "the 328P needs no CPU hook");
+expect(spec.onAdc === undefined, "the 328P needs no ADC hook");
 expect(
   Object.keys(spec.ports).join() === "B,C,D",
   "ports are B, C and D, in that order"

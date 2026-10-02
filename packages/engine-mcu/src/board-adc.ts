@@ -84,6 +84,7 @@ export function attachBoardAdc(
   chip: ChipSpec
 ): AVRADC {
   const adc = new AVRADC(cpu, chip.adc);
+  chip.onAdc?.(cpu);
   const held = new Map<string, number>();
   adc.onADCRead = (input) => {
     const source = sourceOf(input, hooks);

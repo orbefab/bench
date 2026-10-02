@@ -191,9 +191,9 @@ const usart1 = {
 };
 
 /**
- * ADC. Same register addresses as the 328P, vector 29. MUX5 (ADCSRB bit 3)
- * makes avr8js OR 0x20 into the channel, so the mask keeps that bit.
- * Channels 8–13 are mux 0x20–0x25. ADC2 and ADC3 do not exist. Mux 0x1e is
+ * ADC. Same register addresses as the 328P, vector 29. MUX5 (ADCSRB bit 5,
+ * moved for avr8js by `placeMux5`) ORs 0x20 into the channel, so the mask
+ * keeps that bit. Channels 8–13 are mux 0x20–0x25. ADC2 and ADC3 do not exist. Mux 0x1e is
  * the 1.1 V bandgap (Table 8-3, typical). Mux 0x27 is the temperature sensor;
  * it is omitted so a conversion there reads 0 rather than the 328P's 314 mV.
  * REFS 11 is the internal 2.56 V reference (Table 29-7, VINT typical).
@@ -231,6 +231,31 @@ const adc: ADCConfig = {
     ADCReference.Internal2V56,
   ],
 };
+
+/** ADCSRB MUX5, bit 5. Bit 3 is ADTS3. */
+const MUX5 = 0x20;
+/** The bit avr8js 0.21 reads as MUX5, from the 328P-style layout. */
+const AVR8JS_MUX5 = 0x08;
+
+/**
+ * avr8js picks the channel inside its ADCSRA write hook and takes MUX5 from
+ * ADCSRB bit 3. On the 32U4 that bit is ADTS3, and Arduino's analogRead sets
+ * bit 5. For the length of that hook ADCSRB holds MUX5 where avr8js looks;
+ * the firmware's own value is put back after, so a read sees what it wrote.
+ */
+function placeMux5(cpu: CPU): void {
+  const start = cpu.writeHooks[adc.ADCSRA];
+  if (!start) return;
+  cpu.writeHooks[adc.ADCSRA] = (value, oldValue, addr, mask) => {
+    const firmware = cpu.data[adc.ADCSRB] ?? 0;
+    cpu.data[adc.ADCSRB] = (firmware & MUX5) !== 0 ? AVR8JS_MUX5 : 0;
+    try {
+      return start(value, oldValue, addr, mask);
+    } finally {
+      cpu.data[adc.ADCSRB] = firmware;
+    }
+  };
+}
 
 /**
  * Bonded GPIO only. PC0–PC5, PE0, PE1, PE3–PE5, PF2 and PF3 are not on the
@@ -294,6 +319,7 @@ export const ATMEGA32U4: ChipSpec = {
     13: "PB6",
   },
   onCpu: lockPll,
+  onAdc: placeMux5,
   gaps: [
     {
       code: "timer4",
