@@ -1503,7 +1503,9 @@ export function planWorld(
     return {
       ok: false,
       errors: [
-        schema("World file is not JSON. Hint: a world is <name>.world.json."),
+        schema(
+          "World file is not JSON. Hint: a world is a root part, parts/<publisher>/<name>@<version>.json."
+        ),
       ],
     };
   }

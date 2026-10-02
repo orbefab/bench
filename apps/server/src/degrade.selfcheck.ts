@@ -126,7 +126,7 @@ try {
   if (broken.ok) throw new Error("unreachable");
   expect(
     broken.errors[0]?.message ===
-      "World file is not JSON. Hint: a world is <name>.world.json.",
+      "World file is not JSON. Hint: a world is a root part, parts/<publisher>/<name>@<version>.json.",
     broken.errors.map((item) => item.message).join("; ")
   );
   console.log(broken.errors[0]?.message);
