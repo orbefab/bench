@@ -29,7 +29,7 @@ import {
   UNO_T1_DIODE,
   UNO_T1_RDS,
   UNO_TERM_NODE,
-} from "./power-path";
+} from "@sfab-bench/sim/power-path";
 
 const PC2_NODE = "pc2";
 const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;

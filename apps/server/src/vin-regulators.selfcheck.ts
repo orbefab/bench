@@ -34,15 +34,19 @@ import {
   VSource,
 } from "@sfab-bench/engine-circuit";
 import { batteryFrom, ldoFrom } from "@sfab-bench/parts";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
+import {
+  powerFeedsOf,
+  powerIslands,
+  suppliesOnPort,
+} from "@sfab-bench/sim/wiring";
 import { levelCard } from "../../web/src/lib/level-card";
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { boardStampOf, realize } from "./world/circuit-stamp";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { catalogRoot, planWorld } from "./world/plan";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit } from "./world/rail-circuit";
-import { powerFeedsOf, powerIslands, suppliesOnPort } from "./world/wiring";
 
 function partParams(id: string): LdoParams {
   const file = JSON.parse(

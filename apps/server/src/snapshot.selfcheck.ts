@@ -29,14 +29,14 @@ import {
   loadSnapshot,
   outsideEnvelope,
 } from "@sfab-bench/parts";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
 import { captureCatalog, type FreeRunSpec, runClassScenes } from "./capture";
 import { closeRootWatches } from "./projects";
 import { boardStampOf } from "./world/circuit-stamp";
 import { attachWorld, stopWorld } from "./world/host";
 import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit } from "./world/rail-circuit";
 
 const SNAPSHOT_ID = "sfab/nano-power-input@1.0.0";
 const nanoDir = fileURLToPath(

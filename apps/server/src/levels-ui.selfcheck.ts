@@ -20,7 +20,8 @@ import {
   type WorldServerMessage,
   type WorldViewNode,
 } from "@sfab-bench/contract";
-import { contentHash } from "@sfab-bench/parts";
+import { contentHash, replaceLevels } from "@sfab-bench/parts";
+import { viewOf } from "@sfab-bench/sim/view";
 import { levelCard, reasonWords } from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
@@ -30,9 +31,7 @@ import {
   type WorldHandle,
   worldWorkerCount,
 } from "./world/host";
-import { replaceLevels } from "./world/level-edit";
 import { planWorld } from "./world/plan";
-import { viewOf } from "./world/view";
 import { worldTools } from "./world-tools";
 
 function isRecord(value: unknown): value is Record<string, unknown> {

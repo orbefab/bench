@@ -2,7 +2,7 @@
  * Typed edits, undo, and the agent and socket paths.
  * Copies only. Catalog files and the examples stay untouched.
  */
-import { ok as expect } from "node:assert/strict";
+import { deepStrictEqual, ok as expect } from "node:assert/strict";
 import {
   cpSync,
   existsSync,
@@ -47,7 +47,7 @@ import { absolutePath, nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
 import { catalogRoot, planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
-import { worldTools } from "./world-tools";
+import { editFailure, worldTools } from "./world-tools";
 
 const SPAN_MS = 3000;
 const SCENE = "parts/sfab/nano-servo-scene@1.0.0.json";
@@ -589,6 +589,37 @@ try {
       const redone = await call(worldTools.world_redo, { world: USB });
       expect(typeof redone === "string", JSON.stringify(redone));
       console.log(`world_redo: ${redone}`);
+
+      // The agent reads its ops with the socket's schema, so the two paths
+      // cannot drift: the same op is refused with the same sentence. (Before
+      // the tool shared the schema it repeated the same per-op read, so no
+      // input differed; this guards the one path, it was not failing first.)
+      const badOp = { kind: "set-pose", document: USB, id: "scene" };
+      const agentBad = await call(worldTools.world_edit, {
+        world: USB,
+        ops: [badOp],
+      });
+      const socketBad = parseWorldClient(
+        JSON.stringify({ type: "edit", ops: [badOp] })
+      );
+      expect(
+        "error" in socketBad &&
+          JSON.stringify(agentBad) ===
+            JSON.stringify({ error: socketBad.error }),
+        `agent ${JSON.stringify(agentBad)} socket ${JSON.stringify(socketBad)}`
+      );
+      // No real path fails the restart after an edit passed its own load
+      // check, so the agent's answer to a run fault is checked directly:
+      // the file was written, and the agent is told so.
+      deepStrictEqual(
+        editFailure({ error: "world failed to load", runFault: true }),
+        {
+          error:
+            "The file was written, but the run did not restart: world failed to load",
+          written: true,
+        },
+        "a run fault after an edit tells the agent the edit was written"
+      );
 
       const editRaw = JSON.stringify({
         type: "edit",

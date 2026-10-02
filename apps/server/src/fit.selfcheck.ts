@@ -5,16 +5,15 @@ import { fileURLToPath } from "node:url";
 
 import type { PartFile } from "@sfab-bench/contract";
 import { compileWorld } from "@sfab-bench/engine-body";
-
-import { projectReal, readerFor } from "./world/files";
-import { catalogRoot, planWorld } from "./world/plan";
 import {
   type MotorLaw,
   noLoadSpeedRad,
   servoElectrical,
   stallCurrent,
   stallTorque,
-} from "./world/power";
+} from "@sfab-bench/sim/power";
+import { projectReal, readerFor } from "./world/files";
+import { catalogRoot, planWorld } from "./world/plan";
 
 /**
  * Servo fits on the fixture arm, 1 ms steps, stiff rail (the supply

@@ -283,14 +283,13 @@ for (const file of steps) {
   }
 }
 
-// Reported rather than thrown. Every failure is already on stderr, and an
-// uncaught throw here makes Node print the current source frame — which, with the
-// wasm glue loaded through `new Function`, is 330KB of minified emscripten on one
-// line, burying the results this check exists to show.
+// Every failure is already on stderr. The runner reports this throw as the
+// file's failure with its message and stack only; an uncaught throw outside
+// the runner would print the current source frame, which with the wasm glue
+// loaded through `new Function` is 330KB of minified emscripten.
 if (failures.length) {
-  console.error(
-    `\n${failures.length} corpus failure(s) across ${steps.length} fixtures`
+  throw new Error(
+    `${failures.length} corpus failure(s) across ${steps.length} fixtures`
   );
-  process.exit(1);
 }
 console.log(`occt.corpus.selfcheck ok (${steps.length} fixtures)`);

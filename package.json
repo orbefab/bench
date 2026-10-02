@@ -27,7 +27,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint:check": "biome check --diagnostic-level=error .",
     "lint:fix": "biome check --write .",
-    "test": "pnpm --filter @sfab-bench/server test && pnpm --filter @sfab-bench/web test && pnpm --filter @sfab-bench/desktop test",
+    "test": "pnpm --filter @sfab-bench/contract test && pnpm --filter @sfab-bench/parts test && pnpm --filter @sfab-bench/engine-body test && pnpm --filter @sfab-bench/engine-mcu test && pnpm --filter @sfab-bench/sim test && pnpm --filter @sfab-bench/server test && pnpm --filter @sfab-bench/web test && pnpm --filter @sfab-bench/desktop test",
     "test:smoke": "pnpm --filter @sfab-bench/server test:smoke && pnpm --filter @sfab-bench/web test:smoke",
     "corpus:fetch": "node apps/server/scripts/fetch_external.mjs",
     "corpus:external": "pnpm --filter @sfab-bench/server exec tsx src/occt.external.selfcheck.ts",

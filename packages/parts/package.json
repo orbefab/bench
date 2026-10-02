@@ -9,12 +9,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "test": "node ../../scripts/checks.mjs test/parts-core.selfcheck.ts"
   },
   "dependencies": {
     "@sfab-bench/contract": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.2"
   }
 }

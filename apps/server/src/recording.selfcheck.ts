@@ -18,7 +18,12 @@ import {
 } from "@sfab-bench/contract";
 
 import { BROWNOUT_RESET, FIRMWARE_RELOADED } from "@sfab-bench/engine-mcu";
-
+import {
+  motionRank,
+  RunRecorder as Recorder,
+  type RunRecorder,
+  recordingFootprint,
+} from "@sfab-bench/sim/record";
 import { closeRootWatches } from "./projects";
 import {
   attachWorld,
@@ -30,12 +35,6 @@ import {
   setRecordingEnabled,
   stopWorld,
 } from "./world/host";
-import {
-  motionRank,
-  RunRecorder as Recorder,
-  type RunRecorder,
-  recordingFootprint,
-} from "./world/record";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
 
 /**

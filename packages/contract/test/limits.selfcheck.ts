@@ -3,7 +3,7 @@ import {
   jointLimitWarning,
   pastLimitAmount,
   SLIDE_LIMIT_WARN_M,
-} from "@sfab-bench/contract";
+} from "../src/index";
 
 /**
  * A hinge overshoots in degrees. A slide stays in metres and warns

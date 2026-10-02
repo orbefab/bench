@@ -140,7 +140,4 @@ const main = async () => {
   console.log("provisioning.selfcheck ok");
 };
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+await main();

@@ -12,12 +12,12 @@ import { fileURLToPath } from "node:url";
 
 import type { RecordingRead } from "@sfab-bench/contract";
 import { sha256Bytes } from "@sfab-bench/parts";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
 import { Sim } from "@sfab-bench/sim/sim";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { packageVersion } from "./world/package-version";
 import { planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
-import { createRailCircuit } from "./world/rail-circuit";
 
 const nanoExample = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
@@ -126,7 +126,7 @@ try {
   if (broken.ok) throw new Error("unreachable");
   expect(
     broken.errors[0]?.message ===
-      "World file is not JSON. Hint: a world is <name>.world.json.",
+      "World file is not JSON. Hint: a world is a root part, parts/<publisher>/<name>@<version>.json.",
     broken.errors.map((item) => item.message).join("; ")
   );
   console.log(broken.errors[0]?.message);

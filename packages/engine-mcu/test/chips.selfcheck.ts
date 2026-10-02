@@ -4,7 +4,6 @@
  * reset-check addresses, and the native pin table.
  */
 import { deepStrictEqual, ok as expect, throws } from "node:assert/strict";
-import { AvrBoard, chipSpec, requireChipSpec } from "@sfab-bench/engine-mcu";
 import {
   ADCMuxInputType,
   ADCReference,
@@ -18,6 +17,7 @@ import {
   timer2Config,
   usart0Config,
 } from "avr8js";
+import { AvrBoard, chipSpec, requireChipSpec } from "../src/index";
 
 const spec = chipSpec("atmega328p");
 expect(spec, "atmega328p is registered");
@@ -248,4 +248,6 @@ const none = new AvrBoard("t", null);
 none.load(new Uint8Array(spec.flashBytes));
 expect(!none.running && none.fault === "board has no chip", "no chip, no boot");
 
-console.log("chips: atmega328p record matches the constants it replaced");
+console.log(
+  "chips: atmega328p record matches the constants it replaced; atmega32u4 record, PLL lock and refusals"
+);

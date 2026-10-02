@@ -9,12 +9,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "test": "node ../../scripts/checks.mjs test/limits.selfcheck.ts"
   },
   "dependencies": {
     "ai": "^7.0.99"
   },
   "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.2"
   }
 }

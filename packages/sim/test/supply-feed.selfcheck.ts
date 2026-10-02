@@ -1,7 +1,7 @@
 /** Which supply feeds a port: the supplies on its electrical net, whatever the net's hub. */
 import { ok as expect } from "node:assert/strict";
 
-import { type PowerWiring, suppliesOnPort } from "@sfab-bench/sim/wiring";
+import { type PowerWiring, suppliesOnPort } from "../src/wiring";
 
 const power = { kind: "power", output: false, digital: false, pwm: false };
 const supplyPin = { ...power, output: true };

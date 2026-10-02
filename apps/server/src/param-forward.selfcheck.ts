@@ -8,10 +8,9 @@ import { ok as expect } from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 import type { WorldViewNode } from "@sfab-bench/contract";
-
+import { viewOf } from "@sfab-bench/sim/view";
 import { forwardLabel, instanceCard } from "../../web/src/lib/world-card";
 import { planWorld } from "./world/plan";
-import { viewOf } from "./world/view";
 
 const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)

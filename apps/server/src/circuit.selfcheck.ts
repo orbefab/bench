@@ -48,6 +48,8 @@ import {
 import { unoUsbTrace } from "./world/uno-reference";
 
 const timings = process.env.BENCH_TIMINGS === "1";
+// The fallback count is per process; other checks may share this one.
+const gminBefore = gminFallbackCalls;
 
 function benchUs(engine: Engine, warmup: number, samples: number): number {
   engine.operatingPoint();
@@ -617,8 +619,9 @@ for (const rail of POT_RAILS) {
   console.log(`circuit divider thevenin: ${r} ohm`);
 }
 
+const gminCalls = gminFallbackCalls - gminBefore;
 expect(
-  gminFallbackCalls === 0,
-  `gmin fallback ran ${gminFallbackCalls} times on the existing checks`
+  gminCalls === 0,
+  `gmin fallback ran ${gminCalls} times on the existing checks`
 );
-console.log(`gmin fallback calls ${gminFallbackCalls}`);
+console.log(`gmin fallback calls ${gminCalls}`);

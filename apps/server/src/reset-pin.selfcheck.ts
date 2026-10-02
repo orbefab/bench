@@ -25,10 +25,10 @@ import {
   EXTERNAL_RESET,
   FIRMWARE_RELOADED,
 } from "@sfab-bench/engine-mcu";
+import { runningBrownout, stepBrownout } from "@sfab-bench/sim/power";
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
 import { planWorld } from "./world/plan";
-import { runningBrownout, stepBrownout } from "./world/power";
 
 const LIMITS = { assertV: 2.675, releaseV: 2.725, holdMs: 66 };
 

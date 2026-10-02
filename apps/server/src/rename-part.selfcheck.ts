@@ -35,6 +35,7 @@ import { closeRootWatches } from "./projects";
 import {
   applyDocumentEdit,
   handleLiveEdit,
+  historiesFor,
   historiesForConnect,
 } from "./world/edit";
 import { stopWorld, worldWorkerCount } from "./world/host";
@@ -616,6 +617,56 @@ async function proveUndoOrder() {
   }
 }
 
+/**
+ * One undo order across parts: a new edit in any part's history clears
+ * the redo of every part this world has open, as an editor does.
+ */
+async function proveRedoCleared() {
+  const project = copyNano("sfab-redo-cleared-");
+  const sent = async (message: object) => {
+    const parsed = parseWorldClient(JSON.stringify(message));
+    if ("error" in parsed) throw new Error(parsed.error);
+    if (parsed.type !== "edit" && parsed.type !== "undo") {
+      throw new Error(`not an edit: ${parsed.type}`);
+    }
+    const answer = await handleLiveEdit(project, USB, parsed);
+    expect(answer.type === "edited", JSON.stringify(answer));
+  };
+  const sceneRedo = () =>
+    historiesFor(project, USB).find((row) => row.part === SCENE_ID)?.canRedo;
+  try {
+    await sent({
+      type: "edit",
+      part: SCENE_ID,
+      ops: [{ kind: "rename-part", document: SCENE_ID, to: "servo-scene" }],
+    });
+    await sent({ type: "undo", part: SCENE_ID });
+    expect(sceneRedo() === true, "the scene's undone rename can be redone");
+    await sent({
+      type: "edit",
+      ops: [
+        {
+          kind: "set-pose",
+          document: USB,
+          id: "scene",
+          pose: { position: [0, 0, 0.01], rotation: [1, 0, 0, 0] },
+        },
+      ],
+    });
+    expect(
+      sceneRedo() === false,
+      `an edit of the root left the scene's redo: ${JSON.stringify(historiesFor(project, USB))}`
+    );
+    console.log(
+      "redo across parts: a new edit of the root clears the scene's redo"
+    );
+  } finally {
+    await stopWorld(project, USB);
+    closeRootWatches();
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
 function proveSplice() {
   const module = "parts/sfab/nano-led-module@1.0.0.json";
   const child = "parts/sfab/nano-led-module-scene@1.0.0.json";
@@ -781,6 +832,7 @@ proveLeaf(armDir, "parts/sfab/arm@1.0.0.json", "arm");
 proveIdle();
 await proveMoved();
 await proveUndoOrder();
+await proveRedoCleared();
 await proveUnreadable();
 expect(worldWorkerCount() === 0, "a world worker was left behind");
 console.log("rename-part.selfcheck ok");

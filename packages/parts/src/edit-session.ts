@@ -6,12 +6,13 @@
  * lock change. The next open of an edit or a run finishes a torn write.
  */
 
-import type {
-  EditOp,
-  EditRefusal,
-  LockFile,
-  PartFile,
-  RunReport,
+import {
+  type EditOp,
+  type EditRefusal,
+  EXTERNAL_EDIT,
+  type LockFile,
+  type PartFile,
+  type RunReport,
 } from "@sfab-bench/contract";
 
 import {
@@ -53,7 +54,7 @@ import type { Store } from "./store";
 
 const LOCK_SUFFIX = ".lock.json";
 
-export const EXTERNAL_EDIT = "the document changed outside this session";
+export { EXTERNAL_EDIT };
 
 type SavedFile = {
   path: string;
@@ -169,6 +170,11 @@ export class EditSession {
 
   get canRedo(): boolean {
     return this.redoStack.length > 0;
+  }
+
+  /** A new edit elsewhere in the same undo order ends this redo. */
+  dropRedo(): void {
+    this.redoStack = [];
   }
 
   /** Point this session at the file it now edits. The server re-keys the map. */

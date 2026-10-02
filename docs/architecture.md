@@ -182,8 +182,9 @@ runner. The plan reads a run root from the open part — play, the stage,
 ground, and targets. A `.world.json` reaches it only as an import. It
 does not read files or the clock. The host passes a `Store`, absolute
 paths, package versions, and `now`. `apps/server/src/world/`
-keeps thin shims so existing imports still resolve, plus the test
-references (Uno, Nano, snapshot DC). The worker
+binds it to the Node host (`plan.ts`, `plan-host.ts` and `circuit-stamp.ts`
+pass the file store and the catalog) and holds the test references (Uno,
+Nano). Other code imports `@sfab-bench/sim` directly. The worker
 (`apps/server/src/world/worker.ts`) is the Node host: thread messages,
 the play timer, and file reads around `Sim`. `host.ts` and `live.ts`
 stay in the server and talk to that worker. `sfab-bench run` builds

@@ -2,6 +2,7 @@ import { ok as expect } from "node:assert/strict";
 
 import type { EditRefusal, EditRefusalCode } from "@sfab-bench/contract";
 
+import { EXTERNAL_EDIT } from "@sfab-bench/contract";
 import { editRefusalText, historyRefusalTitle } from "./world-edit-refusal";
 
 /** The server's wording, rebuilt from the same parts it sends. */
@@ -91,8 +92,23 @@ for (const message of [
   expect(editRefusalText({ message }) === message, `no parts: ${message}`);
 }
 
-expect(historyRefusalTitle("undo") === "Nothing to undo.", "undo title");
-expect(historyRefusalTitle("redo") === "Nothing to redo.", "redo title");
+expect(
+  historyRefusalTitle("undo", "nothing to undo") === "Nothing to undo.",
+  "undo title"
+);
+expect(
+  historyRefusalTitle("redo", "nothing to redo") === "Nothing to redo.",
+  "redo title"
+);
+// A step whose files changed outside this session is there, but refused.
+for (const kind of ["undo", "redo"] as const) {
+  const title = historyRefusalTitle(kind, EXTERNAL_EDIT);
+  expect(
+    title ===
+      `Not ${kind === "undo" ? "undone" : "redone"}: the document changed outside this session.`,
+    `${kind} after an outside change: ${title}`
+  );
+}
 
 console.log(
   `world-edit-refusal.selfcheck ok (${wire.length} wire, ${other.length} other refusals)`

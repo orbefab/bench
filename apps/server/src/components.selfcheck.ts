@@ -38,6 +38,8 @@ import {
   sortValue,
   tableLawOf,
 } from "@sfab-bench/parts";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { boardStampOf, realize } from "./world/circuit-stamp";
@@ -49,8 +51,6 @@ import {
 } from "./world/host";
 import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit } from "./world/rail-circuit";
 
 const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
   boardId: "nano",
@@ -59,6 +59,8 @@ const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
 const BAND = 0.005;
+// The fallback count is per process; other checks may share this one.
+const gminBefore = gminFallbackCalls;
 
 function ledDeck(board: number): number {
   const diode = new Diode("led", "a", "0", LED_RED);
@@ -449,11 +451,12 @@ function servoPulseUs(angle: number): number {
       JSON.stringify(power)
     );
     writeFileSync(join(dir, "nano-1n4148@1.0.0.json"), JSON.stringify(part));
+    const gminCalls = gminFallbackCalls - gminBefore;
     expect(
-      gminFallbackCalls === 0,
-      `gmin fallback ran ${gminFallbackCalls} times before the open diode`
+      gminCalls === 0,
+      `gmin fallback ran ${gminCalls} times before the open diode`
     );
-    console.log(`gmin fallback calls ${gminFallbackCalls}`);
+    console.log(`gmin fallback calls ${gminCalls}`);
     const stamp = boardStampOf(id, "circuits", {
       boardId: "nano",
       libraryDir: root,
