@@ -623,13 +623,14 @@ function childIds(part: PartFile): string[] {
 }
 
 /**
- * The class whose `variant` is a firmware board or a circuit composite.
- * Throws when the variant is missing or is neither.
+ * The class whose `variant` is a circuit composite.
+ * A firmware-only variant throws here: GPIO for that level is planned
+ * from the board, and this stamp only walks a composite's chip child.
  */
 function variantSlot(
   part: PartFile,
   variant: string
-): { key: (typeof CLASS_KEYS)[number]; kind: "firmware" | "composite" } {
+): { key: (typeof CLASS_KEYS)[number] } {
   const behaviour = part.axes?.behaviour;
   if (!behaviour) throw new Error(`${part.id} has no behaviour`);
   let saw = false;
@@ -637,7 +638,7 @@ function variantSlot(
     const impl = behaviour[key]?.variants[variant];
     if (!impl) continue;
     saw = true;
-    if (impl.kind === "composite") return { key, kind: "composite" };
+    if (impl.kind === "composite") return { key };
   }
   if (!saw) throw new Error(`${part.id} has no variant ${variant}`);
   throw new Error(`${part.id} variant ${variant} is not a circuit assembly`);
@@ -880,11 +881,7 @@ function stampOf(
   }
   const { instances } = resolveLevels(lib, compileRules(lib.run));
   const board = instances.find((inst) => inst.path === boardId);
-  const firmwareSelf =
-    (board?.axes.behaviour.impl as BehaviourImpl | null)?.kind === "firmware"
-      ? board
-      : undefined;
-  if (!board || (!netlistOf(board) && !firmwareSelf)) {
+  if (!board || !netlistOf(board)) {
     throw new Error(
       firmwareOnly
         ? `${partId} variant ${variant} is not a firmware board`
@@ -900,7 +897,7 @@ function stampOf(
       (inst.axes.behaviour.impl as BehaviourImpl | null)?.kind === "firmware" &&
       boardHostOf(inst, byPath, ROOT_PATH) === board
   );
-  const isFirmware = slot.kind === "firmware" || chip !== undefined;
+  const isFirmware = chip !== undefined;
   if (firmwareOnly && !isFirmware) {
     throw new Error(`${partId} variant ${variant} is not a firmware board`);
   }
@@ -911,14 +908,12 @@ function stampOf(
     if (row) circuitParts.push(row);
   }
   const built = buildNets(instances, undefined);
-  if (slot.kind === "composite") {
-    for (const inst of instances) {
-      if (inst.path === ROOT_PATH || inst.path === boardId) continue;
-      const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
-      if (behaviour?.kind === "composite" || inst === chip) continue;
-      if (circuitParts.some((part) => part.path === inst.path)) continue;
-      throw new Error(`${partId}: ${inst.path} is not a circuit leaf`);
-    }
+  for (const inst of instances) {
+    if (inst.path === ROOT_PATH || inst.path === boardId) continue;
+    const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+    if (behaviour?.kind === "composite" || inst === chip) continue;
+    if (circuitParts.some((part) => part.path === inst.path)) continue;
+    throw new Error(`${partId}: ${inst.path} is not a circuit leaf`);
   }
   const behaviour = (chip ?? board).axes.behaviour.impl as BehaviourImpl | null;
   const facts = behaviour?.kind === "firmware" ? chipFactsOf(behaviour) : null;
@@ -945,11 +940,10 @@ function stampOf(
   }
   const resetPort =
     behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
-  const runner = chip ?? firmwareSelf;
-  const chipBehaviour = runner?.axes.behaviour.impl as BehaviourImpl | null;
+  const chipBehaviour = chip?.axes.behaviour.impl as BehaviourImpl | null;
   const gpio =
-    runner && chipBehaviour?.kind === "firmware"
-      ? boardGpio(chipBehaviour.chip, runner, board)
+    chip && chipBehaviour?.kind === "firmware"
+      ? boardGpio(chipBehaviour.chip, chip, board)
       : [];
   const stamp = stampBoard({
     boardId,
