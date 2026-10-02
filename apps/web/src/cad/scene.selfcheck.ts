@@ -571,6 +571,9 @@ for (const name of ["inch_block", "bracket_assembly", "cut_solid"]) {
   }
 }
 
+// The checks share one process: leave the viewer as a fresh tab has it.
+viewerStore.setState(viewerStore.getInitialState(), true);
+
 if (failures.length)
   throw new Error(
     `${failures.length} scene failure(s) across ${names.length} fixtures`

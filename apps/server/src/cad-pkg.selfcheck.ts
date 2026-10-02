@@ -130,7 +130,6 @@ try {
 }
 
 if (failures.length) {
-  console.error(`\n${failures.length} cad-pkg failure(s)`);
-  process.exit(1);
+  throw new Error(`${failures.length} cad-pkg failure(s)`);
 }
 console.log("cad-pkg.selfcheck ok");

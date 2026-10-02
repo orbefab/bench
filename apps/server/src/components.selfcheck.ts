@@ -59,6 +59,8 @@ const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
 const BAND = 0.005;
+// The fallback count is per process; other checks may share this one.
+const gminBefore = gminFallbackCalls;
 
 function ledDeck(board: number): number {
   const diode = new Diode("led", "a", "0", LED_RED);
@@ -449,11 +451,12 @@ function servoPulseUs(angle: number): number {
       JSON.stringify(power)
     );
     writeFileSync(join(dir, "nano-1n4148@1.0.0.json"), JSON.stringify(part));
+    const gminCalls = gminFallbackCalls - gminBefore;
     expect(
-      gminFallbackCalls === 0,
-      `gmin fallback ran ${gminFallbackCalls} times before the open diode`
+      gminCalls === 0,
+      `gmin fallback ran ${gminCalls} times before the open diode`
     );
-    console.log(`gmin fallback calls ${gminFallbackCalls}`);
+    console.log(`gmin fallback calls ${gminCalls}`);
     const stamp = boardStampOf(id, "circuits", {
       boardId: "nano",
       libraryDir: root,

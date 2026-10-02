@@ -2,15 +2,24 @@
 
 What "renders correctly" means here, and which parts of it are checked today.
 
-Checks are plain `tsx` scripts named `*.selfcheck.ts`, run by `pnpm test`.
+Checks are plain top-level scripts named `*.selfcheck.ts`, run by `pnpm test`.
 The desktop packager check is a `node` script next to `package.mjs`.
-No framework. A check either prints `… ok` or throws, using `node:assert/strict`.
-`scripts/checks.mjs` runs each package's list in turn and stops at the first failure.
+A check either prints `… ok` or throws, using `node:assert/strict`.
+A check that tests one package lives in that package's `test/` folder and may
+read files under `examples/`; checks that need the server or the catalog stay
+in `apps/server/src`. Each package's `pnpm test` runs its list in one process:
+`scripts/checks.mjs` hands the files to node's test runner
+(`--test-isolation=none`) through `tsx`, or plain `node` when every file is
+`.js` or `.mjs`.
+The files run one after another in name order, each as one test. A failure
+does not stop the files after it, and the run fails at the end. Because checks
+share a process, a check restores what it changes (env, `console`) and reads a
+process-wide counter as the change across its own run.
 
 The log of two runs of one commit is byte-identical, so a line diff against the
 previous head only shows real changes. Wall-clock lines (µs per step, real-time
 factor, OCCT kernel times) print only with `BENCH_TIMINGS=1`. `CHECK_TIMES=<file>`
-appends `<seconds> <check>` per check to that file.
+writes node's spec report, one line and duration per check, to that file.
 
 The full suite is a local gate: run `pnpm test` before you land on a shared
 branch. Pull requests and `main` run a light check on GitHub Actions:
