@@ -1,7 +1,7 @@
 import { ok as expect } from "node:assert/strict";
 import type { WorldViewNode } from "@sfab-bench/contract";
 
-import { instanceCard } from "./world-card";
+import { forwardLabel, instanceCard } from "./world-card";
 
 const node: WorldViewNode = {
   id: "servo",
@@ -71,9 +71,27 @@ expect(
 expect(
   card.params.length === 1 &&
     card.params[0]?.name === "K" &&
-    card.params[0].value === 0.2,
+    card.params[0].value === 0.2 &&
+    card.params[0].forward === undefined,
   "params are the instance params"
 );
+const child: WorldViewNode = {
+  ...node,
+  id: "board.mcu",
+  name: "mcu",
+  params: { firmware: "app.hex", quiescent: 0.02 },
+  forwards: { firmware: { from: "board", param: "firmware" } },
+};
+const childCard = instanceCard(child);
+const forwarded = childCard.params.find((param) => param.name === "firmware");
+const own = childCard.params.find((param) => param.name === "quiescent");
+expect(
+  forwarded?.forward?.from === "board" &&
+    forwarded.forward.param === "firmware" &&
+    forwardLabel(forwarded.forward) === "from board.firmware",
+  "a forwarded param names its parent"
+);
+expect(own?.forward === undefined, "a plain child param stays editable");
 expect(
   card.axes.map((axis) => axis.axis).join(",") === "behaviour,visual",
   "one picker per authored axis"

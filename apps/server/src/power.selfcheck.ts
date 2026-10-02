@@ -266,20 +266,27 @@ expect(
 console.log("brownout: assert 2.675 V, release 2.725 V, hold 66 ms");
 
 const brownoutV = 2.7;
-const inBand = atmega328pSoaWarning(3.2, brownoutV);
+const floorV = 3.78;
+const inBand = atmega328pSoaWarning(3.2, brownoutV, floorV);
 expect(
   inBand?.code === "below-16mhz-soa" &&
     inBand.message ===
       "supply 3.20 V is below the 3.78 V the ATmega328P needs at 16 MHz; real boards may misbehave",
   `soa message ${inBand?.message}`
 );
-expect(atmega328pSoaWarning(3.78, brownoutV) === null, "3.78 V is in spec");
-expect(atmega328pSoaWarning(5, brownoutV) === null, "5 V is in spec");
 expect(
-  atmega328pSoaWarning(2.7, brownoutV) === null,
+  atmega328pSoaWarning(3.78, brownoutV, floorV) === null,
+  "3.78 V is in spec"
+);
+expect(atmega328pSoaWarning(5, brownoutV, floorV) === null, "5 V is in spec");
+expect(
+  atmega328pSoaWarning(2.7, brownoutV, floorV) === null,
   "brownout edge is not SOA"
 );
-expect(atmega328pSoaWarning(2.5, brownoutV) === null, "brownout is not SOA");
+expect(
+  atmega328pSoaWarning(2.5, brownoutV, floorV) === null,
+  "brownout is not SOA"
+);
 console.log("soa: 3.20 V warns, 2.70 V and 3.78 V do not");
 
 expect(

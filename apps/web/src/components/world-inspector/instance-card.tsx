@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { LevelAxis } from "@/components/LevelAxis";
 import { Button } from "@/components/ui/button";
 import { openPartFile } from "@/components/WorldPartTabs";
-import { instanceCard } from "@/lib/world-card";
+import { forwardLabel, instanceCard } from "@/lib/world-card";
 import { openPartTarget } from "@/lib/world-open-part";
 import { renamePartOp } from "@/lib/world-ops";
 import type { WorldOutline } from "@/lib/world-outline";
@@ -20,6 +20,24 @@ import { LiveBody } from "./live-card";
 import { commitOnEnter, commitParam, NumberField } from "./params";
 import { Section, WarningList } from "./parts";
 import { PoseSection } from "./pose-section";
+
+function ForwardedParam({
+  name,
+  value,
+  from,
+}: {
+  name: string;
+  value: number | string | boolean;
+  from: string;
+}) {
+  return (
+    <div className="mb-1.5 min-w-0">
+      <div className="text-[11px] text-muted-foreground">{name}</div>
+      <div className="break-all font-mono text-[12px]">{String(value)}</div>
+      <div className="text-[11px] text-muted-foreground">{from}</div>
+    </div>
+  );
+}
 
 export function RenamePartFile({
   name,
@@ -173,7 +191,14 @@ export function InstanceBody({
       {card.params.length > 0 ? (
         <Section title="Params">
           {card.params.map((param) =>
-            typeof param.value === "boolean" ? (
+            param.forward ? (
+              <ForwardedParam
+                key={param.name}
+                name={param.name}
+                value={param.value}
+                from={forwardLabel(param.forward)}
+              />
+            ) : typeof param.value === "boolean" ? (
               <label
                 key={param.name}
                 className="mb-1.5 flex items-center gap-2 text-[12px]"

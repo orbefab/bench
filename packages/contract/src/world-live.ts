@@ -87,77 +87,6 @@ export function pinHas(
   return pinBitSet(words, index);
 }
 
-/** D0–D13, then A0–A5. The pin table and the mask use this order. */
-export const ARDUINO_PINS: readonly string[] = [
-  "D0",
-  "D1",
-  "D2",
-  "D3",
-  "D4",
-  "D5",
-  "D6",
-  "D7",
-  "D8",
-  "D9",
-  "D10",
-  "D11",
-  "D12",
-  "D13",
-  "A0",
-  "A1",
-  "A2",
-  "A3",
-  "A4",
-  "A5",
-];
-
-/**
- * Bit index of an Arduino header name. The web and the agent tools still
- * read pins through this until they take the board view's pin list.
- * It matches a board whose GPIO order is D0–D13, A0–A5.
- */
-export function arduinoPinBit(pin: string): number | undefined {
-  const digital = /^D(\d+)$/.exec(pin);
-  if (digital) {
-    const n = Number(digital[1]);
-    if (n >= 0 && n <= 13) return n;
-    return undefined;
-  }
-  const analog = /^A(\d+)$/.exec(pin);
-  if (analog) {
-    const n = Number(analog[1]);
-    if (n >= 0 && n <= 5) return 14 + n;
-    return undefined;
-  }
-  return undefined;
-}
-
-/**
- * Read one Arduino-named pin. `mask` may be the old 20-bit number or the
- * word list. The index is `arduinoPinBit`, so this is right while that
- * board's pin list is D0–D13, A0–A5. Prefer `pinHas` with the board's names.
- */
-export function maskHasPin(
-  mask: number | readonly number[],
-  pin: string
-): boolean {
-  const bit = arduinoPinBit(pin);
-  if (bit === undefined) return false;
-  return pinBitSet(mask, bit);
-}
-
-/**
- * Pack PORTD, PORTB, and PORTC into the 20-bit Arduino mask.
- * D0–D7 = PORTD0–7, D8–D13 = PORTB0–5, A0–A5 = PORTC0–5.
- */
-export function arduinoPinMask(
-  portD: number,
-  portB: number,
-  portC: number
-): number {
-  return (portD & 0xff) | ((portB & 0x3f) << 8) | ((portC & 0x3f) << 14);
-}
-
 /** Servo display state. The motor current does not follow this. */
 export type WorldPartMotion = "idle" | "moving" | "stall";
 
@@ -236,17 +165,12 @@ export type WorldBoardState = {
    */
   ledCurrent?: number;
   /**
-   * Set while a running ATmega328P supply is above brownout and below
-   * 3.78 V. Reporting only: the step does not change.
+   * Set while a running chip's supply is above its brownout level and
+   * below its minimum operating voltage. Reporting only: the step does
+   * not change.
    */
   warnings?: WorldBoardWarning[];
 };
-
-/** 16 MHz ATmega328P is specified only above this supply voltage. */
-export const ATMEGA328P_16MHZ_MIN_V = 3.78;
-
-/** ATmega328P brownout level in volts when a board does not set one. */
-export const ATMEGA328P_BROWNOUT_V = 2.7;
 
 export type WorldBoardWarning = {
   code: "below-16mhz-soa" | "degraded";
@@ -255,12 +179,14 @@ export type WorldBoardWarning = {
 
 /**
  * Warning while `voltage` is above the chip's brownout level and below
- * the 16 MHz minimum. Null outside that band, including brownout itself.
+ * `minVoltage`. Null outside that band, including brownout itself.
+ * Callers pass both thresholds from the chip; this function does not
+ * look up a board.
  */
 export function atmega328pSoaWarning(
   voltage: number,
   brownoutVoltage: number,
-  minVoltage: number = ATMEGA328P_16MHZ_MIN_V
+  minVoltage: number
 ): WorldBoardWarning | null {
   if (!(voltage > brownoutVoltage) || !(voltage < minVoltage)) {
     return null;

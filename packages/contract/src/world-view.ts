@@ -3,7 +3,14 @@
  * plan. Not a file format.
  */
 
-import type { AxisName, Domain, LevelClass, Params, Pose } from "./layered";
+import type {
+  AxisName,
+  Domain,
+  LevelClass,
+  ParamForward,
+  Params,
+  Pose,
+} from "./layered";
 import type { WorldPrimitive, WorldStepProp, WorldTarget } from "./world";
 
 export type WorldViewRobot = {
@@ -22,6 +29,11 @@ export type WorldViewBoard = {
   size: [number, number, number];
   /** Volts. The card's brownout line uses this, not a client-side catalog. */
   brownoutVoltage: number;
+  /**
+   * Volts. The chip part's minimum operating voltage, the SOA floor.
+   * Null when the chip does not publish one.
+   */
+  minOperatingVoltage: number | null;
   /**
    * Exposed GPIO header names, in the order `WorldPinState` bits use.
    * Sent with the view. A later state tick does not repeat the list.
@@ -160,6 +172,12 @@ export type WorldViewNode = {
   ports: WorldViewPort[];
   /** Instance params, SI. Empty when the instance sets none. */
   params: Params;
+  /**
+   * Params filled from the parent via `$param`. Keyed by this instance's
+   * param name. Absent when none were forwarded. The card shows these
+   * read-only; editing stays on the parent.
+   */
+  forwards?: Readonly<Record<string, ParamForward>>;
   /**
    * Authored wires of this assembly, in netlist order. Absent on a
    * leaf, a ground, and a target.

@@ -1,16 +1,13 @@
 import {
-  ARDUINO_PINS,
-  ATMEGA328P_16MHZ_MIN_V,
-  ATMEGA328P_BROWNOUT_V,
   atmega328pSoaWarning,
   boardTrackId,
   type EditOp,
   extractUrdfJointsAndMeshes,
   type JointLimitKind,
   jointLimitWarning,
-  maskHasPin,
   partTrackId,
   pastLimitAmount,
+  pinBitSet,
   RECORD_FRAME_MS,
   type RecordingEvent,
   type RecordingManifest,
@@ -141,18 +138,36 @@ function capTail<T>(items: T[]): { items: T[]; truncated: boolean } {
   return { items: items.slice(items.length - LIST_CAP), truncated: true };
 }
 
+/** Driven outputs, named from this board's pin list. Bit `i` is pin `i`. */
 function drivenPins(
+  names: readonly string[] | undefined,
   pins:
     | { ddr: number | readonly number[]; level: number | readonly number[] }
     | undefined
 ): string[] {
-  if (!pins) return [];
+  if (!pins || !names || names.length === 0) return [];
   const out: string[] = [];
-  for (const pin of ARDUINO_PINS) {
-    if (!maskHasPin(pins.ddr, pin)) continue;
-    out.push(`${pin}: out ${maskHasPin(pins.level, pin) ? "H" : "L"}`);
+  for (let i = 0; i < names.length; i++) {
+    const pin = names[i];
+    if (!pin || !pinBitSet(pins.ddr, i)) continue;
+    out.push(`${pin}: out ${pinBitSet(pins.level, i) ? "H" : "L"}`);
   }
   return out;
+}
+
+function pinOrdersOf(plan: RunPlan): Map<string, readonly string[]> {
+  return new Map(plan.boards.map((board) => [board.id, board.pinOrder]));
+}
+
+/** Brownout and the SOA floor. Null when the chip publishes none. */
+function chipBand(
+  loaded: Loaded,
+  id: string
+): { brownout: number; floor: number } | null {
+  const board = loaded.plan.boards.find((row) => row.id === id);
+  const floor = board?.minOperatingVoltage;
+  if (!board || floor == null) return null;
+  return { brownout: board.brownoutVoltage, floor };
 }
 
 function loadPlan(project: string, world: string): RunPlan | { error: string } {
@@ -257,16 +272,18 @@ function rangeWarnings(
     for (const [id, board] of Object.entries(frame.boards)) {
       if (!board.belowSoa) continue;
       soaSeen.add(id);
-      const brownout =
-        loaded.plan.boards.find((board) => board.id === id)?.brownoutVoltage ??
-        ATMEGA328P_BROWNOUT_V;
+      const band = chipBand(loaded, id);
       const row = frame.boards[id];
-      if (!row) continue;
+      if (!band || !row) continue;
       const candidate =
-        row.minVoltage > brownout && row.minVoltage < ATMEGA328P_16MHZ_MIN_V
+        row.minVoltage > band.brownout && row.minVoltage < band.floor
           ? row.minVoltage
           : row.voltage;
-      const warning = atmega328pSoaWarning(candidate, brownout);
+      const warning = atmega328pSoaWarning(
+        candidate,
+        band.brownout,
+        band.floor
+      );
       if (!warning) continue;
       const prev = soaVoltage.get(id);
       if (prev === undefined || candidate < prev) soaVoltage.set(id, candidate);
@@ -281,16 +298,17 @@ function rangeWarnings(
   }
   for (const id of soaSeen) {
     const voltage = soaVoltage.get(id);
-    const brownout =
-      loaded.plan.boards.find((board) => board.id === id)?.brownoutVoltage ??
-      ATMEGA328P_BROWNOUT_V;
+    const band = chipBand(loaded, id);
+    if (!band) continue;
     const warning =
-      voltage === undefined ? null : atmega328pSoaWarning(voltage, brownout);
-    out.push(
-      warning
-        ? `${id}: ${warning.message}`
-        : `${id}: supply was below the 3.78 V the ATmega328P needs at 16 MHz`
-    );
+      voltage === undefined
+        ? null
+        : atmega328pSoaWarning(voltage, band.brownout, band.floor);
+    const floor = band.floor.toFixed(2);
+    const fallback =
+      `${id}: supply was below the ${floor} V` +
+      " the ATmega328P needs at 16 MHz";
+    out.push(warning ? `${id}: ${warning.message}` : fallback);
   }
   for (const [joint, amount] of past) {
     const kind = limitKind(units.get(joint));
@@ -355,7 +373,10 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       fault: unpowered ? "unpowered" : (board.fault ?? null),
       resets: board.resets ?? 0,
       brownout: board.brownout === true,
-      pins: drivenPins(board.pins),
+      pins: drivenPins(
+        doc.boards.find((row) => row.id === id)?.pinOrder,
+        board.pins
+      ),
       voltage:
         unpowered || board.voltage === undefined
           ? null
@@ -683,7 +704,8 @@ function wantsJoint(
 function trimFrame(
   frame: RecordingRead["frames"][number],
   selected: ReturnType<typeof selectTracks>,
-  units: Map<string, "deg" | "m">
+  units: Map<string, "deg" | "m">,
+  pinOrders: ReadonlyMap<string, readonly string[]>
 ): AgentFrame {
   const out: AgentFrame = { t: seconds(frame.t) };
   const joints: NonNullable<AgentFrame["joints"]> = {};
@@ -734,7 +756,9 @@ function trimFrame(
     if (selected.filtered && !fields) continue;
     const all = !fields || fields === "all";
     const board: NonNullable<AgentFrame["boards"]>[string] = {};
-    if (all || fields.has("pins")) board.pins = drivenPins(row.pins);
+    if (all || fields.has("pins")) {
+      board.pins = drivenPins(pinOrders.get(id), row.pins);
+    }
     if (all || fields.has("running")) board.running = row.running;
     if (all || fields.has("brownout")) {
       board.brownout = row.brownout || row.brownoutAny;
@@ -878,6 +902,7 @@ async function readWindow(
   });
   if ("error" in read) return read;
   const units = jointUnits(loaded.root, loaded.world, loaded.plan);
+  const pinOrders = pinOrdersOf(loaded.plan);
   const serial = agentEvents(read.events);
   const events = capTail(serial.events);
   return {
@@ -885,7 +910,9 @@ async function readWindow(
     from,
     to,
     frameMs: read.frameMs,
-    frames: read.frames.map((frame) => trimFrame(frame, selected, units)),
+    frames: read.frames.map((frame) =>
+      trimFrame(frame, selected, units, pinOrders)
+    ),
     raw: read,
     events: events.items,
     truncated: serial.truncated || events.truncated,

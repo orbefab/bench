@@ -26,18 +26,37 @@ export type CardAxis = {
   capture?: WorldViewCapture;
 };
 
+export type CardParam = {
+  name: string;
+  value: number | string | boolean;
+  /** Set when this param was filled from the parent via `$param`. */
+  forward?: { from: string; param: string };
+};
+
+/** `from nano.firmware`. The names are the forward record, not a literal. */
+export function forwardLabel(forward: { from: string; param: string }): string {
+  return `from ${forward.from}.${forward.param}`;
+}
+
 export type InstanceCard = {
   ports: WorldViewPort[];
-  params: { name: string; value: number | string | boolean }[];
+  params: CardParam[];
   axes: CardAxis[];
 };
 
 export function instanceCard(node: WorldViewNode): InstanceCard {
-  const params: InstanceCard["params"] = [];
+  const params: CardParam[] = [];
   for (const name of Object.keys(node.params)) {
     const value = node.params[name];
     if (value === undefined) continue;
-    params.push({ name, value });
+    const forward = node.forwards?.[name];
+    params.push({
+      name,
+      value,
+      ...(forward
+        ? { forward: { from: forward.from, param: forward.param } }
+        : {}),
+    });
   }
   return {
     ports: node.ports.map((port) => ({ ...port })),

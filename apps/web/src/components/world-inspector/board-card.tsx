@@ -1,10 +1,6 @@
 /** The board card: pins, LEDs, serial console and firmware source for one live board. */
 
-import {
-  ARDUINO_PINS,
-  maskHasPin,
-  type WorldPinState,
-} from "@sfab-bench/contract";
+import type { WorldPinState } from "@sfab-bench/contract";
 import { SerialConsole } from "@/components/SerialConsole";
 import { SourceView } from "@/components/SourceView";
 import { sendBoardSerial } from "@/hooks/useWorldRun";
@@ -15,6 +11,7 @@ import {
   recordedSoaLine,
   scrubbedBoardStatus,
 } from "@/lib/board-status";
+import { pinRows } from "@/lib/pin-rows";
 import { faultUntil, resetsUntil, serialUntil } from "@/lib/timeline";
 import { relFromWorldFile } from "@/lib/world-assets";
 import type { WorldOutlineBoard, WorldOutlinePart } from "@/lib/world-outline";
@@ -60,11 +57,13 @@ function pulseOnPin(
 }
 
 function PinTable({
+  names,
   pins,
   boardId,
   parts,
   live,
 }: {
+  names: readonly string[];
   pins: WorldPinState | undefined;
   boardId: string;
   parts: readonly WorldOutlinePart[];
@@ -74,6 +73,13 @@ function PinTable({
     return (
       <p className="mb-3 text-[12px] text-muted-foreground">
         Pins appear with the next state.
+      </p>
+    );
+  }
+  if (names.length === 0) {
+    return (
+      <p className="mb-3 text-[12px] text-muted-foreground">
+        This board exposes no GPIO pins.
       </p>
     );
   }
@@ -90,25 +96,24 @@ function PinTable({
         </tr>
       </thead>
       <tbody>
-        {ARDUINO_PINS.map((pin) => {
-          const active = maskHasPin(pins.toggled, pin);
-          const pulse = pulseOnPin(boardId, pin, parts, live);
+        {pinRows(names, pins).map((row) => {
+          const pulse = pulseOnPin(boardId, row.name, parts, live);
           const width =
             pulse === undefined || pulse === null
               ? null
               : `${Math.round(pulse)} µs`;
           return (
-            <tr key={pin} className="font-mono">
-              <td>{pin}</td>
-              <td>{maskHasPin(pins.ddr, pin) ? "out" : "in"}</td>
-              <td>{maskHasPin(pins.level, pin) ? "H" : "L"}</td>
+            <tr key={row.name} className="font-mono">
+              <td>{row.name}</td>
+              <td>{row.dir}</td>
+              <td>{row.level}</td>
               <td className="whitespace-nowrap">
-                {active ? (
+                {row.active ? (
                   <span title="Toggled since the last state">●</span>
                 ) : null}
                 {width ? (
                   <span title="Servo pulse width">
-                    {active ? " " : ""}
+                    {row.active ? " " : ""}
                     {width}
                   </span>
                 ) : null}
@@ -220,11 +225,10 @@ export function BoardBody({
       <SoaLine
         text={
           recorded
-            ? recordedSoaLine(
-                recorded.belowSoa,
-                recorded,
-                info?.brownoutVoltage
-              )
+            ? recordedSoaLine(recorded.belowSoa, recorded, {
+                brownoutVoltage: info?.brownoutVoltage,
+                minOperatingVoltage: info?.minOperatingVoltage,
+              })
             : boardWarningLine(live?.warnings)
         }
       />
@@ -240,6 +244,7 @@ export function BoardBody({
         />
       </div>
       <PinTable
+        names={info?.pins ?? []}
         pins={pins}
         boardId={id}
         parts={outlineParts}

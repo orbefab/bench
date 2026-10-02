@@ -47,15 +47,20 @@ expect(
   "the board status line is the SOA warning"
 );
 expect(boardWarningLine(undefined) === "", "no warning is a blank line");
+const soaFacts = { brownoutVoltage: 2.7, minOperatingVoltage: 3.78 };
 expect(
-  recordedSoaLine(true, { voltage: 3.2, minVoltage: 3.2 }) === soa,
+  recordedSoaLine(true, { voltage: 3.2, minVoltage: 3.2 }, soaFacts) === soa,
   "a scrubbed frame uses this board's 5V node"
 );
 expect(
-  recordedSoaLine(false, { voltage: 3.2, minVoltage: 3.2 }) === "",
+  recordedSoaLine(false, { voltage: 3.2, minVoltage: 3.2 }, soaFacts) === "",
   "a frame outside the band has no line"
 );
-const otherLine = recordedSoaLine(true, { voltage: 5, minVoltage: 5 });
+const otherLine = recordedSoaLine(
+  true,
+  { voltage: 5, minVoltage: 5 },
+  soaFacts
+);
 expect(
   otherLine !== soa && !otherLine.includes("3.20"),
   `an in-spec node was quoted as the sag: ${otherLine}`

@@ -284,12 +284,20 @@ export type Params = Record<string, number | string | boolean>;
 
 /**
  * A netlist child's param that reads the parent instance's param of that
- * name. The loader resolves it before the child is visited, so nothing
- * downstream of `resolveLevels` ever sees one. `optional` leaves the child
- * param out, with no report, when the parent has none: a board that runs
- * bare forwards its firmware this way.
+ * name. The loader resolves it to a scalar before the child is visited.
+ * The view records which parent instance and param it came from
+ * (`ParamForward`). `optional` leaves the child param out, with no report,
+ * when the parent has none: a board that runs bare forwards its firmware
+ * this way.
  */
 export type ParamRef = { $param: string; optional?: true };
+
+/**
+ * A resolved `$param`. The child param's value is the parent's scalar.
+ * `from` is the parent instance path (`nano`, `fleet.nano`). `param` is
+ * the parent param name.
+ */
+export type ParamForward = { from: string; param: string };
 
 /** `Params` as a netlist child may write them: values, or references. */
 export type NetlistParams = Record<string, Params[string] | ParamRef>;

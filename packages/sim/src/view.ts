@@ -39,6 +39,7 @@ export function viewOf(plan: RunPlan): WorldView {
       pose: board.pose,
       size: board.size,
       brownoutVoltage: board.brownoutVoltage,
+      minOperatingVoltage: board.minOperatingVoltage,
       pins: board.pinOrder,
     })),
     supplies: plan.supplies.map((supply) => ({

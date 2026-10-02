@@ -160,6 +160,7 @@ export function runTree(input: {
       pose: poseOf(inst.pose),
       ports: portsOf(inst, world, dependents(inst.part.id)),
       params: { ...inst.params },
+      ...(inst.forwards ? { forwards: { ...inst.forwards } } : {}),
       ...(netlist ? { wires: netlist.wires.map(([a, b]) => ({ a, b })) } : {}),
       levels: levelAxes(inst.part, chosenOf(inst), inst.declaredOnly, {
         added: place?.added,

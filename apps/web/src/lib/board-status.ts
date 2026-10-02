@@ -1,8 +1,4 @@
-import {
-  ATMEGA328P_16MHZ_MIN_V,
-  ATMEGA328P_BROWNOUT_V,
-  atmega328pSoaWarning,
-} from "@sfab-bench/contract";
+import { atmega328pSoaWarning } from "@sfab-bench/contract";
 
 type BoardStatusInput = {
   running: boolean;
@@ -45,24 +41,35 @@ export function boardWarningLine(
   return warnings?.[0]?.message ?? "";
 }
 
+/** Brownout and SOA floor from the board view. Both are volts. */
+export type SoaFacts = {
+  brownoutVoltage?: number;
+  /** Null when the chip publishes no floor. */
+  minOperatingVoltage?: number | null;
+};
+
 /**
  * The same line for a scrubbed frame. `belowSoa` is the window flag.
  * The voltage is this board's 5V node, not the supply terminal.
+ * The thresholds come from the view. Missing facts produce no line.
  */
 export function recordedSoaLine(
   belowSoa: boolean | undefined,
   board: { voltage: number; minVoltage: number } | undefined,
-  brownoutVoltage = ATMEGA328P_BROWNOUT_V
+  facts?: SoaFacts
 ): string {
   if (!belowSoa) return "";
-  const brownout = brownoutVoltage;
+  const brownout = facts?.brownoutVoltage;
+  const floor = facts?.minOperatingVoltage;
+  if (brownout === undefined || floor == null) return "";
   if (board) {
     const voltage =
-      board.minVoltage > brownout && board.minVoltage < ATMEGA328P_16MHZ_MIN_V
+      board.minVoltage > brownout && board.minVoltage < floor
         ? board.minVoltage
         : board.voltage;
-    const warning = atmega328pSoaWarning(voltage, brownout);
+    const warning = atmega328pSoaWarning(voltage, brownout, floor);
     if (warning) return warning.message;
   }
-  return "supply was below the 3.78 V the ATmega328P needs at 16 MHz";
+  const shown = floor.toFixed(2);
+  return `supply was below the ${shown} V the ATmega328P needs at 16 MHz`;
 }

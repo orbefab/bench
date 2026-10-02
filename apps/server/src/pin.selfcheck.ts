@@ -12,61 +12,103 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import {
-  arduinoPinBit,
-  arduinoPinMask,
-  maskHasPin,
+  pinBitSet,
+  pinHas,
+  pinIndex,
   type WorldPinState,
   type WorldState,
 } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { worldWorkerEntry } from "./world/host";
+import { planWorld } from "./world/plan";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import type { FromWorker, ToWorker } from "./world/worker";
 
 /**
- * Pin masks, then the arm fixture. `step(100)` is 100 ms of simulation.
+ * Pin words on the board's own names, then the arm fixture.
+ * `step(100)` is 100 ms of simulation.
  * The state under test is the one whose sim time is 0.100 s.
  */
 
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
+const armWorld = "parts/sfab/arm-bench@1.0.0.json";
 
-function bit(pin: string): number {
-  const index = arduinoPinBit(pin);
-  expect(index !== undefined, `${pin} is an Arduino pin`);
-  return index as number;
+const header = [
+  "D0",
+  "D1",
+  "D2",
+  "D3",
+  "D4",
+  "D5",
+  "D6",
+  "D7",
+  "D8",
+  "D9",
+  "D10",
+  "D11",
+  "D12",
+  "D13",
+  "A0",
+  "A1",
+  "A2",
+  "A3",
+  "A4",
+  "A5",
+];
+const bare = [
+  "PB0",
+  "PB1",
+  "PB2",
+  "PB3",
+  "PB4",
+  "PB5",
+  "PB6",
+  "PB7",
+  "PC0",
+  "PC1",
+  "PC2",
+  "PC3",
+  "PC4",
+  "PC5",
+  "PC6",
+  "PD0",
+  "PD1",
+  "PD2",
+  "PD3",
+  "PD4",
+  "PD5",
+  "PD6",
+  "PD7",
+];
+
+expect(pinIndex(header, "D0") === 0, "D0 is pin 0 of a header list");
+expect(pinIndex(header, "D9") === 9, "D9 is pin 9 of a header list");
+expect(pinIndex(header, "D13") === 13, "D13 is pin 13 of a header list");
+expect(pinIndex(header, "A5") === 19, "A5 is pin 19 of a header list");
+expect(pinIndex(header, "PB5") === undefined, "a header list has no PB5");
+expect(pinIndex(bare, "PB5") === 5, "PB5 is pin 5 of a bare chip");
+expect(pinHas([1 << 5], header, "D5"), "bit 5 of a header list is D5");
+expect(pinHas([1 << 5], bare, "PB5"), "bit 5 of a bare chip is PB5");
+expect(!pinHas([1 << 5], bare, "D5"), "a bare chip does not label bit 5 as D5");
+expect(pinBitSet([1 << 9], 9), "bit 9 is set");
+expect(!pinBitSet([1 << 9], 8), "bit 8 is clear");
+
+function pinOrder(
+  project: string,
+  world: string,
+  id: string
+): readonly string[] {
+  const planned = planWorld(project, world);
+  if (!planned.ok) {
+    throw new Error(planned.errors.map((item) => item.message).join("; "));
+  }
+  const board = planned.plan.boards.find((item) => item.id === id);
+  if (!board) throw new Error(`no board ${id}`);
+  return board.pinOrder;
 }
-
-expect(bit("D0") === 0, "D0 is bit 0");
-expect(bit("D7") === 7, "D7 is bit 7");
-expect(bit("D8") === 8, "D8 is bit 8");
-expect(bit("D9") === 9, "D9 is bit 9");
-expect(bit("D13") === 13, "D13 is bit 13");
-expect(bit("A0") === 14, "A0 is bit 14");
-expect(bit("A5") === 19, "A5 is bit 19");
-expect(arduinoPinBit("D14") === undefined, "D14 is not a pin");
-expect(arduinoPinBit("A6") === undefined, "A6 is not a pin");
-expect(arduinoPinBit("B0") === undefined, "port names are not pin names");
-
-expect(arduinoPinMask(1 << 0, 0, 0) === 1 << bit("D0"), "PORTD0 is D0");
-expect(arduinoPinMask(1 << 7, 0, 0) === 1 << bit("D7"), "PORTD7 is D7");
-expect(arduinoPinMask(0, 1 << 0, 0) === 1 << bit("D8"), "PORTB0 is D8");
-expect(arduinoPinMask(0, 1 << 1, 0) === 1 << bit("D9"), "PORTB1 is D9");
-expect(arduinoPinMask(0, 1 << 5, 0) === 1 << bit("D13"), "PORTB5 is D13");
-expect(arduinoPinMask(0, 1 << 6, 0) === 0, "PORTB6 is not an Arduino pin");
-expect(arduinoPinMask(0, 1 << 7, 0) === 0, "PORTB7 is not an Arduino pin");
-expect(arduinoPinMask(0, 0, 1 << 0) === 1 << bit("A0"), "PORTC0 is A0");
-expect(arduinoPinMask(0, 0, 1 << 5) === 1 << bit("A5"), "PORTC5 is A5");
-expect(arduinoPinMask(0, 0, 1 << 6) === 0, "PORTC6 is not an Arduino pin");
-expect(
-  arduinoPinMask(0xff, 0xff, 0xff) === (1 << 20) - 1,
-  "the mask is twenty bits"
-);
-expect(maskHasPin(arduinoPinMask(0, 1 << 1, 0), "D9"), "maskHasPin reads D9");
-expect(!maskHasPin(arduinoPinMask(0, 1 << 1, 0), "D8"), "maskHasPin misses D8");
-console.log("pin mask: D/B/C bits map onto D0–D13 and A0–A5");
 
 function waitUntil(
   pred: () => boolean,
@@ -160,19 +202,20 @@ function pinsOf(state: WorldState, id: string): WorldPinState {
 }
 
 try {
-  const hold = await stepWorld(armDir, "parts/sfab/arm-bench@1.0.0.json", 100);
+  const unoNames = pinOrder(armDir, armWorld, "uno");
+  const hold = await stepWorld(armDir, armWorld, 100);
   expect(hold.simTime.toFixed(3) === "0.100", `hold simTime ${hold.simTime}`);
   const uno = pinsOf(hold, "uno");
   expect(
-    maskHasPin(uno.ddr, "D9"),
+    pinHas(uno.ddr, unoNames, "D9"),
     `D9 is an output, ddr ${(uno.ddr[0] ?? 0).toString(2)}`
   );
   expect(
-    maskHasPin(uno.toggled, "D9"),
+    pinHas(uno.toggled, unoNames, "D9"),
     `D9 toggled, toggled ${(uno.toggled[0] ?? 0).toString(2)}`
   );
   expect(
-    !maskHasPin(uno.ddr, "D13"),
+    !pinHas(uno.ddr, unoNames, "D13"),
     `D13 is an input, ddr ${(uno.ddr[0] ?? 0).toString(2)}`
   );
   console.log(
@@ -182,7 +225,7 @@ try {
   const pairRoot = mkdtempSync(join(tmpdir(), "sfab-pins-"));
   try {
     cpSync(armDir, pairRoot, { recursive: true });
-    const doc = readDraft(pairRoot, "parts/sfab/arm-bench@1.0.0.json");
+    const doc = readDraft(pairRoot, armWorld);
     const unoBoard = doc.boards[0];
     if (!unoBoard) throw new Error("fixture board");
     doc.boards.push({
@@ -203,14 +246,16 @@ try {
     // 55 ms lands inside the stall firmware's longer servo pulse and after
     // the hold firmware's pulse has ended, so D9's level differs.
     const both = await stepWorld(pairRoot, "two.world.json", 55);
+    const holdNames = pinOrder(pairRoot, "two.world.json", "uno");
+    const stallNames = pinOrder(pairRoot, "two.world.json", "stall");
     const holdPins = pinsOf(both, "uno");
     const stallPins = pinsOf(both, "stall");
     expect(
-      !maskHasPin(holdPins.level, "D9"),
+      !pinHas(holdPins.level, holdNames, "D9"),
       `hold D9 is low at 55 ms, level ${holdPins.level}`
     );
     expect(
-      maskHasPin(stallPins.level, "D9"),
+      pinHas(stallPins.level, stallNames, "D9"),
       `stall D9 is high at 55 ms, level ${stallPins.level}`
     );
     console.log("two boards: hold and stall report different pin states");

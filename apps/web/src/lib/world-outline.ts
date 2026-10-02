@@ -1,8 +1,4 @@
-import {
-  ATMEGA328P_BROWNOUT_V,
-  type UrdfInfo,
-  type WorldViewFeeds,
-} from "@sfab-bench/contract";
+import type { UrdfInfo, WorldViewFeeds } from "@sfab-bench/contract";
 
 export type WorldOutlineJoint = {
   name: string;
@@ -28,7 +24,18 @@ export type WorldOutlineBoard = {
   chip: string;
   firmware: string;
   source?: string;
+  /** Volts. Absent when the view did not carry one. */
   brownoutVoltage?: number;
+  /**
+   * Exposed GPIO names, in pin-word order. Absent on a hand-built
+   * outline; empty when the view sent none.
+   */
+  pins?: readonly string[];
+  /**
+   * Volts. The chip's SOA floor. Absent when the view did not carry one,
+   * null when the chip publishes none.
+   */
+  minOperatingVoltage?: number | null;
 };
 
 export type WorldOutlineWire = {
@@ -78,6 +85,8 @@ export type WorldOutlineInput = {
     firmware: string;
     source?: string;
     brownoutVoltage?: number;
+    pins?: readonly string[];
+    minOperatingVoltage?: number | null;
   }[];
   parts?: readonly {
     id: string;
@@ -220,7 +229,13 @@ export function buildWorldOutline(
       chip: board.chip,
       firmware: board.firmware,
       ...(board.source ? { source: board.source } : {}),
-      brownoutVoltage: board.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V,
+      ...(board.brownoutVoltage !== undefined
+        ? { brownoutVoltage: board.brownoutVoltage }
+        : {}),
+      pins: board.pins ?? [],
+      ...(board.minOperatingVoltage !== undefined
+        ? { minOperatingVoltage: board.minOperatingVoltage }
+        : {}),
     })),
     supplies: supplyFeeds(world),
     targets: (world.targets ?? []).map((target) => target.id),
