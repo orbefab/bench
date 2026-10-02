@@ -12,12 +12,12 @@ import { fileURLToPath } from "node:url";
 
 import type { RecordingRead } from "@sfab-bench/contract";
 import { sha256Bytes } from "@sfab-bench/parts";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
 import { Sim } from "@sfab-bench/sim/sim";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { packageVersion } from "./world/package-version";
 import { planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
-import { createRailCircuit } from "./world/rail-circuit";
 
 const nanoExample = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)

@@ -44,6 +44,13 @@ import {
   loadTypeById,
   tableLawOf,
 } from "@sfab-bench/parts";
+import { branchDc } from "@sfab-bench/sim";
+import { BOARD_LOAD_KNEE_V, railAttachment } from "@sfab-bench/sim/power-path";
+import {
+  createRailCircuit,
+  type RailCircuit,
+} from "@sfab-bench/sim/rail-circuit";
+import { powerFeedsOf } from "@sfab-bench/sim/wiring";
 import { closeRootWatches } from "./projects";
 import {
   type AssignedPart,
@@ -55,11 +62,7 @@ import {
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
-import { BOARD_LOAD_KNEE_V, railAttachment } from "./world/power-path";
-import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
-import { branchDc } from "./world/snapshot-dc";
 import { UnoReferenceRail } from "./world/uno-reference";
-import { powerFeedsOf } from "./world/wiring";
 
 function readPart(id: string): PartFile {
   const file = join(catalogRoot(), "parts", "sfab", `${id}.json`);

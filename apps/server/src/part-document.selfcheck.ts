@@ -24,12 +24,12 @@ import { compileWorld } from "@sfab-bench/engine-body";
 import { convertWorldFile, loadWorldV2, sha256Bytes } from "@sfab-bench/parts";
 import type { SerialChunk } from "@sfab-bench/sim/sim";
 import { Sim } from "@sfab-bench/sim/sim";
+import { viewIdsAreNodes, viewOf } from "@sfab-bench/sim/view";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
 import { catalogRoot, planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
-import { viewIdsAreNodes, viewOf } from "./world/view";
 
 const repo = fileURLToPath(new URL("../../..", import.meta.url));
 const SPAN_MS = 3000;

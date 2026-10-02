@@ -12,12 +12,6 @@ import { fileURLToPath } from "node:url";
 
 import type { WorldServerMessage, WorldState } from "@sfab-bench/contract";
 import { compileWorld, JOINT_LIMIT_SOLREF } from "@sfab-bench/engine-body";
-
-import { closeRootWatches } from "./projects";
-import { projectReal, readerFor } from "./world/files";
-import { attachWorld, stopWorld } from "./world/host";
-import { planWorld } from "./world/plan";
-import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import {
   blankTrack,
   commandDegFromPulse,
@@ -27,8 +21,13 @@ import {
   SERVO_US_MIN,
   SIGNAL_GAP_MS,
   trackServo,
-} from "./world/servo";
-import { servoSignalDrives } from "./world/wiring";
+} from "@sfab-bench/sim/servo";
+import { servoSignalDrives } from "@sfab-bench/sim/wiring";
+import { closeRootWatches } from "./projects";
+import { projectReal, readerFor } from "./world/files";
+import { attachWorld, stopWorld } from "./world/host";
+import { planWorld } from "./world/plan";
+import { readDraft, writeDraft } from "./world/selfcheck-draft";
 
 /**
  * Servo drive on sim time. `step(1)` is one millisecond. Samples are the

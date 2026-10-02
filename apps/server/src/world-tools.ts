@@ -19,6 +19,8 @@ import {
   type WorldState,
 } from "@sfab-bench/contract";
 import { confirmSentence } from "@sfab-bench/parts";
+import { commandDegFromPulse } from "@sfab-bench/sim/servo";
+import { powerFeedsOf, servoSignalDrives } from "@sfab-bench/sim/wiring";
 import { tool } from "ai";
 import { z } from "zod";
 import { viewerProjectRoot, WORLD_ARG } from "./viewer-context";
@@ -44,8 +46,6 @@ import {
 } from "./world/host";
 import { parseEditRequest } from "./world/live-message";
 import { planWorld, type RunPlan, WORLD_V1_MESSAGE } from "./world/plan";
-import { commandDegFromPulse } from "./world/servo";
-import { powerFeedsOf, servoSignalDrives } from "./world/wiring";
 
 /** Who sent the command. Desktop clients show this label (D-015). */
 const AGENT: WorldSender = { kind: "agent" };

@@ -25,11 +25,10 @@ import {
   INTERNAL_2V56_V,
   requireChipSpec,
 } from "@sfab-bench/engine-mcu";
-
+import { viewOf } from "@sfab-bench/sim/view";
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
 import { planWorld } from "./world/plan";
-import { viewOf } from "./world/view";
 
 const project = fileURLToPath(
   new URL("../../../examples/pro-micro/", import.meta.url)

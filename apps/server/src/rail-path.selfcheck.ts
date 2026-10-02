@@ -17,16 +17,18 @@ import { fileURLToPath } from "node:url";
 import type { RecordingRead } from "@sfab-bench/contract";
 import { AVR_PIN } from "@sfab-bench/engine-circuit";
 import { sha256Bytes } from "@sfab-bench/parts";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import {
+  createRailCircuit,
+  type RailCircuit,
+} from "@sfab-bench/sim/rail-circuit";
 import { Sim } from "@sfab-bench/sim/sim";
-
+import { powerIslands } from "@sfab-bench/sim/wiring";
 import { boardStampOf } from "./world/circuit-stamp";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { packageVersion } from "./world/package-version";
 import { planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
-import { powerIslands } from "./world/wiring";
 
 function benchSim(): Sim {
   return new Sim({

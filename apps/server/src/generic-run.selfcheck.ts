@@ -26,14 +26,17 @@ import {
   Resistor,
   TheveninLimit,
 } from "@sfab-bench/engine-circuit";
+import { BOARD_LOAD_KNEE_V, NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import {
+  createRailCircuit,
+  type RailCircuit,
+} from "@sfab-bench/sim/rail-circuit";
 import {
   type BoardStamp,
   type boardStampOf,
   realize,
 } from "./world/circuit-stamp";
 import { catalogRoot, planWorld } from "./world/plan";
-import { BOARD_LOAD_KNEE_V, NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 
 const law = { k: 0.458, resistance: 7.1, quiescent: 0.01 };
 const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };

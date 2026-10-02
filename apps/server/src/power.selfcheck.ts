@@ -17,7 +17,18 @@ import {
 } from "@sfab-bench/contract";
 
 import { BROWNOUT_RESET } from "@sfab-bench/engine-mcu";
-
+import {
+  displayMotion,
+  noLoadSpeedRad,
+  runningBrownout,
+  servoElectrical,
+  solveRail,
+  stallCurrent,
+  stallTorque,
+  stepBrownout,
+} from "@sfab-bench/sim/power";
+import { viewOf } from "@sfab-bench/sim/view";
+import { powerFeedsOf } from "@sfab-bench/sim/wiring";
 import { closeRootWatches } from "./projects";
 import {
   BOD_ASSERT_V,
@@ -32,19 +43,7 @@ import {
   stopWorld,
 } from "./world/host";
 import { planWorld } from "./world/plan";
-import {
-  displayMotion,
-  noLoadSpeedRad,
-  runningBrownout,
-  servoElectrical,
-  solveRail,
-  stallCurrent,
-  stallTorque,
-  stepBrownout,
-} from "./world/power";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
-import { viewOf } from "./world/view";
-import { powerFeedsOf } from "./world/wiring";
 
 /**
  * Power budget on sim time. Samples are the state posted for that sim

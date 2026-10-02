@@ -8,11 +8,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingEvent, RecordingRead } from "@sfab-bench/contract";
-
+import { powerFeedsOf } from "@sfab-bench/sim/wiring";
 import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stepWorld, stopWorld } from "./world/host";
 import { planWorld } from "./world/plan";
-import { powerFeedsOf } from "./world/wiring";
 
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)

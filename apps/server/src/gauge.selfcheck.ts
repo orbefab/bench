@@ -26,7 +26,15 @@ import {
   type RunReport,
   type WorldSender,
 } from "@sfab-bench/contract";
-import { loadWorldV2, writeLock } from "@sfab-bench/parts";
+import {
+  type LevelTable,
+  loadWorldV2,
+  lockAfterLevels,
+  replaceLevels,
+  writeLock,
+} from "@sfab-bench/parts";
+import { noLoadSpeedRad } from "@sfab-bench/sim/power";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
 import {
@@ -36,16 +44,9 @@ import {
   stopWorld,
   type WorldHandle,
 } from "./world/host";
-import {
-  type LevelTable,
-  lockAfterLevels,
-  replaceLevels,
-} from "./world/level-edit";
 import { maxBoardDelta } from "./world/nano-reference";
 import { nodeStore } from "./world/node-store";
 import { catalogRoot } from "./world/plan";
-import { noLoadSpeedRad } from "./world/power";
-import { NANO_BOARD_A } from "./world/power-path";
 import { worldTools } from "./world-tools";
 
 const sender: WorldSender = { kind: "loopback", label: "Mac" };

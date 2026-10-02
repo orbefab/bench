@@ -8,6 +8,7 @@ import {
   isChatEffort,
   isHarnessId,
 } from "@sfab-bench/contract";
+import { viewOf } from "@sfab-bench/sim/view";
 import type { UIMessage } from "ai";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -55,7 +56,6 @@ import {
 } from "./threads-db";
 import { handleTranscribe } from "./transcribe";
 import { planWorld, WORLD_V1_MESSAGE } from "./world/plan";
-import { viewOf } from "./world/view";
 
 export type AppEnv = {
   Bindings: HttpBindings;

@@ -28,14 +28,14 @@ import {
   TheveninLimit,
   vSource,
 } from "@sfab-bench/engine-circuit";
-import { boardStampOf, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,
   NANO_BOARD_A,
   UNO_BOARD_NODE,
   UNO_TERM_NODE,
-} from "./power-path";
-import { createRailCircuit } from "./rail-circuit";
+} from "@sfab-bench/sim/power-path";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
+import { boardStampOf, realize } from "./circuit-stamp";
 
 const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
   boardId: "nano",

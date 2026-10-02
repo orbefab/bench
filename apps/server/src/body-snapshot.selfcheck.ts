@@ -26,12 +26,11 @@ import type {
 } from "@sfab-bench/contract";
 
 import { collapse, reflection } from "@sfab-bench/engine-body";
-
+import { applyLevelEdit } from "@sfab-bench/parts";
 import { levelCard } from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
 import { writeHingeSnapshot } from "./world/body/hinge-capture";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
-import { applyLevelEdit } from "./world/level-edit";
 import { catalogRoot, planWorld } from "./world/plan";
 
 const catalog = catalogRoot();
