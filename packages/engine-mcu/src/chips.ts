@@ -13,12 +13,20 @@ import {
   timer2Config,
   usart0Config,
 } from "avr8js";
+import { ATMEGA32U4 } from "./atmega32u4";
 
 /** A native pin: the chip's own name for it lives in `ChipSpec.pins`. */
 export type ChipPin = {
   /** Port letter, a key of `ChipSpec.ports`. */
   port: string;
   bit: number;
+};
+
+/** A limit the emulator names once when this chip runs. It does not emulate it. */
+export type ChipGap = {
+  code: string;
+  /** Sentence a user can read. */
+  message: string;
 };
 
 /** Data-space addresses the reset check reads. Names are the 328P's. */
@@ -60,8 +68,16 @@ export type ChipSpec = {
   io: ChipIo;
   /** Native pin name to port and bit. */
   pins: Readonly<Record<string, ChipPin>>;
+  /**
+   * ADC channel index to the chip's pin name. The board's expose turns that
+   * name into the header label. Analog-only pins (ADC6) live here and not
+   * in `pins`.
+   */
+  adcPins: Readonly<Record<number, string>>;
   /** Write hooks and other setup for a fresh CPU. Absent on the 328P. */
   onCpu?: (cpu: CPU) => void;
+  /** Named once per boot. Absent when the record emulates what it claims. */
+  gaps?: readonly ChipGap[];
 };
 
 function pinTable(
@@ -95,10 +111,21 @@ const ATMEGA328P: ChipSpec = {
     UCSR0C: 0xc2,
   },
   pins: pinTable({ B: 8, C: 7, D: 8 }),
+  adcPins: {
+    0: "PC0",
+    1: "PC1",
+    2: "PC2",
+    3: "PC3",
+    4: "PC4",
+    5: "PC5",
+    6: "ADC6",
+    7: "ADC7",
+  },
 };
 
 const CHIPS: Readonly<Record<string, ChipSpec>> = {
   atmega328p: ATMEGA328P,
+  atmega32u4: ATMEGA32U4,
 };
 
 /** The record for a chip type, or null when the emulator does not know it. */

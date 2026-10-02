@@ -13,6 +13,7 @@ export {
   TEMP_25_V,
 } from "./board-adc";
 export {
+  type ChipGap,
   type ChipIo,
   type ChipPin,
   type ChipSpec,
