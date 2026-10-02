@@ -281,7 +281,13 @@ export class RailCircuit {
     this.ledDiodes = built.ledDiodes;
     this.ledAlias = built.ledAlias;
     this.resetFraction = built.resetFraction;
-    this.resetNode = built.resetNode;
+    // A RESET net with no element on this rail (a class-1 shared rail
+    // stamps no pins, so another board's pin is not here) has no voltage.
+    // Its margin stays null rather than read as a low pin.
+    const solved = (node: string) =>
+      node === "0" || built.engine.nodeNames.includes(node);
+    this.resetNode =
+      built.resetNode && solved(built.resetNode) ? built.resetNode : null;
     this.branchLaws = built.branchLaws;
     this.battery = built.battery;
     this.diodes = built.diodes;
@@ -292,7 +298,7 @@ export class RailCircuit {
     for (const [id, node] of built.boardNodes) this.boardNodes.set(id, node);
     for (const [id, rows] of built.boardDrives) this.boardDrives.set(id, rows);
     for (const [id, reset] of built.boardResets)
-      this.boardResets.set(id, reset);
+      if (solved(reset.node)) this.boardResets.set(id, reset);
     for (const [id, ports] of built.boardPorts) this.boardPorts.set(id, ports);
     for (const [id, node] of built.extraNodes) this.extraNodes.set(id, node);
     this.pruned = built.pruned;

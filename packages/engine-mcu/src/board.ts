@@ -35,6 +35,9 @@ export const FIRMWARE_RELOADED = "— firmware reloaded —\n";
  */
 export const BROWNOUT_RESET = "— brownout reset —\n";
 
+/** The same, when the RESET pin held the chip and the rail did not sag. */
+export const EXTERNAL_RESET = "— external reset —\n";
+
 /** Pending USART0 RX bytes. A send that does not fit is refused whole. */
 export const RX_BACKLOG = 4 * 1024;
 
@@ -183,15 +186,16 @@ export class AvrBoard {
 
   /**
    * Boot the saved image from address 0: a fresh CPU, USART, and timers.
-   * The brownout marker is appended in front of whatever the new program
-   * prints. Serial that was already in `tx` stays ahead of the marker.
+   * `marker` (the brownout one unless the RESET pin held the chip) is
+   * appended in front of whatever the new program prints. Serial that was
+   * already in `tx` stays ahead of the marker.
    */
-  reboot(): boolean {
+  reboot(marker = BROWNOUT_RESET): boolean {
     if (!this.image) return false;
     // The previous run's wire levels are not the new CPU's. Nets are
     // resolved again by the caller once this image is mounted.
     this.driven.fill(0);
-    this.tx += BROWNOUT_RESET;
+    this.tx += marker;
     this.mount(this.image, true);
     return this.running;
   }

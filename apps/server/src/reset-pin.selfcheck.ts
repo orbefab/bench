@@ -8,7 +8,9 @@
  * `nano.GND`, D13 never becomes an output, the board reads in reset, and
  * the one reset event names the pin as its cause. Without that wire the
  * same scene boots. The `hold` sketch prints `10` within its first
- * millisecond, so an empty console proves the held chip ran nothing.
+ * millisecond, so an empty console proves the held chip ran nothing. A
+ * reload under a low RESET is still recorded as a reload. When another
+ * Nano's D13 lets RESET go, the chip boots with `— external reset —`.
  */
 
 import { ok as expect } from "node:assert/strict";
@@ -18,6 +20,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { pinBitSet, pinIndex } from "@sfab-bench/contract";
+import {
+  BROWNOUT_RESET,
+  EXTERNAL_RESET,
+  FIRMWARE_RELOADED,
+} from "@sfab-bench/engine-mcu";
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
 import { planWorld } from "./world/plan";
@@ -78,16 +85,21 @@ const none = (label: string) => ({
 });
 
 /**
- * `pair` adds a second Nano, `free`, on the same USB supply with its RESET
- * left alone, so the rail carries two reset nodes.
+ * `held` wires `nano.RESET` to GND. `pair` adds a second Nano, `free`, on
+ * the same USB supply with its RESET left alone, so the rail carries two
+ * reset nodes. `driven` adds a Nano running blink whose D13 drives
+ * `nano.RESET`: low for 200 ms, then released for 200 ms.
  */
-function writeWorld(
-  dir: string,
-  level: 1 | 2,
-  held: boolean,
-  pair = false,
-  image = "blink.hex"
-): string {
+type Scene = {
+  held?: boolean;
+  pair?: boolean;
+  driven?: boolean;
+  image?: string;
+};
+
+function writeWorld(dir: string, level: 1 | 2, scene: Scene): string {
+  const { held = false, pair = false, driven = false } = scene;
+  const image = scene.image ?? "blink.hex";
   const wires = [
     ["usb.5V", "nano.5V"],
     ["usb.GND", "nano.GND"],
@@ -103,6 +115,17 @@ function writeWorld(
   if (pair) {
     instances.free = instances.nano;
     wires.push(["usb.5V", "free.5V"], ["usb.GND", "free.GND"]);
+  }
+  if (driven) {
+    instances.driver = {
+      part: "sfab/nano-ch340@1.0.0",
+      params: { firmware: "blink.hex" },
+    };
+    wires.push(
+      ["usb.5V", "driver.5V"],
+      ["usb.GND", "driver.GND"],
+      ["driver.D13", "nano.RESET"]
+    );
   }
   const doc = {
     version: 2,
@@ -137,7 +160,8 @@ function writeWorld(
       },
     },
   };
-  const name = `reset-pin-${level}-${held ? "held" : "free"}${pair ? "-pair" : ""}-${image.replace(".hex", "")}.world.json`;
+  const shape = driven ? "driven" : held ? "held" : "free";
+  const name = `reset-pin-${level}-${shape}${pair ? "-pair" : ""}-${image.replace(".hex", "")}.world.json`;
   writeFileSync(join(dir, name), JSON.stringify(doc));
   return name;
 }
@@ -145,12 +169,9 @@ function writeWorld(
 async function run(
   dir: string,
   level: 1 | 2,
-  held: boolean,
-  pair = false,
-  image = "blink.hex",
-  reload = false
+  scene: Scene & { reload?: boolean; ms?: number }
 ) {
-  const world = writeWorld(dir, level, held, pair, image);
+  const world = writeWorld(dir, level, scene);
   const planned = planWorld(dir, world);
   if (!planned.ok) {
     throw new Error(planned.errors.map((item) => item.message).join("; "));
@@ -161,8 +182,8 @@ async function run(
   try {
     const loaded = await sim.load({ project: dir, world, generation: 1 });
     expect(loaded.ok, `class ${level} reset world loads`);
-    await sim.step(150);
-    if (reload) {
+    await sim.step(scene.ms ?? 150);
+    if (scene.reload) {
       // A new image while RESET is low stays held as well.
       await sim.accept({ type: "reloadBoard", board: "nano", generation: 1 });
       await sim.step(150);
@@ -173,6 +194,9 @@ async function run(
     const body = sim.record({ op: "read", from: 0, to: state?.simTime ?? 0 });
     if (body.op !== "read") throw new Error("no recording");
     const resets = body.read.events.filter((event) => event.kind === "reset");
+    const reloads = body.read.events.filter(
+      (event) => event.kind === "reload" && event.board === "nano"
+    );
     const other = state?.boards.free;
     const serial = body.read.events
       .filter((event) => event.kind === "serial" && event.board === "nano")
@@ -191,6 +215,7 @@ async function run(
       reboots: live.resets ?? 0,
       voltage: live.voltage ?? 0,
       resets,
+      reloads,
     };
   } finally {
     sim.dispose();
@@ -202,12 +227,12 @@ try {
   copyFileSync(firmware("blink"), join(dir, "blink.hex"));
   copyFileSync(firmware("hold"), join(dir, "hold.hex"));
   for (const level of [1, 2] as const) {
-    const free = await run(dir, level, false);
+    const free = await run(dir, level, {});
     expect(free.d13Output, `class ${level}: blink makes D13 an output`);
     expect(!free.inReset, `class ${level}: a free RESET runs`);
     expect(free.resets.length === 0, `class ${level}: no reset event`);
 
-    const held = await run(dir, level, true);
+    const held = await run(dir, level, { held: true });
     expect(held.voltage > 4.5, `class ${level}: rail ${held.voltage} V`);
     expect(!held.d13Output, `class ${level}: RESET low keeps D13 an input`);
     expect(held.inReset, `class ${level}: RESET low reads in reset`);
@@ -219,23 +244,33 @@ try {
       `class ${level}: reset events ${JSON.stringify(held.resets)}`
     );
     // Not one instruction: the sketch that prints at once prints nothing.
-    const quiet = await run(dir, level, true, false, "hold.hex");
+    const quiet = await run(dir, level, { held: true, image: "hold.hex" });
     expect(
       quiet.serial === "" && quiet.inReset,
       `class ${level}: a held chip printed ${JSON.stringify(quiet.serial)}`
     );
-    const reloaded = await run(dir, level, true, false, "hold.hex", true);
+    // A reload under a low RESET is still a reload: the event and its
+    // marker are recorded, and the new image prints nothing.
+    const reloaded = await run(dir, level, {
+      held: true,
+      image: "hold.hex",
+      reload: true,
+    });
     expect(
-      !reloaded.serial.includes("10") && reloaded.inReset,
+      reloaded.serial === FIRMWARE_RELOADED && reloaded.inReset,
       `class ${level}: a reload under a low RESET printed ${JSON.stringify(reloaded.serial)}`
     );
-    const talks = await run(dir, level, false, false, "hold.hex");
+    expect(
+      reloaded.reloads.length === 1,
+      `class ${level}: reload events ${reloaded.reloads.length}`
+    );
+    const talks = await run(dir, level, { image: "hold.hex" });
     expect(
       talks.serial.startsWith("10"),
       `class ${level}: a free chip prints ${JSON.stringify(talks.serial)}`
     );
     // Two boards on one rail: only the grounded RESET holds its chip.
-    const pair = await run(dir, level, true, true);
+    const pair = await run(dir, level, { held: true, pair: true });
     expect(!pair.d13Output && pair.inReset, `class ${level}: nano held`);
     expect(
       pair.other?.d13Output === true && pair.other.inReset === false,
@@ -247,6 +282,37 @@ try {
     );
     console.log(
       `class ${level} Nano: RESET to GND holds the chip at ${held.voltage.toFixed(2)} V; free RESET boots`
+    );
+    // Another Nano's D13 on RESET. Class 1 stamps no pins on a shared
+    // rail, so that net has no voltage: the chip runs. At class 2, D13
+    // low holds it, and once D13 lets go it boots holdMs later with a
+    // console line that names the external reset, not a brownout.
+    const driven = await run(dir, level, {
+      driven: true,
+      image: "hold.hex",
+      ms: 1000,
+    });
+    if (level === 1) {
+      expect(
+        driven.resets.length === 0 && driven.serial.startsWith("10"),
+        `class 1: an unsolved RESET net runs ${JSON.stringify(driven)}`
+      );
+      continue;
+    }
+    expect(
+      driven.reboots >= 1 &&
+        driven.resets.some(
+          (event) =>
+            event.kind === "reset" &&
+            event.board === "nano" &&
+            event.cause === "pin"
+        ),
+      `class ${level}: driven RESET reboots ${driven.reboots}, resets ${JSON.stringify(driven.resets)}`
+    );
+    expect(
+      driven.serial.includes(EXTERNAL_RESET) &&
+        !driven.serial.includes(BROWNOUT_RESET),
+      `class ${level}: driven RESET console ${JSON.stringify(driven.serial)}`
     );
   }
 } finally {

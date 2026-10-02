@@ -41,7 +41,9 @@ import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   type AdcConversion,
   AvrBoard,
+  BROWNOUT_RESET,
   type CpuResetRegs,
+  EXTERNAL_RESET,
   FIRMWARE_RELOADED,
   parseIntelHex,
 } from "@sfab-bench/engine-mcu";
@@ -404,9 +406,11 @@ function createSession(host: SimHost) {
         },
         resetPinLowOf(s, board.id)
       );
+      const ended = power.brownout.cause;
       power.brownout = {
         phase: stepped.phase,
         releaseAtMs: stepped.releaseAtMs,
+        cause: stepped.cause,
       };
       if (stepped.assertReset) {
         board.holdInReset();
@@ -419,7 +423,8 @@ function createSession(host: SimHost) {
         continue;
       }
       if (!stepped.reboot) continue;
-      if (!board.reboot()) continue;
+      if (!board.reboot(ended === "pin" ? EXTERNAL_RESET : BROWNOUT_RESET))
+        continue;
       applyInputNets(s);
       const regs = board.peekRegs();
       const pins = board.peekPins();
@@ -571,21 +576,22 @@ function createSession(host: SimHost) {
     bindRangers(s, s.runPlan);
     // The ranger's idle current is on the node the first CPU step reads.
     solveSupplies(s);
-    openRecorder(s);
     // A chip that powers up into a sagging rail or a low RESET never runs
-    // its first instruction. The reset lands on the first recorded step.
-    let held = false;
+    // its first instruction, so the t=0 frame already shows it in reset.
+    // The reset event lands on the first recorded step.
+    const holds: typeof s.pendingNotes = [];
     for (const board of s.boards) {
       const cause = holdBeforeRun(s, board);
       if (!cause) continue;
-      held = true;
-      s.pendingNotes.push(
+      holds.push(
         cause === "pin"
           ? { kind: "reset", board: board.id, cause }
           : { kind: "reset", board: board.id }
       );
     }
-    if (held) applyInputNets(s);
+    if (holds.length > 0) applyInputNets(s);
+    openRecorder(s);
+    s.pendingNotes.push(...holds);
     latchSupplyNodes(s);
     post(s, {
       type: "ready",

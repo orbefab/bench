@@ -346,7 +346,11 @@ expect(
       dropped = true;
     }
     const stepped = stepBrownout(bo, trip.boardMinVoltage, ms, BROWNOUT_LIMITS);
-    bo = { phase: stepped.phase, releaseAtMs: stepped.releaseAtMs };
+    bo = {
+      phase: stepped.phase,
+      releaseAtMs: stepped.releaseAtMs,
+      cause: stepped.cause,
+    };
     if (stepped.assertReset) {
       assertAt = ms;
       terminalAtAssert = trip.voltage;

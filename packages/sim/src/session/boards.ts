@@ -275,14 +275,16 @@ export function reloadBoard(s: SessionState, id: string) {
   // the rail those currents actually draw. A sag still under the assert
   // threshold, or a low RESET, holds the new CPU in reset. A firmware
   // reload is not a brown-out delay: once both are up, the image runs.
+  // A held reload is still a reload, and is recorded as one.
   solveSupplies(s);
-  if (holdBeforeRun(s, next)) applyInputNets(s);
+  const held = holdBeforeRun(s, next);
+  if (held) applyInputNets(s);
   s.rxSent.delete(id);
   s.faulted.delete(id);
   if (s.runPlan) bindInputNets(s, s.runPlan);
   const recorded = s.recorder?.manifest.boards.find((item) => item.id === id);
   if (recorded) recorded.sha256 = s.firmwareSha.get(id) ?? recorded.sha256;
-  if (next.running) {
+  if (next.running || held) {
     const ms = simMs(s);
     s.recorder?.noteEvent({ timeMs: ms, kind: "reload", board: id });
     s.recorder?.noteSerial(id, FIRMWARE_RELOADED, ms);
@@ -437,7 +439,7 @@ export function holdBeforeRun(
     return null;
   }
   board.holdInReset();
-  power.brownout = { phase: "held", releaseAtMs: null };
+  power.brownout = { phase: "held", releaseAtMs: null, cause };
   return cause;
 }
 

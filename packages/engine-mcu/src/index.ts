@@ -2,6 +2,7 @@ export {
   AvrBoard,
   BROWNOUT_RESET,
   type CpuResetRegs,
+  EXTERNAL_RESET,
   FIRMWARE_RELOADED,
   RX_BACKLOG,
 } from "./board";
