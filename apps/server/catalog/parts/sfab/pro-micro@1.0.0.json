@@ -1,0 +1,261 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/pro-micro@1.0.0",
+  "type": "sparkfun-pro-micro",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "SparkFun Pro Micro 5 V pin names",
+      "ref": "Header names follow the Nano: Arduino pin numbers, not the silkscreen TX0/RX1. D0 is PD2 (silk RX1), D1 is PD3 (silk TX0), D2 is PD1, D3 is PD0, D4 is PD4, D5 is PC6, D6 is PD7, D7 is PE6, D8 is PB4, D9 is PB5, D10 is PB6, D14 is PB3, D15 is PB1, D16 is PB2, A0 is PF7, A1 is PF6, A2 is PF5, A3 is PF4. RAW, VCC, GND and RST are the power and reset header. D11 (PB7), D12 (PD6) and D13 (PC7) are not broken out. PWM that the emulator can do: D3 (OC0B), D5 (OC3A), D9 (OC1A), D10 (OC1B). D6 is timer 4. UART is D0/D1 (Serial1). I2C is D2 SDA and D3 SCL. SPI on the header is D14 MISO, D15 SCK, D16 MOSI. SS is PB0, which is the RX LED and not a header pin."
+    },
+    {
+      "title": "SparkFun Pro Micro regulator",
+      "ref": "The board uses a MIC5219-class LDO from RAW to 5 V. This part does not add that regulator. It reuses sfab/nano-power-input, whose class 2 regulator is sfab/ams1117-5v0. RAW is that part's VIN, re-exposed. The RAW rating 7 V to 12 V is the Nano VIN window, which keeps RAW from being chosen as the 5 V rail. Dropout at 0 A on the stand-in is 1.0 V."
+    },
+    {
+      "title": "Pro Micro RX and TX LEDs",
+      "ref": "RX LED is PB0 (Arduino pin 17) and TX LED is PD5 (Arduino pin 30). Both are active low: the pin sinks the cathode. Series resistor 330 ohm is assumed. Forward drop is the led-red part. Neither LED is a header pin. The type ports RXLED and TXLED are internal and sit after the header in the expose list so the CPU can drive them."
+    },
+    {
+      "title": "Pro Micro reset network",
+      "ref": "Pull-up 10 kohm from VCC to RESET, and 100 nF from RESET to GND, both assumed. There is no DTR capacitor across the pull-up."
+    },
+    {
+      "title": "ATmega32U4 UCAP",
+      "ref": "Atmel-7766J section 2.2.12: UCAP takes 1 uF to ground. UGND is tied to GND on the board and is not a header pin."
+    },
+    {
+      "title": "Pro Micro outline",
+      "ref": "SparkFun lists the board as about 1.3 in by 0.7 in, so the box is 33 mm by 18 mm. Height 3 mm is assumed."
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "0": {
+        "default": "pins",
+        "variants": {
+          "pins": {
+            "kind": "script",
+            "script": "pins-follow-level",
+            "omits": [
+              "instruction timing",
+              "peripherals",
+              "brownout",
+              "analog pin waveforms"
+            ]
+          }
+        }
+      },
+      "1": {
+        "default": "avr8js",
+        "variants": {
+          "avr8js": {
+            "kind": "composite",
+            "netlist": {
+              "instances": {
+                "power": {
+                  "part": "sfab/nano-power-input@1.0.0",
+                  "level": { "behaviour": 1 }
+                },
+                "mcu": {
+                  "part": "sfab/atmega32u4@1.0.0",
+                  "params": {
+                    "firmware": { "$param": "firmware", "optional": true },
+                    "source": { "$param": "source", "optional": true },
+                    "quiescent": 0.027
+                  }
+                }
+              },
+              "wires": [
+                ["power.5V", "mcu.VCC"],
+                ["power.5V", "mcu.AVCC"],
+                ["power.GND", "mcu.GND"]
+              ],
+              "expose": {
+                "VBUS": "power.VBUS",
+                "VCC": "power.5V",
+                "GND": "power.GND",
+                "RAW": "power.VIN",
+                "RST": "mcu.RESET",
+                "D0": "mcu.PD2",
+                "D1": "mcu.PD3",
+                "D2": "mcu.PD1",
+                "D3": "mcu.PD0",
+                "D4": "mcu.PD4",
+                "D5": "mcu.PC6",
+                "D6": "mcu.PD7",
+                "D7": "mcu.PE6",
+                "D8": "mcu.PB4",
+                "D9": "mcu.PB5",
+                "D10": "mcu.PB6",
+                "D14": "mcu.PB3",
+                "D15": "mcu.PB1",
+                "D16": "mcu.PB2",
+                "A0": "mcu.PF7",
+                "A1": "mcu.PF6",
+                "A2": "mcu.PF5",
+                "A3": "mcu.PF4",
+                "RXLED": "mcu.PB0",
+                "TXLED": "mcu.PD5"
+              }
+            },
+            "omits": [
+              "rail capacitance (snapshot has no state)",
+              "RX and TX LEDs and reset network",
+              "UCAP capacitor",
+              "timer 4",
+              "USB CDC",
+              "temperature",
+              "I/O pin impedance",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
+            ]
+          }
+        }
+      },
+      "2": {
+        "default": "circuits",
+        "variants": {
+          "circuits": {
+            "kind": "composite",
+            "netlist": {
+              "instances": {
+                "power": { "part": "sfab/nano-power-input@1.0.0" },
+                "cvcc": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": { "C": 1e-7 }
+                },
+                "cavcc": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": { "C": 1e-7 }
+                },
+                "crst": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": { "C": 1e-7 }
+                },
+                "cucap": {
+                  "part": "sfab/capacitor@1.0.0",
+                  "params": { "C": 1e-6 }
+                },
+                "rrst": {
+                  "part": "sfab/resistor@1.0.0",
+                  "params": { "R": 10000 }
+                },
+                "rrx": {
+                  "part": "sfab/resistor@1.0.0",
+                  "params": { "R": 330 }
+                },
+                "rtx": {
+                  "part": "sfab/resistor@1.0.0",
+                  "params": { "R": 330 }
+                },
+                "led": { "part": "sfab/led-red@1.0.0" },
+                "txled": { "part": "sfab/led-red@1.0.0" },
+                "mcu": {
+                  "part": "sfab/atmega32u4@1.0.0",
+                  "params": {
+                    "firmware": { "$param": "firmware", "optional": true },
+                    "source": { "$param": "source", "optional": true },
+                    "quiescent": 0.027
+                  }
+                }
+              },
+              "wires": [
+                ["power.5V", "mcu.VCC"],
+                ["power.5V", "mcu.AVCC"],
+                ["power.5V", "cvcc.A"],
+                ["power.5V", "cavcc.A"],
+                ["power.GND", "cvcc.B"],
+                ["power.GND", "cavcc.B"],
+                ["power.GND", "mcu.GND"],
+                ["power.GND", "mcu.UGND"],
+                ["power.5V", "rrst.A"],
+                ["rrst.B", "mcu.RESET"],
+                ["mcu.RESET", "crst.A"],
+                ["power.GND", "crst.B"],
+                ["mcu.UCAP", "cucap.A"],
+                ["power.GND", "cucap.B"],
+                ["power.5V", "rrx.A"],
+                ["rrx.B", "led.A"],
+                ["led.K", "mcu.PB0"],
+                ["power.5V", "rtx.A"],
+                ["rtx.B", "txled.A"],
+                ["txled.K", "mcu.PD5"]
+              ],
+              "expose": {
+                "VBUS": "power.VBUS",
+                "VCC": "power.5V",
+                "GND": "power.GND",
+                "RAW": "power.VIN",
+                "RST": "mcu.RESET",
+                "D0": "mcu.PD2",
+                "D1": "mcu.PD3",
+                "D2": "mcu.PD1",
+                "D3": "mcu.PD0",
+                "D4": "mcu.PD4",
+                "D5": "mcu.PC6",
+                "D6": "mcu.PD7",
+                "D7": "mcu.PE6",
+                "D8": "mcu.PB4",
+                "D9": "mcu.PB5",
+                "D10": "mcu.PB6",
+                "D14": "mcu.PB3",
+                "D15": "mcu.PB1",
+                "D16": "mcu.PB2",
+                "A0": "mcu.PF7",
+                "A1": "mcu.PF6",
+                "A2": "mcu.PF5",
+                "A3": "mcu.PF4",
+                "RXLED": "mcu.PB0",
+                "TXLED": "mcu.PD5"
+              }
+            },
+            "omits": [
+              "MIC5219 (AMS1117-5.0 stand-in)",
+              "timer 4",
+              "USB CDC",
+              "auto-reset on upload",
+              "temperature",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["board mass is not in the catalog"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.033, 0.018, 0.003],
+            "omits": [
+              "headers",
+              "silk",
+              "USB connector shape",
+              "board height is assumed"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

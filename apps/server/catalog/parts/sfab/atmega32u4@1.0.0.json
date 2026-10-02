@@ -1,0 +1,100 @@
+{
+  "format": "sfab.part@1",
+  "id": "sfab/atmega32u4@1.0.0",
+  "type": "atmega32u4",
+  "foreign": false,
+  "sources": [
+    {
+      "title": "ATmega32U4 DC characteristics",
+      "ref": "Atmel-7766J Table 29-1 at VCC 5 V. VIL max is 0.2*VCC-0.1 (0.9 V). VIH min is 0.2*VCC+0.9 (1.9 V). VOL max is 0.7 V at 0.010 A, so rol is 70 ohm at that test point. VOH min is 4.2 V at -0.010 A, so roh is 80 ohm. Both are the max-spec equivalents, not a fitted typical. Iin is 1 uA max at 5.5 V, so rLeak is 5.5 Mohm. Rpu is the midpoint of 20 kohm to 50 kohm. Abs max operating voltage is 6.0 V. GPIO abs max is -0.5 V to VCC+0.5 V. RESET abs max is 13 V. VBUS abs max is 6 V. DC current per I/O pin is 0.040 A. Note 5: the DC characteristics are preliminary."
+    },
+    {
+      "title": "ATmega32U4 16 MHz speed grade",
+      "ref": "Atmel-7766J Figure 29-2 and the speed-grade table: 16 MHz needs 4.5 V, 8 MHz needs 2.7 V. minOperatingVoltage is 4.5. The operating range is 2.7 V to 5.5 V, so the VCC rating is 4.5 V to 5.5 V."
+    },
+    {
+      "title": "ATmega32U4 reset",
+      "ref": "Atmel-7766J Table 29-1: VRST max is 0.85*VCC, so resetFraction is 0.85. Table 6-1: low fuse 0xFF is CKSEL 1111 (low-power crystal) and SUT 11, with CKDIV8 unprogrammed. Table 6-4, slowly rising power, CKSEL0=1, SUT=11: the extra delay from reset at VCC 5.0 V is 14 CK + 65 ms. Table 6-2: that 65 ms is the 8K-cycle watchdog timeout, typical, at 5.0 V. resetHoldS stores 0.065 and leaves the 14 CK out. The Leonardo low fuse 0xFF is arduino:avr 1.8.8 boards.txt."
+    },
+    {
+      "title": "ATmega32U4 brownout",
+      "ref": "Atmel-7766J Table 8-1, BODLEVEL 011: min 2.4 V, typical 2.6 V, max 2.8 V. Table 28-3 and the Leonardo extended fuse 0xCB (arduino:avr 1.8.8 boards.txt): BODLEVEL[2:0] is 011. Table 8-2: VHYST typical is 50 mV. Page 52: VBOT+ is VBOT + VHYST/2 and VBOT- is VBOT - VHYST/2, so assert is 2.575 V and release is 2.625 V. The running brownoutVoltage is the 2.6 V typical."
+    },
+    {
+      "title": "ATmega32U4 supply current",
+      "ref": "Atmel-7766J Table 29-1, active supply current, 16 MHz, VCC 5 V, PRR1 disabled: maximum 0.027 A. The typical cell is blank, so quiescent is that maximum."
+    },
+    {
+      "title": "ATmega32U4 pins left off this type",
+      "ref": "XTAL1 and XTAL2 are not ports: the clock is the 16 MHz parameter. PC0-PC5, PE0, PE1, PE3-PE5, PF2 and PF3 are not bonded (sections 2.2.4, 2.2.6, 2.2.7). Repeated VCC, AVCC and GND pads are one port each. UGND (section 2.2.10) is its own ground. UCAP (section 2.2.12) takes 1 uF to ground."
+    },
+    {
+      "title": "ATmega32U4 package",
+      "ref": "Atmel-7766J 44-pin QFN is 7 mm square. The box is that outline at 1 mm tall. The 44-pin TQFP is 10 mm and is not this box."
+    }
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "avr8js",
+        "variants": {
+          "avr8js": {
+            "kind": "firmware",
+            "chip": "atmega32u4",
+            "resetPort": "RESET",
+            "imageParam": "firmware",
+            "railVoltage": 5,
+            "resetFraction": 0.85,
+            "minOperatingVoltage": 4.5,
+            "params": {
+              "brownoutVoltage": 2.6,
+              "brownoutAssertVoltage": 2.575,
+              "brownoutReleaseVoltage": 2.625,
+              "resetHoldS": 0.065,
+              "quiescent": 0.027,
+              "roh": 80,
+              "rol": 70,
+              "rpu": 35000,
+              "rLeak": 5500000
+            },
+            "fuses": {
+              "low": "0xFF",
+              "extended": "0xCB"
+            },
+            "omits": [
+              "timer 4",
+              "USB CDC",
+              "temperature",
+              "I/O pin impedance",
+              "ADC INL and DNL",
+              "ADC noise",
+              "ADC noise canceller",
+              "ADC temperature drift",
+              "AREF pin circuit"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": { "kind": "none", "omits": ["package body"] }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "box",
+        "variants": {
+          "box": {
+            "kind": "box",
+            "size": [0.007, 0.007, 0.001],
+            "omits": ["leads", "marking"]
+          }
+        }
+      }
+    }
+  }
+}
