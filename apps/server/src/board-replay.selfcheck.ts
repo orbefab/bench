@@ -1,85 +1,35 @@
 /**
  * Replay golden. Every example root that has a firmware board runs headless
- * for a fixed simulated time, and a digest of what the sim computed is
- * compared with `board-replay.golden.json`.
+ * for a fixed simulated time, and the run is compared, channel by channel,
+ * with its trace in `fixtures/traces/replay/` (see `trace.ts`).
  *
- * The digest covers computed values only: frame poses and joints, part and
- * supply voltages and currents, board state and pins, serial text, faults and
- * warnings. It leaves out anything that names how the document is laid out
- * (instance lists, the tree, lock hashes, manifest paths, seams, diagnostic
- * paths), and it reads boards and their LEDs by order, not by instance path,
- * so a board that gains a chip child keeps its digest.
+ * A trace keeps every recorded frame field as a channel, every recorded
+ * event, the serial text per board, the end state and the warnings. Boards
+ * keep their ids. A field the run gains is a new channel and does not fail
+ * the check. A value that moves names the channel, the time and Δ.
  *
- * `--write` rewrites the golden. Do it only for a change that is meant to move
- * behaviour, never for a refactor.
+ * `--write` rewrites the traces. Do it only for a change that is meant to move
+ * behaviour, never for a refactor. The diff then shows which channels moved.
  */
 
 import { ok as expect } from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { RecordedFrame, RecordingEvent } from "@sfab-bench/contract";
-
-import { byOrder, canon, num, r5bBoards } from "./board-digest";
+import { recordingTrace, stateSample } from "./board-trace";
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
+import { checkTraceDir, type Trace } from "./trace";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
-const goldenPath = fileURLToPath(
-  new URL("./board-replay.golden.json", import.meta.url)
+const traceDir = fileURLToPath(
+  new URL("../fixtures/traces/replay/", import.meta.url)
 );
 const write = process.argv.includes("--write");
 
 /** Simulated milliseconds each world runs. */
 const RUN_MS = 3000;
-type Row = {
-  world: string;
-  ms: number;
-  digest: string;
-  frames: number;
-  boards: number;
-  serialLines: number;
-  resets: number;
-  finalVolts: number[];
-};
-
-function boardOrdinals(ids: string[]): Map<string, number> {
-  return new Map([...ids].sort().map((id, index) => [id, index]));
-}
-
-function frameView(frame: RecordedFrame) {
-  return {
-    t: frame.t,
-    joints: frame.joints,
-    limitDeg: frame.limitDeg,
-    poses: frame.poses,
-    parts: frame.parts,
-    supplies: frame.supplies,
-    boards: byOrder(r5bBoards(frame.boards)).map((board) => ({
-      ...board,
-      leds: byOrder(board.leds),
-    })),
-  };
-}
-
-function eventView(event: RecordingEvent, ordinal: Map<string, number>) {
-  if (
-    event.kind === "fault" ||
-    event.kind === "reset" ||
-    event.kind === "reboot" ||
-    event.kind === "reload"
-  ) {
-    return {
-      t: event.t,
-      kind: event.kind,
-      board: ordinal.get(event.board),
-      message: "message" in event ? event.message : undefined,
-    };
-  }
-  return null;
-}
 
 function exampleWorlds(): { project: string; world: string }[] {
   const worlds: { project: string; world: string }[] = [];
@@ -107,15 +57,24 @@ function exampleWorlds(): { project: string; world: string }[] {
   return worlds;
 }
 
+/** `<example>/<file stem>`: the trace's name under `traceDir`. */
+function traceName(target: { project: string; world: string }): string {
+  const stem = target.world
+    .split("/")
+    .pop()!
+    .replace(/\.json$/, "");
+  return `${relative(join(root, "examples"), target.project)}/${stem}`;
+}
+
 function worldId(target: { project: string; world: string }): string {
   return `${relative(root, target.project)}/${target.world}`;
 }
 
-/** One world's row, or null when the world has no firmware board. */
+/** One world's trace, or null when the world has no firmware board. */
 async function replay(target: {
   project: string;
   world: string;
-}): Promise<Row | null> {
+}): Promise<Trace | null> {
   const sim = headlessSim();
   try {
     const loaded = await sim.load({ ...target, generation: 1 });
@@ -123,115 +82,39 @@ async function replay(target: {
     await sim.step(RUN_MS);
     const state = sim.state();
     if (!state) throw new Error(`${target.world}: no state`);
-    const boardIds = Object.keys(state.boards);
-    if (boardIds.length === 0) return null;
-    const ordinal = boardOrdinals(boardIds);
+    if (Object.keys(state.boards).length === 0) return null;
     const body = sim.record({ op: "read", from: 0, to: state.simTime });
     if (body.op !== "read") throw new Error(`${target.world}: no recording`);
-
-    const hash = createHash("sha256");
-    for (const frame of body.read.frames) {
-      hash.update(`f${canon(frameView(frame))}\n`);
-    }
-    for (const event of body.read.events) {
-      const view = eventView(event, ordinal);
-      if (view) hash.update(`e${canon(view)}\n`);
-    }
-
-    const serial = new Map<number, string>();
+    const serial: Record<string, string> = {};
     for (const chunk of sim.drainSerial()) {
-      const at = ordinal.get(chunk.board) ?? -1;
-      serial.set(at, (serial.get(at) ?? "") + chunk.text);
+      serial[chunk.board] = (serial[chunk.board] ?? "") + chunk.text;
     }
-    let serialLines = 0;
-    for (const at of [...serial.keys()].sort((a, b) => a - b)) {
-      const text = serial.get(at) ?? "";
-      hash.update(`s${at}:${JSON.stringify(text)}\n`);
-      serialLines += text.split("\n").filter((line) => line.trim()).length;
-    }
-
-    hash.update(
-      `z${canon({
-        simTime: state.simTime,
-        poses: state.poses,
-        joints: state.joints,
-        boards: byOrder(r5bBoards(state.boards)).map((board) => ({
-          ...board,
-          leds: byOrder(board.leds),
-        })),
-        parts: state.parts,
-        supplies: state.supplies,
-        diagnostics: (state.diagnostics ?? []).map((row) => ({
-          severity: row.severity,
-          code: row.code,
-          message: row.message,
-        })),
-      })}\n`
-    );
-    const warnings = (sim.report()?.warnings ?? []).map((row) => ({
-      severity: row.severity,
-      code: row.code,
-      message: row.message,
-    }));
-    hash.update(`w${canon(warnings)}\n`);
-
-    return {
-      world: worldId(target),
-      ms: RUN_MS,
-      digest: hash.digest("hex"),
-      frames: body.read.frames.length,
-      boards: boardIds.length,
-      serialLines,
-      resets: byOrder(state.boards).reduce(
-        (sum, board) => sum + (board.resets ?? 0),
-        0
-      ),
-      finalVolts: byOrder(state.boards).map((board) =>
-        Number(num(board.voltage ?? 0))
-      ),
-    };
+    return recordingTrace({
+      source: worldId(target),
+      read: body.read,
+      serial,
+      samples: { end: stateSample(state) },
+      warnings: sim.report()?.warnings ?? [],
+    });
   } finally {
     sim.dispose();
   }
 }
 
-const rows: Row[] = [];
+const traces = new Map<string, Trace>();
 const skipped: string[] = [];
 for (const target of exampleWorlds()) {
-  const row = await replay(target);
-  if (row) rows.push(row);
+  const trace = await replay(target);
+  if (trace) traces.set(traceName(target), trace);
   else skipped.push(worldId(target));
 }
 closeRootWatches();
 
-if (write) {
-  writeFileSync(goldenPath, `${JSON.stringify(rows, null, 2)}\n`);
-  console.log(`board-replay: wrote ${rows.length} rows`);
-  for (const row of rows)
-    console.log(`  ${row.world} ${row.digest.slice(0, 12)}`);
-  console.log(`  no board: ${skipped.join(", ")}`);
-} else {
-  const golden = JSON.parse(readFileSync(goldenPath, "utf8")) as Row[];
-  const byWorld = new Map(golden.map((row) => [row.world, row]));
-  const failures: string[] = [];
-  for (const row of rows) {
-    const want = byWorld.get(row.world);
-    if (!want) failures.push(`${row.world}: not in the golden`);
-    else if (want.digest !== row.digest) {
-      failures.push(
-        `${row.world}: digest ${row.digest.slice(0, 12)} != ${want.digest.slice(0, 12)} ` +
-          `(frames ${row.frames}/${want.frames}, serial ${row.serialLines}/${want.serialLines}, ` +
-          `resets ${row.resets}/${want.resets}, volts ${row.finalVolts.join(",")}/${want.finalVolts.join(",")})`
-      );
-    }
-    byWorld.delete(row.world);
-  }
-  for (const world of byWorld.keys()) {
-    failures.push(`${world}: in the golden but no longer a board world`);
-  }
-  expect(failures.length === 0, `board replay moved:\n${failures.join("\n")}`);
-  expect(rows.length > 0, "at least one board world");
-  console.log(
-    `board-replay: ${rows.length} board worlds match the golden (${RUN_MS} ms each; ${skipped.length} roots have no board)`
-  );
-}
+const problems = checkTraceDir(traceDir, traces, write);
+expect(problems.length === 0, `board replay moved:\n${problems.join("\n")}`);
+expect(traces.size > 0, "at least one board world");
+console.log(
+  write
+    ? `board-replay: wrote ${traces.size} traces (${skipped.length} roots have no board)`
+    : `board-replay: ${traces.size} board worlds match their traces (${RUN_MS} ms each; ${skipped.length} roots have no board)`
+);

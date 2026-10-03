@@ -15,7 +15,15 @@
  * and the report names it as a rename.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 
 export const TRACE_FORMAT = "sfab.trace@1";
 
@@ -53,8 +61,11 @@ export type Trace = {
   text?: Record<string, string>;
   /** Compared exactly: diagnostics and warnings, one line each. */
   notes?: string[];
-  /** One sample at the end of the run, compared like a channel. */
-  final?: Record<string, Discrete>;
+  /**
+   * Named one-off samples, such as the state at a checkpoint or at the end,
+   * by leaf path. Each value compares like a channel's, at the last time.
+   */
+  samples?: Record<string, Record<string, Discrete>>;
 };
 
 const isDiscrete = (channel: Channel): channel is DiscreteChannel =>
@@ -129,7 +140,7 @@ function unitOf(path: string): string | undefined {
   const parts = path.split(".");
   if (parts[0] === "limitDeg") return "deg";
   if (parts[0] === "poses") {
-    return parts.includes("position") ? "m" : undefined;
+    return parts[parts.length - 2] === "p" ? "m" : undefined;
   }
   return UNITS[parts[parts.length - 1]!];
 }
@@ -423,18 +434,25 @@ export function compareTraces(actual: Trace, ref: Trace): TraceReport {
       if (to) renamed.push([from, to]);
     }
   }
-  if (ref.final) {
-    const final = actual.final ?? {};
-    for (const [name, want] of Object.entries(ref.final)) {
-      const got = name in final ? final[name]! : null;
-      const fake: NumericChannel | DiscreteChannel =
+  for (const [label, sample] of Object.entries(ref.samples ?? {})) {
+    const ours = actual.samples?.[label];
+    if (!ours) {
+      missing.push(`sample ${label}`);
+      continue;
+    }
+    for (const [name, want] of Object.entries(sample)) {
+      if (!(name in ours)) {
+        missing.push(`${label} ${name}`);
+        continue;
+      }
+      const shape: Channel =
         typeof want === "number" || want === null
           ? { v: want }
           : { at: [[0, want]] };
       const miss = compareColumn(
-        `final ${name}`,
-        fake,
-        [got],
+        `${label} ${name}`,
+        shape,
+        [ours[name]!],
         [want],
         [ref.t[ref.t.length - 1] ?? 0],
         ref.tol
@@ -542,7 +560,19 @@ export function traceText(trace: Trace): string {
   if (kept.events) parts.push(`  "events": ${list(kept.events)}`);
   if (kept.text) parts.push(`  "text": ${block(Object.entries(kept.text))}`);
   if (kept.notes) parts.push(`  "notes": ${list(kept.notes)}`);
-  if (kept.final) parts.push(`  "final": ${block(Object.entries(kept.final))}`);
+  if (kept.samples) {
+    const labels = Object.entries(kept.samples).map(
+      ([label, sample]) =>
+        `    ${line(label)}: {\n${Object.entries(sample)
+          .map(([key, value]) => `      ${line(key)}: ${line(value)}`)
+          .join(",\n")}\n    }`
+    );
+    parts.push(
+      labels.length === 0
+        ? `  "samples": {}`
+        : `  "samples": {\n${labels.join(",\n")}\n  }`
+    );
+  }
   return `{\n${parts.join(",\n")}\n}\n`;
 }
 
@@ -563,4 +593,50 @@ export function readTrace(path: string): Trace {
     );
   }
   return trace;
+}
+
+/**
+ * Compare traces with the files in `dir`, one `<name>.trace.json` each, or
+ * rewrite the directory with `write`. Returns one line per problem.
+ */
+export function checkTraceDir(
+  dir: string,
+  traces: ReadonlyMap<string, Trace>,
+  write: boolean
+): string[] {
+  const fileOf = (name: string) => join(dir, `${name}.trace.json`);
+  const onDisk = new Set(
+    existsSync(dir)
+      ? readdirSync(dir, { recursive: true })
+          .map(String)
+          .filter((file) => file.endsWith(".trace.json"))
+          .map((file) => file.slice(0, -".trace.json".length))
+      : []
+  );
+  if (write) {
+    for (const name of onDisk) {
+      if (!traces.has(name)) rmSync(fileOf(name));
+    }
+    for (const [name, trace] of traces) {
+      mkdirSync(dirname(fileOf(name)), { recursive: true });
+      writeTrace(fileOf(name), trace);
+    }
+    return [];
+  }
+  const problems: string[] = [];
+  for (const [name, trace] of traces) {
+    if (!onDisk.has(name)) {
+      problems.push(`${name}: no reference trace (run with --write)`);
+      continue;
+    }
+    const report = compareTraces(trace, readTrace(fileOf(name)));
+    const lines = formatReport(report);
+    if (!report.ok) {
+      problems.push(`${name}:`, ...lines.map((line) => `  ${line}`));
+    }
+  }
+  for (const name of onDisk) {
+    if (!traces.has(name)) problems.push(`${name}: reference trace not run`);
+  }
+  return problems;
 }

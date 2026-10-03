@@ -29,6 +29,33 @@ face, part loading, the CLI, degrade, a headless run, the arm baseline replay,
 seams, the edit ops, the probe, and the web document path. It is not a physics proof. "Run workflow" on
 the CI workflow runs the full suite by hand. CI does not package a `.app`.
 
+## Simulation traces
+
+A run the simulator must keep reproducing is stored as a trace
+(`sfab.trace@1`, `apps/server/src/trace.ts`). A trace is named channels on one
+time base. Each recorded frame field is a channel, named by its path, such as
+`supplies.usb.voltage` or `parts.servo.state`. The trace also holds the events,
+the serial text per board, the state at named checkpoints, and the warnings.
+A numeric channel passes when every sample is within
+`abs + rel·|ref| + span·range(ref)` of the reference. Discrete values, text,
+events and warnings must match exactly. A trace on another time base is
+resampled onto the reference's.
+
+A failure names the channel, the time, both values and Δ, for example
+`supplies.usb.voltage at 2.02 s: 4.7353 V, want 4.7378 V, Δ 2.51e-3`. A field
+the run gains becomes a new channel and does not fail the check. A renamed
+field is reported as a rename.
+
+- **Regression traces** (`fixtures/traces/replay/`, `fixtures/traces/interact/`)
+  use 1e-9 absolute plus 1e-9 relative. That is the sensitivity of the digests
+  they replace, enough to absorb a reordered float sum and nothing more.
+  `board-replay.selfcheck.ts --write` and `board-interact.selfcheck.ts --write`
+  re-record them. Do that only for a change that is meant to move behaviour.
+  The diff, one channel per line, then shows what moved.
+- **Reference comparisons** use a span tolerance against an outside oracle.
+  The ngspice decks in `circuit.selfcheck.ts` allow 0.5% of the reference's
+  range.
+
 ## The ladder
 
 "Correct" has several different reference points, and it is worth being

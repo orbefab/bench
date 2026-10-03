@@ -1,0 +1,62 @@
+{
+  "format": "sfab.trace@1",
+  "source": "parts/sfab/nano-swap-c2@1.0.0.json",
+  "tol": {"abs":1e-9,"rel":1e-9},
+  "t": [0,0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.09,0.1,0.11,0.12,0.13,0.14,0.15,0.16,0.17,0.18,0.19,0.2,0.21,0.22,0.23,0.24,0.25,0.26,0.27,0.28,0.29,0.3],
+  "channels": {
+    "boards.nano.belowSoa": {"at":[[0,false]]},
+    "boards.nano.inReset": {"at":[[0,false]]},
+    "boards.nano.inResetAny": {"at":[[0,false]]},
+    "boards.nano.ledCurrent": {"v":4.763184562e-17},
+    "boards.nano.leds.nano.led": {"v":4.763184562e-17},
+    "boards.nano.minVoltage": {"unit":"V","v":4.734065533},
+    "boards.nano.pins.ddr.0": {"v":[0,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512]},
+    "boards.nano.pins.level.0": {"v":0},
+    "boards.nano.pins.toggled.0": {"v":[0,0,0,0,0,0,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512]},
+    "boards.nano.regulatorA": {"v":0},
+    "boards.nano.regulatorMax": {"v":0},
+    "boards.nano.running": {"at":[[0,true]]},
+    "boards.nano.voltage": {"unit":"V","v":4.734065533},
+    "supplies.supply.current": {"unit":"A","v":0.02520000003},
+    "supplies.supply.maxCurrent": {"unit":"A","v":0.02520000003},
+    "supplies.supply.minVoltage": {"unit":"V","v":4.987400055},
+    "supplies.supply.voltage": {"unit":"V","v":4.987400055}
+  },
+  "events": [
+    {"t":0.001,"kind":"serial","board":"nano","text":"10\r\n","from":0,"to":4}
+  ],
+  "text": {
+    "nano": "10\r\n"
+  },
+  "notes": [],
+  "samples": {
+    "boot": {
+      "simTime": 0.3,
+      "boards.nano.running": true,
+      "boards.nano.pins.ddr.0": 512,
+      "boards.nano.pins.level.0": 0,
+      "boards.nano.pins.toggled.0": 0,
+      "boards.nano.resets": 0,
+      "boards.nano.inReset": false,
+      "boards.nano.voltage": 4.734065382,
+      "boards.nano.leds.nano.led": 4.763184636e-17,
+      "boards.nano.ledCurrent": 4.763184636e-17,
+      "supplies.supply.voltage": 4.9874,
+      "supplies.supply.current": 0.02520000001
+    },
+    "before-swap": {
+      "simTime": 0.3,
+      "boards.nano.running": true,
+      "boards.nano.pins.ddr.0": 512,
+      "boards.nano.pins.level.0": 0,
+      "boards.nano.pins.toggled.0": 0,
+      "boards.nano.resets": 0,
+      "boards.nano.inReset": false,
+      "boards.nano.voltage": 4.734065382,
+      "boards.nano.leds.nano.led": 4.763184636e-17,
+      "boards.nano.ledCurrent": 4.763184636e-17,
+      "supplies.supply.voltage": 4.9874,
+      "supplies.supply.current": 0.02520000001
+    }
+  }
+}

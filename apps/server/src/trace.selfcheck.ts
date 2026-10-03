@@ -208,3 +208,24 @@ const ref = traceOf(frames(11, 0.1), {
     "trace: a finer time base resamples; 0.4% of span passes a 0.5% span tolerance"
   );
 }
+
+// A named sample compares each leaf. A missing label is a missing channel.
+{
+  const withEnd: Trace = {
+    ...ref,
+    samples: { end: { "boards.uno.voltage": 4.9 } },
+  };
+  const moved: Trace = {
+    ...ref,
+    samples: { end: { "boards.uno.voltage": 4.8 } },
+  };
+  const lines = formatReport(compareTraces(moved, withEnd));
+  expect(
+    lines.length === 1 &&
+      lines[0]!.startsWith("end boards.uno.voltage at 1 s: 4.8, want 4.9"),
+    lines.join("\n")
+  );
+  const gone = formatReport(compareTraces(ref, withEnd));
+  expect(gone[0] === "missing channel sample end", gone.join("\n"));
+  console.log(`trace: ${lines[0]}`);
+}

@@ -1,0 +1,56 @@
+{
+  "format": "sfab.trace@1",
+  "source": "parts/sfab/uno-swap-c2@1.0.0.json",
+  "tol": {"abs":1e-9,"rel":1e-9},
+  "t": [0,0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.09,0.1,0.11,0.12,0.13,0.14,0.15,0.16,0.17,0.18,0.19,0.2,0.21,0.22,0.23,0.24,0.25,0.26,0.27,0.28,0.29,0.3],
+  "channels": {
+    "boards.uno.belowSoa": {"at":[[0,false]]},
+    "boards.uno.inReset": {"at":[[0,false]]},
+    "boards.uno.inResetAny": {"at":[[0,false]]},
+    "boards.uno.minVoltage": {"unit":"V","v":4.997499943},
+    "boards.uno.pins.ddr.0": {"v":[0,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512]},
+    "boards.uno.pins.level.0": {"v":0},
+    "boards.uno.pins.toggled.0": {"v":[0,0,0,0,0,0,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512]},
+    "boards.uno.regulatorA": {"v":0},
+    "boards.uno.regulatorMax": {"v":0},
+    "boards.uno.running": {"at":[[0,true]]},
+    "boards.uno.voltage": {"unit":"V","v":4.997499943},
+    "supplies.supply.current": {"unit":"A","v":0.05000000075},
+    "supplies.supply.maxCurrent": {"unit":"A","v":0.05000000075},
+    "supplies.supply.minVoltage": {"unit":"V","v":4.997499943},
+    "supplies.supply.voltage": {"unit":"V","v":4.997499943}
+  },
+  "events": [
+    {"t":0.001,"kind":"serial","board":"uno","text":"10\r\n","from":0,"to":4}
+  ],
+  "text": {
+    "uno": "10\r\n"
+  },
+  "notes": [],
+  "samples": {
+    "boot": {
+      "simTime": 0.3,
+      "boards.uno.running": true,
+      "boards.uno.pins.ddr.0": 512,
+      "boards.uno.pins.level.0": 0,
+      "boards.uno.pins.toggled.0": 0,
+      "boards.uno.resets": 0,
+      "boards.uno.inReset": false,
+      "boards.uno.voltage": 4.9975,
+      "supplies.supply.voltage": 4.9975,
+      "supplies.supply.current": 0.05
+    },
+    "before-swap": {
+      "simTime": 0.3,
+      "boards.uno.running": true,
+      "boards.uno.pins.ddr.0": 512,
+      "boards.uno.pins.level.0": 0,
+      "boards.uno.pins.toggled.0": 0,
+      "boards.uno.resets": 0,
+      "boards.uno.inReset": false,
+      "boards.uno.voltage": 4.9975,
+      "supplies.supply.voltage": 4.9975,
+      "supplies.supply.current": 0.05
+    }
+  }
+}
