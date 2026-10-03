@@ -421,6 +421,18 @@ function pinOf(decl: PortDecl): RunPin | null {
   return { kind: "signal", output: false, digital: false, pwm: false };
 }
 
+/** Electrical logic inputs of a type, in port order. */
+function logicInputs(ports: Record<string, PortDecl>): string[] {
+  return Object.entries(ports)
+    .filter(
+      ([, port]) =>
+        port.domain === "electrical" &&
+        port.role === "logic" &&
+        port.direction === "in"
+    )
+    .map(([name]) => name);
+}
+
 function pinsOf(ports: Record<string, PortDecl>): Record<string, RunPin> {
   const pins: Record<string, RunPin> = {};
   for (const [name, decl] of Object.entries(ports)) {
@@ -987,8 +999,8 @@ function build(
   // An if-chain on the selected behaviour. A composite is a shell and
   // is skipped. What runs: firmware; form resistor@1, capacitor@1 and
   // diode@1; form multibody@1 with a urdf body; form thevenin-limit@1;
-  // form dc-motor@1 with a lumped joint, a hinge@1 snapshot, or the
-  // collapse of a gear train; form ranger@1. Anything else is a plan
+  // form dc-motor@1 on a type with one logic input, with a lumped joint,
+  // a hinge@1 snapshot, or the collapse of a gear train; form ranger@1. Anything else is a plan
   // error that names the path.
   const byPath = new Map(loaded.resolved.map((item) => [item.path, item]));
   for (const inst of loaded.resolved) {
@@ -1167,13 +1179,23 @@ function build(
     if (behaviour?.kind === "form" && behaviour.form === "dc-motor@1") {
       const numbers = formNumbers(inst);
       const hinge = jointOf(inst, loaded);
-      if (
-        !numbers ||
-        inst.axes.behaviour.label !== "form dc-motor@1" ||
-        !hinge
-      ) {
+      if (!numbers || !hinge) {
         diags.push(
           cannot(inst, "the run needs dc-motor@1 and a lumped joint or a hinge")
+        );
+        continue;
+      }
+      // The motor runs behind a hobby servo's control loop, which reads
+      // the type's one logic input. A bare motor would need a driver.
+      const [signal, ...extra] = logicInputs(inst.type.ports);
+      if (!signal || extra.length > 0) {
+        diags.push(
+          cannot(
+            inst,
+            signal
+              ? `dc-motor@1 runs as a servo, and this type has ${extra.length + 1} logic inputs`
+              : "dc-motor@1 runs as a servo, and this type has no logic input for its pulse"
+          )
         );
         continue;
       }
@@ -1185,7 +1207,7 @@ function build(
         model: shortName(inst.part.id),
         type: typeId,
         pins: pinsOf(inst.type.ports),
-        drive: { kind: "servo", pin: "signal" },
+        drive: { kind: "servo", pin: signal },
         ...(supply
           ? {
               supply: {

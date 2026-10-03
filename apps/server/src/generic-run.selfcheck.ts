@@ -1126,3 +1126,83 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+// dc-motor@1 runs behind the servo's control loop, which reads the type's
+// logic input. A bare motor has none, so it is refused, not run as a servo.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-bare-motor-"));
+  try {
+    writeJson(join(dir, "parts", "sfab", "bare-motor@1.0.0.json"), {
+      format: "sfab.part@1",
+      id: "sfab/bare-motor@1.0.0",
+      type: "brushed-dc-motor",
+      axes: {
+        behaviour: {
+          "1": {
+            default: "law",
+            variants: {
+              law: {
+                kind: "form",
+                form: "dc-motor@1",
+                params: {
+                  K: 0.05,
+                  R: 2,
+                  efficiency: 0.7,
+                  eSat: 0.2,
+                  quiescent: 0.02,
+                },
+                omits: ["test motor"],
+              },
+            },
+          },
+        },
+        body: {
+          "1": {
+            default: "lumped",
+            variants: {
+              lumped: {
+                kind: "lumped",
+                mass: 0.05,
+                com: [0, 0, 0],
+                inertia: [1e-6, 1e-6, 1e-6, 0, 0, 0],
+                joint: { armature: 1e-5, frictionloss: 0, damping: 1e-4 },
+                omits: ["test body"],
+              },
+            },
+          },
+        },
+        visual: noneAxis("none"),
+      },
+    });
+    writeJson(
+      join(dir, "motor.world.json"),
+      sceneWorld(
+        {
+          bench: { part: "sfab/bench-supply@1.0.0" },
+          motor: { part: "sfab/bare-motor@1.0.0" },
+        },
+        [
+          ["bench.5V", "motor.V+"],
+          ["bench.GND", "motor.GND"],
+        ],
+        { default: 1 }
+      )
+    );
+    const planned = planWorld(dir, "motor.world.json");
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((item) => item.message).join("; "));
+    }
+    expect(
+      !planned.plan.parts.some((part) => part.id === "motor"),
+      "a bare motor ran as a servo"
+    );
+    const row = planned.plan.degraded?.find((item) => item.path === "motor");
+    expect(
+      row?.message.includes("no logic input"),
+      `bare motor row: ${row?.message}`
+    );
+    console.log(`bare motor: ${row?.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
