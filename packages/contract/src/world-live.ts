@@ -178,8 +178,8 @@ export type WorldBoardState = {
   inReset?: boolean;
   /**
    * What holds the chip while `inReset`: the rail under its brownout level,
-   * or the RESET pin. Absent while running, and for the hold before a
-   * fresh image's first instruction.
+   * or the RESET pin, including the hold before a fresh image's first
+   * instruction. Absent while running.
    */
   resetCause?: ResetCause;
   /**
