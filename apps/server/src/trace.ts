@@ -138,6 +138,7 @@ const UNITS: Record<string, string> = {
   maxCurrent: "A",
   pulseUs: "µs",
   commandDeg: "deg",
+  torqueNm: "N·m",
   distanceM: "m",
   echoS: "s",
 };

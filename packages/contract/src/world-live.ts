@@ -683,6 +683,12 @@ export type RecordedFrame = {
       maxCurrent: number;
       /** Volts at V+ relative to GND. 0 when that port is unwired. */
       voltage: number;
+      /**
+       * Newton-metres the motor applied at the shaft over the step that
+       * ended at t, after the gearbox efficiency and the torque clamp. 0
+       * when limp. Present on a driven servo.
+       */
+      torqueNm?: number;
       /** Metres. Present on a ranger. Null is no echo. */
       distanceM?: number | null;
       /** Echo high time, seconds. Present on a ranger. */

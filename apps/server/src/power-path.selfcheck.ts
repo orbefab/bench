@@ -551,9 +551,19 @@ try {
     last.parts.servo?.state === "stall",
     `tail state ${last.parts.servo?.state}`
   );
+  // A saturated stall draws the whole winding, so the shaft torque is
+  // efficiency·k times the current above quiescent.
+  const torque = last.parts.servo?.torqueNm ?? Number.NaN;
+  const fromCurrent =
+    law.efficiency * law.k * ((last.parts.servo?.current ?? 0) - law.quiescent);
+  expect(
+    Math.abs(Math.abs(torque) - fromCurrent) <= 1e-5 * fromCurrent,
+    `stall torque ${torque} N·m vs ${fromCurrent} N·m from the current`
+  );
   console.log(
     `arm stall on the usb path: board ${steady.toFixed(4)} V at 3 s, ` +
-      `within 1 mV of ${stall.boardVoltage.toFixed(4)} V, no brownout, runs identical`
+      `within 1 mV of ${stall.boardVoltage.toFixed(4)} V, no brownout, runs identical, ` +
+      `shaft ${Math.abs(torque).toFixed(4)} N·m`
   );
 } finally {
   rmSync(usbRoot, { recursive: true, force: true });

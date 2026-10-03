@@ -110,6 +110,8 @@ type Chunk = {
   partCurrent: Float32Array;
   partMax: Float32Array;
   partVoltage: Float32Array;
+  /** NaN when that part has no driven motor. */
+  partTorque: Float32Array;
   voltage: Float32Array;
   minVoltage: Float32Array;
   supplyCurrent: Float32Array;
@@ -176,6 +178,8 @@ export class RunRecorder {
   readonly partCurrent: Float64Array;
   /** Volts at V+ relative to GND. */
   readonly partVoltage: Float64Array;
+  /** Newton-metres at the shaft. NaN when that part has no driven motor. */
+  readonly partTorque: Float64Array;
   readonly voltage: Float64Array;
   readonly supplyCurrent: Float64Array;
   /** NaN when that supply has no state of charge. */
@@ -277,6 +281,7 @@ export class RunRecorder {
     this.state = new Uint8Array(nP);
     this.partCurrent = new Float64Array(nP);
     this.partVoltage = new Float64Array(nP);
+    this.partTorque = new Float64Array(nP).fill(Number.NaN);
     this.rangerDistance = this.hasRanger ? new Float64Array(nP) : null;
     this.rangerHit = this.hasRanger ? new Uint8Array(nP) : null;
     this.rangerDistance?.fill(Number.NaN);
@@ -506,6 +511,7 @@ export class RunRecorder {
       chunk.partCurrent[channel(i, slot)] = this.partCurrent[i] ?? 0;
       chunk.partMax[channel(i, slot)] = this.partMax[i] ?? 0;
       chunk.partVoltage[channel(i, slot)] = this.partVoltage[i] ?? 0;
+      chunk.partTorque[channel(i, slot)] = this.partTorque[i] ?? Number.NaN;
       if (chunk.rangerDistance && this.rangerDistance) {
         chunk.rangerDistance[channel(i, slot)] =
           this.rangerDistance[i] ?? Number.NaN;
@@ -857,6 +863,7 @@ export class RunRecorder {
       if (!spec || !want(spec.track)) continue;
       const pulse = slot.chunk.pulse[channel(i, slot.slot)] ?? Number.NaN;
       const command = slot.chunk.command[channel(i, slot.slot)] ?? Number.NaN;
+      const torque = slot.chunk.partTorque[channel(i, slot.slot)] ?? Number.NaN;
       parts[spec.id] = {
         pulseUs: Number.isNaN(pulse) ? null : pulse,
         commandDeg: Number.isNaN(command) ? null : command,
@@ -865,6 +872,7 @@ export class RunRecorder {
         current: slot.chunk.partCurrent[channel(i, slot.slot)] ?? 0,
         maxCurrent: slot.chunk.partMax[channel(i, slot.slot)] ?? 0,
         voltage: slot.chunk.partVoltage[channel(i, slot.slot)] ?? 0,
+        ...(Number.isNaN(torque) ? {} : { torqueNm: torque }),
         ...(this.partRanger[i]
           ? {
               distanceM: Number.isNaN(
@@ -1075,6 +1083,7 @@ function createChunk(counts: {
     partCurrent: new Float32Array(counts.parts * CHUNK),
     partMax: new Float32Array(counts.parts * CHUNK),
     partVoltage: new Float32Array(counts.parts * CHUNK),
+    partTorque: new Float32Array(counts.parts * CHUNK),
     voltage: new Float32Array(counts.supplies * CHUNK),
     minVoltage: new Float32Array(counts.supplies * CHUNK),
     supplyCurrent: new Float32Array(counts.supplies * CHUNK),

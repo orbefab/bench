@@ -223,6 +223,10 @@ function fillRecorder(s: SessionState, full: boolean) {
     rec.state[i] = motionRank(load.state);
     rec.partCurrent[i] = load.current;
     rec.partVoltage[i] = partVolts(s, load.supplyId, loadBoard(load));
+    rec.partTorque[i] =
+      load.drive && s.sim
+        ? (s.sim.data.actuator(load.partId).ctrl as number)
+        : Number.NaN;
   }
   for (let i = 0; i < lay.rangers.length; i++) {
     const ranger = lay.rangers[i];
