@@ -422,13 +422,9 @@ export function recordStep(s: SessionState) {
   fillRecorder(s, ms % RECORD_FRAME_MS === 0);
   for (const board of s.boards) {
     const text = board.peekTx();
-    let seen = s.txSeen.get(board.id) ?? 0;
-    if (text.length < seen) seen = 0;
-    if (text.length > seen) {
-      rec.noteSerial(board.id, text.slice(seen), ms);
-      seen = text.length;
-    }
-    s.txSeen.set(board.id, seen);
+    const seen = s.txSeen.get(board.id) ?? 0;
+    if (text.length > seen) rec.noteSerial(board.id, text.slice(seen), ms);
+    s.txSeen.set(board.id, text.length);
   }
   for (const note of s.pendingNotes) {
     rec.noteEvent({

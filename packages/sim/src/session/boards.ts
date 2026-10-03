@@ -42,7 +42,9 @@ export function boardInSoa(s: SessionState, board: AvrBoard): boolean {
 function flushBoards(s: SessionState) {
   const chunks: { board: string; text: string }[] = [];
   for (const board of s.boards) {
+    // The recording noted this text at the end of each step.
     const text = board.takeTx();
+    s.txSeen.set(board.id, 0);
     if (text) chunks.push({ board: board.id, text });
     const stamp = `${board.rxQueued}:${board.rxAccepted}`;
     if (s.rxSent.get(board.id) === stamp) continue;

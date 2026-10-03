@@ -218,6 +218,10 @@ export type SessionState = {
   readonly firmwareSha: Map<string, string>;
   inputNets: ReturnType<typeof gpioInputNets>;
   applyingInputs: boolean;
+  /**
+   * Per board, how much of its unflushed serial the recording has noted.
+   * Whoever drains the board's serial sets it back to 0.
+   */
   readonly txSeen: Map<string, number>;
   /** `cause` is set only on a reset the RESET pin asserted. */
   readonly pendingNotes: {

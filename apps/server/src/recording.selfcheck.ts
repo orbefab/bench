@@ -42,6 +42,9 @@ import { readDraft, writeDraft } from "./world/selfcheck-draft";
  * recording; a hex restart does not. Scrub is per subscriber.
  */
 
+const gaugeDir = fileURLToPath(
+  new URL("../../../examples/gauge/", import.meta.url)
+);
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
@@ -439,6 +442,38 @@ try {
 } finally {
   demo1.attached.detach();
   await stopWorld(armDir, "parts/sfab/arm-bench@1.0.0.json");
+}
+
+// Each posted state drains the board's serial. Stepping one millisecond
+// at a time drains it inside each gauge line, and the recording still
+// holds every byte.
+{
+  const world = "parts/sfab/gauge-scene@1.0.0.json";
+  const trace = openTrace(gaugeDir, world);
+  const attached = await trace.attached;
+  if ("error" in attached) throw new Error(attached.error);
+  try {
+    for (let ms = 1; ms <= 1500; ms++) {
+      attached.step(1);
+      await trace.at(ms / 1000);
+    }
+    const read = await readRecording(gaugeDir, world, { from: 0, to: 1.5 });
+    if ("error" in read) throw new Error(read.error);
+    const ring = readSerial(gaugeDir, world, "nano", 0);
+    if ("error" in ring) throw new Error(ring.error);
+    const printed = serialOf(read.events, "nano");
+    expect(
+      printed === ring.text,
+      `stepped serial ${JSON.stringify(printed)} ring ${JSON.stringify(ring.text)}`
+    );
+    expect(printed.includes("vcc,"), "the gauge printed no vcc line");
+    console.log(
+      `stepped recording: ${printed.length} serial bytes match the ring`
+    );
+  } finally {
+    attached.detach();
+    await stopWorld(gaugeDir, world);
+  }
 }
 
 const demo2 = await recordedRun(
