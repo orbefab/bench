@@ -94,6 +94,9 @@ export function sample(s: SessionState): WorldState | null {
       ...(unpowered ? { unpowered: true as const } : {}),
       resets: power?.resets ?? 0,
       inReset: board.inReset,
+      ...(board.inReset && power?.reset.cause
+        ? { resetCause: power.reset.cause }
+        : {}),
       ...(power?.supplyId ? { voltage: node } : {}),
       ...ledReading(s, board.id),
       ...(() => {

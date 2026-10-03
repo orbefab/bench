@@ -222,6 +222,7 @@ async function run(
         : null,
       d13Output: pinBitSet(live.pins.ddr, bit ?? -1),
       inReset: live.inReset === true,
+      resetCause: live.resetCause,
       reboots: live.resets ?? 0,
       voltage: live.voltage ?? 0,
       resets,
@@ -240,12 +241,20 @@ try {
     const free = await run(dir, level, {});
     expect(free.d13Output, `class ${level}: blink makes D13 an output`);
     expect(!free.inReset, `class ${level}: a free RESET runs`);
+    expect(
+      free.resetCause === undefined,
+      `class ${level}: a running chip has no reset cause`
+    );
     expect(free.resets.length === 0, `class ${level}: no reset event`);
 
     const held = await run(dir, level, { held: true });
     expect(held.voltage > 4.5, `class ${level}: rail ${held.voltage} V`);
     expect(!held.d13Output, `class ${level}: RESET low keeps D13 an input`);
     expect(held.inReset, `class ${level}: RESET low reads in reset`);
+    expect(
+      held.resetCause === "pin",
+      `class ${level}: reset cause ${held.resetCause}`
+    );
     expect(held.reboots === 0, `class ${level}: a held RESET never reboots`);
     expect(
       held.resets.length === 1 &&

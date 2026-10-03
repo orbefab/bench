@@ -1,21 +1,37 @@
-import { type ChipClock, soaNeed, soaWarning } from "@sfab-bench/contract";
+import {
+  type ChipClock,
+  type ResetCause,
+  soaNeed,
+  soaWarning,
+} from "@sfab-bench/contract";
 
 type BoardStatusInput = {
   running: boolean;
   fault?: string;
   inReset?: boolean;
+  /** Live only: what holds the chip while `inReset`. */
+  resetCause?: ResetCause;
   /** No supply reaches the board, so the CPU never boots. */
   unpowered?: boolean;
 };
+
+type InResetLabel = "in reset" | "in reset (RESET pin)" | "in reset (brownout)";
+
+/** "in reset", naming what holds the chip when the live state says. */
+function inResetLabel(cause: ResetCause | undefined): InResetLabel {
+  if (cause === "pin") return "in reset (RESET pin)";
+  if (cause === "brownout") return "in reset (brownout)";
+  return "in reset";
+}
 
 /** What the board header says. `running` means the sim is playing, not merely loaded. */
 export function boardStatusLabel(
   board: BoardStatusInput | undefined,
   playing: boolean
-): "" | "paused" | "running" | "stopped" | "in reset" | "unpowered" {
+): "" | "paused" | "running" | "stopped" | InResetLabel | "unpowered" {
   if (!board) return "";
   if (board.unpowered) return "unpowered";
-  if (board.inReset) return "in reset";
+  if (board.inReset) return inResetLabel(board.resetCause);
   if (!board.running || board.fault) return "stopped";
   return playing ? "running" : "paused";
 }

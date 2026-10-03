@@ -30,6 +30,20 @@ expect(
   "a board held in reset says in reset"
 );
 expect(
+  boardStatusLabel(
+    { running: false, inReset: true, resetCause: "pin" },
+    true
+  ) === "in reset (RESET pin)",
+  "a pin hold names the RESET pin"
+);
+expect(
+  boardStatusLabel(
+    { running: false, inReset: true, resetCause: "brownout" },
+    true
+  ) === "in reset (brownout)",
+  "a sag names the brownout"
+);
+expect(
   boardStatusLabel({ running: true, inReset: false }, false) === "paused",
   "a board that is not in reset stays paused"
 );

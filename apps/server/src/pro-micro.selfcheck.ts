@@ -259,6 +259,10 @@ expect(
   `weak RAW board node ${weak.live.voltage} V`
 );
 expect(weak.live.inReset === true, "weak RAW holds the 32U4 in reset");
+expect(
+  weak.live.resetCause === "brownout",
+  `weak RAW reset cause ${weak.live.resetCause}`
+);
 expect((weak.live.resets ?? 0) === 0, "a held sag does not count a reboot");
 expect(
   weak.events.some((event) => event.kind === "reset") &&
