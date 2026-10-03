@@ -334,6 +334,15 @@ export class RunRecorder {
     if (cutoff > 0) this.dropBefore(cutoff);
   }
 
+  /**
+   * A master step inside a millisecond: fold its extremes into the window.
+   * The sample at the millisecond is still the one `commit` takes.
+   */
+  foldStep() {
+    if (!this.enabled) return;
+    this.fold();
+  }
+
   noteSerial(board: string, text: string, timeMs: number) {
     if (!this.enabled || !text) return;
     const from = this.serialNext.get(board) ?? 0;

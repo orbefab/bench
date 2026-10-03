@@ -24,6 +24,8 @@ import {
   type WorldState,
 } from "@sfab-bench/contract";
 
+import { RunRecorder } from "@sfab-bench/sim/record";
+
 import { closeRootWatches } from "./projects";
 import { attachWorld, recordingInfo, stopWorld } from "./world/host";
 
@@ -47,6 +49,46 @@ for (const [seconds, want] of [
   expect(
     stepsPerMs(seconds) === want,
     `stepsPerMs(${seconds}) is ${stepsPerMs(seconds)}, want ${want}`
+  );
+}
+
+// A finer step records at the step that ends a millisecond. The steps
+// before it still fold their extremes into the frame's window.
+{
+  const rec = new RunRecorder({
+    id: "fold",
+    manifest: {
+      mujoco: "3.14.0",
+      avr8js: "0.21.1",
+      timestep: 0.0001,
+      integrator: "implicitfast",
+      frameMs: 10,
+      worldSha256: "0".repeat(64),
+      boards: [],
+      parts: {},
+    },
+    joints: [],
+    bodies: [],
+    parts: [],
+    supplies: ["usb"],
+    boards: [],
+  });
+  rec.voltage[0] = 4.2;
+  rec.supplyCurrent[0] = 0.9;
+  rec.foldStep();
+  rec.voltage[0] = 5;
+  rec.supplyCurrent[0] = 0.02;
+  rec.commit(10);
+  const usb = rec.read({ from: 0, to: 0.01 }).frames[0]?.supplies.usb;
+  expect(
+    // The recorder stores float32.
+    usb?.minVoltage === Math.fround(4.2) &&
+      usb.maxCurrent === Math.fround(0.9) &&
+      usb.voltage === 5,
+    `a sub-millisecond dip is lost: ${JSON.stringify(usb)}`
+  );
+  console.log(
+    "timestep: a dip and a peak inside a millisecond reach the frame's min and max"
   );
 }
 

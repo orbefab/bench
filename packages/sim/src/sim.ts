@@ -110,6 +110,7 @@ import {
 import { bindPower, latchSupplyNodes, stampNodes } from "./session/rails";
 import {
   answerRecord,
+  foldStep,
   openRecorder,
   record,
   recordStep,
@@ -469,8 +470,10 @@ function createSession(host: SimHost) {
     noteMotorSeams(s);
     classifyLoads(s);
     // The recorder keys on whole milliseconds: a finer step records once,
-    // at the step that ends the millisecond.
+    // at the step that ends the millisecond, and folds the extremes of the
+    // steps before it into the frame's window.
     if (stepCount(s) % s.perMs === 0) recordStep(s);
+    else foldStep(s);
     stampNodes(s, stepCount(s) / s.perMs);
   }
 

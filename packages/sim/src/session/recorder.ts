@@ -402,6 +402,14 @@ function manifestOf(s: SessionState): RecordingManifest {
   };
 }
 
+/** A master step that does not end a millisecond: extremes only. */
+export function foldStep(s: SessionState) {
+  const rec = s.recorder;
+  if (!rec?.enabled || !s.sim) return;
+  fillRecorder(s, false);
+  rec.foldStep();
+}
+
 export function recordStep(s: SessionState) {
   const rec = s.recorder;
   if (!rec?.enabled || !s.sim) {
