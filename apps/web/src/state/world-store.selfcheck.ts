@@ -89,6 +89,19 @@ try {
   store().clearRunProblem();
   expect(notified === quiet, "clearing no problem does not notify");
 
+  // A pin hold the rail then sags under stays in reset at the same voltage:
+  // only the cause changes, and the card must follow it.
+  const held = { running: true, inReset: true, resets: 0, voltage: 4.96 };
+  store().setBoards({ uno: { ...held, resetCause: "pin" } });
+  store().setBoards({ uno: { ...held, resetCause: "brownout" } });
+  expect(
+    store().boards.uno?.resetCause === "brownout",
+    "a new reset cause updates the board"
+  );
+  const sameCause = notified;
+  store().setBoards({ uno: { ...held, resetCause: "brownout" } });
+  expect(notified === sameCause, "the same boards do not notify");
+
   store().close();
   expect(
     store().path === "" &&
@@ -106,6 +119,6 @@ try {
 }
 
 console.log(
-  "world-store: same-document reopen waits or keeps state, another document clears, unchanged actions do not notify"
+  "world-store: same-document reopen waits or keeps state, another document clears, unchanged actions do not notify, a new reset cause updates the board"
 );
 console.log("world-store.selfcheck ok");

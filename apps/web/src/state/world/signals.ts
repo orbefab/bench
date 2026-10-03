@@ -56,6 +56,7 @@ export const signalsSlice: WorldSlice<
           next.fault === old.fault &&
           next.unpowered === old.unpowered &&
           next.inReset === old.inReset &&
+          next.resetCause === old.resetCause &&
           next.resets === old.resets &&
           next.voltage === old.voltage &&
           next.ledCurrent === old.ledCurrent &&
