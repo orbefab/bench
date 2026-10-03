@@ -178,7 +178,9 @@ then `read_recording` from 0 to 2. Expect `resets` ≥ 1 on the board, a
 `reset` event, a later `reboot`, and a board frame whose `minVoltage`
 (the 5V node) is under 2.675. On a bench header that node equals the
 supply terminal. The serial line `— brownout reset —` is on the reboot.
-The board status says **in reset** through the 66 ms hold.
+The board status says **in reset (brownout)** through the 66 ms hold. A
+live board in reset has `inReset: true` and a `resetCause` of `brownout`
+or `pin`; a scrubbed frame says only **in reset**.
 
 ## Not yet
 
