@@ -62,10 +62,15 @@ function copyVcc(dir: string): void {
   );
 }
 
+type Pose = {
+  position: [number, number, number];
+  rotation: [number, number, number, number];
+};
+
 function sceneWorld(
   instances: Record<
     string,
-    { part: string; params?: Record<string, string | number> }
+    { part: string; params?: Record<string, string | number>; pose?: Pose }
   >,
   wires: [string, string][],
   levels: {
@@ -994,6 +999,129 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       "the loose part was stamped on the supply"
     );
     console.log("loose part: r is on nano");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// The run places an instance by its own pose. A parent's pose is not
+// composed in, so a placed part under a posed group is refused.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-nested-pose-"));
+  try {
+    copyVcc(dir);
+    const groupPose = (x: number): Pose => ({
+      position: [x, 0, 0],
+      rotation: [1, 0, 0, 0],
+    });
+    const rig = (x: number) => ({
+      format: "sfab.part@1",
+      id: `sfab/rig-${x}@1.0.0`,
+      type: "assembly",
+      axes: {
+        behaviour: {
+          "2": {
+            default: "netlist",
+            variants: {
+              netlist: {
+                kind: "composite",
+                omits: ["test group"],
+                netlist: {
+                  instances: {
+                    nano: {
+                      part: "sfab/nano-ch340@1.0.0",
+                      pose: groupPose(0.08),
+                      params: {
+                        firmware: "firmware/vcc/vcc.hex",
+                        source: "firmware/vcc/vcc.ino",
+                      },
+                    },
+                    usb: { part: "sfab/usb-port-500ma@1.0.0" },
+                  },
+                  wires: [
+                    ["usb.5V", "nano.5V"],
+                    ["usb.GND", "nano.GND"],
+                  ],
+                  expose: {},
+                },
+              },
+            },
+          },
+        },
+        body: noneAxis("none"),
+        visual: noneAxis("none"),
+      },
+    });
+    for (const x of [0, 1]) {
+      writeJson(join(dir, "parts", "sfab", `rig-${x}@1.0.0.json`), rig(x));
+      writeJson(
+        join(dir, `rig-${x}.world.json`),
+        sceneWorld(
+          { rig: { part: `sfab/rig-${x}@1.0.0`, pose: groupPose(x) } },
+          [],
+          { default: 1 }
+        )
+      );
+    }
+    const flat = planWorld(dir, "rig-0.world.json");
+    if (!flat.ok) {
+      throw new Error(flat.errors.map((item) => item.message).join("; "));
+    }
+    expect(
+      flat.plan.boards.some((board) => board.id === "rig.nano"),
+      "the group at the origin did not run its nano"
+    );
+    const moved = planWorld(dir, "rig-1.world.json");
+    expect(!moved.ok, "a nano under a posed group ran");
+    const message = moved.ok
+      ? ""
+      : moved.errors.map((item) => item.message).join("; ");
+    expect(
+      message.includes("rig.nano") && message.includes("under rig"),
+      `nested pose error: ${message}`
+    );
+    console.log(`nested pose: refused (${message})`);
+
+    // -q is the same rotation as q, so the group is still at the origin.
+    writeJson(
+      join(dir, "flipped.world.json"),
+      sceneWorld(
+        {
+          rig: {
+            part: "sfab/rig-0@1.0.0",
+            pose: { position: [0, 0, 0], rotation: [-1, 0, 0, 0] },
+          },
+        },
+        [],
+        { default: 1 }
+      )
+    );
+    const flipped = planWorld(dir, "flipped.world.json");
+    expect(
+      flipped.ok,
+      `a group at the origin as -q was refused: ${flipped.ok ? "" : flipped.errors.map((item) => item.message).join("; ")}`
+    );
+
+    // The world root is placed once and the editor may move it: its pose
+    // places nothing, and the parts below it keep their own poses.
+    const scene = sceneWorld({ rig: { part: "sfab/rig-0@1.0.0" } }, [], {
+      default: 1,
+    }) as { root: Record<string, unknown> };
+    scene.root.pose = groupPose(1);
+    writeJson(join(dir, "root-pose.world.json"), scene);
+    const rooted = planWorld(dir, "root-pose.world.json");
+    if (!rooted.ok) {
+      throw new Error(rooted.errors.map((item) => item.message).join("; "));
+    }
+    const rootedNano = rooted.plan.boards.find(
+      (board) => board.id === "rig.nano"
+    );
+    const flatNano = flat.plan.boards.find((board) => board.id === "rig.nano");
+    expect(
+      JSON.stringify(rootedNano) === JSON.stringify(flatNano),
+      "a posed world root moved rig.nano"
+    );
+    console.log("nested pose: a posed world root runs, rig.nano stays put");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

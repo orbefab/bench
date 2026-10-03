@@ -23,7 +23,7 @@
                 "rig2": {
                   "part": "sfab/arm-rig@1.0.0",
                   "pose": {
-                    "position": [0, 0.35, 0],
+                    "position": [0, 0, 0],
                     "rotation": [1, 0, 0, 0]
                   }
                 }

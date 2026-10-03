@@ -527,6 +527,49 @@ function poseOf(inst: LiveInstance): Pose {
   };
 }
 
+/** -q is the same rotation as q, so [-1, 0, 0, 0] is the identity too. */
+const isIdentity = (pose: Pose) => {
+  const [w, x, y, z] = pose.rotation;
+  return (
+    pose.position.every((value) => value === 0) &&
+    Math.abs(w) === 1 &&
+    x === 0 &&
+    y === 0 &&
+    z === 0
+  );
+};
+
+/**
+ * The run places an instance by its own pose, in world space: a parent's
+ * pose is not composed in. Each placed path under a posed group is one
+ * error, so the run does not start with a part in the wrong place. The
+ * world root is placed once and the editor may move it, so its pose
+ * places nothing and is not an error.
+ */
+function nestedPoses(plan: RunPlan, resolved: LiveInstance[]): WorldError[] {
+  const posed = resolved.filter(
+    (inst) => inst.path !== ROOT_PATH && inst.pose && !isIdentity(inst.pose)
+  );
+  const placed = [
+    ...plan.robots,
+    ...plan.boards,
+    ...(plan.rangers ?? []),
+    ...(plan.boxes ?? []),
+  ].map((item) => item.id);
+  const errors: WorldError[] = [];
+  for (const path of new Set(placed)) {
+    const group = posed.find((inst) => path.startsWith(`${inst.path}.`));
+    if (!group) continue;
+    errors.push(
+      schema(
+        `${path} sits under ${group.path}, which has a pose. Nested poses are not composed yet. Hint: pose ${group.path} at the origin, or move ${path} up to the scene.`,
+        path
+      )
+    );
+  }
+  return errors;
+}
+
 function cannot(inst: LiveInstance, detail: string, code = "idle"): Diagnostic {
   const named =
     inst.path === ROOT_PATH
@@ -1536,6 +1579,8 @@ export function planWorld(
   if (!built.plan) {
     return { ok: false, errors: [schema("World file did not load.")] };
   }
+  const stacked = nestedPoses(built.plan, loaded.resolved);
+  if (stacked.length > 0) return { ok: false, errors: stacked };
   const fromLoad = loaded.diagnostics
     .filter((diag) => diag.severity === "error")
     .map((diag) => present(diag));
