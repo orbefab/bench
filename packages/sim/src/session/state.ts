@@ -181,8 +181,11 @@ export type SessionState = {
    * after the solve, before a board that just left reset executes.
    */
   latchedNode: Map<string, number>;
-  /** Terminal of a supply that feeds no board. Latched with the board nodes. */
-  latchedTerminal: Map<string, number>;
+  /**
+   * Each supply's rail node (`boardNodeOf`), for a part with no power
+   * board. Latched with the board nodes.
+   */
+  latchedRail: Map<string, number>;
   adcNodes: AdcNodeStamp[];
   adcSamples: AdcSampleStamp[];
   /** Test only. Absent on load, stamps and samples are not allocated. */
@@ -254,7 +257,7 @@ export function createState(host: SimHost): SessionState {
     partFeeds: {},
     supplyLive: {},
     latchedNode: new Map<string, number>(),
-    latchedTerminal: new Map<string, number>(),
+    latchedRail: new Map<string, number>(),
     adcNodes: [],
     adcSamples: [],
     adcTrace: false,

@@ -8,7 +8,7 @@ import { RangerRuntime } from "../ranger";
 import { blankTrack, trackServo } from "../servo";
 import { targetPosition } from "../targets";
 import { fail, simMs } from "./common";
-import { latchedSupplyNode } from "./rails";
+import { latchedBoardNode, latchedSupplyNode, powerBoardOf } from "./rails";
 import { scalar } from "./recorder";
 import { warnEnvelope } from "./solve";
 import type { Load, ServoDrive, SessionState } from "./state";
@@ -63,8 +63,13 @@ export function bindRangers(s: SessionState, plan: RunPlan) {
   s.rangers = (plan.rangers ?? []).map((spec) => {
     const ranger = new RangerRuntime(spec);
     ranger.supplyId = s.partFeeds[spec.id] ?? null;
-    ranger.volts = () =>
-      ranger.supplyId ? latchedSupplyNode(s, ranger.supplyId) : 0;
+    ranger.powerBoard = powerBoardOf(plan, spec);
+    ranger.volts = () => {
+      if (!ranger.supplyId) return 0;
+      return ranger.powerBoard
+        ? latchedBoardNode(s, ranger.powerBoard)
+        : latchedSupplyNode(s, ranger.supplyId);
+    };
     ranger.physics = () =>
       s.sim ? { mj: s.sim.mj, model: s.sim.model, data: s.sim.data } : null;
     return ranger;

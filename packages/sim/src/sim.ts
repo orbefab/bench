@@ -488,7 +488,7 @@ function createSession(host: SimHost) {
     s.partFeeds = {};
     s.supplyLive = {};
     s.latchedNode = new Map();
-    s.latchedTerminal = new Map();
+    s.latchedRail = new Map();
     s.adcNodes = [];
     s.adcSamples = [];
     s.rails = new Map();

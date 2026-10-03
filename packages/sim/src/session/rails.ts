@@ -7,7 +7,7 @@ import {
 } from "@sfab-bench/contract";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 import { splitPortRef } from "@sfab-bench/parts";
-import type { RunBoard, RunPlan } from "../plan";
+import type { RunBoard, RunPart, RunPlan } from "../plan";
 import { railAttachment } from "../power-path";
 import { createRailCircuit, type RailCircuit } from "../rail-circuit";
 import { blankTrack } from "../servo";
@@ -58,9 +58,11 @@ function spansOn(s: SessionState, ids: readonly string[]) {
  * The board whose 5V, VIN, or VBUS the part's power pins reach.
  * Ground wires are not followed, so a shared ground is not a second board.
  */
-function powerBoardOf(plan: RunPlan, partId: string): string | null {
-  const part = plan.parts.find((item) => item.id === partId);
-  if (!part) return null;
+export function powerBoardOf(
+  plan: RunPlan,
+  part: { id: string; pins: RunPart["pins"] }
+): string | null {
+  const partId = part.id;
   const adjacent = wireGraph(plan);
   const isGround = (full: string): boolean => {
     const end = splitPortRef(full);
@@ -182,7 +184,7 @@ export function bindPower(s: SessionState, plan: RunPlan) {
       stallMs: 0,
       winding: 0,
       railSlot: -1,
-      powerBoard: powerBoardOf(plan, part.id),
+      powerBoard: powerBoardOf(plan, part),
     };
     s.loads.push(load);
   }
@@ -208,6 +210,15 @@ function supplyTerms(
   };
 }
 
+/**
+ * The board whose node a servo's current is stamped on: the one its V+
+ * reaches, else the one that drives its signal. Null means the rail's
+ * board node.
+ */
+export function loadBoard(load: Load): string | null {
+  return load.powerBoard ?? load.drive?.board?.id ?? null;
+}
+
 /** The winding sits on the powering board's 5V node, not on the terminal. */
 function motorsOf(members: readonly Load[]) {
   return members.map((load) => {
@@ -216,7 +227,7 @@ function motorsOf(members: readonly Load[]) {
     return {
       resistance: drive.law.resistance,
       k: drive.law.k,
-      boardId: load.powerBoard ?? drive.board?.id,
+      boardId: loadBoard(load) ?? undefined,
     };
   });
 }
@@ -542,15 +553,12 @@ export function drivenBoard(
 }
 
 /**
- * Volts the ranger may read. A board on the same supply contributes its
- * latched node. A supply with no board contributes its latched terminal,
- * so a bench supply can feed the sensor on its own.
+ * Volts a ranger with no power board reads: the latched `boardNodeOf`,
+ * the node the state and the solve use for it. A supply with no board
+ * reads its terminal, so a bench supply can feed the sensor on its own.
  */
 export function latchedSupplyNode(s: SessionState, supplyId: string): number {
-  for (const [boardId, power] of s.boardPower) {
-    if (power.supplyId === supplyId) return latchedBoardNode(s, boardId);
-  }
-  return s.latchedTerminal.get(supplyId) ?? 0;
+  return s.latchedRail.get(supplyId) ?? 0;
 }
 
 /** Board node at the end of the step. With no cable this is the terminal. */
@@ -562,6 +570,19 @@ export function boardVolts(s: SessionState, boardId: string): number {
   const supplyId = s.boardPower.get(boardId)?.supplyId;
   if (!supplyId) return 0;
   return s.rails.get(supplyId)?.circuit.boardReading(boardId).voltage ?? 0;
+}
+
+/**
+ * Volts at the node a part's current is stamped on: its power board's
+ * node, else the rail's board node.
+ */
+export function partVolts(
+  s: SessionState,
+  supplyId: string | null,
+  board: string | null | undefined
+): number {
+  if (!supplyId) return 0;
+  return board ? boardVolts(s, board) : boardNodeOf(s, supplyId);
 }
 
 /** Node the CPU is allowed to see: the latch, not the solve in progress. */
@@ -581,10 +602,7 @@ export function latchSupplyNodes(s: SessionState) {
     s.latchedNode.set(board.id, supplyId ? boardVolts(s, board.id) : 0);
   }
   for (const supply of s.supplySpecs) {
-    s.latchedTerminal.set(
-      supply.id,
-      s.rails.get(supply.id)?.circuit.sourceVoltage(supply.id) ?? 0
-    );
+    s.latchedRail.set(supply.id, boardNodeOf(s, supply.id));
   }
 }
 

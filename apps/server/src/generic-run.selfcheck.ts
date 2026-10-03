@@ -31,6 +31,7 @@ import {
   createRailCircuit,
   type RailCircuit,
 } from "@sfab-bench/sim/rail-circuit";
+import { headlessSim } from "./run";
 import {
   type BoardStamp,
   type boardStampOf,
@@ -43,6 +44,9 @@ const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };
 const SETTLE = 80;
 const nanoExample = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
+);
+const armExample = fileURLToPath(
+  new URL("../../../examples/arm/", import.meta.url)
 );
 
 function writeJson(file: string, value: unknown): void {
@@ -1203,6 +1207,85 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     );
     console.log(`bare motor: ${row?.message}`);
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Two supplies whose grounds meet are one rail. A part reads the node of
+// the board its V+ is on, not the first board's or the one that drives
+// its signal.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-shared-rail-"));
+  const sim = headlessSim();
+  try {
+    copyVcc(dir);
+    cpSync(join(armExample, "robot"), join(dir, "robot"), { recursive: true });
+    cpSync(
+      join(armExample, "parts", "sfab", "arm@1.0.0.json"),
+      join(dir, "parts", "sfab", "arm@1.0.0.json")
+    );
+    writeJson(
+      join(dir, "shared.world.json"),
+      sceneWorld(
+        {
+          usbLeft: { part: "sfab/usb-port-500ma@1.0.0" },
+          usbRight: { part: "sfab/usb-port-500ma@1.0.0" },
+          left: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+          right: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+          arm: { part: "sfab/arm@1.0.0" },
+          servo: { part: "sfab/sg90@1.0.0" },
+          sensor: { part: "sfab/hc-sr04@1.0.0" },
+        },
+        [
+          ["servo.shaft", "arm.shoulder"],
+          ["servo.mount", "arm.base"],
+          ["usbLeft.5V", "left.5V"],
+          ["usbLeft.GND", "left.GND"],
+          ["usbRight.5V", "right.5V"],
+          ["usbRight.GND", "right.GND"],
+          ["left.GND", "right.GND"],
+          ["right.5V", "servo.V+"],
+          ["right.GND", "servo.GND"],
+          ["left.D9", "servo.signal"],
+          ["right.5V", "sensor.VCC"],
+          ["right.GND", "sensor.GND"],
+          ["left.D7", "sensor.Trig"],
+          ["left.D8", "sensor.Echo"],
+        ],
+        // Class 2 adds the S4 diode on right's USB path, so the nodes part.
+        { default: 1, paths: { right: { behaviour: 2 } } }
+      )
+    );
+    const loaded = await sim.load({
+      project: dir,
+      world: "shared.world.json",
+      generation: 1,
+    });
+    if (!loaded.ok) {
+      throw new Error(loaded.errors.map((item) => item.message).join("; "));
+    }
+    await sim.step(50);
+    const state = sim.state();
+    if (!state) throw new Error("no state");
+    const left = state.boards.left?.voltage ?? 0;
+    const right = state.boards.right?.voltage ?? 0;
+    expect(Math.abs(left - right) > 1e-4, `left ${left} V right ${right} V`);
+    const sensor = state.parts?.sensor?.voltage ?? 0;
+    expect(sensor === right, `sensor reads ${sensor} V, right is ${right} V`);
+    const body = sim.record({ op: "read", from: 0, to: state.simTime });
+    if (body.op !== "read") throw new Error("no recording");
+    const frame = body.read.frames.at(-1);
+    const servo = frame?.parts.servo?.voltage ?? 0;
+    const rightRec = frame?.boards.right?.voltage ?? 0;
+    expect(
+      servo === rightRec,
+      `recorded servo ${servo} V, right ${rightRec} V`
+    );
+    console.log(
+      `shared rail: sensor and servo read right ${right.toFixed(4)} V, left is ${left.toFixed(4)} V`
+    );
+  } finally {
+    sim.dispose();
     rmSync(dir, { recursive: true, force: true });
   }
 }

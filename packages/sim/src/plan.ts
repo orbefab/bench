@@ -1247,6 +1247,7 @@ function build(
         model: shortName(inst.part.id),
         pose: poseOf(inst),
         law: rangerLaw(numbers),
+        pins: pinsOf(inst.type.ports),
         trig: digitalPeer(inst, "Trig", loaded, boards),
         echo: digitalPeer(inst, "Echo", loaded, boards),
       });

@@ -8,7 +8,7 @@ import type { PinMode } from "@sfab-bench/engine-circuit";
 import { boundOutside } from "@sfab-bench/parts";
 import type { RailCircuit } from "../rail-circuit";
 import { sampleLoad } from "./actuators";
-import { boardsFed, drivenBoard } from "./rails";
+import { boardsFed, drivenBoard, loadBoard } from "./rails";
 import type { SessionState } from "./state";
 
 /** One warning per path and ref when an observed bound is outside. */
@@ -205,7 +205,8 @@ function pinPiecesUnion(
 function solveOneRail(
   s: SessionState,
   supplyId: string,
-  fixed: number
+  fixed: number,
+  rangerOnBoard: ReadonlyMap<string, number>
 ): { voltage: number; current: number; board: number; boardMin: number } {
   const group = s.rails.get(supplyId);
   if (!group) return { voltage: 0, current: 0, board: 0, boardMin: 0 };
@@ -218,9 +219,11 @@ function solveOneRail(
       const board = s.runPlan?.boards.find((item) => item.id === id);
       return board ? [board] : [];
     });
-    const quiescent = new Map<string, number>();
+    // Each draw sits on its own board's node. A part with no board of
+    // its own is the rest of `fixed`, and lands on the first board.
+    const quiescent = new Map<string, number>(rangerOnBoard);
     for (const load of members) {
-      const id = load.powerBoard ?? load.drive?.board?.id ?? specs[0]?.id;
+      const id = loadBoard(load) ?? specs[0]?.id;
       if (!id) continue;
       quiescent.set(id, (quiescent.get(id) ?? 0) + load.quiescent);
     }
@@ -231,13 +234,13 @@ function solveOneRail(
       circuit.setBoardLoad(spec.id, amps);
       accounted += amps;
     }
-    const ranger = fixed - accounted;
+    const rest = fixed - accounted;
     const first = specs[0];
-    if (first && ranger !== 0) {
+    if (first && rest !== 0) {
       const base =
         (s.boardPower.get(first.id)?.draw ?? 0) +
         (quiescent.get(first.id) ?? 0);
-      circuit.setBoardLoad(first.id, base + ranger);
+      circuit.setBoardLoad(first.id, base + rest);
     }
     pieces = pinPiecesUnion(s, specs, circuit);
     if (!pieces) {
@@ -301,6 +304,7 @@ function solveOneRail(
 export function solveSupplies(s: SessionState) {
   for (const load of s.loads) sampleLoad(s, load);
   const rangerFixed = new Map<string, number>();
+  const rangerOnBoard = new Map<string, number>();
   for (const ranger of s.rangers) {
     const draw = ranger.takeDraw();
     if (!ranger.supplyId) continue;
@@ -308,6 +312,12 @@ export function solveSupplies(s: SessionState) {
       ranger.supplyId,
       (rangerFixed.get(ranger.supplyId) ?? 0) + draw
     );
+    if (ranger.powerBoard) {
+      rangerOnBoard.set(
+        ranger.powerBoard,
+        (rangerOnBoard.get(ranger.powerBoard) ?? 0) + draw
+      );
+    }
   }
   const next: Record<string, WorldSupplyState> = {};
   const solved = new Set<RailCircuit>();
@@ -333,7 +343,7 @@ export function solveSupplies(s: SessionState) {
     for (const [id, draw] of rangerFixed) {
       if (onThis(id)) fixed += draw;
     }
-    solveOneRail(s, supply.id, fixed);
+    solveOneRail(s, supply.id, fixed, rangerOnBoard);
   }
   for (const supply of s.supplySpecs) {
     const circuit = s.rails.get(supply.id)?.circuit;

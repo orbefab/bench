@@ -9,6 +9,8 @@
 import type { Pose } from "@sfab-bench/contract";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 
+import type { RunPin } from "./plan";
+
 /** Include geom group 0 only: targets and static primitives. */
 export const RANGER_GEOM_GROUP = [1, 0, 0, 0, 0, 0];
 
@@ -48,6 +50,7 @@ export type RunRanger = {
   model: string;
   pose: Pose;
   law: RangerLaw;
+  pins: Record<string, RunPin>;
   /** Board pin that drives Trig. Null when Trig is unwired. */
   trig: { boardId: string; bit: number } | null;
   /** Board pin Echo drives. Null when Echo is unwired. */
@@ -177,6 +180,8 @@ export class RangerRuntime {
   readonly directions: Vec3[];
   board: AvrBoard | null = null;
   supplyId: string | null = null;
+  /** The board whose power pin VCC reaches, when exactly one does. */
+  powerBoard: string | null = null;
   distanceM: number | null = null;
   echoS: number | null = null;
   hit = false;

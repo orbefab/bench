@@ -21,7 +21,7 @@ import { motionRank, RunRecorder, timelineFromRead } from "../record";
 import type { RecordBody, RecordQuery, ToWorker } from "../sim";
 import { boardInSoa, ledCurrentOf, ledReading, regulatorAmps } from "./boards";
 import { post, simMs } from "./common";
-import { boardNodeOf, boardVolts } from "./rails";
+import { boardVolts, loadBoard, partVolts } from "./rails";
 import type { RecLayout, SessionState } from "./state";
 
 const INTEGRATORS = [
@@ -125,11 +125,7 @@ export function sample(s: SessionState): WorldState | null {
       commandDeg: load.drive?.track.commandDeg ?? null,
       state: load.state,
       current: load.current,
-      voltage: load.drive?.board
-        ? boardVolts(s, load.drive.board.id)
-        : load.supplyId
-          ? boardNodeOf(s, load.supplyId)
-          : 0,
+      voltage: partVolts(s, load.supplyId, loadBoard(load)),
     };
   }
   for (const ranger of s.rangers) {
@@ -139,7 +135,7 @@ export function sample(s: SessionState): WorldState | null {
       commandDeg: null,
       state: "idle",
       current: ranger.current,
-      voltage: ranger.supplyId ? boardNodeOf(s, ranger.supplyId) : 0,
+      voltage: partVolts(s, ranger.supplyId, ranger.powerBoard),
       distanceM: ranger.distanceM,
       echoS: ranger.echoS,
       hit: ranger.hit,
@@ -226,11 +222,7 @@ function fillRecorder(s: SessionState, full: boolean) {
     if (!load) continue;
     rec.state[i] = motionRank(load.state);
     rec.partCurrent[i] = load.current;
-    rec.partVoltage[i] = load.drive?.board
-      ? boardVolts(s, load.drive.board.id)
-      : load.supplyId
-        ? boardNodeOf(s, load.supplyId)
-        : 0;
+    rec.partVoltage[i] = partVolts(s, load.supplyId, loadBoard(load));
   }
   for (let i = 0; i < lay.rangers.length; i++) {
     const ranger = lay.rangers[i];
@@ -238,9 +230,7 @@ function fillRecorder(s: SessionState, full: boolean) {
     const index = lay.parts.length + i;
     rec.state[index] = 0;
     rec.partCurrent[index] = ranger.current;
-    rec.partVoltage[index] = ranger.supplyId
-      ? boardNodeOf(s, ranger.supplyId)
-      : 0;
+    rec.partVoltage[index] = partVolts(s, ranger.supplyId, ranger.powerBoard);
   }
   for (let i = 0; i < lay.supplies.length; i++) {
     const spec = lay.supplies[i];
