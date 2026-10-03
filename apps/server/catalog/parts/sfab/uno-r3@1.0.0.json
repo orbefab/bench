@@ -95,7 +95,8 @@
                 "A2": "mcu.PC2",
                 "A3": "mcu.PC3",
                 "A4": "mcu.PC4",
-                "A5": "mcu.PC5"
+                "A5": "mcu.PC5",
+                "RESET": "mcu.RESET"
               }
             },
             "omits": [
@@ -164,7 +165,8 @@
                 "A2": "mcu.PC2",
                 "A3": "mcu.PC3",
                 "A4": "mcu.PC4",
-                "A5": "mcu.PC5"
+                "A5": "mcu.PC5",
+                "RESET": "mcu.RESET"
               }
             },
             "omits": [

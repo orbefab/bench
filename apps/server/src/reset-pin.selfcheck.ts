@@ -11,6 +11,8 @@
  * millisecond, so an empty console proves the held chip ran nothing. A
  * reload under a low RESET is still recorded as a reload. When another
  * Nano's D13 lets RESET go, the chip boots with `— external reset —`.
+ * The Uno's header brings out RESET as well, and grounding it holds that
+ * chip the same way.
  */
 
 import { ok as expect } from "node:assert/strict";
@@ -88,32 +90,39 @@ const none = (label: string) => ({
  * `held` wires `nano.RESET` to GND. `pair` adds a second Nano, `free`, on
  * the same USB supply with its RESET left alone, so the rail carries two
  * reset nodes. `driven` adds a Nano running blink whose D13 drives
- * `nano.RESET`: low for 200 ms, then released for 200 ms.
+ * `nano.RESET`: low for 200 ms, then released for 200 ms. `uno` puts an
+ * Uno R3, `uno`, in the held board's place.
  */
 type Scene = {
+  uno?: boolean;
   held?: boolean;
   pair?: boolean;
   driven?: boolean;
   image?: string;
 };
 
+function boardId(scene: Scene): string {
+  return scene.uno ? "uno" : "nano";
+}
+
 function writeWorld(dir: string, level: 1 | 2, scene: Scene): string {
   const { held = false, pair = false, driven = false } = scene;
   const image = scene.image ?? "blink.hex";
+  const id = boardId(scene);
   const wires = [
-    ["usb.5V", "nano.5V"],
-    ["usb.GND", "nano.GND"],
+    ["usb.5V", `${id}.5V`],
+    ["usb.GND", `${id}.GND`],
   ];
-  if (held) wires.push(["nano.RESET", "nano.GND"]);
+  if (held) wires.push([`${id}.RESET`, `${id}.GND`]);
   const instances: Record<string, unknown> = {
-    nano: {
-      part: "sfab/nano-ch340@1.0.0",
+    [id]: {
+      part: scene.uno ? "sfab/uno-r3@1.0.0" : "sfab/nano-ch340@1.0.0",
       params: { firmware: image },
     },
     usb: { part: "sfab/usb-port-500ma@1.0.0" },
   };
   if (pair) {
-    instances.free = instances.nano;
+    instances.free = instances[id];
     wires.push(["usb.5V", "free.5V"], ["usb.GND", "free.GND"]);
   }
   if (driven) {
@@ -124,7 +133,7 @@ function writeWorld(dir: string, level: 1 | 2, scene: Scene): string {
     wires.push(
       ["usb.5V", "driver.5V"],
       ["usb.GND", "driver.GND"],
-      ["driver.D13", "nano.RESET"]
+      ["driver.D13", `${id}.RESET`]
     );
   }
   const doc = {
@@ -161,7 +170,7 @@ function writeWorld(dir: string, level: 1 | 2, scene: Scene): string {
     },
   };
   const shape = driven ? "driven" : held ? "held" : "free";
-  const name = `reset-pin-${level}-${shape}${pair ? "-pair" : ""}-${image.replace(".hex", "")}.world.json`;
+  const name = `reset-pin-${level}-${id}-${shape}${pair ? "-pair" : ""}-${image.replace(".hex", "")}.world.json`;
   writeFileSync(join(dir, name), JSON.stringify(doc));
   return name;
 }
@@ -176,7 +185,8 @@ async function run(
   if (!planned.ok) {
     throw new Error(planned.errors.map((item) => item.message).join("; "));
   }
-  const board = planned.plan.boards.find((item) => item.id === "nano");
+  const id = boardId(scene);
+  const board = planned.plan.boards.find((item) => item.id === id);
   const bit = pinIndex(board?.pinOrder ?? [], "D13");
   const sim = headlessSim();
   try {
@@ -185,21 +195,21 @@ async function run(
     await sim.step(scene.ms ?? 150);
     if (scene.reload) {
       // A new image while RESET is low stays held as well.
-      await sim.accept({ type: "reloadBoard", board: "nano", generation: 1 });
+      await sim.accept({ type: "reloadBoard", board: id, generation: 1 });
       await sim.step(150);
     }
     const state = sim.state();
-    const live = state?.boards.nano;
-    expect(live?.pins, `class ${level} nano has no pins`);
+    const live = state?.boards[id];
+    expect(live?.pins, `class ${level} ${id} has no pins`);
     const body = sim.record({ op: "read", from: 0, to: state?.simTime ?? 0 });
     if (body.op !== "read") throw new Error("no recording");
     const resets = body.read.events.filter((event) => event.kind === "reset");
     const reloads = body.read.events.filter(
-      (event) => event.kind === "reload" && event.board === "nano"
+      (event) => event.kind === "reload" && event.board === id
     );
     const other = state?.boards.free;
     const serial = body.read.events
-      .filter((event) => event.kind === "serial" && event.board === "nano")
+      .filter((event) => event.kind === "serial" && event.board === id)
       .map((event) => (event.kind === "serial" ? event.text : ""))
       .join("");
     return {
@@ -282,6 +292,23 @@ try {
     );
     console.log(
       `class ${level} Nano: RESET to GND holds the chip at ${held.voltage.toFixed(2)} V; free RESET boots`
+    );
+    const unoFree = await run(dir, level, { uno: true });
+    expect(
+      unoFree.d13Output && !unoFree.inReset,
+      `class ${level}: a free Uno RESET runs`
+    );
+    const unoHeld = await run(dir, level, { uno: true, held: true });
+    expect(
+      !unoHeld.d13Output &&
+        unoHeld.inReset &&
+        unoHeld.resets.length === 1 &&
+        unoHeld.resets[0]?.kind === "reset" &&
+        unoHeld.resets[0].cause === "pin",
+      `class ${level}: Uno RESET low ${JSON.stringify(unoHeld)}`
+    );
+    console.log(
+      `class ${level} Uno: RESET to GND holds the chip at ${unoHeld.voltage.toFixed(2)} V; free RESET boots`
     );
     // Another Nano's D13 on RESET. Class 1 stamps no pins on a shared
     // rail, so that net has no voltage: the chip runs. At class 2, D13
