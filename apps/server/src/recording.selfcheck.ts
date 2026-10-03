@@ -87,7 +87,9 @@ function fill(
   rec.state[0] = motionRank(sample.state ?? "idle");
   rec.partCurrent[0] = sample.current ?? 0.01;
   rec.voltage[0] = sample.voltage ?? 5;
+  rec.voltageLow[0] = rec.voltage[0];
   rec.supplyCurrent[0] = 0.06;
+  rec.supplyCurrentHigh[0] = 0.06;
   rec.ddr[0] = sample.ddr ?? 0;
   rec.running[0] = 1;
   rec.inReset[0] = sample.inReset ? 1 : 0;
@@ -508,8 +510,9 @@ try {
       `arm ${deg(angle).toFixed(3)}° at ${frame.t.toFixed(3)} s reached the stop ${deg(upper).toFixed(3)}°`
     );
   }
-  // The capacitors hold the board node during the brownout.
-  expect(Math.abs(minV - 2.099) <= 0.02, `recorded minimum ${minV} V`);
+  // The servo opens at the sub-step the node crosses assert, so the rail
+  // undershoots it by about one 0.1 ms sub-step of slew.
+  expect(Math.abs(minV - 2.557) <= 0.02, `recorded minimum ${minV} V`);
   expect(resets.length >= 1, "no recorded reset within 2 s");
   expect(
     reboots.length === resets.length,

@@ -74,10 +74,16 @@ for (const [seconds, want] of [
     boards: [],
   });
   rec.voltage[0] = 4.2;
+  rec.voltageLow[0] = 4.2;
   rec.supplyCurrent[0] = 0.9;
+  rec.supplyCurrentHigh[0] = 0.9;
   rec.foldStep();
+  // The step that ends the millisecond dipped and peaked between its
+  // circuit sub-steps, then recovered.
   rec.voltage[0] = 5;
+  rec.voltageLow[0] = 4.5;
   rec.supplyCurrent[0] = 0.02;
+  rec.supplyCurrentHigh[0] = 0.3;
   rec.commit(10);
   const usb = rec.read({ from: 0, to: 0.01 }).frames[0]?.supplies.usb;
   expect(
@@ -87,8 +93,20 @@ for (const [seconds, want] of [
       usb.voltage === 5,
     `a sub-millisecond dip is lost: ${JSON.stringify(usb)}`
   );
+  rec.voltage[0] = 5;
+  rec.voltageLow[0] = 4.5;
+  rec.supplyCurrent[0] = 0.02;
+  rec.supplyCurrentHigh[0] = 0.3;
+  rec.commit(20);
+  const next = rec.read({ from: 0.02, to: 0.02 }).frames[0]?.supplies.usb;
+  expect(
+    next?.minVoltage === Math.fround(4.5) &&
+      next.maxCurrent === Math.fround(0.3) &&
+      next.voltage === 5,
+    `a dip between circuit sub-steps is lost: ${JSON.stringify(next)}`
+  );
   console.log(
-    "timestep: a dip and a peak inside a millisecond reach the frame's min and max"
+    "timestep: a dip and a peak inside a millisecond, or between its circuit sub-steps, reach the frame's min and max"
   );
 }
 

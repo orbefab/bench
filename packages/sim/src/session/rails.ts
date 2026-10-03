@@ -576,6 +576,13 @@ export function boardVolts(s: SessionState, boardId: string): number {
   return s.rails.get(supplyId)?.circuit.boardReading(boardId).voltage ?? 0;
 }
 
+/** Lowest volts on a board's node over the last solve's sub-steps. */
+export function boardMinVolts(s: SessionState, boardId: string): number {
+  const supplyId = s.boardPower.get(boardId)?.supplyId;
+  if (!supplyId) return 0;
+  return s.rails.get(supplyId)?.circuit.boardReading(boardId).min ?? 0;
+}
+
 /**
  * Volts at the node a part's current is stamped on: its power board's
  * node, else the rail's board node.

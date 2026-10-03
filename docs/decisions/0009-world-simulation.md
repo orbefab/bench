@@ -93,8 +93,9 @@ preset is 5 V, `R_s = 0.5 Ω`, `I_limit = 0.9 A`, and one stalled SG90
 holds the USB terminal near 4.65 V and, through the Uno's fuse and switch,
 the board node near 4.5 V without a reset. A bench preset is `R_s = 0.05 Ω` with the file's
 voltage and current limit. At 5 V / 0.3 A the starting current at rest
-pulls the rail to about 1.70 V (0.3 A − 50 mA board − 10 mA quiescent
-leaves 0.24 A through 7.1 Ω). The board resets on the first pulse, holds
+would pull the rail toward about 1.70 V (0.3 A − 50 mA board − 10 mA
+quiescent leaves 0.24 A through 7.1 Ω). The board resets on the first
+pulse, when the rail crosses the assert voltage inside that step, holds
 66 ms, reboots, and repeats. The torque of each assert step coasts while
 the winding is open, so the arm walks a few degrees and does not reach
 the stop. Reset asserts

@@ -21,7 +21,7 @@ import { motionRank, RunRecorder, timelineFromRead } from "../record";
 import type { RecordBody, RecordQuery, ToWorker } from "../sim";
 import { boardInSoa, ledCurrentOf, ledReading, regulatorAmps } from "./boards";
 import { post, simMs } from "./common";
-import { boardVolts, loadBoard, partVolts } from "./rails";
+import { boardMinVolts, boardVolts, loadBoard, partVolts } from "./rails";
 import type { RecLayout, SessionState } from "./state";
 
 const INTEGRATORS = [
@@ -240,6 +240,11 @@ function fillRecorder(s: SessionState, full: boolean) {
     const spec = lay.supplies[i];
     const live = spec ? s.supplyLive[spec.id] : undefined;
     rec.voltage[i] = live?.voltage ?? 0;
+    const circuit = spec ? s.rails.get(spec.id)?.circuit : undefined;
+    rec.voltageLow[i] =
+      spec && circuit ? circuit.sourceMin(spec.id) : rec.voltage[i];
+    rec.supplyCurrentHigh[i] =
+      spec && circuit ? circuit.sourceMax(spec.id) : rec.supplyCurrent[i];
     rec.supplyCurrent[i] = live?.current ?? 0;
     rec.supplySoc[i] = live?.soc ?? Number.NaN;
   }
@@ -257,6 +262,7 @@ function fillRecorder(s: SessionState, full: boolean) {
     const id = lay.boards[i];
     const board = s.boards.find((item) => item.id === id);
     rec.boardVoltage[i] = id ? boardVolts(s, id) : 0;
+    rec.boardVoltageLow[i] = id ? boardMinVolts(s, id) : 0;
     rec.regulatorA[i] = id ? regulatorAmps(s, id) : 0;
     if (rec.ledOn[i]) {
       const supplyId = id ? s.boardPower.get(id)?.supplyId : undefined;

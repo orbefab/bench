@@ -177,11 +177,17 @@ export class RunRecorder {
   /** Newton-metres at the shaft. NaN when that part has no driven motor. */
   readonly partTorque: Float64Array;
   readonly voltage: Float64Array;
+  /** Lowest terminal volts over this step's sub-steps. The frame minimum folds it. */
+  readonly voltageLow: Float64Array;
   readonly supplyCurrent: Float64Array;
+  /** Highest terminal current over this step's sub-steps. The frame maximum folds it. */
+  readonly supplyCurrentHigh: Float64Array;
   /** NaN when that supply has no state of charge. */
   readonly supplySoc: Float64Array;
   /** Volts on each board's 5V node. */
   readonly boardVoltage: Float64Array;
+  /** Lowest volts on that node over this step's sub-steps. The frame minimum folds it. */
+  readonly boardVoltageLow: Float64Array;
   /** Regulator pass current into that node. */
   readonly regulatorA: Float64Array;
   /** Amperes through each board's onboard LED. Read only where `ledOn` is set. */
@@ -282,10 +288,13 @@ export class RunRecorder {
     this.rangerHit = this.hasRanger ? new Uint8Array(nP) : null;
     this.rangerDistance?.fill(Number.NaN);
     this.voltage = new Float64Array(nS);
+    this.voltageLow = new Float64Array(nS);
     this.supplyCurrent = new Float64Array(nS);
+    this.supplyCurrentHigh = new Float64Array(nS);
     this.supplySoc = new Float64Array(nS);
     this.supplySoc.fill(Number.NaN);
     this.boardVoltage = new Float64Array(nD);
+    this.boardVoltageLow = new Float64Array(nD);
     this.regulatorA = new Float64Array(nD);
     this.ledCurrent = new Float64Array(nD);
     this.ledOn = spec.boardLed ?? this.boards.map(() => false);
@@ -437,8 +446,8 @@ export class RunRecorder {
 
   private fold() {
     for (let i = 0; i < this.supplies.length; i++) {
-      const voltage = this.voltage[i] ?? 0;
-      const current = this.supplyCurrent[i] ?? 0;
+      const voltage = this.voltageLow[i] ?? 0;
+      const current = this.supplyCurrentHigh[i] ?? 0;
       if (voltage < (this.minV[i] ?? Number.POSITIVE_INFINITY)) {
         this.minV[i] = voltage;
       }
@@ -455,7 +464,7 @@ export class RunRecorder {
       }
     }
     for (let i = 0; i < this.boards.length; i++) {
-      const voltage = this.boardVoltage[i] ?? 0;
+      const voltage = this.boardVoltageLow[i] ?? 0;
       if (voltage < (this.minBoardV[i] ?? Number.POSITIVE_INFINITY)) {
         this.minBoardV[i] = voltage;
       }

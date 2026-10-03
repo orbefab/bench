@@ -139,8 +139,9 @@ export function applyTorque(s: SessionState) {
     const cpu = drive.board;
     const powered = load.supplyId !== null;
     const held = cpu !== null && (!cpu.running || cpu.inReset);
-    // The sample is the current already charged to the rail, including
-    // the step that asserts reset. A board already in reset was latched
+    // The winding is the current already charged to the rail. On the step
+    // that asserts reset it is the share before the brownout opened the
+    // motor (`RailCircuit.armTrips`). A board already in reset was latched
     // limp, so its sample carries no torque.
     const limp = !powered || sample.limp;
     let torque = 0;

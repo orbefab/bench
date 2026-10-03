@@ -162,11 +162,14 @@ limit. USB ("500 mA" port) is 5 V, 0.5 Ω, 0.9 A. A bench supply is
 0.05 Ω with the voltage and current limit in the file.
 
 `parts/sfab/arm-stall@1.0.0.json` is a bench supply at 5 V / 0.3 A. The starting
-current at rest pulls the rail to about 1.70 V: 0.3 A minus the 50 mA
-board and the 10 mA servo electronics leaves 0.24 A through 7.1 Ω. The
-board resets on the first pulse, holds 66 ms, reboots, and repeats. Each
-of those steps torques the joint once and the open winding coasts, so in
-2 s the arm walks a few degrees and does not reach the stop. The
+current at rest would pull the rail toward about 1.70 V: 0.3 A minus the
+50 mA board and the 10 mA servo electronics leaves 0.24 A through 7.1 Ω.
+The rail crosses the reset voltage first. The board resets on the first
+pulse, inside that step, and the servo opens there; at the 1 ms step the
+recorded minimum is about 2.56 V. It holds 66 ms, reboots, and repeats.
+Each of those steps torques the joint until the crossing and the open
+winding coasts, so in 2 s the arm walks a few degrees and does not reach
+the stop. The
 ATmega328P resets below 2.675 V and releases
 above 2.725 V. Pins float from the reset. The recording has a `reset`
 event at the assert and a `reboot` event at the first instruction. The

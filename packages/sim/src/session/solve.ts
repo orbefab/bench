@@ -3,11 +3,11 @@
 import type { WorldSupplyState } from "@sfab-bench/contract";
 import type { PinMode } from "@sfab-bench/engine-circuit";
 import { boundOutside } from "@sfab-bench/parts";
-import type { RailCircuit } from "../rail-circuit";
+import type { MotorTrip, RailCircuit } from "../rail-circuit";
 import { sampleLoad } from "./actuators";
 import { stepS } from "./common";
 import { boardsFed, drivenBoard, loadBoard } from "./rails";
-import type { SessionState } from "./state";
+import type { Load, SessionState } from "./state";
 
 /** One warning per path and ref when an observed bound is outside. */
 function noteSnapshotEnvelope(s: SessionState, supplyId: string): void {
@@ -201,6 +201,36 @@ function pinPiecesUnion(
   return pieces.length > 0 ? pieces : null;
 }
 
+/**
+ * Boards on this circuit that can brown out this step, each with the
+ * running motors it drives. A board that is already held, or whose node is
+ * on another circuit, arms nothing: the step-end `stepReset` decides it.
+ */
+function tripsOf(
+  s: SessionState,
+  circuit: RailCircuit,
+  members: readonly Load[]
+): MotorTrip[] {
+  const trips: MotorTrip[] = [];
+  for (const board of s.boards) {
+    const power = s.boardPower.get(board.id);
+    if (!power?.supplyId || board.fault || power.reset.phase !== "run") {
+      continue;
+    }
+    if (s.rails.get(power.supplyId)?.circuit !== circuit) continue;
+    const motors: number[] = [];
+    for (let i = 0; i < members.length; i++) {
+      const load = members[i];
+      if (load?.drive?.board?.id !== board.id) continue;
+      if (load.sample && !load.sample.limp) motors.push(i);
+    }
+    if (motors.length > 0) {
+      trips.push({ boardId: board.id, assertV: power.assertVoltage, motors });
+    }
+  }
+  return trips;
+}
+
 function solveOneRail(
   s: SessionState,
   supplyId: string,
@@ -276,6 +306,7 @@ function solveOneRail(
       on
     );
   }
+  circuit.armTrips(tripsOf(s, circuit, members));
   circuit.solve(pieces ?? undefined);
   noteSnapshotEnvelope(s, supplyId);
   for (const [id, other] of s.rails) {

@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  type RecordingRead,
   soaWarning,
   type WorldServerMessage,
   type WorldState,
@@ -377,7 +378,7 @@ async function sample(
   totalMs: number,
   stepMs: number,
   boards: readonly string[],
-  beforeStop?: () => void
+  beforeStop?: () => void | Promise<void>
 ): Promise<Row[]> {
   const trace = openTrace(project, worldRel);
   const attached = await trace.attached;
@@ -392,7 +393,7 @@ async function sample(
         serial[board] = serialText(trace.events, board);
       rows.push({ state, serial });
     }
-    beforeStop?.();
+    await beforeStop?.();
     return rows;
   } finally {
     attached.detach();
@@ -456,13 +457,21 @@ for (const row of holdRows) {
 }
 console.log(`hold minimum voltage ${holdMin.toFixed(3)} V`);
 
+let stallFrames: RecordingRead["frames"] = [];
 const stallRows = await sample(
   armDir,
   "parts/sfab/arm-stall@1.0.0.json",
   2000,
   1,
   ["uno"],
-  () => {
+  async () => {
+    const read = await readRecording(
+      armDir,
+      "parts/sfab/arm-stall@1.0.0.json",
+      { from: 0, to: 2 }
+    );
+    if ("error" in read) throw new Error(read.error);
+    stallFrames = read.frames;
     const snap = brownoutBootSnapshot(
       armDir,
       "parts/sfab/arm-stall@1.0.0.json",
@@ -492,8 +501,11 @@ const stallRows = await sample(
   }
 );
 const benchOf = (row: Row) => row.state.boards.uno;
-const sagAt = stallRows.find(
-  (row) => (benchOf(row)?.voltage ?? 5) < BOD_ASSERT_V
+// The rail dips under assert inside the step that resets, then recovers
+// once the servo opens, so the dip is the recorded frame minimum, not a
+// step-end voltage.
+const sagAt = stallFrames.find(
+  (frame) => (frame.boards.uno?.minVoltage ?? 5) < BOD_ASSERT_V
 );
 const resetAt = stallRows.find((row) => row.state.boards.uno?.inReset === true);
 const recoveryAt = stallRows.find(
@@ -513,6 +525,10 @@ const shoulder = jointLimitRad(
   "shoulder"
 );
 let benchMin = Infinity;
+for (const frame of stallFrames) {
+  const low = frame.boards.uno?.minVoltage ?? 5;
+  if (low < benchMin) benchMin = low;
+}
 let armPeak = 0;
 let armAt = 0;
 let angleLo = Number.POSITIVE_INFINITY;
@@ -524,7 +540,6 @@ for (const row of stallRows) {
     terminal === voltage,
     `bench terminal ${terminal} V is not the board node ${voltage} V`
   );
-  if (voltage < benchMin) benchMin = voltage;
   const angle = row.state.joints.arm?.shoulder ?? startAngle;
   if (angle < angleLo) angleLo = angle;
   if (angle > angleHi) angleHi = angle;
@@ -536,15 +551,16 @@ for (const row of stallRows) {
 }
 // Each assert step's torque leaves a velocity that coasts while the
 // winding is open, so the shoulder walks a few degrees. It does not
-// reach the stop. 5.74° at 2 s on this fit.
+// reach the stop. 2.64° at 2 s on this fit.
 const limitDeg = (shoulder.upper * 180) / Math.PI;
 expect(
   angleLo >= shoulder.lower && angleHi < shoulder.upper,
   `shoulder ${angleLo.toFixed(4)}..${angleHi.toFixed(4)} rad reached the stop ${shoulder.lower}..${shoulder.upper}`
 );
-// The capacitors hold the board node during the brownout.
+// The servo opens at the sub-step the node crosses assert, so the rail
+// undershoots it by about one 0.1 ms sub-step of slew.
 expect(
-  Math.abs(benchMin - 2.099) <= 0.02,
+  Math.abs(benchMin - 2.557) <= 0.02,
   `bench rail minimum ${benchMin.toFixed(3)} V`
 );
 console.log(
@@ -585,7 +601,7 @@ console.log(
   `milestone-1 arm-stall before: brownout 0.060 s, reset 0.130 s, bench minimum 1.704 V, shoulder peak 6.359°`
 );
 console.log(
-  `milestone-1 arm-stall after: brownout ${sagAt?.state.simTime.toFixed(3)} s, ` +
+  `milestone-1 arm-stall after: brownout ${sagAt?.t.toFixed(3)} s, ` +
     `reset ${resetAt.state.simTime.toFixed(3)} s, ` +
     `reboot ${rebootAt.state.simTime.toFixed(3)} s, ` +
     `bench minimum ${benchMin.toFixed(3)} V, ` +
@@ -773,8 +789,10 @@ try {
   const stallSide = split.find(
     (row) => (row.state.boards.stall?.resets ?? 0) >= 1
   );
+  // The node dips under assert inside the step and recovers once the
+  // servo opens, so the step-end voltage does not show it; the reset cause does.
   const stallSag = split.find(
-    (row) => (row.state.boards.stall?.voltage ?? 5) < BOD_ASSERT_V
+    (row) => row.state.boards.stall?.resetCause === "brownout"
   );
   expect(stallSag, "stall supply never sagged");
   expect(stallSide, "stall board never reset");
@@ -796,7 +814,7 @@ try {
   // The stall servo's current pulls that rail through brownout, so the
   // hold board resets even though its own servo is not stalled.
   const sharedSag = shared.find(
-    (row) => (row.state.boards.hold?.voltage ?? 5) < BOD_ASSERT_V
+    (row) => row.state.boards.hold?.resetCause === "brownout"
   );
   const holdReset = shared.find(
     (row) => (row.state.boards.hold?.resets ?? 0) >= 1
@@ -837,7 +855,7 @@ try {
       const brownedPart = browned.parts?.servo;
       expect(
         browned.boards.uno?.inReset === true &&
-          (brownedRail?.voltage ?? 5) < BOD_ASSERT_V,
+          browned.boards.uno.resetCause === "brownout",
         `brownout sample ${browned.boards.uno?.inReset} ${brownedRail?.voltage} V ${brownedPart?.state} ${brownedPart?.current} A`
       );
       const hexPath = join(reloadRoot, "firmware/stall/stall.hex");

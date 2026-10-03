@@ -20,6 +20,7 @@ import { applyGpioDrives, gpioInputNets, powerFeedsOf } from "../wiring";
 import { rearmRangers, rearmServos } from "./actuators";
 import { post, simMs, stepCount, stepEndMs, thrownMessage } from "./common";
 import {
+  boardMinVolts,
   boardVolts,
   latchedBoardNode,
   noteDegraded,
@@ -419,9 +420,7 @@ function attachAnalog(s: SessionState, board: AvrBoard) {
  * With no Uno cable the board node is the supply terminal.
  */
 export function brownoutOf(s: SessionState, boardId: string): number {
-  const supplyId = s.boardPower.get(boardId)?.supplyId;
-  if (!supplyId) return 0;
-  return s.rails.get(supplyId)?.circuit.boardReading(boardId).min ?? 0;
+  return boardMinVolts(s, boardId);
 }
 
 /**

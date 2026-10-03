@@ -157,6 +157,17 @@ export type BoardReading = {
   resetMargin: number | null;
 };
 
+/**
+ * A board's brownout inside one solve. At the first sub-step its node is
+ * under `assertV`, the chip resets, so the motors it drives (`motors`,
+ * indexes into the rail's motor list) open for the rest of the step.
+ */
+export type MotorTrip = {
+  boardId: string;
+  assertV: number;
+  motors: readonly number[];
+};
+
 /** One slice of a master step, between pin edges. */
 type RailPiece = {
   dt: number;
@@ -164,7 +175,14 @@ type RailPiece = {
 };
 
 export class RailCircuit {
+  /**
+   * Winding current each motor charged to the last master step: its end
+   * current, or for a tripped motor its current at the trip times
+   * `onShare`, which is the step mean when the rest of the step is open.
+   */
   readonly winding: Float64Array;
+  /** Share of the last master step before a trip opened the motor; 1 with no trip. */
+  readonly onShare: Float64Array;
   /** True when the Uno cable sits between the terminal and the board node. */
   readonly path: boolean;
   /** Supply terminal. With no path this is the rail, and the only node. */
@@ -259,6 +277,15 @@ export class RailCircuit {
   /** Lowest reset margin of each board this step, when it has a reset node. */
   private readonly resetMins = new Map<string, number>();
   private readonly boardOrder: string[] = [];
+  /** Lowest `src` terminal volts over the last solve's sub-steps. */
+  private termMin = 0;
+  /** Highest `src` current over the last solve's sub-steps. */
+  private termMax = 0;
+  /** Lowest volts and highest amperes of each `also` source over the last solve. */
+  private readonly extraMins = new Map<string, number>();
+  private readonly extraMaxes = new Map<string, number>();
+  /** Trips armed for the next solve. `solve` clears them. */
+  private trips: readonly MotorTrip[] = [];
   private readonly boardResets = new Map<
     string,
     { node: string; fraction: number | null }
@@ -267,6 +294,7 @@ export class RailCircuit {
   constructor(spec: RailCircuitSpec) {
     const built = assembleRail(spec);
     this.winding = built.winding;
+    this.onShare = new Float64Array(built.winding.length).fill(1);
     this.path = built.path;
     this.substeps = built.substeps;
     this.masterS = spec.masterS ?? MASTER_S;
@@ -357,6 +385,24 @@ export class RailCircuit {
       return -this.engine.branchCurrent(id);
     }
     return this.current;
+  }
+
+  /** Lowest terminal volts of one supply over the last solve's sub-steps. */
+  sourceMin(id: string): number {
+    if (this.primarySupply !== null && id !== this.primarySupply) {
+      const min = this.extraMins.get(id);
+      if (min !== undefined) return min;
+    }
+    return this.termMin;
+  }
+
+  /** Highest current out of one supply over the last solve's sub-steps. */
+  sourceMax(id: string): number {
+    if (this.primarySupply !== null && id !== this.primarySupply) {
+      const max = this.extraMaxes.get(id);
+      if (max !== undefined) return max;
+    }
+    return this.termMax;
   }
 
   /** Terminal voltage of one supply. A one-supply rail returns `voltage`. */
@@ -465,6 +511,14 @@ export class RailCircuit {
     motor.s = fraction;
     motor.omega = omega;
     motor.connected = connected;
+  }
+
+  /**
+   * Trips for the next solve only. Set after `setMotor`: a trip opens a
+   * motor that `setMotor` connected.
+   */
+  armTrips(trips: readonly MotorTrip[]): void {
+    this.trips = trips;
   }
 
   get tripped(): boolean {
@@ -617,7 +671,55 @@ export class RailCircuit {
     }
     this.resetMarginMin = Number.POSITIVE_INFINITY;
     this.resetMins.clear();
+    const motors = this.motors;
+    const winding = this.winding;
+    const onShare = this.onShare;
+    onShare.fill(1);
+    const pending = this.trips.filter((trip) => trip.motors.length > 0);
+    this.trips = [];
+    const opened: number[] = [];
+    let elapsed = 0;
+    // Before the step is noted: a trip at this sub-step keeps the current
+    // the motor ran on, and opens it for the sub-steps after.
+    const trip = (dt: number) => {
+      elapsed += dt;
+      if (!(dt > 0) || pending.length === 0) return;
+      for (let j = pending.length - 1; j >= 0; j--) {
+        const armed = pending[j]!;
+        const node = this.boardNodes.get(armed.boardId) ?? this.boardNode;
+        if (!(this.engine.voltage(node) < armed.assertV)) continue;
+        pending.splice(j, 1);
+        for (const index of armed.motors) {
+          const motor = motors[index];
+          if (!motor?.connected) continue;
+          winding[index] = this.engine.branchCurrent(motor.id);
+          onShare[index] = Math.min(1, elapsed / this.masterS);
+          motor.connected = false;
+          opened.push(index);
+        }
+      }
+    };
+    this.termMin = Number.POSITIVE_INFINITY;
+    this.termMax = Number.NEGATIVE_INFINITY;
+    this.extraMins.clear();
+    this.extraMaxes.clear();
+    const noteSources = () => {
+      const v = this.engine.voltage(this.termNode);
+      if (v < this.termMin) this.termMin = v;
+      const amps = -this.engine.branchCurrent("src");
+      if (amps > this.termMax) this.termMax = amps;
+      for (const [id, node] of this.extraNodes) {
+        const volts = this.engine.voltage(node);
+        const low = this.extraMins.get(id);
+        if (low === undefined || volts < low) this.extraMins.set(id, volts);
+        const out = -this.engine.branchCurrent(id);
+        const high = this.extraMaxes.get(id);
+        if (high === undefined || out > high) this.extraMaxes.set(id, out);
+      }
+    };
     const note = (dt: number) => {
+      trip(dt);
+      noteSources();
       if (!many) {
         const v = this.engine.voltage(this.boardNode);
         if (v < min) min = v;
@@ -669,10 +771,12 @@ export class RailCircuit {
       this.boardVoltage = this.engine.voltage(this.boardNode);
       this.boardMinVoltage = min;
     }
-    const motors = this.motors;
-    const winding = this.winding;
     for (let i = 0; i < motors.length; i++) {
       const motor = motors[i]!;
+      if (opened.includes(i)) {
+        winding[i] = (winding[i] as number) * (onShare[i] as number);
+        continue;
+      }
       winding[i] = motor.connected ? this.engine.branchCurrent(motor.id) : 0;
     }
     const voltage = (node: string) => this.engine.voltage(node);

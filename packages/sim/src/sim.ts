@@ -374,8 +374,9 @@ function createSession(host: SimHost) {
    * One master step. Boards that are already running execute first, so this
    * step's pulses are the command. The rail is solved from that command and
    * the joint velocity. A rail below the chip's assert voltage asserts
-   * reset on this step. The torque still matches the current charged for
-   * the step; the pins are Hi-Z for the recording. After the rail rises
+   * reset on this step. The motors that chip drives open at the sub-step
+   * the rail crosses, so the torque and the current charged are the share
+   * of the step before it; the pins are Hi-Z for the recording. After the rail rises
    * above the chip's release voltage the CPU stays in reset for the chip's
    * hold, then the first instruction runs.
    */
