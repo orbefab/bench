@@ -172,7 +172,7 @@ export function castRanger(
 /**
  * One sensor during a run. `token` drops a scheduled edge after a reboot
  * replaces the CPU. `drew` stays set until the rail is solved, so a
- * measurement that starts and ends inside one millisecond still draws
+ * measurement that starts and ends inside one master step still draws
  * the working current.
  */
 export class RangerRuntime {
