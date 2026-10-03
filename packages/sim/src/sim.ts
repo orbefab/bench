@@ -9,6 +9,7 @@
  * stay direct so the millisecond loop does not grow a wrapper.
  */
 import {
+  boardPinState,
   DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type JointLimitKind,
@@ -427,7 +428,10 @@ function createSession(host: SimHost) {
         continue;
       applyInputNets(s);
       const regs = board.peekRegs();
-      const pins = board.peekPins();
+      const pins = boardPinState(
+        board.peekPins(),
+        s.specs.find((item) => item.id === board.id)?.pinCount ?? 0
+      );
       power.resets += 1;
       s.pendingNotes.push({ kind: "reboot", board: board.id });
       if (regs) {
