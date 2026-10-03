@@ -163,15 +163,14 @@ export function BoardBody({
     scrub.playhead !== null
       ? faultUntil(markers, id, scrub.playhead)
       : undefined;
-  // `unpowered` is the run's wiring (no supply reaches the board), fixed
-  // when the run is built, and each build starts a new recording. So the
-  // live flag holds for every recorded frame too.
+  // A scrubbed frame shows only what was recorded. The live run's
+  // `unpowered` can belong to another build (a parked strip, a recording
+  // id reused after the worker restarts), so it is not merged in.
   const statusBoard = recorded
     ? {
         running: recorded.running,
         inReset: recorded.inReset || recorded.inResetAny,
         ...(pastFault ? { fault: pastFault } : {}),
-        ...(live?.unpowered ? { unpowered: true } : {}),
       }
     : live;
   const serialText =
