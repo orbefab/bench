@@ -73,7 +73,7 @@ function fill(
     state?: "idle" | "moving" | "stall";
     current?: number;
     ddr?: number;
-    brownout?: boolean;
+    inReset?: boolean;
     command?: number;
   }
 ) {
@@ -87,7 +87,7 @@ function fill(
   rec.supplyCurrent[0] = 0.06;
   rec.ddr[0] = sample.ddr ?? 0;
   rec.running[0] = 1;
-  rec.brownout[0] = sample.brownout ? 1 : 0;
+  rec.inReset[0] = sample.inReset ? 1 : 0;
 }
 
 function unitRecorder(boundMs?: number): RunRecorder {
@@ -499,7 +499,7 @@ try {
     if (frame.t <= firstReset.t || frame.t >= firstReboot.t) continue;
     const board = frame.boards.uno;
     expect(
-      board?.brownout === true &&
+      board?.inReset === true &&
         board.pins.ddr[0] === 0 &&
         board.pins.level[0] === 0,
       `driven at ${frame.t.toFixed(3)} s`

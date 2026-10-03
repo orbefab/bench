@@ -1,6 +1,10 @@
 /** Boards: boot, load, reload, flush, fault, serial, the ADC attachment, brownout, and one CPU step. */
 
-import { onboardLedPath, type WorldSender } from "@sfab-bench/contract";
+import {
+  onboardLedPath,
+  type ResetCause,
+  type WorldSender,
+} from "@sfab-bench/contract";
 import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   type AdcConversion,
@@ -11,7 +15,7 @@ import {
 } from "@sfab-bench/engine-mcu";
 import { analogRead } from "../analog-pin";
 import type { RunPlan } from "../plan";
-import { type ResetCause, runningReset } from "../power";
+import { runningReset } from "../power";
 import { applyGpioDrives, gpioInputNets, powerFeedsOf } from "../wiring";
 import { rearmRangers, rearmServos } from "./actuators";
 import { post, simMs, thrownMessage } from "./common";

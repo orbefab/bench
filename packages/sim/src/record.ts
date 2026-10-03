@@ -2,7 +2,7 @@
  * Columnar recording of one world run. The worker calls `commit` once per
  * simulated millisecond. A frame is written every 10 ms and covers (t−10 ms, t]:
  * the value at t, plus the minimum terminal and board-node voltage, the
- * maximum current, the worst part state, any brownout, any out-of-SOA
+ * maximum current, the worst part state, any reset, any out-of-SOA
  * supply, and the furthest a joint passed its limit in that window.
  * A 1 ms dip therefore lands on the frame that closes the window.
  *
@@ -132,8 +132,8 @@ type Chunk = {
   level: Uint32Array;
   toggled: Uint32Array;
   running: Uint8Array;
-  brownout: Uint8Array;
-  brownoutAny: Uint8Array;
+  inReset: Uint8Array;
+  inResetAny: Uint8Array;
   belowSoa: Uint8Array;
 };
 
@@ -196,7 +196,7 @@ export class RunRecorder {
   readonly level: Uint32Array;
   readonly toggled: Uint32Array;
   readonly running: Uint8Array;
-  readonly brownout: Uint8Array;
+  readonly inReset: Uint8Array;
   /** 1 when this step's supply is in the 16 MHz out-of-SOA band. */
   readonly belowSoa: Uint8Array;
   /** Degrees past the joint limit at this step. The frame keeps the max. */
@@ -225,7 +225,7 @@ export class RunRecorder {
   private readonly maxRegulator: Float64Array;
   private readonly worst: Uint8Array;
   private readonly partMax: Float64Array;
-  private readonly brownAny: Uint8Array;
+  private readonly inResetAny: Uint8Array;
   private readonly soaAny: Uint8Array;
   private readonly pastMax: Float64Array;
   private readonly chunks: Chunk[] = [];
@@ -295,7 +295,7 @@ export class RunRecorder {
     this.level = new Uint32Array(nPins);
     this.toggled = new Uint32Array(nPins);
     this.running = new Uint8Array(nD);
-    this.brownout = new Uint8Array(nD);
+    this.inReset = new Uint8Array(nD);
     this.belowSoa = new Uint8Array(nD);
     this.soaAny = new Uint8Array(nD);
     this.minV = new Float64Array(nS);
@@ -304,7 +304,7 @@ export class RunRecorder {
     this.maxRegulator = new Float64Array(nD);
     this.worst = new Uint8Array(nP);
     this.partMax = new Float64Array(nP);
-    this.brownAny = new Uint8Array(nD);
+    this.inResetAny = new Uint8Array(nD);
     this.resetFold();
   }
 
@@ -453,7 +453,7 @@ export class RunRecorder {
       if (pass > (this.maxRegulator[i] ?? Number.NEGATIVE_INFINITY)) {
         this.maxRegulator[i] = pass;
       }
-      if ((this.brownout[i] ?? 0) !== 0) this.brownAny[i] = 1;
+      if ((this.inReset[i] ?? 0) !== 0) this.inResetAny[i] = 1;
       if ((this.belowSoa[i] ?? 0) !== 0) this.soaAny[i] = 1;
     }
     for (let i = 0; i < this.joints.length; i++) {
@@ -469,7 +469,7 @@ export class RunRecorder {
     this.maxRegulator.fill(Number.NEGATIVE_INFINITY);
     this.worst.fill(0);
     this.partMax.fill(Number.NEGATIVE_INFINITY);
-    this.brownAny.fill(0);
+    this.inResetAny.fill(0);
     this.soaAny.fill(0);
     this.pastMax.fill(0);
   }
@@ -521,8 +521,8 @@ export class RunRecorder {
         chunk.toggled[channel(index, slot)] = this.toggled[index] ?? 0;
       }
       chunk.running[channel(i, slot)] = this.running[i] ?? 0;
-      chunk.brownout[channel(i, slot)] = this.brownout[i] ?? 0;
-      chunk.brownoutAny[channel(i, slot)] = this.brownAny[i] ?? 0;
+      chunk.inReset[channel(i, slot)] = this.inReset[i] ?? 0;
+      chunk.inResetAny[channel(i, slot)] = this.inResetAny[i] ?? 0;
       chunk.belowSoa[channel(i, slot)] = this.soaAny[i] ?? 0;
       chunk.boardVoltage[channel(i, slot)] = this.boardVoltage[i] ?? 0;
       chunk.boardMinVoltage[channel(i, slot)] = this.minBoardV[i] ?? 0;
@@ -717,9 +717,9 @@ export class RunRecorder {
     const partMax = this.parts.map(
       (_item, i) => chosen.chunk.partMax[channel(i, chosen.slot)] ?? 0
     );
-    const brown = this.boards.map(
+    const held = this.boards.map(
       (_item, i) =>
-        (chosen.chunk.brownoutAny[channel(i, chosen.slot)] ?? 0) !== 0
+        (chosen.chunk.inResetAny[channel(i, chosen.slot)] ?? 0) !== 0
     );
     const soa = this.boards.map(
       (_item, i) => (chosen.chunk.belowSoa[channel(i, chosen.slot)] ?? 0) !== 0
@@ -750,8 +750,8 @@ export class RunRecorder {
         if (current > (partMax[i] ?? 0)) partMax[i] = current;
       }
       for (let i = 0; i < this.boards.length; i++) {
-        if ((slot.chunk.brownoutAny[channel(i, slot.slot)] ?? 0) !== 0) {
-          brown[i] = true;
+        if ((slot.chunk.inResetAny[channel(i, slot.slot)] ?? 0) !== 0) {
+          held[i] = true;
         }
         if ((slot.chunk.belowSoa[channel(i, slot.slot)] ?? 0) !== 0) {
           soa[i] = true;
@@ -784,7 +784,7 @@ export class RunRecorder {
       const board = this.boards[i];
       const row = board ? frame.boards[board.id] : undefined;
       if (!row) continue;
-      row.brownoutAny = brown[i] ?? row.brownoutAny;
+      row.inResetAny = held[i] ?? row.inResetAny;
       row.belowSoa = soa[i] ?? row.belowSoa;
       row.minVoltage = minBoard[i] ?? row.minVoltage;
       row.regulatorMax = maxPass[i] ?? row.regulatorMax;
@@ -887,8 +887,8 @@ export class RunRecorder {
       boards[spec.id] = {
         pins: this.storedPins(slot.chunk, i, slot.slot),
         running: (slot.chunk.running[channel(i, slot.slot)] ?? 0) !== 0,
-        brownout: (slot.chunk.brownout[channel(i, slot.slot)] ?? 0) !== 0,
-        brownoutAny: (slot.chunk.brownoutAny[channel(i, slot.slot)] ?? 0) !== 0,
+        inReset: (slot.chunk.inReset[channel(i, slot.slot)] ?? 0) !== 0,
+        inResetAny: (slot.chunk.inResetAny[channel(i, slot.slot)] ?? 0) !== 0,
         belowSoa: (slot.chunk.belowSoa[channel(i, slot.slot)] ?? 0) !== 0,
         voltage: slot.chunk.boardVoltage[channel(i, slot.slot)] ?? 0,
         minVoltage: slot.chunk.boardMinVoltage[channel(i, slot.slot)] ?? 0,
@@ -910,8 +910,8 @@ export class RunRecorder {
       boards[spec.id] = {
         pins: this.storedPins(slot.chunk, i, slot.slot),
         running: (slot.chunk.running[at] ?? 0) !== 0,
-        brownout: (slot.chunk.brownout[at] ?? 0) !== 0,
-        brownoutAny: (slot.chunk.brownoutAny[at] ?? 0) !== 0,
+        inReset: (slot.chunk.inReset[at] ?? 0) !== 0,
+        inResetAny: (slot.chunk.inResetAny[at] ?? 0) !== 0,
         belowSoa: (slot.chunk.belowSoa[at] ?? 0) !== 0,
         voltage: slot.chunk.boardVoltage[at] ?? 0,
         minVoltage: slot.chunk.boardMinVoltage[at] ?? 0,
@@ -1085,8 +1085,8 @@ function createChunk(counts: {
     level: new Uint32Array(counts.boards * (counts.pinStride ?? 1) * CHUNK),
     toggled: new Uint32Array(counts.boards * (counts.pinStride ?? 1) * CHUNK),
     running: new Uint8Array(counts.boards * CHUNK),
-    brownout: new Uint8Array(counts.boards * CHUNK),
-    brownoutAny: new Uint8Array(counts.boards * CHUNK),
+    inReset: new Uint8Array(counts.boards * CHUNK),
+    inResetAny: new Uint8Array(counts.boards * CHUNK),
     belowSoa: new Uint8Array(counts.boards * CHUNK),
   };
 }

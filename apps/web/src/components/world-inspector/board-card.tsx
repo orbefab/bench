@@ -166,7 +166,7 @@ export function BoardBody({
   const statusBoard = recorded
     ? {
         running: recorded.running,
-        brownout: recorded.brownout || recorded.brownoutAny,
+        inReset: recorded.inReset || recorded.inResetAny,
         ...(pastFault ? { fault: pastFault } : {}),
         ...(live?.unpowered ? { unpowered: true } : {}),
       }

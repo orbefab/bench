@@ -126,6 +126,9 @@ export type WorldSupplyState = {
   soc?: number;
 };
 
+/** What asserted a reset: the rail under the brownout level, or the RESET pin. */
+export type ResetCause = "brownout" | "pin";
+
 /** One board in the shared run. `pins` is this tick's GPIO words. */
 export type WorldBoardState = {
   /**
@@ -142,10 +145,19 @@ export type WorldBoardState = {
   unpowered?: boolean;
   /** Absent only on a client that has not seen a state tick yet. */
   pins?: WorldPinState;
-  /** Brownout reboots since this world was loaded. Absent on older clients. */
+  /**
+   * Reboots after a reset (brownout or RESET pin) since this world was
+   * loaded. Absent on older clients.
+   */
   resets?: number;
-  /** True while the CPU is in reset, including the delay after the rail recovers. */
-  brownout?: boolean;
+  /** True while the CPU is in reset, including the time-out after release. */
+  inReset?: boolean;
+  /**
+   * What holds the chip while `inReset`: the rail under its brownout level,
+   * or the RESET pin. Absent while running, and for the hold before a
+   * fresh image's first instruction.
+   */
+  resetCause?: ResetCause;
   /**
    * Volts on this board's 5V node. Absent when no supply reaches the board.
    * With no cable this equals the supply terminal.
@@ -620,7 +632,7 @@ export function probeOfTrack(id: string): string | null {
 
 /**
  * One recorded instant. Joints are radians, like `WorldState`.
- * `minVoltage`, `maxCurrent`, `worst`, and `brownoutAny` cover the
+ * `minVoltage`, `maxCurrent`, `worst`, and `inResetAny` cover the
  * window (t − frame, t], so a 1 ms dip is not lost between frames.
  */
 export type RecordedFrame = {
@@ -673,10 +685,10 @@ export type RecordedFrame = {
     {
       pins: WorldPinState;
       running: boolean;
-      /** In brownout at t. */
-      brownout: boolean;
-      /** In brownout at any step of the window. */
-      brownoutAny: boolean;
+      /** In reset at t (brownout or RESET pin). */
+      inReset: boolean;
+      /** In reset at any step of the window. */
+      inResetAny: boolean;
       /** Supply was in the 16 MHz out-of-SOA band at any step of the window. */
       belowSoa: boolean;
       /** Volts on the 5V node at t. With no cable this equals the terminal. */

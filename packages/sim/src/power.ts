@@ -13,7 +13,7 @@
  * form.
  */
 
-import type { WorldPartMotion } from "@sfab-bench/contract";
+import type { ResetCause, WorldPartMotion } from "@sfab-bench/contract";
 
 export type { WorldPartMotion };
 
@@ -38,9 +38,6 @@ export type ResetLimits = {
 };
 
 export type ResetPhase = "run" | "held" | "delay";
-
-/** What asserted a reset: the rail under the brownout level, or the RESET pin. */
-export type ResetCause = "brownout" | "pin";
 
 export type ResetState = {
   phase: ResetPhase;

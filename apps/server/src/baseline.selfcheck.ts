@@ -81,7 +81,7 @@ function captured(
       const reboots = eventsAt(read.events, "reboot", id);
       boards[id] = {
         reset: resets.some((t) => t > prev && t <= frame.t),
-        brownout: board.brownout,
+        brownout: board.inReset,
         resets: reboots.filter((t) => t <= frame.t).length,
       };
     }

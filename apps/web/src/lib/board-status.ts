@@ -3,7 +3,7 @@ import { type ChipClock, soaNeed, soaWarning } from "@sfab-bench/contract";
 type BoardStatusInput = {
   running: boolean;
   fault?: string;
-  brownout?: boolean;
+  inReset?: boolean;
   /** No supply reaches the board, so the CPU never boots. */
   unpowered?: boolean;
 };
@@ -15,7 +15,7 @@ export function boardStatusLabel(
 ): "" | "paused" | "running" | "stopped" | "in reset" | "unpowered" {
   if (!board) return "";
   if (board.unpowered) return "unpowered";
-  if (board.brownout) return "in reset";
+  if (board.inReset) return "in reset";
   if (!board.running || board.fault) return "stopped";
   return playing ? "running" : "paused";
 }
@@ -29,7 +29,7 @@ export function scrubbedBoardStatus(
 ): "" | "running" | "stopped" | "in reset" | "unpowered" {
   if (!board) return "";
   if (board.unpowered) return "unpowered";
-  if (board.brownout) return "in reset";
+  if (board.inReset) return "in reset";
   if (!board.running || board.fault) return "stopped";
   return "running";
 }

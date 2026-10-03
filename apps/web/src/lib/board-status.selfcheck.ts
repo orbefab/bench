@@ -26,19 +26,19 @@ expect(
   "a stopped board stays stopped while the world plays"
 );
 expect(
-  boardStatusLabel({ running: false, brownout: true }, true) === "in reset",
+  boardStatusLabel({ running: false, inReset: true }, true) === "in reset",
   "a board held in reset says in reset"
 );
 expect(
-  boardStatusLabel({ running: true, brownout: false }, false) === "paused",
-  "a board that is not in brownout stays paused"
+  boardStatusLabel({ running: true, inReset: false }, false) === "paused",
+  "a board that is not in reset stays paused"
 );
 expect(
-  scrubbedBoardStatus({ running: true, brownout: false }) === "running",
+  scrubbedBoardStatus({ running: true, inReset: false }) === "running",
   "a recorded running board is not paused"
 );
 expect(
-  scrubbedBoardStatus({ running: false, brownout: true }) === "in reset",
+  scrubbedBoardStatus({ running: false, inReset: true }) === "in reset",
   "a recorded reset stays in reset"
 );
 const soa =

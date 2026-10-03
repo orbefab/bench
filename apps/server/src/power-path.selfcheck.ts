@@ -501,7 +501,7 @@ async function runWorld(
   const amps = opened.state.supplies?.usb?.current ?? Number.NaN;
   const terminal = opened.state.supplies?.usb?.voltage ?? Number.NaN;
   expect(
-    opened.state.boards.uno?.brownout === true,
+    opened.state.boards.uno?.inReset === true,
     "tripped fuse did not reset"
   );
   expect(
@@ -519,7 +519,7 @@ async function runWorld(
 {
   const bench = await runWorld(armDir, "parts/sfab/arm-stall@1.0.0.json", 2000);
   const browned = bench.read.frames.some(
-    (frame) => frame.boards.uno?.brownoutAny === true
+    (frame) => frame.boards.uno?.inResetAny === true
   );
   let benchMin = Infinity;
   for (const frame of bench.read.frames) {
@@ -578,7 +578,7 @@ try {
     `servo V+ ${first.state.parts?.servo?.voltage} V is not the board node`
   );
   expect(
-    frames.every((frame) => frame.boards.uno?.brownout !== true),
+    frames.every((frame) => frame.boards.uno?.inReset !== true),
     "usb stall browned out"
   );
   expect(

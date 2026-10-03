@@ -276,7 +276,7 @@ function brownoutCount(run: GaugeRun): number {
   let frames = 0;
   for (const frame of run.read.frames) {
     const board = frame.boards.nano;
-    if (board?.brownout || board?.brownoutAny) frames += 1;
+    if (board?.inReset || board?.inResetAny) frames += 1;
   }
   let marks = 0;
   for (const event of run.read.events) {

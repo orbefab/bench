@@ -67,7 +67,7 @@ const SUPPLY_FIELDS = new Set(["voltage", "current", "minVoltage"]);
 const BOARD_FIELDS = new Set([
   "pins",
   "running",
-  "brownout",
+  "inReset",
   "voltage",
   "minVoltage",
   "ledCurrent",
@@ -114,7 +114,8 @@ type AgentFrame = {
     {
       pins?: string[];
       running?: boolean;
-      brownout?: boolean;
+      /** In reset at t or at any step of the window. */
+      inReset?: boolean;
       /** Board node at t. */
       voltage?: number;
       /** Lowest board-node voltage in the window. */
@@ -363,7 +364,7 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       running: boolean;
       fault: string | null;
       resets: number;
-      brownout: boolean;
+      inReset: boolean;
       pins: string[];
       /** Volts on the board node. Null when no supply reaches the board. */
       voltage: number | null;
@@ -380,7 +381,7 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       running: unpowered ? false : board.running,
       fault: unpowered ? "unpowered" : (board.fault ?? null),
       resets: board.resets ?? 0,
-      brownout: board.brownout === true,
+      inReset: board.inReset === true,
       pins: drivenPins(
         doc.boards.find((row) => row.id === id)?.pinOrder,
         board.pins
@@ -768,8 +769,8 @@ function trimFrame(
       board.pins = drivenPins(pinOrders.get(id), row.pins);
     }
     if (all || fields.has("running")) board.running = row.running;
-    if (all || fields.has("brownout")) {
-      board.brownout = row.brownout || row.brownoutAny;
+    if (all || fields.has("inReset")) {
+      board.inReset = row.inReset || row.inResetAny;
     }
     if (all || fields.has("voltage") || fields.has("minVoltage")) {
       if (all || fields.has("voltage")) board.voltage = row.voltage;
@@ -1018,7 +1019,7 @@ export function editFailure(
 
 export const worldTools = {
   world_status: tool({
-    description: `Read a world's shared run. ${WORLD_ARG} Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its board node, ledCurrent in amperes through its onboard LED when that board stamps one (D13 on the Nano, RXLED on the Pro Micro), driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose node is above its brownout but below its chip's minimum operating voltage at its clock, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.`,
+    description: `Read a world's shared run. ${WORLD_ARG} Returns sim time, who last played or paused, each board (running, fault, resets, inReset, voltage on its board node, ledCurrent in amperes through its onboard LED when that board stamps one (D13 on the Nano, RXLED on the Pro Micro), driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose node is above its brownout but below its chip's minimum operating voltage at its clock, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.`,
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);

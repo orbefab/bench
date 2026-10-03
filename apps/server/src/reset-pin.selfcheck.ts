@@ -217,11 +217,11 @@ async function run(
       other: other?.pins
         ? {
             d13Output: pinBitSet(other.pins.ddr, bit ?? -1),
-            inReset: other.brownout === true,
+            inReset: other.inReset === true,
           }
         : null,
       d13Output: pinBitSet(live.pins.ddr, bit ?? -1),
-      inReset: live.brownout === true,
+      inReset: live.inReset === true,
       reboots: live.resets ?? 0,
       voltage: live.voltage ?? 0,
       resets,

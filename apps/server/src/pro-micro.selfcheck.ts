@@ -163,7 +163,7 @@ try {
   expect(live, "promicro is in the state");
   if (!live) throw new Error("unreachable");
   expect(
-    live.running && !live.brownout,
+    live.running && !live.inReset,
     "the 9 V RAW rail leaves the CPU running"
   );
   expect((live.voltage ?? 0) > 4.5, `board node ${live.voltage} V`);
@@ -258,7 +258,7 @@ expect(
   (weak.live.voltage ?? 0) < 2.575 && (weak.live.voltage ?? 0) > 0.5,
   `weak RAW board node ${weak.live.voltage} V`
 );
-expect(weak.live.brownout === true, "weak RAW holds the 32U4 in reset");
+expect(weak.live.inReset === true, "weak RAW holds the 32U4 in reset");
 expect((weak.live.resets ?? 0) === 0, "a held sag does not count a reboot");
 expect(
   weak.events.some((event) => event.kind === "reset") &&
@@ -278,7 +278,7 @@ expect(
   midVoltage > 2.575 && midVoltage < ATMEGA328P_ASSERT_V,
   `mid RAW node ${midVoltage} V is not between the two asserts`
 );
-expect(mid.live.brownout !== true, "the 32U4 stays running in that band");
+expect(mid.live.inReset !== true, "the 32U4 stays running in that band");
 expect(
   mid.events.every((event) => event.kind !== "reset"),
   "the 328P threshold would have reset this rail"

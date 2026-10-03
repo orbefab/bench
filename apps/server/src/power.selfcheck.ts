@@ -451,7 +451,7 @@ for (const row of holdRows) {
   );
   expect(voltage >= 4.5, `hold rail ${voltage} V at ${row.state.simTime}`);
   expect(board?.resets === 0, `hold resets ${board?.resets}`);
-  expect(board?.brownout !== true, "hold board browned out");
+  expect(board?.inReset !== true, "hold board browned out");
   expect(board?.running === true, "hold board stopped");
 }
 console.log(`hold minimum voltage ${holdMin.toFixed(3)} V`);
@@ -495,12 +495,10 @@ const benchOf = (row: Row) => row.state.boards.uno;
 const sagAt = stallRows.find(
   (row) => (benchOf(row)?.voltage ?? 5) < BOD_ASSERT_V
 );
-const resetAt = stallRows.find(
-  (row) => row.state.boards.uno?.brownout === true
-);
+const resetAt = stallRows.find((row) => row.state.boards.uno?.inReset === true);
 const recoveryAt = stallRows.find(
   (row) =>
-    row.state.boards.uno?.brownout === true &&
+    row.state.boards.uno?.inReset === true &&
     (row.state.boards.uno.resets ?? 0) === 0 &&
     (benchOf(row)?.voltage ?? 0) > BOD_RELEASE_V
 );
@@ -563,7 +561,7 @@ for (const row of stallRows) {
   if (row.state.simTime >= rebootAt.state.simTime) break;
   const pins = row.state.boards.uno?.pins;
   expect(
-    row.state.boards.uno?.brownout === true &&
+    row.state.boards.uno?.inReset === true &&
       pins?.ddr[0] === 0 &&
       pins.level[0] === 0,
     `driven during reset at ${row.state.simTime}`
@@ -619,10 +617,7 @@ try {
   for (const row of usbRows) {
     const voltage = row.state.boards.uno?.voltage ?? Number.NaN;
     if (voltage < usbMin) usbMin = voltage;
-    expect(
-      row.state.boards.uno?.brownout !== true,
-      "usb stall reset the board"
-    );
+    expect(row.state.boards.uno?.inReset !== true, "usb stall reset the board");
     expect(
       (row.state.boards.uno?.resets ?? 0) === 0,
       "usb stall counted a reset"
@@ -768,7 +763,7 @@ try {
     const voltage = row.state.boards.hold?.voltage ?? Number.NaN;
     if (voltage < holdMin) holdMin = voltage;
     const board = row.state.boards.hold;
-    expect(board?.resets === 0 && board.brownout !== true, "split hold reset");
+    expect(board?.resets === 0 && board.inReset !== true, "split hold reset");
   }
   // A step from rest is the ω = 0 stall point on the USB cable, 4.509 V
   // at the board node. The class-1 terminal is about 4.64 V; the fuse and
@@ -831,7 +826,7 @@ try {
       for (let ms = 1; ms <= 2000; ms++) {
         attached.step(1);
         const state = await trace.at(ms / 1000);
-        if (state.boards.uno?.brownout === true) {
+        if (state.boards.uno?.inReset === true) {
           browned = state;
           break;
         }
@@ -841,9 +836,9 @@ try {
       const brownedRail = browned.supplies?.bench;
       const brownedPart = browned.parts?.servo;
       expect(
-        browned.boards.uno?.brownout === true &&
+        browned.boards.uno?.inReset === true &&
           (brownedRail?.voltage ?? 5) < BOD_ASSERT_V,
-        `brownout sample ${browned.boards.uno?.brownout} ${brownedRail?.voltage} V ${brownedPart?.state} ${brownedPart?.current} A`
+        `brownout sample ${browned.boards.uno?.inReset} ${brownedRail?.voltage} V ${brownedPart?.state} ${brownedPart?.current} A`
       );
       const hexPath = join(reloadRoot, "firmware/stall/stall.hex");
       const from = trace.events.length;
@@ -874,11 +869,11 @@ try {
         `rail ${rail.voltage} V at ${rail.current} A, draw ${draw} A`
       );
       expect(
-        board?.brownout === false && board.running === true,
-        `running ${board?.running} brownout ${board?.brownout} at ${rail.voltage} V`
+        board?.inReset === false && board.running === true,
+        `running ${board?.running} brownout ${board?.inReset} at ${rail.voltage} V`
       );
       console.log(
-        `hex reload during brownout: ${rail.voltage.toFixed(2)} V, ${rail.current} A, running ${board?.running}, brownout ${board?.brownout}`
+        `hex reload during brownout: ${rail.voltage.toFixed(2)} V, ${rail.current} A, running ${board?.running}, brownout ${board?.inReset}`
       );
     } finally {
       attached.detach();
@@ -927,7 +922,7 @@ try {
       const warning = state.boards.uno?.warnings?.[0];
       expect(Math.abs(voltage - 3.2) < 1e-9, `soa rail ${voltage}`);
       expect(state.boards.uno?.running === true, "soa board stopped");
-      expect(state.boards.uno?.brownout !== true, "soa board browned out");
+      expect(state.boards.uno?.inReset !== true, "soa board browned out");
       expect(
         warning?.code === "below-16mhz-soa" &&
           warning.message.includes("3.20 V"),

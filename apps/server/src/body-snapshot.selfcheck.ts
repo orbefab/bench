@@ -874,7 +874,7 @@ function volts(frames: RecordedFrame[]): string {
 }
 
 function brownout(frames: RecordedFrame[]): string {
-  return frames.some((frame) => frame.boards.nano?.brownoutAny === true)
+  return frames.some((frame) => frame.boards.nano?.inResetAny === true)
     ? "yes"
     : "none";
 }

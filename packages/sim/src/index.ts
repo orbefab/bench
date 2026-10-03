@@ -71,7 +71,6 @@ export {
   type MotorLaw,
   noLoadSpeedRad,
   type RailMotor,
-  type ResetCause,
   servoElectrical,
   solveRail,
   stallCurrent,
