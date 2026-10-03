@@ -551,15 +551,25 @@ try {
     last.parts.servo?.state === "stall",
     `tail state ${last.parts.servo?.state}`
   );
-  // A saturated stall draws the whole winding, so the shaft torque is
-  // efficiency·k times the current above quiescent.
+  // A saturated drive draws the whole winding, so the shaft torque is
+  // efficiency·k times the current above quiescent on every frame,
+  // including the acceleration, where it changes step to step and a
+  // sample one step late would not match.
+  let moving = 0;
+  for (const frame of frames) {
+    const servo = frame.parts.servo;
+    const shaft = servo?.torqueNm ?? Number.NaN;
+    const fromCurrent =
+      law.efficiency * law.k * ((servo?.current ?? 0) - law.quiescent);
+    const bound = Math.max(1e-5 * Math.abs(fromCurrent), 1e-9);
+    expect(
+      Math.abs(Math.abs(shaft) - fromCurrent) <= bound,
+      `${frame.t} s: torque ${shaft} N·m vs ${fromCurrent} N·m from the current`
+    );
+    if (servo?.state === "moving") moving++;
+  }
+  expect(moving >= 10, `only ${moving} moving frames`);
   const torque = last.parts.servo?.torqueNm ?? Number.NaN;
-  const fromCurrent =
-    law.efficiency * law.k * ((last.parts.servo?.current ?? 0) - law.quiescent);
-  expect(
-    Math.abs(Math.abs(torque) - fromCurrent) <= 1e-5 * fromCurrent,
-    `stall torque ${torque} N·m vs ${fromCurrent} N·m from the current`
-  );
   console.log(
     `arm stall on the usb path: board ${steady.toFixed(4)} V at 3 s, ` +
       `within 1 mV of ${stall.boardVoltage.toFixed(4)} V, no brownout, runs identical, ` +

@@ -50,23 +50,19 @@ function motionName(rank: number): WorldPartMotion {
 
 /**
  * Bytes of frame storage for one minute of sim time, channels only.
- * A chunk may hold a little more until its front is dropped.
- * Events sit beside this and are not counted.
+ * Measured from the chunk layout, so a new column is counted. A chunk may
+ * hold a little more until its front is dropped. Events sit beside this
+ * and are not counted.
  */
-export function recordingFootprint(counts: {
-  joints: number;
-  bodies: number;
-  parts: number;
-  supplies: number;
-  boards: number;
-}): { bytesPerFrame: number; bytesPerMinute: number } {
-  const bytesPerFrame =
-    4 +
-    counts.joints * 8 +
-    counts.bodies * 28 +
-    counts.parts * 22 +
-    counts.supplies * 20 +
-    counts.boards * 24;
+export function recordingFootprint(counts: ChunkCounts): {
+  bytesPerFrame: number;
+  bytesPerMinute: number;
+} {
+  let bytes = 0;
+  for (const column of Object.values(createChunk(counts))) {
+    if (ArrayBuffer.isView(column)) bytes += column.byteLength;
+  }
+  const bytesPerFrame = bytes / CHUNK;
   const framesPerMinute = 60_000 / RECORD_FRAME_MS;
   return {
     bytesPerFrame,
@@ -1057,7 +1053,7 @@ function bucketIndexes(indexes: number[], maxFrames: number): number[][] {
   return out;
 }
 
-function createChunk(counts: {
+type ChunkCounts = {
   joints: number;
   bodies: number;
   parts: number;
@@ -1068,7 +1064,9 @@ function createChunk(counts: {
   boardLed?: boolean;
   leds?: number;
   ranger?: boolean;
-}): Chunk {
+};
+
+function createChunk(counts: ChunkCounts): Chunk {
   return {
     start: 0,
     count: 0,

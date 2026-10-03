@@ -381,6 +381,12 @@ try {
     supplies: foot.tracks.supplies.length,
     boards: foot.tracks.boards.length,
   });
+  // Per row: time 4; joint 8; body 28; part 26 (pulse, command, current,
+  // max, voltage, torque 4 each; state, worst 1 each); supply 20; board 32.
+  expect(
+    bytes.bytesPerFrame === 4 + 8 + 2 * 28 + 26 + 20 + 32,
+    `arm bench ${bytes.bytesPerFrame} B/frame`
+  );
   console.log(
     `fixture: ${foot.tracks.bodies.length} bodies, ${foot.tracks.joints.length} joint, ` +
       `${bytes.bytesPerFrame} B/frame, ${(bytes.bytesPerMinute / 1024).toFixed(1)} KiB/min`
