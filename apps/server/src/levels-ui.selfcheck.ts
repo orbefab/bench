@@ -228,6 +228,19 @@ console.log(`parts: ${modulePart?.id} · ${modulePart?.model}`);
   );
   const power = nodeAt(nanoView, "nano.power");
   deepStrictEqual(axisOf(power, "behaviour")?.capture, { ready: true });
+  // A composite of declared-only parts has nothing to run. The SG90's
+  // class 2 names its gear train, motor, pot and control, and none of them
+  // has a level yet.
+  const servoOptions = (
+    axisOf(nodeAt(nanoView, "servo"), "behaviour")?.options ?? []
+  ).map(
+    (opt) => `${opt.class}:${opt.variant}:${opt.runnable}:${opt.reason ?? ""}`
+  );
+  deepStrictEqual(servoOptions, [
+    "0:slew:false:no runtime for form slew@1",
+    "1:datasheet:true:",
+    "2:netlist:false:declared-only parts: control, gears, motor, pot",
+  ]);
   expect(
     axisOf(power, "visual")?.capture === undefined,
     "a visual axis never captures"
