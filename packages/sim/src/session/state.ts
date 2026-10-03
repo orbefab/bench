@@ -49,6 +49,8 @@ export type BoardSpec = {
   clock: ChipClock | null;
   /** Chip pin name per pin-state index, from the board's `expose`. */
   wire: readonly string[];
+  /** Pins the board names (its `pinOrder`). `wire` may add internal drives. */
+  pinCount: number;
 };
 
 export type ServoDrive = {

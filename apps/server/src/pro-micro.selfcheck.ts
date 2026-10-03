@@ -19,7 +19,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { adcCount, soaWarning, type WorldViewNode } from "@sfab-bench/contract";
+import {
+  adcCount,
+  pinBitSet,
+  soaWarning,
+  type WorldPinState,
+  type WorldViewNode,
+} from "@sfab-bench/contract";
 import {
   AvrBoard,
   INTERNAL_2V56_V,
@@ -146,6 +152,20 @@ expect(
   `level picker ${offered.join(" ")}`
 );
 
+/**
+ * Set bits the board's pin list does not name. The RX and TX LEDs are
+ * driven pins past the header; the pin words carry the header only.
+ */
+function unnamedBits(pins: WorldPinState): number {
+  const fields = [pins.ddr, pins.level, pins.toggled];
+  const words = Math.max(...fields.map((field) => field.length));
+  let count = 0;
+  for (let bit = HEADER.length; bit < words * 32; bit++) {
+    for (const field of fields) if (pinBitSet(field, bit)) count += 1;
+  }
+  return count;
+}
+
 const sim = headlessSim();
 let ticks = 0;
 let ledOn = 0;
@@ -196,6 +216,17 @@ try {
     if (current < 0.0002) ledOff += 1;
   }
   expect(ledOn > 0 && ledOff > 0, `RX LED on ${ledOn} off ${ledOff}`);
+  const unnamed = body.read.frames.reduce(
+    (sum, frame) =>
+      sum +
+      (frame.boards.promicro ? unnamedBits(frame.boards.promicro.pins) : 0),
+    0
+  );
+  expect(unnamed === 0, `recorded pin words carry ${unnamed} unnamed bits`);
+  expect(
+    live.pins !== undefined && unnamedBits(live.pins) === 0,
+    "live pin words carry the header only"
+  );
 } finally {
   sim.dispose();
 }

@@ -1,5 +1,6 @@
 /** Recorder: the live state sample, the recording layout and manifest, and the recorded query answers. */
 import {
+  boardPinState,
   DEFAULT_TIMESTEP_S,
   emptyPinState,
   type JointLimitKind,
@@ -69,11 +70,11 @@ export function sample(s: SessionState): WorldState | null {
   }
   const boardState: WorldState["boards"] = {};
   for (const board of s.boards) {
-    const pins = board.takePins();
+    const spec = s.specs.find((item) => item.id === board.id);
+    const pins = boardPinState(board.takePins(), spec?.pinCount ?? 0);
     const power = s.boardPower.get(board.id);
     const unpowered = !power?.supplyId;
     const node = power?.supplyId ? boardVolts(s, board.id) : 0;
-    const spec = s.specs.find((item) => item.id === board.id);
     const minVoltage = spec?.minOperatingVoltage;
     const clock = spec?.clock;
     const brownoutVoltage = power?.brownoutVoltage;
@@ -212,7 +213,11 @@ function fillRecorder(s: SessionState, full: boolean) {
     for (let i = 0; i < lay.boards.length; i++) {
       const id = lay.boards[i];
       const board = s.boards.find((item) => item.id === id);
-      rec.setPins(i, board?.peekPins() ?? emptyPinState());
+      const pinCount = s.specs.find((item) => item.id === id)?.pinCount ?? 0;
+      rec.setPins(
+        i,
+        board ? boardPinState(board.peekPins(), pinCount) : emptyPinState()
+      );
       rec.running[i] = board?.running ? 1 : 0;
     }
   }

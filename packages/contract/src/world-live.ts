@@ -42,6 +42,30 @@ export function pinWordCount(pinCount: number): number {
   return Math.max(1, Math.ceil(pinCount / 32));
 }
 
+/**
+ * `pins` cut to the board's first `pinCount` pins: `pinWordCount` words,
+ * the bits past the list cleared. The CPU's words also carry the internal
+ * pins a stamp drives (the Pro Micro's RX and TX LEDs), which the board's
+ * pin list does not name.
+ */
+export function boardPinState(
+  pins: WorldPinState,
+  pinCount: number
+): WorldPinState {
+  const words = pinWordCount(pinCount);
+  const cut = (field: readonly number[]) =>
+    Array.from({ length: words }, (_, w) => {
+      const bits = pinCount - w * 32;
+      const mask = bits >= 32 ? 0xffffffff : bits <= 0 ? 0 : (1 << bits) - 1;
+      return ((field[w] ?? 0) & mask) >>> 0;
+    });
+  return {
+    ddr: cut(pins.ddr),
+    level: cut(pins.level),
+    toggled: cut(pins.toggled),
+  };
+}
+
 /** A stopped board, or a board with no exposed GPIO. */
 export function emptyPinState(words = 1): WorldPinState {
   const n = Math.max(1, words);

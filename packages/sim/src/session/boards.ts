@@ -100,6 +100,7 @@ function boardSpecsOf(plan: RunPlan): BoardSpec[] {
     minOperatingVoltage: board.minOperatingVoltage,
     clock: board.clock,
     wire: board.wire,
+    pinCount: board.pinOrder.length,
   }));
 }
 
