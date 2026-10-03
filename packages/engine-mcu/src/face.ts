@@ -3,8 +3,10 @@ import type { Engine } from "@sfab-bench/contract";
 import { AvrBoard } from "./board";
 import { requireChipSpec } from "./chips";
 
-/** Flash image, brownout threshold, and the board pin list. Supply starts at 5 V. */
+/** Chip, flash image, brownout threshold, and the board pin list. Supply starts at 5 V. */
 export type McuEngineSpec = {
+  /** Chip registry key, e.g. `atmega328p` or `atmega32u4`. */
+  chip: string;
   firmware: Uint8Array;
   /**
    * Volts. The CPU is held in reset below this. The caller passes the
@@ -20,7 +22,7 @@ export type McuEngineSpec = {
 const LOGIC_HIGH = 0.6;
 
 /**
- * Port face of one ATmega328P.
+ * Port face of one registered AVR chip.
  * `supply.voltage` is the rail. A pin's `voltage` is its drive, or the
  * voltage written onto an input. `serial.tx` is the next USART byte
  * (0–255, or −1 when the buffer is empty) and `serial.rx` accepts one.
@@ -49,7 +51,7 @@ export class McuEngine implements Engine {
     this.pinVolts.clear();
     const board = new AvrBoard(
       this.id,
-      requireChipSpec("atmega328p"),
+      requireChipSpec(parsed.chip),
       parsed.wire ?? []
     );
     this.board = board;
@@ -144,6 +146,9 @@ function mcuSpec(spec: unknown): McuEngineSpec {
     throw new Error("mcu engine spec is missing");
   }
   const row = spec as McuEngineSpec;
+  if (typeof row.chip !== "string") {
+    throw new Error("mcu engine spec needs a chip");
+  }
   if (!(row.firmware instanceof Uint8Array)) {
     throw new Error("mcu engine spec needs a firmware image");
   }

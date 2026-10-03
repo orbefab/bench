@@ -49,7 +49,13 @@ const STEP = 0.001;
     ...Array.from({ length: 6 }, (_, n) => `PB${n}`),
     ...Array.from({ length: 6 }, (_, n) => `PC${n}`),
   ];
-  mcu.init({ firmware: parsed.bytes, brownoutVoltage: 2.7, pins, wire });
+  mcu.init({
+    chip: "atmega328p",
+    firmware: parsed.bytes,
+    brownoutVoltage: 2.7,
+    pins,
+    wire,
+  });
   mcu.write("supply", "voltage", 5);
   mcu.advance(0.001);
   let line = "";
@@ -65,6 +71,38 @@ const STEP = 0.001;
   mcu.dispose();
   console.log(
     'engine mcu: first serial line 10 (nano-led serial "10\\r\\n90\\r\\n" first line at 0.001 s)'
+  );
+}
+
+{
+  const tickPath = fileURLToPath(
+    new URL(
+      "../../../examples/pro-micro/firmware/blink-serial1/blink-serial1.hex",
+      import.meta.url
+    )
+  );
+  const parsed = parseIntelHex(readFileSync(tickPath, "utf8"));
+  expect(parsed.ok, parsed.ok ? "" : parsed.error);
+  if (!parsed.ok) throw new Error("unreachable");
+  const mcu: Engine = new McuEngine("u4");
+  mcu.init({
+    chip: "atmega32u4",
+    firmware: parsed.bytes,
+    brownoutVoltage: 2.7,
+  });
+  mcu.write("supply", "voltage", 5);
+  let text = "";
+  for (let ms = 1; ms <= 1500 && !text.includes("tick"); ms++) {
+    mcu.advance(ms / 1000);
+    for (let byte = mcu.read("serial", "tx"); byte >= 0; ) {
+      text += String.fromCharCode(byte);
+      byte = mcu.read("serial", "tx");
+    }
+  }
+  expect(text.includes("tick"), `32U4 serial ${JSON.stringify(text)}`);
+  mcu.dispose();
+  console.log(
+    "engine mcu: an atmega32u4 prints tick on Serial1 (pro-micro Serial1 ticks)"
   );
 }
 

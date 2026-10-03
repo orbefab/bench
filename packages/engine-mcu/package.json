@@ -2,7 +2,7 @@
   "name": "@sfab-bench/engine-mcu",
   "version": "0.2.2",
   "private": true,
-  "description": "ATmega328P engine. No file access.",
+  "description": "AVR engine (ATmega328P, ATmega32U4). No file access.",
   "homepage": "https://bench.sfab.ai",
   "type": "module",
   "exports": {
