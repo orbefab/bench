@@ -635,8 +635,9 @@ function lineError(current: number[], volts: number[]): number {
  * The largest `err` over the sweep: what a `static-max-abs` row states. The
  * knots are sweep points, so the error that matters is between them. Each
  * interval is sampled at 32 steps, plus a halving ladder when it starts at
- * 0 A, where a diode knee sits; the worst sample is then refined between its
- * neighbours.
+ * 0 A, where a diode knee sits; every local peak among the samples is then
+ * refined between its neighbours. A peak narrower than the sample spacing can
+ * still be missed; snapshot-holdout.selfcheck re-checks on its own grid.
  */
 function maxBetween(
   current: readonly number[],
@@ -651,21 +652,26 @@ function maxBetween(
     if (lo === 0) for (let j = 1; j <= 12; j++) points.add(hi / 2 ** j);
     const sorted = [...points].sort((a, b) => a - b);
     const errs = sorted.map(err);
-    let best = 0;
-    for (let i = 1; i < errs.length; i++) {
-      if ((errs[i] ?? 0) > (errs[best] ?? 0)) best = i;
+    for (let i = 0; i < errs.length; i++) {
+      const here = errs[i] ?? 0;
+      worst = Math.max(worst, here);
+      if (here < (errs[i - 1] ?? 0) || here < (errs[i + 1] ?? 0)) continue;
+      const around = goldenMax(
+        err,
+        sorted[Math.max(i - 1, 0)] ?? lo,
+        sorted[Math.min(i + 1, sorted.length - 1)] ?? hi
+      );
+      worst = Math.max(worst, around);
     }
-    const around = goldenMax(
-      err,
-      sorted[Math.max(best - 1, 0)] ?? lo,
-      sorted[Math.min(best + 1, sorted.length - 1)] ?? hi
-    );
-    worst = Math.max(worst, errs[best] ?? 0, around);
   }
   return worst;
 }
 
-/** The maximum of `f` on `[a, b]`, by golden-section search. */
+/**
+ * The maximum of `f` on `[a, b]` by golden-section search, when `f` has one
+ * peak there. With more than one it returns one of them, not necessarily the
+ * largest.
+ */
 function goldenMax(f: (x: number) => number, a: number, b: number): number {
   const r = (Math.sqrt(5) - 1) / 2;
   let lo = a;
