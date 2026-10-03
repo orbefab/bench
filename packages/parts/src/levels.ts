@@ -251,7 +251,9 @@ function resolveAxis(
   // The chosen level cannot express a port this scene drives. The
   // nearest other class runs instead. On a tie, the more detailed one.
   // Children do not inherit it; a fallback parent does not pass its
-  // class down. The reason is the card's warning.
+  // class down. The reason is the card's warning. The loader fills the
+  // map (`nearestFallback` in `load.ts`): today, a snapshot part whose
+  // branch does not span the ports a supply drives.
   const forced = fallbackClass?.get(instancePath);
   if (
     axis === "behaviour" &&

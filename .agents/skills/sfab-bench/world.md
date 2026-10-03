@@ -102,7 +102,8 @@ few degrees from those impulses and does not reach the stop.
 Call these with the `world` path from `get_viewer`. Use sim time. Wait
 for the status they return. Do not sample "whatever arrived last".
 
-1. `world_set_level` — write one rule into `run.levels` and restart.
+1. `world_set_level` — write one rule into the root part's `play.levels`
+   (`run.levels` on a legacy `.world.json`) and restart.
    `scope` is `default`, `type`, or `path`. `key` is the part type or the
    instance path (`nano`). `class` is 0, 1, 2, 3, or `null` to remove the
    rule. The default cannot be removed. A missing type or path is an error

@@ -889,7 +889,7 @@ export class Sim {
   reload(): Promise<LoadResult> {
     return this.session.reload();
   }
-  /** Advance exactly `n` master steps, then resolve. */
+  /** Advance exactly `n` simulated milliseconds (`n·perMs` master steps), then resolve. */
   async step(n: number): Promise<void> {
     this.session.step(n);
   }

@@ -18,6 +18,8 @@ export const RANGER_GEOM_GROUP = [1, 0, 0, 0, 0, 0];
  * One centre ray, then five radial steps out to the half-angle and eight
  * azimuths. The outer ring sits on the cone, and two of the azimuths are
  * horizontal, so a sideways pole is within one radial step of the edge.
+ * The grid is a sampling choice, not a datasheet number: the HC-SR04 sheet
+ * gives the cone, not a ray count.
  */
 const RADIAL_STEPS = 5;
 const AZIMUTHS = 8;

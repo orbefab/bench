@@ -14,6 +14,9 @@ is the orchestrator plus every form adapter. The engines are TypeScript or WASM,
 so nothing stops them from running headless in Node, in a browser worker, or
 in CI, except where the code sits.
 
+(That was the tree on 2026-09-27. Since the split this ADR decided,
+`packages/sim` owns the run and `worker.ts` is a host of about 50 lines.)
+
 The owner asked for the code to decouple into levels, with the engine apart
 from the UI, perhaps with plugins, and noted that the wire tool is only one of
 many tools a robotics world simulator needs. The editor and chat are peers

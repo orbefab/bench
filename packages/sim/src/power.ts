@@ -281,6 +281,9 @@ export function solveRail(input: {
     const { slope, intercept } = segmentAt(voltage);
     return intercept + slope * voltage;
   };
+  // The bracket for the piecewise search, not a physical limit. The draw
+  // is never negative, so the solution is at most vNom; four times it is
+  // margin.
   const cap = Math.max(input.vNom * 4, 1);
   const bounds = [0, cap];
   for (const term of terms) {
