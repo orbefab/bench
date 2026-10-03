@@ -1,13 +1,11 @@
 /** Solve: one rail per step from the pulses and the joint speed, the supply states, and the supply and envelope warnings. */
 
-import {
-  DEFAULT_TIMESTEP_S,
-  type WorldSupplyState,
-} from "@sfab-bench/contract";
+import type { WorldSupplyState } from "@sfab-bench/contract";
 import type { PinMode } from "@sfab-bench/engine-circuit";
 import { boundOutside } from "@sfab-bench/parts";
 import type { RailCircuit } from "../rail-circuit";
 import { sampleLoad } from "./actuators";
+import { stepS } from "./common";
 import { boardsFed, drivenBoard, loadBoard } from "./rails";
 import type { SessionState } from "./state";
 
@@ -125,6 +123,7 @@ function pinPiecesUnion(
   | { dt: number; drive: { bit: number; mode: PinMode; boardId: string }[] }[]
   | null {
   type Edge = { boardId: string; bit: number; when: number; high: boolean };
+  const step = stepS(s);
   const edges: Edge[] = [];
   const modes = new Map<string, Map<number, PinMode>>();
   const bitsOf = new Map<string, readonly number[]>();
@@ -143,7 +142,7 @@ function pinPiecesUnion(
       edges.push({
         boardId: spec.id,
         bit: edge.bit,
-        when: ((edge.cycle - avr.stepOrigin) / span) * DEFAULT_TIMESTEP_S,
+        when: ((edge.cycle - avr.stepOrigin) / span) * step,
         high: edge.high,
       });
     }
@@ -197,7 +196,7 @@ function pinPiecesUnion(
     if (edge.when > t) t = edge.when;
   }
   if (!changed) return null;
-  const rest = DEFAULT_TIMESTEP_S - t;
+  const rest = step - t;
   if (rest > 1e-12) pieces.push({ dt: rest, drive: driveOf() });
   return pieces.length > 0 ? pieces : null;
 }

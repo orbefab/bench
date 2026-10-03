@@ -18,7 +18,7 @@ import type { RunPlan } from "../plan";
 import { runningReset } from "../power";
 import { applyGpioDrives, gpioInputNets, powerFeedsOf } from "../wiring";
 import { rearmRangers, rearmServos } from "./actuators";
-import { post, simMs, thrownMessage } from "./common";
+import { post, simMs, stepCount, stepEndMs, thrownMessage } from "./common";
 import {
   boardVolts,
   latchedBoardNode,
@@ -307,7 +307,7 @@ export function reloadBoard(s: SessionState, id: string) {
   }
   // The reload solved the rail without advancing time. The next CPU step
   // reads this node as the previous step.
-  stampNodes(s, simMs(s));
+  stampNodes(s, stepCount(s) / s.perMs);
   postState(s);
 }
 
@@ -352,7 +352,7 @@ export function serialIn(
 function noteAdc(s: SessionState, boardId: string, sample: AdcConversion) {
   s.adcSamples.push({
     board: boardId,
-    ms: simMs(s) + 1,
+    ms: stepEndMs(s),
     mux: sample.mux,
     ref: sample.ref,
     vRef: sample.vRef,
@@ -463,7 +463,7 @@ export function resetPinLowOf(s: SessionState, boardId: string): boolean {
 export function stepBoard(s: SessionState, board: AvrBoard) {
   if (!board.running || board.fault) return;
   try {
-    board.stepMillis();
+    board.stepPart(s.perMs);
   } catch (err: unknown) {
     board.stop(thrownMessage(err));
   }

@@ -55,7 +55,7 @@ export type AdcConversion = {
 };
 
 export type BoardAdcHooks = {
-  /** Board node at the end of the previous 1 ms step. */
+  /** Board node at the end of the previous master step. */
   supply: () => number;
   /** AREF net. 0 when that pin is unwired, and the count is then 0. */
   aref: () => number;
@@ -74,7 +74,7 @@ export type BoardAdcHooks = {
  *
  * AVCC is `supply()` for the whole conversion: the worker latches the
  * board node before the CPU step, so the ADC sees the rail from the end
- * of the previous master step and lags it by at most 1 ms. The internal
+ * of the previous master step and lags it by at most one step. The internal
  * 1.1 V reference is the bandgap. The 32U4's 2.56 V reference is
  * `INTERNAL_2V56_V`. AREF is the hooked net, or 0.
  */

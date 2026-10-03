@@ -418,7 +418,7 @@ function writeJson(file: string, value: unknown) {
     expect(
       warning?.path === "$root" &&
         warning.message ===
-          "play.timestep 0.002 s is not supported yet; the run steps 1 ms",
+          "play.timestep 0.002 s is not 1 ms divided by a whole number up to 1000; the run steps 1 ms",
       `timestep warning ${JSON.stringify(warning)}`
     );
     if (!warning) throw new Error("timestep warning missing");

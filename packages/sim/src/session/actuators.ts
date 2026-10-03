@@ -172,7 +172,10 @@ export function classifyLoads(s: SessionState) {
     const stallOmega = (DISPLAY_STALL_DEG_PER_SEC * Math.PI) / 180;
     const stalling =
       !sample.limp && sample.saturated && Math.abs(omega) < stallOmega;
-    load.stallMs = stalling ? load.stallMs + 1 : 0;
+    // Counted in steps so a sum of fractional steps lands on whole ms.
+    load.stallMs = stalling
+      ? Math.round(load.stallMs * s.perMs + 1) / s.perMs
+      : 0;
     load.state = displayMotion({
       limp: sample.limp,
       saturated: sample.saturated,

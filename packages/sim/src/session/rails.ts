@@ -18,7 +18,7 @@ import {
   supplyPositiveNode,
   wireGraph,
 } from "../wiring";
-import { simMs } from "./common";
+import { simMs, stepS } from "./common";
 import { solveSupplies } from "./solve";
 import type { Load, ServoDrive, SessionState, SupplySpec } from "./state";
 
@@ -352,6 +352,7 @@ function bindRails(s: SessionState) {
         boardsSorted.map((board) => board.id)
       );
       const circuit = createRailCircuit({
+        masterS: stepS(s),
         ...supplyTerms(primary),
         motors: motorsOf(members),
         ...(islandSpans ? { spans: islandSpans } : {}),
@@ -423,6 +424,7 @@ function bindRails(s: SessionState) {
     const members = island.supplyIds.flatMap((id) => groups.get(id) ?? []);
     const primary = vinSupply;
     const circuit = createRailCircuit({
+      masterS: stepS(s),
       ...supplyTerms(primary),
       motors: motorsOf(members),
       pin: only.pin,
@@ -476,6 +478,7 @@ function bindRails(s: SessionState) {
     );
     const circuit = shared
       ? createRailCircuit({
+          masterS: stepS(s),
           ...supplyTerms(supply),
           motors: motorsOf(members),
           ...(stamped.length === 1 && fed
@@ -501,6 +504,7 @@ function bindRails(s: SessionState) {
           }),
         })
       : createRailCircuit({
+          masterS: stepS(s),
           ...supplyTerms(supply),
           motors: motorsOf(members),
           ...(fed ? { pin: fed.pin, ledAlias: onboardLedPath(fed.id) } : {}),

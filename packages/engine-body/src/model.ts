@@ -432,6 +432,9 @@ function applyLimitSolref(
   const stride = model.njnt > 0 ? solref.length / model.njnt : 0;
   if (stride < 2) return;
   const jointType = mj.mjtObj.mjOBJ_JOINT.value;
+  // Fixed at the 1 ms step, not the run's: a finer step must not stiffen an
+  // authored limit, or the law would change with the step. Every allowed
+  // step is at most 1 ms, so this stays at least twice it.
   const minTimeconst = 2 * TIMESTEP_S;
   for (let joint = 0; joint < model.njnt; joint++) {
     const lower = limits[joint * 2] ?? 0;

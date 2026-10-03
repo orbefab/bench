@@ -104,7 +104,8 @@ export function stepReset(
     };
   }
   const releaseAtMs = state.releaseAtMs ?? stepEndMs;
-  if (stepEndMs - releaseAtMs >= limits.holdMs) {
+  // A finer step sums fractional ms: the slack absorbs that sum.
+  if (stepEndMs - releaseAtMs >= limits.holdMs - 1e-9) {
     return {
       phase: "run",
       releaseAtMs: null,

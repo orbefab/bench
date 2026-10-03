@@ -5,13 +5,14 @@
  * bridge ratio, each held speed, and, when the Uno path is on, the fuse
  * resistance after the electrical solve.
  *
- * L = 0 and no capacitor is one backward-Euler step per millisecond.
+ * L = 0 and no capacitor is one backward-Euler step per master step
+ * (1 ms unless the run names a finer one).
  * An algebraic board, including a class-1 table with no capacitor, is
  * that one step. A pin edge inside the step is its own piece, still one
  * step when the rail is algebraic. Inductance or capacitance is 10
  * backward-Euler steps with ω and the bridge ratio held. The fuse
  * temperature, and a battery's state of charge, move once per
- * millisecond, after those steps, not inside them.
+ * master step, after those steps, not inside them.
  * Implicit damping (E2 scheme (d)) is not applied here. It would stamp
  * ω = 0 and add B(s) on the joint.
  */
@@ -66,6 +67,8 @@ export type SharedBoard = {
 };
 
 export type RailCircuitSpec = {
+  /** Master step in seconds. Default 1 ms. */
+  masterS?: number;
   vNom: number;
   rSeries: number;
   iLimit: number;
@@ -171,11 +174,13 @@ export class RailCircuit {
   boardVoltage = 0;
   /** Lowest board-node voltage across the sub-steps. The end voltage on the first solve. */
   boardMinVoltage = 0;
-  /** Electrical steps inside one 1 ms master step. */
+  /** Electrical steps inside one master step. */
   readonly substeps: number;
+  /** Master step in seconds. */
+  readonly masterS: number;
   /**
    * Pin-edge pieces inside the last master step. 0 when every stamped
-   * pin was held for the whole millisecond.
+   * pin was held for the whole master step.
    */
   lastPieceCount = 0;
   /** Frozen-factor steps during the last master step. */
@@ -264,6 +269,7 @@ export class RailCircuit {
     this.winding = built.winding;
     this.path = built.path;
     this.substeps = built.substeps;
+    this.masterS = spec.masterS ?? MASTER_S;
     this.ledPaths = built.ledPaths;
     this.engine = built.engine;
     this.load = built.load;
@@ -591,7 +597,7 @@ export class RailCircuit {
   /**
    * Solve the rail. Writes the terminal, the board node, and `winding`.
    * The fuse, when there is one, takes one thermal step from this current.
-   * `pieces`, when a stamped pin changed inside this millisecond, are the
+   * `pieces`, when a stamped pin changed inside this master step, are the
    * intervals between those edges. Their durations sum to one master step.
    * With no pieces the pin is held and the grid is the one used before.
    */
@@ -670,10 +676,11 @@ export class RailCircuit {
       winding[i] = motor.connected ? this.engine.branchCurrent(motor.id) : 0;
     }
     const voltage = (node: string) => this.engine.voltage(node);
-    for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
+    for (const fuse of this.fuse)
+      fuse.advance(fuse.current(voltage), this.masterS);
     for (const channel of this.channels) channel.latch(voltage);
     for (const cmp of this.comparators) cmp.latch(voltage);
-    this.battery?.advance(this.current, MASTER_S);
+    this.battery?.advance(this.current, this.masterS);
   }
 
   private noteShared(dt: number): void {
@@ -1035,7 +1042,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     : [supply, load, ...motors, ...stamped, ...extras];
   const engine = new Engine(elements, {
     method: "be",
-    h: MASTER_S / substeps,
+    h: (spec.masterS ?? MASTER_S) / substeps,
     atol: 1e-14,
     rtol: 1e-12,
   });

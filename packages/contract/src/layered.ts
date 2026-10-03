@@ -590,6 +590,22 @@ export type Citation = { title: string; ref: string };
  */
 export const DEFAULT_TIMESTEP_S = 0.001;
 
+/** Most master steps in one millisecond: the finest step is 1 µs. */
+export const MAX_STEPS_PER_MS = 1000;
+
+/**
+ * Master steps per millisecond for a step of `seconds`, or null when the
+ * step is not 1 ms divided by a whole number up to `MAX_STEPS_PER_MS`.
+ * Every millisecond is then a step boundary, which the recorder's frame
+ * grid and the integer-millisecond clock rely on.
+ */
+export function stepsPerMs(seconds: number): number | null {
+  if (!(seconds > 0)) return null;
+  const k = Math.round(DEFAULT_TIMESTEP_S / seconds);
+  if (k < 1 || k > MAX_STEPS_PER_MS) return null;
+  return Math.abs(k * seconds - DEFAULT_TIMESTEP_S) <= 1e-12 ? k : null;
+}
+
 /** Instance path of the document opened as the root part. */
 export const ROOT_PATH = "$root";
 

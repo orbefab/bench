@@ -9,11 +9,13 @@ import {
   type LevelClass,
   type LockFile,
   type LockSnapshot,
+  MAX_STEPS_PER_MS,
   type PartFile,
   ROOT_PATH,
   type RunReport,
   type SnapshotFile,
   SUPPLY_FORMS,
+  stepsPerMs,
 } from "@sfab-bench/contract";
 import { checkWorld } from "./check";
 import type { RunRoot } from "./document";
@@ -450,7 +452,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     ...checkWorld(resolved.instances, nets, wires, opts.assetRoot, opts.store)
   );
   const step = lib.run.play.timestep;
-  if (typeof step === "number" && step !== DEFAULT_TIMESTEP_S) {
+  if (typeof step === "number" && stepsPerMs(step) === null) {
     diagnostics.push({
       severity: "warning",
       code: "timestep-unsupported",
@@ -459,7 +461,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
       quantity: "Time",
       left: String(step),
       right: String(DEFAULT_TIMESTEP_S),
-      message: `play.timestep ${step} s is not supported yet; the run steps 1 ms`,
+      message: `play.timestep ${step} s is not 1 ms divided by a whole number up to ${MAX_STEPS_PER_MS}; the run steps 1 ms`,
     });
   }
   const built = buildReport({

@@ -10,7 +10,6 @@
  */
 import {
   boardPinState,
-  DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type JointLimitKind,
   pastLimitAmount,
@@ -22,6 +21,7 @@ import {
   type RecordingRead,
   type RunReport,
   type SeamEnergy,
+  stepsPerMs,
   type TimelineMarker,
   type TimelineTrack,
   type WorldError,
@@ -103,6 +103,8 @@ import {
   noteCommand,
   post,
   simMs,
+  stepCount,
+  stepEndMs,
   thrownMessage,
 } from "./session/common";
 import { bindPower, latchSupplyNodes, stampNodes } from "./session/rails";
@@ -152,8 +154,9 @@ export type SimHost = {
 
 /**
  * One world, off the API thread. The host starts one of these per open
- * document. Sim time advances only in here: `step(n)` is exactly n steps
- * of 1 ms, and `play` batches steps so sim time tracks wall time at 1×.
+ * document. Sim time advances only in here: `step(n)` is exactly n
+ * milliseconds (n·perMs master steps), and `play` batches milliseconds so
+ * sim time tracks wall time at 1×.
  */
 
 const TICK_MS = 16;
@@ -392,7 +395,7 @@ function createSession(host: SimHost) {
     }
     latchServos(s);
     solveSupplies(s);
-    const stepEndMs = simMs(s) + 1;
+    const endMs = stepEndMs(s);
     for (const board of s.boards) {
       const power = s.boardPower.get(board.id);
       if (!power?.supplyId || board.fault) continue;
@@ -400,7 +403,7 @@ function createSession(host: SimHost) {
       const stepped = stepReset(
         power.reset,
         voltage,
-        stepEndMs,
+        endMs,
         {
           assertV: power.assertVoltage,
           releaseV: power.releaseVoltage,
@@ -465,8 +468,15 @@ function createSession(host: SimHost) {
     s.sim.mj.mj_step(s.sim.model, s.sim.data);
     noteMotorSeams(s);
     classifyLoads(s);
-    recordStep(s);
-    stampNodes(s, simMs(s));
+    // The recorder keys on whole milliseconds: a finer step records once,
+    // at the step that ends the millisecond.
+    if (stepCount(s) % s.perMs === 0) recordStep(s);
+    stampNodes(s, stepCount(s) / s.perMs);
+  }
+
+  /** One simulated millisecond: `perMs` master steps. */
+  function advanceMs() {
+    for (let k = 0; k < s.perMs; k++) advanceOne();
   }
 
   function dispose() {
@@ -563,6 +573,7 @@ function createSession(host: SimHost) {
     const data = new compiled.mj.MjData(compiled.model);
     compiled.mj.mj_forward(compiled.model, data);
     s.sim = { ...compiled, data };
+    s.perMs = stepsPerMs(compiled.model.opt.timestep) ?? 1;
     s.files = bytesReader;
     s.playing = false;
     // Feeds are known before boot: an unwired board does not run.
@@ -630,7 +641,7 @@ function createSession(host: SimHost) {
         steps = MAX_STEPS_PER_TICK;
         s.stepDebt = 0;
       }
-      for (let i = 0; i < steps; i++) advanceOne();
+      for (let i = 0; i < steps; i++) advanceMs();
       s.sinceState += elapsed;
       if (s.sinceState >= STATE_EVERY_MS) {
         s.sinceState = 0;
@@ -680,7 +691,7 @@ function createSession(host: SimHost) {
         fail(
           s,
           [],
-          `step(${String(n)}) is not a whole number of steps from 0 to ${MAX_STEP_N}.`
+          `step(${String(n)}) is not a whole number of milliseconds from 0 to ${MAX_STEP_N}.`
         );
         if (request !== undefined) postState(s, request);
         return;
@@ -688,7 +699,7 @@ function createSession(host: SimHost) {
       // One turn: stop the clock, then advance exactly n milliseconds.
       if (pauseBy) noteCommand(s, "pause", pauseBy);
       stopClock();
-      for (let i = 0; i < n; i++) advanceOne();
+      for (let i = 0; i < n; i++) advanceMs();
       postState(s, request);
     } catch (err: unknown) {
       stopClock();

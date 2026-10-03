@@ -104,8 +104,8 @@ The simulation is **specialized engines on one clock**, not one solver:
 MuJoCo for bodies and contact, our MNA engine for circuits, avr8js for
 firmware, and part models where a domain does not need its own engine.
 
-- **One orchestrator owns time.** A 1 ms master step; engines exchange port
-  quantities at seams. Tight loops (servo current against rail voltage)
+- **One orchestrator owns time.** A master step of 1 ms, or 1 ms / k when
+  the run names one; engines exchange port quantities at seams. Tight loops (servo current against rail voltage)
   stay inside one engine; nothing is flattened into one global matrix.
 - **One rail path.** A power island is one circuit. N = 1 is the
   single-board rail: the same element ids and node names. Pin edges

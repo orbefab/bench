@@ -200,6 +200,8 @@ export type SessionState = {
   playing: boolean;
   timer: unknown;
   lastWall: number;
+  /** Master steps per simulated millisecond (`stepsPerMs` of the run's step). */
+  perMs: number;
   stepDebt: number;
   sinceState: number;
   readonly queue: ToWorker[];
@@ -269,6 +271,7 @@ export function createState(host: SimHost): SessionState {
     playing: false,
     timer: null,
     lastWall: 0,
+    perMs: 1,
     stepDebt: 0,
     sinceState: 0,
     queue: [],

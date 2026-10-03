@@ -52,7 +52,8 @@ const warning = {
   path: "$root",
   port: "play",
   code: "timestep-unsupported",
-  message: "play.timestep 0.002 s is not supported yet; the run steps 1 ms",
+  message:
+    "play.timestep 0.002 s is not 1 ms divided by a whole number up to 1000; the run steps 1 ms",
 };
 const report = { warnings: [warning] } as unknown as RunReport;
 const edited = {

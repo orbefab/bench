@@ -42,10 +42,10 @@ export const EXTERNAL_RESET = "— external reset —\n";
 export const RX_BACKLOG = 4 * 1024;
 
 /**
- * One AVR chip, built from its `ChipSpec`. `stepMillis` runs one sim
- * millisecond of instructions (`hz / 1000` cycles), then stops. The last
- * instruction may pass that budget; `overshoot` is how many extra cycles it
- * used, and the next millisecond runs that many fewer.
+ * One AVR chip, built from its `ChipSpec`. `stepPart` runs one master
+ * step of instructions (`hz / 1000` cycles at 1 ms), then stops; `stepMillis`
+ * is the 1 ms step. The last instruction may pass that budget; `overshoot` is
+ * how many extra cycles it used, and the next step runs that many fewer.
  *
  * The caller passes the board's pin list: each entry is a chip pin name
  * (`PB5`), and its index is that pin's bit in the pin state. The chip's
@@ -81,9 +81,9 @@ export class AvrBoard {
   private toggled: Uint32Array;
   /** Pin indexes whose rising and falling edges are timed. */
   private edgeMask: Uint32Array;
-  /** Cycle count at the start of the current `stepMillis`. */
+  /** Cycle count at the start of the current step. */
   stepOrigin = 0;
-  /** Port-bit changes during the current `stepMillis`, in order. */
+  /** Port-bit changes during the current step, in order. */
   pinChanges: { bit: number; high: boolean; cycle: number }[] = [];
   /** Cycle count at the rising edge, keyed by pin index. */
   private riseAt = new Map<number, number>();
@@ -520,12 +520,17 @@ export class AvrBoard {
   }
 
   stepMillis() {
+    this.stepPart(1);
+  }
+
+  /** One master step of `1 / perMs` ms: `hz / (1000·perMs)` cycles. */
+  stepPart(perMs: number) {
     const cpu = this.cpu;
     // Ports and timers stay reachable from this object, not only from CPU hooks.
     if (!this.running || !cpu || this.peripherals.length === 0) return;
     this.pinChanges = [];
     this.stepOrigin = cpu.cycles;
-    const budget = this.hz / 1000 - this.overshoot;
+    const budget = this.hz / (1000 * perMs) - this.overshoot;
     if (budget <= 0) {
       this.overshoot = -budget;
       return;

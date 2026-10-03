@@ -4,7 +4,6 @@ import {
   type BehaviourImpl,
   type BodyImpl,
   type ChipClock,
-  DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type PortDecl,
   type Pose,
@@ -12,6 +11,7 @@ import {
   ROOT_PATH,
   type RunReport,
   SUPPLY_FORMS,
+  stepsPerMs,
   type VisualImpl,
   type WorldError,
   type WorldPrimitive,
@@ -1497,8 +1497,9 @@ function build(
   notePlaceholderBoxes(loaded);
   return {
     plan: {
-      ...(run.play.timestep === DEFAULT_TIMESTEP_S
-        ? { timestep: DEFAULT_TIMESTEP_S }
+      ...(typeof run.play.timestep === "number" &&
+      stepsPerMs(run.play.timestep) !== null
+        ? { timestep: run.play.timestep }
         : {}),
       environment: {
         ground: { plane: run.ground },
