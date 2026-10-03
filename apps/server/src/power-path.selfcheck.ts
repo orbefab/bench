@@ -32,6 +32,7 @@ import {
   type RailCircuit,
 } from "@sfab-bench/sim/rail-circuit";
 import { closeRootWatches } from "./projects";
+import { interp, spanError } from "./trace";
 import {
   BOD_ASSERT_V,
   BOD_RELEASE_V,
@@ -80,45 +81,6 @@ const RECOVER_A = 0.03;
 
 function pct(frac: number): string {
   return `${(frac * 100).toFixed(4)}%`;
-}
-
-function interp(
-  time: readonly number[],
-  values: readonly number[],
-  t: number
-): number {
-  const n = time.length;
-  const t0 = time[0]!;
-  const tN = time[n - 1]!;
-  if (t <= t0) return values[0]!;
-  if (t >= tN) return values[n - 1]!;
-  let lo = 0;
-  let hi = n - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (time[mid]! <= t) lo = mid;
-    else hi = mid;
-  }
-  const a = time[lo]!;
-  const b = time[hi]!;
-  const u = b === a ? 0 : (t - a) / (b - a);
-  return values[lo]! * (1 - u) + values[hi]! * u;
-}
-
-function rangeError(ours: readonly number[], ref: readonly number[]): number {
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const v of ref) {
-    if (v < lo) lo = v;
-    if (v > hi) hi = v;
-  }
-  const span = hi - lo || 1;
-  let worst = 0;
-  for (let i = 0; i < ours.length; i++) {
-    const err = Math.abs(ours[i]! - ref[i]!) / span;
-    if (err > worst) worst = err;
-  }
-  return worst;
 }
 
 function loadCsv(name: string): { t: number[]; v: number[] } {
@@ -197,7 +159,7 @@ const trace = loadCsv("uno-usb.csv");
       t
     )
   );
-  const err = rangeError(ours, trace.v);
+  const err = spanError(ours, trace.v);
   expect(err <= LINE, `uno-usb ${pct(err)} of span exceeds 0.5%`);
   for (const sample of samples) {
     const v = sample.v.v5 ?? 0;
