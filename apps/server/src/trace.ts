@@ -5,9 +5,11 @@
  *
  * A numeric channel passes when every sample has
  * `|actual − ref| ≤ abs + rel·|ref| + span·(max(ref) − min(ref))`. A
- * discrete channel (a motion state, a flag, null) and the text, events and
- * notes compare exactly. A trace on another time base is resampled onto the
- * reference's: linear for numbers, the last change for discrete values.
+ * discrete channel (a motion state, a flag, null), a NaN or an infinity, and
+ * the text, events and notes compare exactly. A trace on another time base is
+ * resampled onto the reference's: linear for numbers, the last sample for a
+ * column that holds a null or a non-finite number, the last change for
+ * discrete values.
  *
  * Channel names are the field paths of the frames they came from. A field
  * that is added is a new channel and does not fail a comparison. A field
@@ -29,7 +31,11 @@ export const TRACE_FORMAT = "sfab.trace@1";
 
 export type Tolerance = { abs?: number; rel?: number; span?: number };
 
-/** Regression traces keep the old digests' sensitivity: a nanounit. */
+/**
+ * Regression traces: a nanounit near zero, a part per billion of larger
+ * values. The relative term covers the ten digits a trace is stored at. A
+ * reordered float sum passes; at 5 V a 7 nV move fails.
+ */
 export const REGRESSION_TOL: Tolerance = { abs: 1e-9, rel: 1e-9 };
 
 export type Discrete = string | boolean | number | null;
@@ -268,8 +274,9 @@ function columnOn(
   const same =
     time.length === at.length && time.every((value, i) => value === at[i]);
   if (same) return column;
-  if (column.some((value) => value === null)) {
-    // Nulls do not interpolate: take the nearest earlier sample.
+  if (column.some((value) => value === null || !Number.isFinite(value))) {
+    // Nulls, NaN and infinities do not interpolate: take the nearest earlier
+    // sample.
     return at.map((t) => {
       let index = 0;
       while (index + 1 < time.length && time[index + 1]! <= t + 1e-12) index++;
@@ -277,6 +284,11 @@ function columnOn(
     });
   }
   return resample(time, column as number[], at);
+}
+
+/** Null and non-finite numbers match only themselves. */
+function sameExact(a: Discrete, b: Discrete): boolean {
+  return a === b || (Number.isNaN(a) && Number.isNaN(b));
 }
 
 function allowedAt(tol: Tolerance, ref: number, span: number): number {
@@ -297,7 +309,7 @@ function compareColumn(
     let first = -1;
     let count = 0;
     for (let i = 0; i < t.length; i++) {
-      if (ours[i] !== refValues[i]) {
+      if (!sameExact(ours[i] ?? null, refValues[i] ?? null)) {
         count++;
         if (first < 0) first = i;
       }
@@ -312,7 +324,8 @@ function compareColumn(
     };
   }
   const numbers = refValues.filter(
-    (value): value is number => typeof value === "number"
+    (value): value is number =>
+      typeof value === "number" && Number.isFinite(value)
   );
   const span =
     numbers.length > 0 ? Math.max(...numbers) - Math.min(...numbers) : 0;
@@ -322,10 +335,16 @@ function compareColumn(
   for (let i = 0; i < t.length; i++) {
     const want = refValues[i] ?? null;
     const got = ours[i] ?? null;
-    if (want === null || got === null || typeof got !== "number") {
-      if (want === got) continue;
+    if (
+      typeof want !== "number" ||
+      typeof got !== "number" ||
+      !Number.isFinite(want) ||
+      !Number.isFinite(got)
+    ) {
+      if (sameExact(want, got)) continue;
       count++;
-      // A value that appears or disappears outranks any numeric miss.
+      // A value that appears, disappears or stops being finite outranks any
+      // numeric miss.
       if (worstOver !== Infinity) {
         worst = {
           channel: name,
@@ -339,8 +358,8 @@ function compareColumn(
       }
       continue;
     }
-    const allowed = allowedAt(tol, want as number, span);
-    const delta = Math.abs(got - (want as number));
+    const allowed = allowedAt(tol, want, span);
+    const delta = Math.abs(got - want);
     if (delta <= allowed) continue;
     count++;
     const over = delta - allowed;
@@ -361,24 +380,29 @@ function compareColumn(
   return { ...worst, count };
 }
 
+/** JSON that keeps NaN and the infinities apart from null and each other. */
+function exactJson(value: unknown): string | undefined {
+  return JSON.stringify(value, (_key, item) =>
+    typeof item === "number" && !Number.isFinite(item)
+      ? { nonFinite: String(item) }
+      : item
+  );
+}
+
 function sameData(a: Channel, b: Channel, n: number): boolean {
   if (isDiscrete(a) || isDiscrete(b)) {
     return (
-      isDiscrete(a) &&
-      isDiscrete(b) &&
-      JSON.stringify(a.at) === JSON.stringify(b.at)
+      isDiscrete(a) && isDiscrete(b) && exactJson(a.at) === exactJson(b.at)
     );
   }
-  return (
-    JSON.stringify(numericColumn(a, n)) === JSON.stringify(numericColumn(b, n))
-  );
+  return exactJson(numericColumn(a, n)) === exactJson(numericColumn(b, n));
 }
 
 function firstDiff(label: string, ref: unknown[], ours: unknown[]): string[] {
   const n = Math.max(ref.length, ours.length);
   for (let i = 0; i < n; i++) {
-    const a = JSON.stringify(ref[i]);
-    const b = JSON.stringify(ours[i]);
+    const a = exactJson(ref[i]);
+    const b = exactJson(ours[i]);
     if (a !== b) {
       return [
         `${label} ${i}: ${b ?? "(none)"}, want ${a ?? "(none)"} (${ours.length} vs ${ref.length})`,
@@ -427,11 +451,12 @@ export function compareTraces(actual: Trace, ref: Trace): TraceReport {
     actual.t.length === ref.t.length &&
     actual.t.every((value, i) => value === ref.t[i]);
   if (sameBase) {
+    const unclaimed = [...added];
     for (const from of missing) {
-      const to = added.find((name) =>
+      const index = unclaimed.findIndex((name) =>
         sameData(ref.channels[from]!, actual.channels[name]!, ref.t.length)
       );
-      if (to) renamed.push([from, to]);
+      if (index >= 0) renamed.push([from, unclaimed.splice(index, 1)[0]!]);
     }
   }
   for (const [label, sample] of Object.entries(ref.samples ?? {})) {
@@ -459,6 +484,12 @@ export function compareTraces(actual: Trace, ref: Trace): TraceReport {
       );
       if (miss) misses.push(miss);
     }
+    for (const name of Object.keys(ours)) {
+      if (!(name in sample)) added.push(`${label} ${name}`);
+    }
+  }
+  for (const label of Object.keys(actual.samples ?? {})) {
+    if (!(label in (ref.samples ?? {}))) added.push(`sample ${label}`);
   }
   const exact: string[] = [];
   for (const [key, want] of Object.entries(ref.text ?? {})) {
@@ -498,8 +529,8 @@ export function formatReport(report: TraceReport): string[] {
   }
   for (const miss of report.misses) {
     const delta =
-      typeof miss.actual === "number" && typeof miss.ref === "number"
-        ? `, Δ ${Math.abs(miss.actual - miss.ref).toExponential(2)}${
+      Number.isFinite(miss.actual) && Number.isFinite(miss.ref)
+        ? `, Δ ${Math.abs((miss.actual as number) - (miss.ref as number)).toExponential(2)}${
             miss.allowed !== undefined
               ? ` > ${miss.allowed.toExponential(2)}`
               : ""
@@ -522,17 +553,56 @@ export function formatReport(report: TraceReport): string[] {
 // ---------------------------------------------------------------- files
 
 /** Ten significant digits: well inside the regression tolerance. */
-function stored(value: unknown): unknown {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? Number(value.toPrecision(10)) : null;
+function round10(value: number): number {
+  return Number(value.toPrecision(10));
+}
+
+/** JSON has no NaN or infinity, so a stored trace cannot hold one. */
+function assertFinite(value: unknown, path: string): void {
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new Error(`${path} is ${value}: a stored trace holds finite numbers`);
   }
-  if (Array.isArray(value)) return value.map(stored);
   if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) out[key] = stored(item);
-    return out;
+    for (const [key, item] of Object.entries(value)) {
+      assertFinite(item, path ? `${path}.${key}` : key);
+    }
   }
-  return value;
+}
+
+/**
+ * The trace as stored: the numbers compared with a tolerance (numeric
+ * channels and numeric checkpoint leaves) at ten digits, and everything
+ * compared exactly as it is.
+ */
+function stored(trace: Trace): Trace {
+  assertFinite(trace, "");
+  const channels: Record<string, Channel> = {};
+  for (const [name, channel] of Object.entries(trace.channels)) {
+    channels[name] = isDiscrete(channel)
+      ? channel
+      : {
+          ...channel,
+          v: Array.isArray(channel.v)
+            ? channel.v.map((value) => (value === null ? null : round10(value)))
+            : channel.v === null
+              ? null
+              : round10(channel.v),
+        };
+  }
+  const samples = trace.samples
+    ? Object.fromEntries(
+        Object.entries(trace.samples).map(([label, sample]) => [
+          label,
+          Object.fromEntries(
+            Object.entries(sample).map(([key, value]) => [
+              key,
+              typeof value === "number" ? round10(value) : value,
+            ])
+          ),
+        ])
+      )
+    : undefined;
+  return { ...trace, channels, samples };
 }
 
 /**
@@ -540,7 +610,7 @@ function stored(value: unknown): unknown {
  * a re-recorded trace shows which channels moved.
  */
 export function traceText(trace: Trace): string {
-  const kept = stored(trace) as Trace;
+  const kept = stored(trace);
   const line = (value: unknown) => JSON.stringify(value);
   const block = (entries: [string, unknown][]) =>
     entries.length === 0

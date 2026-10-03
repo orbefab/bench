@@ -229,3 +229,195 @@ const ref = traceOf(frames(11, 0.1), {
   expect(gone[0] === "missing channel sample end", gone.join("\n"));
   console.log(`trace: ${lines[0]}`);
 }
+
+// NaN and Infinity match only themselves, in either trace. A reference
+// cannot store them.
+{
+  const at3 = (value: number): Trace => {
+    const column = (ref.channels["supplies.usb.voltage"] as { v: number[] }).v;
+    return {
+      ...ref,
+      channels: {
+        ...ref.channels,
+        "supplies.usb.voltage": {
+          unit: "V",
+          v: column.map((v, i) => (i === 3 ? value : v)),
+        },
+      },
+    };
+  };
+  const finite = at3(4.97);
+  const cases: [string, Trace, Trace, boolean][] = [
+    ["NaN against a number", at3(Number.NaN), finite, false],
+    ["a number against NaN", finite, at3(Number.NaN), false],
+    ["a number against Infinity", finite, at3(Infinity), false],
+    ["Infinity against a number", at3(Infinity), finite, false],
+    ["-Infinity against Infinity", at3(-Infinity), at3(Infinity), false],
+    ["NaN against NaN", at3(Number.NaN), at3(Number.NaN), true],
+    ["Infinity against Infinity", at3(Infinity), at3(Infinity), true],
+  ];
+  for (const [label, actual, want, same] of cases) {
+    const report = compareTraces(actual, want);
+    expect(report.ok === same, `${label}: ${formatReport(report).join("; ")}`);
+  }
+  const line = formatReport(compareTraces(at3(Number.NaN), finite))[0];
+  expect(
+    line?.startsWith("supplies.usb.voltage at 0.3 s: NaN V, want 4.97 V"),
+    `${line}`
+  );
+  let refused = "";
+  try {
+    storedTrace(at3(Number.NaN));
+  } catch (error) {
+    refused = (error as Error).message;
+  }
+  expect(
+    refused.includes("channels.supplies.usb.voltage.v.3"),
+    `storing NaN: ${refused || "accepted"}`
+  );
+  console.log(`trace: ${line}; storing it: ${refused}`);
+}
+
+// Events are stored at full precision, so they read back exactly.
+{
+  const third: Trace = {
+    ...ref,
+    events: [{ t: 1 / 3, kind: "reset", board: "uno" }],
+  };
+  const report = compareTraces(storedTrace(third), third);
+  expect(report.ok, formatReport(report).join("\n"));
+}
+
+// Two renamed constants with the same value are two renames, not one.
+{
+  const constant = (v: number) => ({ unit: "V", v });
+  const before: Trace = {
+    ...ref,
+    channels: { a: constant(5), b: constant(5) },
+  };
+  const after: Trace = {
+    ...ref,
+    channels: { x: constant(5), y: constant(5) },
+  };
+  const report = compareTraces(after, before);
+  expect(
+    JSON.stringify(report.renamed) ===
+      JSON.stringify([
+        ["a", "x"],
+        ["b", "y"],
+      ]),
+    JSON.stringify(report.renamed)
+  );
+}
+
+// A new leaf in a sample is reported like a new channel and does not fail.
+{
+  const want: Trace = { ...ref, samples: { end: { v: 4.9 } } };
+  const grown: Trace = { ...ref, samples: { end: { v: 4.9, w: 1 } } };
+  const report = compareTraces(grown, want);
+  expect(report.ok, formatReport(report).join("\n"));
+  expect(
+    formatReport(report)[0] === "new channels, not compared: end w",
+    formatReport(report).join("\n")
+  );
+}
+
+// On another time base a column with a NaN or an infinity is held, not
+// interpolated, so a finite sample still cannot stand in for one.
+{
+  const on = (t: number[], v: number[]): Trace => ({
+    format: TRACE_FORMAT,
+    tol: REGRESSION_TOL,
+    t,
+    channels: { a: { unit: "V", v } },
+  });
+  const nan = Number.NaN;
+  const cases: [string, Trace, Trace, boolean][] = [
+    [
+      "5 against NaN",
+      on([0, 1, 3], [0, 5, nan]),
+      on([0, 1, 2], [0, nan, nan]),
+      false,
+    ],
+    [
+      "5 against NaN, held",
+      on([0, 1, 2], [0, 5, Infinity]),
+      on([1], [nan]),
+      false,
+    ],
+    [
+      "a held 5 against NaN",
+      on([0, 1, 3], [0, 5, nan]),
+      on([0, 1, 2], [0, 5, nan]),
+      false,
+    ],
+    ["5 against 5, held", on([0, 1, 3], [0, 5, nan]), on([0, 1], [0, 5]), true],
+    [
+      "Infinity throughout",
+      on([0, 1, 3], [Infinity, Infinity, Infinity]),
+      on([0, 1, 2], [Infinity, Infinity, Infinity]),
+      true,
+    ],
+  ];
+  for (const [label, actual, want, same] of cases) {
+    const report = compareTraces(actual, want);
+    expect(report.ok === same, `${label}: ${formatReport(report).join("; ")}`);
+  }
+}
+
+// What compares exactly is stored exactly: a number in a discrete channel,
+// a change-point time, the time base. Events refuse NaN like channels do.
+{
+  const mixed: Trace = {
+    format: TRACE_FORMAT,
+    tol: REGRESSION_TOL,
+    t: [0, 1 / 3, 1],
+    channels: {
+      mixed: {
+        at: [
+          [0, 0.1 + 0.2],
+          [1, "idle"],
+        ],
+      },
+      state: {
+        at: [
+          [0, "a"],
+          [1 / 3, "b"],
+        ],
+      },
+    },
+  };
+  const report = compareTraces(mixed, storedTrace(mixed));
+  expect(report.ok, formatReport(report).join("\n"));
+  let refused = "";
+  try {
+    storedTrace({ ...ref, events: [{ t: Number.NaN, kind: "reset" }] });
+  } catch (error) {
+    refused = (error as Error).message;
+  }
+  expect(
+    refused.includes("events.0.t"),
+    `storing a NaN event: ${refused || "accepted"}`
+  );
+}
+
+// NaN, an infinity and null are different values in events and in the
+// rename hint, though JSON writes all three as null.
+{
+  const event = (t: number | null): Trace => ({
+    ...ref,
+    events: [{ t, kind: "reset" }],
+  });
+  for (const [a, b] of [
+    [Number.NaN, null],
+    [Number.NaN, Infinity],
+    [Infinity, -Infinity],
+  ] as [number | null, number | null][]) {
+    expect(!compareTraces(event(a), event(b)).ok, `event t ${a} against ${b}`);
+  }
+  const report = compareTraces(
+    { ...ref, channels: { x: { v: null } } },
+    { ...ref, channels: { a: { v: Number.NaN } } }
+  );
+  expect(report.renamed.length === 0, JSON.stringify(report.renamed));
+}
