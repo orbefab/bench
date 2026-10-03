@@ -539,7 +539,7 @@ One use. The table is a branch between two of the part's own ports. The supply i
 
 - **Branch.** The table is a two-terminal branch between the two live nodes, with no current limit and no floor. Outside the knots it extrapolates the end segments, and the envelope warns once. A behaviour variant `{kind: "snapshot", ref}` whose law is `table@1` is this use. It is stamped on its `across` ports, on the rail of the supply those nets reach, the same way as any circuit part.
 
-During a run, every key in `envelope.bounds` whose quantity is observed on the rail is checked. There is at most one warning per path and ref. The warning names the port and the bound. The run continues. It does not fall back mid-run.
+During a run, every key in `envelope.bounds` whose quantity is observed on the rail is checked. There is at most one warning per path and ref. The warning names the port and the bound. The run continues. It does not fall back mid-run. Below the first knot a branch extrapolates its first segment, so a diode branch conducts backwards: the Nano power input carries an LED's current from `5V` back into `VBUS`, where the SS14 blocks, and warns below the 0 A bound (`snapshot-envelope.selfcheck.ts`).
 
 ### `hinge@1`
 
