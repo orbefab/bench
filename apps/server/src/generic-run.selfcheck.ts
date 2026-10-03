@@ -404,6 +404,34 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
   }
 }
 
+// A type rule that names no type is a bad level rule, not a missing file.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-unknown-type-"));
+  try {
+    nestedNano(dir);
+    const file = join(dir, "nested.world.json");
+    writeFileSync(
+      file,
+      readFileSync(file, "utf8").replace('"arduino-nano"', '"arduino-nanoo"')
+    );
+    const planned = planWorld(dir, "nested.world.json");
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((item) => item.message).join("; "));
+    }
+    const row = planned.plan.degraded?.find(
+      (item) => item.path === "run.levels.types"
+    );
+    expect(
+      row?.code === "bad-params" &&
+        row.message === "type rule names unknown type arduino-nanoo",
+      `unknown type row: ${row?.code} ${row?.message}`
+    );
+    console.log(`unknown type: ${row.code} ${row.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 {
   const dir = mkdtempSync(join(tmpdir(), "sfab-sg90-class2-"));
   try {

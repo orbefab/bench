@@ -199,6 +199,9 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
       diagnostics.push(
         makeDiag({
           severity: "error",
+          // A bad level rule, like a bad variant: the run's "not found" is
+          // not a missing file.
+          code: "bad-params",
           path: "run.levels.types",
           port: typeId,
           quantity: "PartType",
