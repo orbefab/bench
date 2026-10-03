@@ -119,8 +119,13 @@ expect(
       brownoutVoltage: 2.7,
       minOperatingVoltage: 3.78,
     }
-  ) === "",
-  "no chip clock on the view is no line"
+  ) === "supply was below the 3.78 V minimum operating voltage",
+  "no chip clock on the view still shows the flag, with the floor"
+);
+expect(
+  recordedSoaLine(true, { voltage: 3.2, minVoltage: 3.2 }, {}) ===
+    "supply was below the chip's minimum operating voltage",
+  "no facts on the view still shows the flag"
 );
 expect(
   scrubbedBoardStatus({ running: false, fault: "bad checksum" }) === "stopped",

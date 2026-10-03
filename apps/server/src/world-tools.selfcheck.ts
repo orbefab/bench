@@ -29,6 +29,8 @@ function msOf(simTime: number): number {
   return Math.round(simTime * 1000);
 }
 
+// ±4 µs is ADR 0009's measured band for an unmodified Servo.h sweep on
+// avr8js (every completed pulse within it of 647, 1472 and 1781 µs).
 function hasWidth(widths: number[], target: number): boolean {
   return widths.some((width) => Math.abs(width - target) <= 4);
 }
@@ -381,6 +383,34 @@ try {
         Array.isArray(recorded.warnings) && recorded.warnings.length === 0,
         `recording warnings ${JSON.stringify(recorded.warnings)}`
       );
+      // A supply track returns the field it names, and nothing more.
+      for (const field of ["voltage", "minVoltage"]) {
+        const only = await call(worldTools.read_recording, {
+          world: "parts/sfab/arm-bench@1.0.0.json",
+          from: 0,
+          to: 0.5,
+          tracks: [`supply:${supply.id}.${field}`],
+          maxFrames: 20,
+        });
+        expect(!errorOf(only), `supply ${field} ${JSON.stringify(only)}`);
+        const rows =
+          isRecord(only) && Array.isArray(only.frames)
+            ? only.frames.flatMap((frame) =>
+                isRecord(frame) && isRecord(frame.supplies)
+                  ? Object.values(frame.supplies)
+                  : []
+              )
+            : [];
+        expect(rows.length > 0, `supply ${field}: no rows`);
+        for (const row of rows) {
+          expect(
+            isRecord(row) &&
+              Object.keys(row).join() === field &&
+              typeof row[field] === "number",
+            `supply ${field} track kept ${JSON.stringify(row)}`
+          );
+        }
+      }
       const manifest = recorded.manifest;
       expect(isRecord(manifest), "recording has no manifest");
       if (isRecord(manifest)) {

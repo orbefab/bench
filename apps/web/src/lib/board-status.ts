@@ -79,7 +79,8 @@ export type SoaFacts = {
 /**
  * The same line for a scrubbed frame. `belowSoa` is the window flag.
  * The voltage is this board's 5V node, not the supply terminal.
- * The thresholds come from the view. Missing facts produce no line.
+ * The thresholds come from the view. When the view lacks them the flag
+ * still shows, as a line without the numbers it cannot name.
  */
 export function recordedSoaLine(
   belowSoa: boolean | undefined,
@@ -90,7 +91,11 @@ export function recordedSoaLine(
   const brownout = facts?.brownoutVoltage;
   const floor = facts?.minOperatingVoltage;
   const clock = facts?.clock;
-  if (brownout === undefined || floor == null || !clock) return "";
+  if (brownout === undefined || floor == null || !clock) {
+    return floor == null
+      ? "supply was below the chip's minimum operating voltage"
+      : `supply was below the ${floor.toFixed(2)} V minimum operating voltage`;
+  }
   if (board) {
     const voltage =
       board.minVoltage > brownout && board.minVoltage < floor

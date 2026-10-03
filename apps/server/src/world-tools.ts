@@ -760,10 +760,8 @@ function trimFrame(
     if (selected.filtered && !fields) continue;
     const all = !fields || fields === "all";
     const supply: NonNullable<AgentFrame["supplies"]>[string] = {};
-    if (all || fields.has("voltage") || fields.has("minVoltage")) {
-      if (all || fields.has("voltage")) supply.voltage = row.voltage;
-      supply.minVoltage = row.minVoltage;
-    }
+    if (all || fields.has("voltage")) supply.voltage = row.voltage;
+    if (all || fields.has("minVoltage")) supply.minVoltage = row.minVoltage;
     if (all || fields.has("current")) supply.current = row.current;
     supplies[id] = supply;
   }
@@ -1080,7 +1078,7 @@ export const worldTools = {
     },
   }),
   read_recording: tool({
-    description: `Read a world's recording for an agent. ${WORLD_ARG} Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, part:servo.torqueNm (newton-metres at the shaft, driven servos only), supply:usb.voltage (the terminal), and board:uno.voltage (the board node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets (cause "pin" when the RESET pin held the chip, absent for a brownout), reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose node was above its brownout but below its chip's minimum operating voltage, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.`,
+    description: `Read a world's recording for an agent. ${WORLD_ARG} Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, part:servo.torqueNm (newton-metres at the shaft, driven servos only), supply:usb.voltage (the terminal), supply:usb.minVoltage (its lowest over the frame), and board:uno.voltage (the board node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets (cause "pin" when the RESET pin held the chip, absent for a brownout), reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose node was above its brownout but below its chip's minimum operating voltage, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.`,
     inputSchema: z.object({
       world: z.string(),
       from: z.number().optional(),

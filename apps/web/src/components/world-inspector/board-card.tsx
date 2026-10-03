@@ -163,6 +163,9 @@ export function BoardBody({
     scrub.playhead !== null
       ? faultUntil(markers, id, scrub.playhead)
       : undefined;
+  // `unpowered` is the run's wiring (no supply reaches the board), fixed
+  // when the run is built, and each build starts a new recording. So the
+  // live flag holds for every recorded frame too.
   const statusBoard = recorded
     ? {
         running: recorded.running,
