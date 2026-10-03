@@ -112,9 +112,9 @@ export function boardGpio(
 
 /**
  * The board's reset port: the header port the board exposes onto the
- * chip's `resetPort` (`RST` on the Pro Micro, `RESET` on the Nano). A chip
- * that is its own board keeps its own name. Null when the chip has no
- * reset port or the board does not bring it out (the Uno).
+ * chip's `resetPort` (`RST` on the Pro Micro, `RESET` on the Nano and the
+ * Uno). A chip that is its own board keeps its own name. Null when the
+ * chip has no reset port or the board does not bring it out.
  */
 export function boardResetPort(
   resetPort: string | undefined,
