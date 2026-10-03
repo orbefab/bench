@@ -116,8 +116,9 @@ firmware, and part models where a domain does not need its own engine.
 - **Energy residuals at seams** are the honesty signal when coupling is
   imperfect. They are reported, not hidden (G2). The run report's `seams`
   field is joules at each circuit/body cut: energy sent, energy received,
-  the loss the model declares, and the residual. A seam is flagged when
-  that residual grows.
+  the loss the model declares, and the residual. The residual is the
+  coupling lag of one body step, not a conservation check of the run. A
+  seam is flagged when it grows.
 - **Levels and snapshots are the fidelity dial.** The same exposed ports,
   run live or from a snapshot. The snapshot container is universal (ports,
   a typed form, an envelope, error, provenance); forms stay typed, never

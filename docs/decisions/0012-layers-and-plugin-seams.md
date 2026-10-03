@@ -67,8 +67,9 @@ registry with publishing and signing, because it is a security surface.
 ## Consequences
 
 ### Positive
-- The simulation runs headless (`bench run`) with no server: CI, scripts, and
-  RL can use it directly.
+- The simulation runs headless (`bench run`) with no server, so CI and
+  scripts use it directly. RL can build on it; it has no reset, observe
+  or act API yet.
 - The web client depends on the protocol, not on server code.
 - A new form, tool, importer, or engine is one package in one registry.
 - Undo, the agent, and scripts share one edit path.

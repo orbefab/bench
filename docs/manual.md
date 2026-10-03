@@ -108,7 +108,7 @@ Each tool is a mode on the stage. A tool makes ordinary edits, so undo, the agen
 | **Move / rotate** | Drag to move, rotate on handles, **snap** to faces, edges, and ports. Also the default: dragging a selected part moves it. |
 | **Mount** | Attach a part to a body (a servo onto a bracket, a sensor onto a link), so it moves with it. |
 | **Wire** (**W**) | Click **port → port in 3D** (card wiring is backup). **Esc** or **click empty** cancels. Wires are parts too: they show as **instance rows** in the tree, endpoints on the card or on hover; **select → Delete/Backspace** removes one. Wires are **not** added from the library picker. |
-| **Probe** | Pick a port while playing and watch its quantities (volts, amps, torque, angle) as a trace on the timeline. |
+| **Probe** | Pick a port while playing and watch its quantities (volts, amps, torque, angle) as a trace on the timeline. For now a board pin's volts are its logic level times the board node, not the solved pin node. |
 | **Fixture** | Build a test bench around the selected part: a supply, a load, a scripted input. This is where you Capture from (see below). |
 
 Later tools: joints between bodies, measure (distance, angle, clearance), targets and scripted paths, sensor frames, clips from the timeline.

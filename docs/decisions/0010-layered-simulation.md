@@ -103,9 +103,11 @@ types, parts, World v2, snapshots, fixtures, lockfile, run report) are in
 
 ### Reinforcement learning
 
-Bench is a Gymnasium-style environment: seeded `reset`, `step`, fast
+Bench is to be a Gymnasium-style environment: seeded `reset`, `step`, fast
 checkpoint and restore, headless faster than real time, many worlds in
-parallel. Training runs outside Bench (D-019).
+parallel. Training runs outside Bench (D-019). Not built yet: today
+`bench run` runs one world headless for a fixed span, with no reset,
+observe or act.
 
 ### First deep part
 
@@ -165,9 +167,13 @@ run, Bench never compiles firmware, and avr8js is the board.
 
 - One idea covers a resistor, a servo, a robot and a fleet: a part with
   levels, and a snapshot that makes it cheap.
-- The rail, the motor and the pins solve together, so sag, stall and
-  brownout come from circuits, not rules. The experiments match ngspice
-  and the closed forms to well under 1%.
+- The rail, the motor and the pins solve together, so sag and stall come
+  from the circuit: the motor is a lumped law in it (winding resistance
+  and back-EMF), and brownout is a threshold on the solved board node.
+  The lowest level is lumped devices (R, C, L, a Shockley diode, and
+  behavioural regulator, fuse, switch and comparator), not transistors.
+  The experiments match ngspice on the same netlists, and the closed
+  forms, to well under 1%. Nothing is checked against hardware yet (E10).
 - Runs are reproducible and say what they leave out, so a snapshot can be
   scored against its deeper level.
 - Formats map to open standards, and the runtime stays permissive.
