@@ -4,6 +4,7 @@ import {
   type BehaviourImpl,
   type BodyImpl,
   type ChipClock,
+  DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type PortDecl,
   type Pose,
@@ -1497,10 +1498,7 @@ function build(
   notePlaceholderBoxes(loaded);
   return {
     plan: {
-      ...(typeof run.play.timestep === "number" &&
-      stepsPerMs(run.play.timestep) !== null
-        ? { timestep: run.play.timestep }
-        : {}),
+      ...planStep(run.play.timestep),
       environment: {
         ground: { plane: run.ground },
         gravity: [...run.play.gravity],
@@ -1720,4 +1718,13 @@ function degradeCode(diag: Diagnostic): string {
   }
   if (text.includes("variant") || text.includes("param")) return "bad-params";
   return "idle";
+}
+
+/**
+ * `1 ms / k` exactly, so MuJoCo and the circuit read the same number. A step
+ * that does not divide 1 ms is omitted and the body steps 1 ms.
+ */
+function planStep(seconds: number | undefined): { timestep?: number } {
+  const k = typeof seconds === "number" ? stepsPerMs(seconds) : null;
+  return k === null ? {} : { timestep: DEFAULT_TIMESTEP_S / k };
 }

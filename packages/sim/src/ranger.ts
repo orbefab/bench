@@ -209,7 +209,7 @@ export class RangerRuntime {
 
   /**
    * Amperes for the rail solve, then clear the one-step latch.
-   * Unpowered is 0. A measurement in this millisecond draws `working`.
+   * Unpowered is 0. A measurement in this master step draws `working`.
    */
   takeDraw(): number {
     const draw = !this.powered()

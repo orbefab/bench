@@ -37,7 +37,7 @@ export function commandDegFromPulse(us: number): number | null {
 }
 
 /**
- * One millisecond of one servo. `pulsesUs` are the widths completed during
+ * One master step of one servo. `pulsesUs` are the widths completed during
  * this step. No signal leaves the joint limp: the caller applies no motor
  * voltage. The position loop itself is the motor law, not a slew.
  */

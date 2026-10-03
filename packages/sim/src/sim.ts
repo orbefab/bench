@@ -370,7 +370,7 @@ function createSession(host: SimHost) {
   }
 
   /**
-   * One millisecond. Boards that are already running execute first, so this
+   * One master step. Boards that are already running execute first, so this
    * step's pulses are the command. The rail is solved from that command and
    * the joint velocity. A rail below the chip's assert voltage asserts
    * reset on this step. The torque still matches the current charged for

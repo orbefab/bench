@@ -110,8 +110,8 @@ function boundName(key: string): { port: string; quantity: string } {
 
 /**
  * Intervals between edges of every stamped pin on one rail, inside this
- * millisecond, merged onto one timeline. A single level change charges the
- * rail for the part of the millisecond after the edge. A pulse has both
+ * master step, merged onto one timeline. A single level change charges the
+ * rail for the part of the step after the edge. A pulse has both
  * edges, and those intervals are the duty. A board that does not toggle
  * contributes its held mode to each piece.
  */
