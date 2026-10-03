@@ -94,7 +94,9 @@ function nodeAt(fraction: number, connected: boolean): number {
   const interp = rows.find((row) => row.metric === "static-max-abs");
   expect(interp, "power-input snapshot has no static error");
   expect(knot <= 1e-6, `knot error ${knot} V`);
-  expect((interp?.value ?? 1) <= 0.002, `interpolation ${interp?.value} V`);
+  // The stated error is the worst between sweep points (the knee below
+  // 2 mA), checked on held-out currents by snapshot-holdout.selfcheck.ts.
+  expect((interp?.value ?? 1) <= 0.01, `interpolation ${interp?.value} V`);
   console.log(
     `power-input snapshot: knots ${table.iAxis.length}, knot error ${(knot * 1e6).toFixed(3)} µV, interpolation ${((interp?.value ?? 0) * 1000).toFixed(3)} mV, lint ${snap.quality}`
   );

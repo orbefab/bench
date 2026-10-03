@@ -313,11 +313,9 @@ async function captureEntry(
     iAxis: knots,
     vAxis: knots.map((amps) => round9(dc(amps))),
   };
-  let staticMax = 0;
-  for (const amps of sweep.current) {
-    const err = Math.abs(dc(amps) - tableVoltage(law, amps));
-    if (err > staticMax) staticMax = err;
-  }
+  const staticMax = maxBetween(sweep.current, (amps) =>
+    Math.abs(dc(amps) - tableVoltage(law, amps))
+  );
 
   const partType = partTypeOf(config.part, catalog, env, opts.libraryDir);
   const hash = contentHash(describeNetlist(stamp, 0, "header"));
@@ -631,6 +629,67 @@ function lineError(current: number[], volts: number[]): number {
     if (err > max) max = err;
   }
   return max;
+}
+
+/**
+ * The largest `err` over the sweep: what a `static-max-abs` row states. The
+ * knots are sweep points, so the error that matters is between them. Each
+ * interval is sampled at 32 steps, plus a halving ladder when it starts at
+ * 0 A, where a diode knee sits; the worst sample is then refined between its
+ * neighbours.
+ */
+function maxBetween(
+  current: readonly number[],
+  err: (amps: number) => number
+): number {
+  let worst = 0;
+  for (let k = 0; k + 1 < current.length; k++) {
+    const lo = current[k] ?? 0;
+    const hi = current[k + 1] ?? 0;
+    const points = new Set([lo, hi]);
+    for (let j = 1; j < 32; j++) points.add(lo + ((hi - lo) * j) / 32);
+    if (lo === 0) for (let j = 1; j <= 12; j++) points.add(hi / 2 ** j);
+    const sorted = [...points].sort((a, b) => a - b);
+    const errs = sorted.map(err);
+    let best = 0;
+    for (let i = 1; i < errs.length; i++) {
+      if ((errs[i] ?? 0) > (errs[best] ?? 0)) best = i;
+    }
+    const around = goldenMax(
+      err,
+      sorted[Math.max(best - 1, 0)] ?? lo,
+      sorted[Math.min(best + 1, sorted.length - 1)] ?? hi
+    );
+    worst = Math.max(worst, errs[best] ?? 0, around);
+  }
+  return worst;
+}
+
+/** The maximum of `f` on `[a, b]`, by golden-section search. */
+function goldenMax(f: (x: number) => number, a: number, b: number): number {
+  const r = (Math.sqrt(5) - 1) / 2;
+  let lo = a;
+  let hi = b;
+  let c = hi - r * (hi - lo);
+  let d = lo + r * (hi - lo);
+  let fc = f(c);
+  let fd = f(d);
+  for (let i = 0; i < 40; i++) {
+    if (fc > fd) {
+      hi = d;
+      d = c;
+      fd = fc;
+      c = hi - r * (hi - lo);
+      fc = f(c);
+    } else {
+      lo = c;
+      c = d;
+      fc = fd;
+      d = lo + r * (hi - lo);
+      fd = f(d);
+    }
+  }
+  return Math.max(fc, fd);
 }
 
 function fitKnots(current: number[], volts: number[], fitV: number): number[] {

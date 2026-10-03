@@ -17,7 +17,7 @@
       "heldOut": "fixture",
       "metric": "static-max-abs",
       "quantity": "VBUS.voltage",
-      "value": 0.001501644
+      "value": 0.005903559
     }
   ],
   "form": "table@1",

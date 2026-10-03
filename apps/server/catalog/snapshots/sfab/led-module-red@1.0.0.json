@@ -17,7 +17,7 @@
       "heldOut": "fixture",
       "metric": "static-max-abs",
       "quantity": "IN.voltage",
-      "value": 0.001840934
+      "value": 1.260813074
     }
   ],
   "form": "table@1",
