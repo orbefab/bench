@@ -6,7 +6,7 @@ import { performance } from "node:perf_hooks";
 import type { SeamEnergy, WorldState } from "@sfab-bench/contract";
 import { healTornWrite, sha256Bytes } from "@sfab-bench/parts";
 import { seamLine } from "@sfab-bench/sim/seams";
-import { type LoadResult, Sim } from "@sfab-bench/sim/sim";
+import { type LoadResult, MAX_STEP_N, Sim } from "@sfab-bench/sim/sim";
 
 import {
   projectReal,
@@ -114,6 +114,9 @@ export async function runHeadless(opts: {
   world: string;
   ms: number;
 }): Promise<RunResult> {
+  if (!Number.isInteger(opts.ms) || opts.ms < 0) {
+    throw new Error(`--ms ${opts.ms} is not a whole number of ms.`);
+  }
   const root = projectReal(opts.project);
   if (root) {
     const file = resolveInside(root, opts.world);
@@ -132,7 +135,13 @@ export async function runHeadless(opts: {
       generation: 1,
     });
     if (!loaded.ok) throw new Error(loadError(loaded));
-    await sim.step(opts.ms);
+    // One step call is capped. A zero-length run still takes one call.
+    let left = opts.ms;
+    do {
+      const n = Math.min(left, MAX_STEP_N);
+      await sim.step(n);
+      left -= n;
+    } while (left > 0);
     const settled = sim.state();
     if (!settled) throw new Error("world produced no state");
     const body = sim.record({ op: "read", from: 0, to: settled.simTime });

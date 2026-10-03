@@ -3,12 +3,15 @@
  */
 import { ok as expect } from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldSender } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
+import { runHeadless } from "./run";
 import { attachWorld, readRecording, stepWorld, stopWorld } from "./world/host";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -95,3 +98,78 @@ expect(
 console.log(
   `bench run gauge-usb: serial matches the 3000 ms recording (${printed.length} lines)`
 );
+
+// One step call is capped at 60 s of sim time. A longer run still runs.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-run-long-"));
+  try {
+    const none = {
+      "0": { default: "none", variants: { none: { kind: "none" } } },
+    };
+    mkdirSync(join(dir, "parts", "sfab"), { recursive: true });
+    writeFileSync(
+      join(dir, "parts", "sfab", "long@1.0.0.json"),
+      JSON.stringify({
+        format: "sfab.part@1",
+        id: "sfab/long@1.0.0",
+        type: "assembly",
+        play: { seed: 1, levels: { default: 1 } },
+        axes: {
+          behaviour: {
+            "1": {
+              default: "netlist",
+              variants: {
+                netlist: {
+                  kind: "composite",
+                  omits: ["test scene"],
+                  netlist: {
+                    instances: {
+                      bench: { part: "sfab/bench-supply@1.0.0" },
+                      r: {
+                        part: "sfab/resistor@1.0.0",
+                        params: { R: 1000 },
+                      },
+                    },
+                    wires: [
+                      ["bench.5V", "r.A"],
+                      ["bench.GND", "r.B"],
+                    ],
+                    expose: {},
+                  },
+                },
+              },
+            },
+          },
+          body: none,
+          visual: none,
+        },
+      })
+    );
+    const long = await runHeadless({
+      project: dir,
+      world: "parts/sfab/long@1.0.0.json",
+      ms: 60_001,
+    });
+    expect(
+      Math.round(long.simSeconds * 1000) === 60_001,
+      `a 60 001 ms run stopped at ${long.simSeconds} s`
+    );
+    console.log(`bench run past the step cap: ${long.simSeconds.toFixed(3)} s`);
+    // A span the chunks cannot cover is refused before the first step.
+    const half = await runHeadless({
+      project: dir,
+      world: "parts/sfab/long@1.0.0.json",
+      ms: 60_000.5,
+    }).then(
+      () => "",
+      (error: unknown) => String(error)
+    );
+    expect(
+      half.includes("whole number of ms"),
+      `a 60 000.5 ms run was not refused up front: ${half}`
+    );
+    console.log("bench run: 60 000.5 ms refused before stepping");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}

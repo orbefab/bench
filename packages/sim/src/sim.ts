@@ -160,7 +160,8 @@ const TICK_MS = 16;
 const STATE_EVERY_MS = 1000 / 30;
 const MAX_STEPS_PER_TICK = 100;
 // Lockstep AVR runs about 4x real time, so one step call stays in seconds.
-const MAX_STEP_N = 60_000;
+// A longer headless run steps in calls of at most this many.
+export const MAX_STEP_N = 60_000;
 
 export type RecordQuery =
   | { op: "info" }
