@@ -12,6 +12,7 @@ import { latchedBoardNode, latchedSupplyNode, powerBoardOf } from "./rails";
 import { scalar } from "./recorder";
 import {
   applyShaftTorque,
+  classifyShafts,
   latchControls,
   noteShaftSeams,
   rearmControls,
@@ -196,6 +197,7 @@ export function classifyLoads(s: SessionState) {
     });
     noteBodyEnvelope(s, load.partId, omega);
   }
+  classifyShafts(s);
 }
 
 /** Joint speed and applied torque against a body snapshot's shaft bounds. */

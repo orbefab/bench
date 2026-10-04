@@ -125,6 +125,21 @@ export function sample(s: SessionState): WorldState | null {
       voltage: partVolts(s, load.supplyId, loadBoard(load)),
     };
   }
+  for (const shaft of s.shafts) {
+    const part = shaft.part;
+    if (!part) continue;
+    const control = part.control;
+    const command = control?.board
+      ? control.track.commandDeg
+      : (control?.manualDeg ?? null);
+    parts[shaft.spec.id] = {
+      pulseUs: control?.track.pulseUs ?? null,
+      commandDeg: command,
+      state: part.state,
+      current: part.current,
+      voltage: part.voltage,
+    };
+  }
   for (const ranger of s.rangers) {
     const echoUs = ranger.echoS === null ? null : ranger.echoS * 1e6;
     parts[ranger.spec.id] = {
@@ -203,6 +218,14 @@ function fillRecorder(s: SessionState, full: boolean) {
       rec.rangerDistance[index] = ranger.distanceM ?? Number.NaN;
       rec.rangerHit[index] = ranger.hit ? 1 : 0;
     }
+    for (let i = 0; i < lay.shafts.length; i++) {
+      const control = lay.shafts[i]?.part?.control;
+      const index = lay.parts.length + lay.rangers.length + i;
+      rec.pulse[index] = control?.track.pulseUs ?? Number.NaN;
+      rec.command[index] =
+        (control?.board ? control.track.commandDeg : control?.manualDeg) ??
+        Number.NaN;
+    }
     for (let i = 0; i < lay.boards.length; i++) {
       const id = lay.boards[i];
       const board = s.boards.find((item) => item.id === id);
@@ -232,6 +255,16 @@ function fillRecorder(s: SessionState, full: boolean) {
     rec.state[index] = 0;
     rec.partCurrent[index] = ranger.current;
     rec.partVoltage[index] = partVolts(s, ranger.supplyId, ranger.powerBoard);
+  }
+  for (let i = 0; i < lay.shafts.length; i++) {
+    const shaft = lay.shafts[i];
+    const part = shaft?.part;
+    if (!shaft || !part) continue;
+    const index = lay.parts.length + lay.rangers.length + i;
+    rec.state[index] = motionRank(part.state);
+    rec.partCurrent[index] = part.current;
+    rec.partVoltage[index] = part.voltage;
+    rec.partTorque[index] = s.sim.data.actuator(shaft.spec.id).ctrl as number;
   }
   for (let i = 0; i < lay.supplies.length; i++) {
     const spec = lay.supplies[i];
@@ -323,12 +356,14 @@ export function openRecorder(s: SessionState) {
     }
   }
   const parts = s.loads.filter((load) => load.drive);
+  const shafts = s.shafts.filter((shaft) => shaft.part);
   const boardIds = s.boards.map((board) => board.id);
   s.layout = {
     joints,
     bodies,
     parts,
     rangers: s.rangers,
+    shafts,
     supplies: s.supplySpecs,
     boards: boardIds,
   };
@@ -341,8 +376,13 @@ export function openRecorder(s: SessionState) {
     parts: [
       ...parts.map((load) => load.partId),
       ...s.rangers.map((ranger) => ranger.spec.id),
+      ...shafts.map((shaft) => shaft.spec.id),
     ],
-    partRanger: [...parts.map(() => false), ...s.rangers.map(() => true)],
+    partRanger: [
+      ...parts.map(() => false),
+      ...s.rangers.map(() => true),
+      ...shafts.map(() => false),
+    ],
     supplies: s.supplySpecs.map((supply) => supply.id),
     boards: boardIds,
     pinWords: boardIds.map((id) =>

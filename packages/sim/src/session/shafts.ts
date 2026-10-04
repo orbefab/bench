@@ -7,14 +7,16 @@
  * solve, so its loop is one master step behind the joint.
  */
 
-import { pinIndex } from "@sfab-bench/contract";
+import { pinIndex, type WorldPartMotion } from "@sfab-bench/contract";
 import {
   BridgeDriver,
   DcWinding,
+  type Element,
   Potentiometer,
 } from "@sfab-bench/engine-circuit";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 import type { RunControl, RunPlan, RunShaft } from "../plan";
+import { DISPLAY_STALL_DEG_PER_SEC, displayMotion } from "../power";
 import type { RailCircuit } from "../rail-circuit";
 import { blankTrack, type ServoTrack, trackServo } from "../servo";
 import { scalar } from "./recorder";
@@ -30,6 +32,26 @@ export type ControlRuntime = {
   manualDeg: number | null;
   driver: BridgeDriver | null;
   circuit: RailCircuit | null;
+  /** Angle error the bridge ratio came from, radians. 0 when open. */
+  errorRad: number;
+};
+
+/**
+ * The instance a shaft is named after, read at its own ports: the current
+ * its stamped elements draw from its power input's node, and that node
+ * against its ground. Like a `position-servo@1` part's row.
+ */
+export type ShaftPart = {
+  circuit: RailCircuit;
+  elements: Element[];
+  power: string;
+  ground: string;
+  /** The one `servo-control@1` under the instance, if any. */
+  control: ControlRuntime | null;
+  current: number;
+  voltage: number;
+  state: WorldPartMotion;
+  stallMs: number;
 };
 
 export type ShaftRuntime = {
@@ -45,6 +67,8 @@ export type ShaftRuntime = {
   sensors: { spec: RunShaft["sensors"][number]; pot: Potentiometer }[];
   /** Joint speed read before this step's solve, rad/s. */
   omegaBefore: number;
+  /** Null when the instance has no power input a stamped part sits on. */
+  part: ShaftPart | null;
 };
 
 function circuits(s: SessionState): RailCircuit[] {
@@ -87,6 +111,7 @@ export function bindShafts(s: SessionState, plan: RunPlan): void {
       manualDeg: null,
       driver: found?.element ?? null,
       circuit: found?.circuit ?? null,
+      errorRad: 0,
     });
   }
   for (const spec of plan.shafts ?? []) {
@@ -112,8 +137,33 @@ export function bindShafts(s: SessionState, plan: RunPlan): void {
       motors,
       sensors,
       omegaBefore: 0,
+      part: shaftPart(s, spec),
     });
   }
+}
+
+function shaftPart(s: SessionState, spec: RunShaft): ShaftPart | null {
+  const { power, ground } = spec.ports;
+  if (!power) return null;
+  for (const circuit of circuits(s)) {
+    const node = circuit.stampedNode(power);
+    if (!node) continue;
+    const under = s.controls.filter((control) =>
+      control.spec.path.startsWith(`${spec.id}.`)
+    );
+    return {
+      circuit,
+      elements: circuit.elementsUnder(spec.id),
+      power: node,
+      ground: (ground ? circuit.stampedNode(ground) : null) ?? "0",
+      control: under.length === 1 ? (under[0] ?? null) : null,
+      current: 0,
+      voltage: 0,
+      state: "idle",
+      stallMs: 0,
+    };
+  }
+  return null;
 }
 
 /** A board that reloaded: its controls watch the new CPU and start limp. */
@@ -182,10 +232,12 @@ export function prepareShafts(s: SessionState): void {
     if (command === null || sense === null) {
       driver.connected = false;
       driver.s = 0;
+      control.errorRad = 0;
       continue;
     }
     const { eSat, travel } = control.spec;
     const errorRad = (command * Math.PI) / 180 - sense * travel;
+    control.errorRad = errorRad;
     const ratio = eSat > 0 ? errorRad / eSat : 0;
     driver.s = ratio > 1 ? 1 : ratio < -1 ? -1 : ratio;
     driver.connected = true;
@@ -208,12 +260,48 @@ export function driversTripped(
     .map((control) => control.spec.path);
 }
 
-/** After the solves: each winding's mean current. */
+/**
+ * After the solves: each winding's mean current, and each shaft part's
+ * port current and voltage at the end of the step.
+ */
 export function readShafts(s: SessionState): void {
   for (const shaft of s.shafts) {
     for (const motor of shaft.motors) {
       motor.current = motor.circuit.windingCurrent(motor.spec.path) ?? 0;
     }
+    const part = shaft.part;
+    if (!part) continue;
+    part.current = part.circuit.currentLeaving(part.elements, part.power);
+    part.voltage =
+      part.circuit.nodeVoltage(part.power) -
+      part.circuit.nodeVoltage(part.ground);
+  }
+}
+
+/** After the step: each shaft part's display state, as `classifyLoads`. */
+export function classifyShafts(s: SessionState): void {
+  const sim = s.sim;
+  if (!sim) return;
+  const stallOmega = (DISPLAY_STALL_DEG_PER_SEC * Math.PI) / 180;
+  for (const shaft of s.shafts) {
+    const part = shaft.part;
+    if (!part) continue;
+    const driver = part.control?.driver ?? null;
+    const limp = !driver?.connected;
+    const saturated = !limp && Math.abs(driver?.s ?? 0) >= 1;
+    const omega = scalar(sim.data.jnt(shaft.jointName).qvel as Float64Array);
+    const stalling = saturated && Math.abs(omega) < stallOmega;
+    // Counted in steps so a sum of fractional steps lands on whole ms.
+    part.stallMs = stalling
+      ? Math.round(part.stallMs * s.perMs + 1) / s.perMs
+      : 0;
+    part.state = displayMotion({
+      limp,
+      saturated,
+      errorRad: part.control?.errorRad ?? 0,
+      omega,
+      stallForMs: part.stallMs,
+    });
   }
 }
 

@@ -149,6 +149,8 @@ export type RecLayout = {
   bodies: { robot: string; link: string; mj: string }[];
   parts: Load[];
   rangers: RangerRuntime[];
+  /** Shafts recorded as their instance's part row, after the rangers. */
+  shafts: ShaftRuntime[];
   supplies: SupplySpec[];
   boards: string[];
 };

@@ -56,6 +56,8 @@ const RATIO = 82156 / 315;
 type Run = {
   joint: number[];
   current: number[];
+  /** The servo's own row: V+ current, V+ against GND, shaft torque. */
+  part: { current: number; voltage: number; torque: number }[];
   report: RunReport | null;
   warnings: string[];
   levels: string[];
@@ -103,6 +105,14 @@ async function runWorld(project: string, world: string): Promise<Run> {
       current: read.frames.map(
         (frame) => frame.supplies.usb?.current ?? Number.NaN
       ),
+      part: read.frames.map((frame) => {
+        const row = frame.parts.servo;
+        return {
+          current: row?.current ?? Number.NaN,
+          voltage: row?.voltage ?? Number.NaN,
+          torque: row?.torqueNm ?? Number.NaN,
+        };
+      }),
       report,
       warnings: (report?.warnings ?? []).map((row) => row.code),
       levels: (report?.levels ?? []).map(
@@ -297,6 +307,27 @@ try {
     order > 0.4 && order < 0.6,
     `G vs C does not halve with the step: ratio ${order}`
   );
+
+  // G records the servo's row at its own ports, as C does: the current
+  // its parts draw from V+, V+ against GND, and the shaft torque. Held
+  // still, G draws the pot's V/R where the law draws a fixed 1 mA.
+  const part = (run: Run, key: "current" | "voltage" | "torque") =>
+    run.part.map((row) => row[key]);
+  const partI = worst(part(g, "current"), part(c, "current"));
+  const partV = worst(part(g, "voltage"), part(c, "voltage"));
+  const partT = worst(part(g, "torque"), part(c, "torque"));
+  console.log(
+    `G vs C at the servo's ports: V+ current max|Δ| ${(partI.delta * 1000).toFixed(2)} mA at ${partI.atMs} ms, V+ ${(partV.delta * 1000).toFixed(2)} mV, torque ${(partT.delta * 1000).toFixed(2)} mN·m`
+  );
+  expect(partI.delta < 0.02, `G vs C V+ current ${partI.delta} A`);
+  expect(partV.delta < 0.02, `G vs C V+ ${partV.delta} V`);
+  for (const ms of [990, 1990, 2990]) {
+    const i = ms / 10;
+    const held = Math.abs(
+      (g.part[i]?.current ?? Number.NaN) - (c.part[i]?.current ?? Number.NaN)
+    );
+    expect(held < 1e-4, `G vs C held current at ${ms} ms: ${held} A`);
+  }
 
   // The group snapshot's target (step 4). Recorded, not asserted.
   const gs = worst(g.joint, s.joint);

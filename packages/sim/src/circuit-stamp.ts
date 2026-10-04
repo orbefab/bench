@@ -147,6 +147,8 @@ export type RealizedCircuit = {
   capacitive: boolean;
   /** Parts the plan placed that this feed did not keep. */
   pruned: string[];
+  /** `path.port` → node, for the parts kept. */
+  ports: Map<string, string>;
 };
 
 type NetPorts = {
@@ -529,6 +531,7 @@ export function realize(
     : [];
   const aliveIds = new Set(alive.map((part) => part.path));
   return {
+    ports: portsOf(alive),
     elements: [...made, ...pins.flatMap((row) => row.pin.elements())],
     pins,
     leds,
@@ -580,6 +583,8 @@ export function connectParts(
   pruned: string[];
   capacitive: boolean;
   nodes: Map<string, readonly string[]>;
+  /** `path.port` → node, for the parts kept. */
+  ports: Map<string, string>;
 } {
   const alive = prune(parts, anchors);
   const kept = new Set(alive.map((part) => part.path));
@@ -599,7 +604,18 @@ export function connectParts(
       .map((part) => part.path),
     capacitive,
     nodes,
+    ports: portsOf(alive),
   };
+}
+
+function portsOf(parts: readonly AssignedPart[]): Map<string, string> {
+  const ports = new Map<string, string>();
+  for (const part of parts) {
+    for (const [port, node] of Object.entries(part.nodes)) {
+      ports.set(`${part.path}.${port}`, node);
+    }
+  }
+  return ports;
 }
 
 function prune(

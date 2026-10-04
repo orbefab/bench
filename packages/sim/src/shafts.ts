@@ -36,6 +36,12 @@ export type RunShaft = {
   motors: { path: string; k: number; efficiency: number; ratio: number }[];
   /** `potentiometer@1` wipers: `fraction = ratio·angle / travel`. */
   sensors: { path: string; ratio: number; travel: number }[];
+  /**
+   * The instance `id` names, read at its own ports: a stamped part's
+   * `path.port` on the net of its power input, and one on its ground's
+   * net. Null when that port is absent or no stamped part is on its net.
+   */
+  ports: { power: string | null; ground: string | null };
 };
 
 /**
@@ -156,6 +162,34 @@ function reachJoint(
   }
 }
 
+/**
+ * A stamped part's `path.port` on the net of the instance's one port with
+ * `role`, inside the instance first. A power port must be an input.
+ */
+function stampedPeer(
+  inst: LiveInstance,
+  role: "power" | "ground",
+  nets: readonly LiveNet[],
+  stamped: ReadonlySet<string>
+): string | null {
+  const names = Object.entries(inst.type.ports)
+    .filter(
+      ([, decl]) =>
+        decl.role === role && (role === "ground" || decl.direction === "in")
+    )
+    .map(([name]) => name);
+  if (names.length !== 1) return null;
+  const full = `${inst.path}.${names[0]}`;
+  const net = nets.find((item) => item.ports.some((end) => end.full === full));
+  if (!net) return null;
+  const peers = net.ports
+    .filter((end) => stamped.has(end.path))
+    .map((end) => end.full)
+    .sort();
+  const inside = peers.find((end) => end.startsWith(`${inst.path}.`));
+  return inside ?? (stamped.has(inst.path) ? full : (peers[0] ?? null));
+}
+
 /** The clamp: the torque rating on the joint's net nearest the scene root. */
 function torqueOn(net: LiveNet, robot: string): number {
   const rated = net.ports
@@ -262,6 +296,7 @@ export function coupleShafts(input: {
         torqueNm: torqueOn(reach.net, reach.robot),
         motors: [],
         sensors: [],
+        ports: { power: null, ground: null },
       };
       shafts.set(key, shaft);
     }
@@ -309,6 +344,15 @@ export function coupleShafts(input: {
         travel: part.params.travel ?? 0,
       });
     }
+  }
+  const stamped = new Set(input.circuits.map((part) => part.path));
+  for (const shaft of shafts.values()) {
+    const inst = byPath.get(shaft.id);
+    if (!inst) continue;
+    shaft.ports = {
+      power: stampedPeer(inst, "power", input.nets, stamped),
+      ground: stampedPeer(inst, "ground", input.nets, stamped),
+    };
   }
   return {
     shafts: [...shafts.values()].sort((a, b) =>

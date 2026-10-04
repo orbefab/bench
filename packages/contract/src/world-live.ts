@@ -687,7 +687,8 @@ export type RecordedFrame = {
       /**
        * Newton-metres the motor applied at the shaft over the step that
        * ended at t, after the gearbox efficiency and the torque clamp. 0
-       * when limp. Present on a driven servo.
+       * when limp. Present on a driven servo, and on the part a
+       * `dc-motor@1` shaft is named after.
        */
       torqueNm?: number;
       /** Metres. Present on a ranger. Null is no echo. */

@@ -737,6 +737,22 @@ export class Engine {
     return y[i] as number;
   }
 
+  /**
+   * Amperes `elements` draw out of `node` at the last solve: the sum of
+   * their `leaving` terms there. 0 when the node is not in this circuit.
+   */
+  currentLeaving(elements: readonly Element[], node: string): number {
+    const index = this.nodeNames.indexOf(node);
+    if (index < 0) return 0;
+    let sum = 0;
+    for (const el of elements) {
+      for (const term of el.leaving(this.ctx)) {
+        if (term[0] === index) sum += term[1];
+      }
+    }
+    return sum;
+  }
+
   branchCurrent(name: string): number {
     const i = this.branchNames.indexOf(name);
     if (i < 0) throw new Error(`no branch ${name}`);

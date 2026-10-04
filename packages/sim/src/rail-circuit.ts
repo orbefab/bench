@@ -338,6 +338,8 @@ export class RailCircuit {
     for (const [id, node] of built.extraNodes) this.extraNodes.set(id, node);
     this.pruned = built.pruned;
     for (const [id, nodes] of built.partNodes) this.partNodes.set(id, nodes);
+    for (const [full, node] of built.stampedPorts)
+      this.stampedPorts.set(full, node);
     for (const el of built.engine.elements) {
       if (el instanceof BridgeDriver) this.drivers.push(el);
       if (el instanceof DcWinding) this.windings.push(el);
@@ -347,6 +349,7 @@ export class RailCircuit {
   /** Scene parts this rail dropped because a node was open. */
   readonly pruned: readonly string[] = [];
   private readonly partNodes = new Map<string, readonly string[]>();
+  private readonly stampedPorts = new Map<string, string>();
   private readonly drivers: BridgeDriver[] = [];
   private readonly windings: DcWinding[] = [];
   /** Each winding's charge over the solve in progress, coulombs. */
@@ -387,6 +390,26 @@ export class RailCircuit {
 
   elementNodes(id: string): readonly string[] | null {
     return this.partNodes.get(id) ?? null;
+  }
+
+  /** The node a stamped part's `path.port` sits on. Null when not here. */
+  stampedNode(full: string): string | null {
+    return this.stampedPorts.get(full) ?? null;
+  }
+
+  /** The stamped elements of the instance at `path` and everything under it. */
+  elementsUnder(path: string): Element[] {
+    return this.engine.elements.filter(
+      (el) =>
+        el.id === path ||
+        el.id.startsWith(`${path}.`) ||
+        el.id.startsWith(`${path}#`)
+    );
+  }
+
+  /** Amperes `elements` drew out of `node` at the end of the last solve. */
+  currentLeaving(elements: readonly Element[], node: string): number {
+    return this.engine.currentLeaving(elements, node);
   }
 
   setFixed(amps: number): void {
@@ -948,6 +971,8 @@ type Assembled = {
   extraNodes: Map<string, string>;
   pruned: string[];
   partNodes: Map<string, readonly string[]>;
+  /** A stamped part's `path.port` → node, on a board or a span. */
+  stampedPorts: Map<string, string>;
 };
 
 function supplyElement(
@@ -1075,6 +1100,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   let single: ReturnType<typeof realize> | null = null;
   const pruned: string[] = [];
   const partNodes = new Map<string, readonly string[]>();
+  const stampedPorts = new Map<string, string>();
   for (const board of prepared) {
     const realized = realize(
       board.stamp,
@@ -1090,6 +1116,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     if (!many) single = realized;
     if (realized.capacitive) capacitive = true;
     pruned.push(...realized.pruned);
+    for (const [full, node] of realized.ports) stampedPorts.set(full, node);
     feedOf.set(board.id, realized.feedNode);
     boardNodes.set(board.id, realized.boardNode);
     const netlist = board.stamp.netlist === true;
@@ -1140,6 +1167,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   pruned.push(...joined.pruned);
   if (joined.capacitive) capacitive = true;
   for (const [id, nodes] of joined.nodes) partNodes.set(id, nodes);
+  for (const [full, node] of joined.ports) stampedPorts.set(full, node);
   stamped.push(...joined.elements);
   if (many) {
     stamped = [...stamped].sort((a, b) =>
@@ -1255,6 +1283,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     extraNodes,
     pruned,
     partNodes,
+    stampedPorts,
   };
 }
 
