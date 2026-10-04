@@ -641,8 +641,11 @@ try {
   }
   // The board card is the 5V node. One stalled SG90 on the USB cable
   // sits at 4.494 V: the terminal is 5 − I·0.5 Ω, and the fuse plus the
-  // switch drop about I·(0.15 + 0.06) Ω. Still above brownout.
-  expect(Math.abs(usbMin - 4.494279) <= 1e-4, `usb stall minimum ${usbMin} V`);
+  // switch drop about I·(0.15 + 0.06) Ω. Still above brownout. U2's
+  // 65 µA ground current moved it +0.15 mV from 4.494279 V: the servo's
+  // speed history differs, and at the 353 ms minimum it draws 0.28 mA
+  // less (M2c).
+  expect(Math.abs(usbMin - 4.494432) <= 1e-4, `usb stall minimum ${usbMin} V`);
   const blocked = usbRows.filter((row) => row.state.simTime >= 1.5);
   expect(blocked.length > 100, "usb stall tail");
   expect(
@@ -938,7 +941,9 @@ try {
       const state = await trace.at(0.02);
       const voltage = state.supplies?.usb?.voltage ?? Number.NaN;
       const warning = state.boards.uno?.warnings?.[0];
-      expect(Math.abs(voltage - 3.2) < 1e-9, `soa rail ${voltage}`);
+      // 5 − 36 Ω × 50 mA was 3.2 V; U2's 65 µA ground current takes
+      // another 2.34 mV off the weak supply (M2c).
+      expect(Math.abs(voltage - 3.19766) < 1e-6, `soa rail ${voltage}`);
       expect(state.boards.uno?.running === true, "soa board stopped");
       expect(state.boards.uno?.inReset !== true, "soa board browned out");
       expect(

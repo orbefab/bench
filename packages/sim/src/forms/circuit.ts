@@ -276,9 +276,16 @@ export function stampDiode(part: AssignedPart): StampedElements {
 function circuit(
   id: string,
   stamp: FormAdapter["stamp"],
-  ports?: readonly string[]
+  ports?: readonly string[],
+  supply?: Pick<FormAdapter, "power" | "unpowered">
 ): FormAdapter {
-  return { id, stamp, parse: parseCircuitParams, ...(ports ? { ports } : {}) };
+  return {
+    id,
+    stamp,
+    parse: parseCircuitParams,
+    ...(ports ? { ports } : {}),
+    ...supply,
+  };
 }
 
 export const circuitAdapters: FormAdapter[] = [
@@ -287,8 +294,20 @@ export const circuitAdapters: FormAdapter[] = [
   circuit("diode@1", stampDiode, ["A", "K"]),
   circuit("ptc-fuse@1", stampPtc),
   circuit("pmos-switch@1", stampPmos),
-  circuit("ldo-regulator@1", stampLdo),
-  circuit("comparator@1", stampComparator),
+  // Unpowered, the regulator's output is open: its reverse path is in the
+  // parts' omits.
+  circuit("ldo-regulator@1", stampLdo, undefined, {
+    power: { from: "IN", to: ["OUT"] },
+  }),
+  // Unpowered, both output rails are `VN`: the output sits at its
+  // negative rail whatever the inputs.
+  circuit("comparator@1", stampComparator, undefined, {
+    power: { from: "VP", to: ["OUT"] },
+    unpowered: (part) =>
+      part.nodes.VN === undefined
+        ? null
+        : { ...part, nodes: { ...part.nodes, VP: part.nodes.VN } },
+  }),
   circuit("dc-motor@1", stampWinding, ["A", "B"]),
   circuit("servo-control@1", stampServoControl, [
     "V+",

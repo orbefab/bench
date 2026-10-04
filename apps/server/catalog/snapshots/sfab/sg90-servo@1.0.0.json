@@ -3,8 +3,8 @@
   "envelope": {
     "bounds": {
       "V+.current": [
-        -0.003122868,
-        0.658181563
+        -0.003122966,
+        0.658175692
       ]
     }
   },
@@ -17,7 +17,7 @@
       "heldOut": "fixture",
       "metric": "free-run-max-abs",
       "quantity": "shaft.angle",
-      "value": 0.005392909
+      "value": 0.00539279
     },
     {
       "baseline": {
@@ -27,7 +27,7 @@
       "heldOut": "fixture",
       "metric": "free-run-rms",
       "quantity": "shaft.angle",
-      "value": 0.001148811
+      "value": 0.001148799
     },
     {
       "baseline": {
@@ -37,7 +37,7 @@
       "heldOut": "fixture",
       "metric": "free-run-max-abs",
       "quantity": "V+.current",
-      "value": 0.013114348
+      "value": 0.013114437
     },
     {
       "baseline": {
@@ -47,7 +47,7 @@
       "heldOut": "fixture",
       "metric": "free-run-rms",
       "quantity": "V+.current",
-      "value": 0.0010119
+      "value": 0.001011894
     }
   ],
   "form": "position-servo@1",

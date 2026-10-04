@@ -26,6 +26,7 @@ import {
   UNO_F1_TAU_S,
   UNO_F1_TMAX_8A_S,
   UNO_T1_RDS,
+  UNO_U2_LDO,
 } from "@sfab-bench/sim/power-path";
 import {
   createRailCircuit,
@@ -46,6 +47,7 @@ import {
   readRecording,
   stopWorld,
 } from "./world/host";
+import { catalogRoot } from "./world/plan";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import { unoUsbTrace } from "./world/uno-reference";
 
@@ -248,6 +250,20 @@ expect(
 }
 
 {
+  // The reference's U2 is the catalog part's law.
+  const u2 = JSON.parse(
+    readFileSync(
+      join(catalogRoot(), "parts/sfab/lp2985-3v3@1.0.0.json"),
+      "utf8"
+    )
+  ).axes.behaviour["1"].variants.fixed.params;
+  expect(
+    JSON.stringify(u2) === JSON.stringify(UNO_U2_LDO),
+    `UNO_U2_LDO ${JSON.stringify(UNO_U2_LDO)} vs catalog ${JSON.stringify(u2)}`
+  );
+}
+
+{
   const held = new PtcFuseElement("f", "a", "b", MF_MSMF050);
   for (let ms = 0; ms < 60_000; ms++) held.advance(UNO_F1_IHOLD, 0.001);
   expect(!held.tripped, `0.5 A tripped, u=${held.u}`);
@@ -259,7 +275,9 @@ expect(
     stamp: unoStamp,
     feed: "usb",
   });
-  onRail.setFixed(UNO_F1_IHOLD);
+  // U2 (3.3 V) draws its ground current from +5V as well: the fuse
+  // carries the hold current with the board load 65 µA under it.
+  onRail.setFixed(UNO_F1_IHOLD - UNO_U2_LDO.iGround);
   const matched = new PtcFuseElement("f", "a", "b", MF_MSMF050);
   for (let ms = 0; ms < 100; ms++) {
     onRail.solve();

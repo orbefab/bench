@@ -1,10 +1,12 @@
 /**
  * The v2 arm runs match the frames frozen before the format change.
- * Every number is `===`, including the floats JSON kept.
+ * Every number is `===`, including the floats JSON kept. `--write`
+ * refreezes the fixture from these runs: only for a change whose every
+ * moved number is explained.
  */
 
 import { ok as expect } from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingEvent, RecordingRead } from "@sfab-bench/contract";
@@ -162,14 +164,17 @@ async function runWorld(name: string): Promise<FrozenFrame[]> {
   }
 }
 
+const write = process.argv.includes("--write");
 const frozen = JSON.parse(readFileSync(fixturePath, "utf8")) as Frozen;
 expect(frozen.durationS === 3, "fixture duration");
+const refrozen: Frozen = { durationS: 3, runs: {} };
 
 for (const name of [
   "parts/sfab/arm-bench@1.0.0.json",
   "parts/sfab/arm-stall@1.0.0.json",
 ] as const) {
   const live = await runWorld(name);
+  refrozen.runs[name] = { frames: live };
   const saved = frozen.runs[name]?.frames;
   expect(saved, `fixture run ${name}`);
   if (!saved) throw new Error("unreachable");
@@ -195,8 +200,13 @@ for (const name of [
   console.log(
     `baseline ${name}: board Δ ${board.toExponential(2)} V, supply Δ ${current.toExponential(2)} A, ${first ? "mismatch" : "match"}`
   );
+  if (write) continue;
   expect(!first, first ?? "");
   console.log(`${name}: ${live.length} frames match the baseline`);
+}
+if (write) {
+  writeFileSync(fixturePath, JSON.stringify(refrozen));
+  console.log(`baseline: wrote ${fixturePath}`);
 }
 
 console.log("baseline.selfcheck ok");

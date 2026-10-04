@@ -4,7 +4,7 @@
   "fixture": {
     "ms": 3000,
     "hash": "df2d684f5916cb5437e3246dac29db74fd0bb5a187120f585881631e45450e27",
-    "lock": "c7ad6189603677e90adcad53206aa8fa0de684ca74018e6e4d8baa9307d3243d"
+    "lock": "72cbd245fc549e745a6c4e82422c246ead0398c3a19e5fa50e98fc69c0e65343"
   },
   "detailed": {
     "default": 2
@@ -29,7 +29,7 @@
       "path": "servo",
       "axis": "behaviour",
       "ref": "sfab/sg90-servo@1.0.0",
-      "hash": "188716ccef052f5ffe693c00b7f1fa3696df68bda36098ed1a11f647f175cd6b",
+      "hash": "41125bba6d2aa4ec2764e5b9b3e954eed0b7dad2902c36fb6abb5d7ac396b91b",
       "fromHash": "d5a94a97733dfec203fdc89bf0ccc0541d9b94fc801aaf6df3cac53a985aff81"
     },
     {
@@ -50,56 +50,56 @@
     {
       "metric": "free-run-max-abs",
       "quantity": "servo.shaft.angle",
-      "value": 0.005392672829,
+      "value": 0.005388937957,
       "heldOut": "fixture",
       "baseline": "detailed"
     },
     {
       "metric": "free-run-rms",
       "quantity": "servo.shaft.angle",
-      "value": 0.001148753334,
+      "value": 0.001148149144,
       "heldOut": "fixture",
       "baseline": "detailed"
     },
     {
       "metric": "free-run-max-abs",
       "quantity": "servo.V+.current",
-      "value": 0.013106791,
+      "value": 0.01311073258,
       "heldOut": "fixture",
       "baseline": "detailed"
     },
     {
       "metric": "free-run-rms",
       "quantity": "servo.V+.current",
-      "value": 0.001011516059,
+      "value": 0.001011569533,
       "heldOut": "fixture",
       "baseline": "detailed"
     },
     {
       "metric": "free-run-max-abs",
       "quantity": "uno.5V.voltage",
-      "value": 0.009384719537,
+      "value": 0.009433668247,
       "heldOut": "fixture",
       "baseline": "detailed"
     },
     {
       "metric": "free-run-rms",
       "quantity": "uno.5V.voltage",
-      "value": 0.00072235828,
+      "value": 0.0007324082791,
       "heldOut": "fixture",
       "baseline": "detailed"
     },
     {
       "metric": "free-run-max-abs",
       "quantity": "uno.VBUS.voltage",
-      "value": 0.00660895742,
+      "value": 0.006643428343,
       "heldOut": "fixture",
       "baseline": "detailed"
     },
     {
       "metric": "free-run-rms",
       "quantity": "uno.VBUS.voltage",
-      "value": 0.0005087030141,
+      "value": 0.0005157804783,
       "heldOut": "fixture",
       "baseline": "detailed"
     }

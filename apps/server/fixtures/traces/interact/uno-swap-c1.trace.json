@@ -7,18 +7,18 @@
     "boards.uno.belowSoa": {"at":[[0,false]]},
     "boards.uno.inReset": {"at":[[0,false]]},
     "boards.uno.inResetAny": {"at":[[0,false]]},
-    "boards.uno.minVoltage": {"unit":"V","v":4.997499943},
+    "boards.uno.minVoltage": {"unit":"V","v":4.997496605},
     "boards.uno.pins.ddr.0": {"v":[0,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192]},
     "boards.uno.pins.level.0": {"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192]},
     "boards.uno.pins.toggled.0": {"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192]},
     "boards.uno.regulatorA": {"v":0},
     "boards.uno.regulatorMax": {"v":0},
     "boards.uno.running": {"at":[[0,true]]},
-    "boards.uno.voltage": {"unit":"V","v":4.997499943},
-    "supplies.supply.current": {"unit":"A","v":0.05000000075},
-    "supplies.supply.maxCurrent": {"unit":"A","v":0.05000000075},
-    "supplies.supply.minVoltage": {"unit":"V","v":4.997499943},
-    "supplies.supply.voltage": {"unit":"V","v":4.997499943}
+    "boards.uno.voltage": {"unit":"V","v":4.997496605},
+    "supplies.supply.current": {"unit":"A","v":0.05006499961},
+    "supplies.supply.maxCurrent": {"unit":"A","v":0.05006499961},
+    "supplies.supply.minVoltage": {"unit":"V","v":4.997496605},
+    "supplies.supply.voltage": {"unit":"V","v":4.997496605}
   },
   "events": [
     {"t":0.001,"kind":"serial","board":"uno","text":"E","from":0,"to":1},
@@ -37,9 +37,9 @@
       "boards.uno.pins.toggled.0": 0,
       "boards.uno.resets": 0,
       "boards.uno.inReset": false,
-      "boards.uno.voltage": 4.9975,
-      "supplies.supply.voltage": 4.9975,
-      "supplies.supply.current": 0.05
+      "boards.uno.voltage": 4.99749675,
+      "supplies.supply.voltage": 4.99749675,
+      "supplies.supply.current": 0.050065
     },
     "swap-serial": {
       "simTime": 0.45,
@@ -49,9 +49,9 @@
       "boards.uno.pins.toggled.0": 0,
       "boards.uno.resets": 0,
       "boards.uno.inReset": false,
-      "boards.uno.voltage": 4.9975,
-      "supplies.supply.voltage": 4.9975,
-      "supplies.supply.current": 0.05
+      "boards.uno.voltage": 4.99749675,
+      "supplies.supply.voltage": 4.99749675,
+      "supplies.supply.current": 0.050065
     },
     "end": {
       "simTime": 0.45,
@@ -61,9 +61,9 @@
       "boards.uno.pins.toggled.0": 0,
       "boards.uno.resets": 0,
       "boards.uno.inReset": false,
-      "boards.uno.voltage": 4.9975,
-      "supplies.supply.voltage": 4.9975,
-      "supplies.supply.current": 0.05
+      "boards.uno.voltage": 4.99749675,
+      "supplies.supply.voltage": 4.99749675,
+      "supplies.supply.current": 0.050065
     }
   }
 }

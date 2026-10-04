@@ -458,44 +458,65 @@ export function touches(
 }
 
 /**
- * Forms that exist to regulate VIN. With VIN open they are not stamped:
- * their bias would move the USB branch the snapshot was captured from.
+ * A part whose form draws its supply from a port (`power.from`) runs its
+ * law only when that port's node is powered: a non-ground anchor, or
+ * reached from one through other parts. A part with a supply passes power
+ * from that port to the ones it feeds (`power.to`) only; any other part
+ * passes it between all of its ports. Ground never carries power. An
+ * unmet part becomes its form's unpowered contribution, or goes.
  */
-const VIN_ISLAND = new Set(["ldo-regulator@1", "comparator@1"]);
-
-/**
- * VIN open: drop the regulator island, and hold a P-channel gate that
- * lost its driver at ground. That is the comparator output sitting low,
- * and it leaves the USB elements where the snapshot captured them.
- */
-function dropOpenVin(
+function resolvePower(
   parts: readonly AssignedPart[],
-  vin: string | undefined,
   anchors: ReadonlySet<string>
 ): AssignedPart[] {
-  if (!vin || anchors.has(vin)) return [...parts];
-  const kept = parts.filter((part) => {
-    if (VIN_ISLAND.has(part.form)) return false;
-    return !Object.values(part.nodes).includes(vin);
-  });
-  return kept.map((part) => {
-    if (part.form !== "pmos-switch@1") return part;
-    const gate = part.nodes.G;
-    if (!gate || gate === "0" || anchors.has(gate)) return part;
-    const driven = kept.some(
-      (other) =>
-        other.path !== part.path && Object.values(other.nodes).includes(gate)
-    );
-    if (driven) return part;
-    return { ...part, nodes: { ...part.nodes, G: "0" } };
-  });
+  const powered = new Set([...anchors].filter((node) => node !== "0"));
+  const fromOf = (part: AssignedPart) => {
+    const power = formAdapter(part.form)?.power;
+    return power ? (part.nodes[power.from] ?? null) : undefined;
+  };
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const part of parts) {
+      const power = formAdapter(part.form)?.power;
+      const from = fromOf(part);
+      let reach: (string | undefined)[];
+      if (power) {
+        if (!from || !powered.has(from)) continue;
+        reach = power.to.map((port) => part.nodes[port]);
+      } else {
+        reach = Object.values(part.nodes);
+        if (!reach.some((node) => node && powered.has(node))) continue;
+      }
+      for (const node of reach) {
+        if (!node || node === "0" || powered.has(node)) continue;
+        powered.add(node);
+        grew = true;
+      }
+    }
+  }
+  const out: AssignedPart[] = [];
+  for (const part of parts) {
+    const from = fromOf(part);
+    if (from === undefined || (from !== null && powered.has(from))) {
+      out.push(part);
+      continue;
+    }
+    const rest = formAdapter(part.form)?.unpowered?.(part) ?? null;
+    if (rest) out.push(rest);
+  }
+  return out;
 }
 
 /**
- * Drop a part that has a node nothing else drives. A USB feed anchors
+ * Drop a part that has a node nothing else drives (a form's supplied
+ * output is driven by the part itself). A USB feed anchors
  * `VBUS`, so the Schottky stays. A header feed anchors `5V` only, so
  * that diode's open anode drops it. A regulator-input feed anchors that
  * input (`VIN`, or the Pro Micro's `RAW`). No extra conductance is added.
+ * Before that, a part whose supply port is unpowered runs as its form's
+ * unpowered contribution (`resolvePower`): with VIN open, the VIN
+ * regulator goes and a comparator fed from 5V still drives its output.
  */
 export function realize(
   stamp: BoardStamp,
@@ -521,10 +542,7 @@ export function realize(
   for (const node of opts?.keep ?? []) anchors.add(node);
   const withPins = opts?.pins !== false;
   for (const pin of stamp.pins) anchors.add(pin.node);
-  const alive = prune(
-    dropOpenVin(stamp.parts, regulatorNode, anchors),
-    anchors
-  );
+  const alive = prune(resolvePower(stamp.parts, anchors), anchors);
   const made: Element[] = [];
   const leds: { path: string; diode: Diode }[] = [];
   const owners = new Map<string, string>();
@@ -617,7 +635,7 @@ export function connectParts(
   /** Element id → the part path it belongs to. */
   owners: Map<string, string>;
 } {
-  const alive = prune(parts, anchors);
+  const alive = prune(resolvePower(parts, anchors), anchors);
   const kept = new Set(alive.map((part) => part.path));
   const nodes = new Map<string, readonly string[]>();
   const owners = new Map<string, string>();
@@ -669,8 +687,13 @@ function prune(
       }
     }
     for (const part of alive) {
-      const open = Object.values(part.nodes).some(
-        (node) => !anchors.has(node) && (count.get(node) ?? 0) < 2
+      // A port the part drives from its own supply is not open.
+      const drives = formAdapter(part.form)?.power?.to ?? [];
+      const open = Object.entries(part.nodes).some(
+        ([port, node]) =>
+          !drives.includes(port) &&
+          !anchors.has(node) &&
+          (count.get(node) ?? 0) < 2
       );
       if (!open) continue;
       alive = alive.filter((item) => item.path !== part.path);

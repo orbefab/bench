@@ -38,6 +38,17 @@ export type FormAdapter = {
    * lacks one of these does not run this form.
    */
   ports?: readonly string[];
+  /**
+   * The port the form draws its supply from, and the ports that supply
+   * reaches. A part runs its law only when `from` is powered. Absent: no
+   * supply dependency, and power crosses between all of its ports.
+   */
+  power?: { from: string; to: readonly string[] };
+  /**
+   * The part with its supply unmet: what it still contributes. Absent or
+   * null: nothing, the part goes.
+   */
+  unpowered?: (part: AssignedPart) => AssignedPart | null;
   stamp?: (
     part: AssignedPart,
     assigned: readonly AssignedPart[]
