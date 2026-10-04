@@ -12,14 +12,16 @@
  *
  * - the document or its lockfile is not the one the record was measured on;
  * - a child snapshot's source no longer hashes to the record's `fromHash`
- *   (the child is stale, so the assembly row is);
+ *   (the child is stale, so the assembly row is), or the snapshot file
+ *   itself no longer hashes to its `hash`;
  * - the detailed side runs any snapshot, or the snapshot side runs a
  *   different set than `children`;
  * - a recomputed max-abs or rms sits more than `DRIFT` from its row.
  *
  * Pass is "the remeasure matches the stored gap". An acceptance bound per
  * quantity is not stated yet. Any other world, supply, firmware, seed or
- * timestep is unchecked.
+ * timestep is unchecked; so is engine code, except through the remeasure.
+ * The lockfile is hashed as a file, its pins are not re-resolved.
  *
  * `--write` remeasures and rewrites each record's hashes and rows.
  */
@@ -60,7 +62,13 @@ const write = process.argv.includes("--write");
 
 type Levels = { default: LevelSpec; paths?: Record<string, LevelSpec> };
 
-type Child = { path: string; axis: string; ref: string; fromHash: string };
+type Child = {
+  path: string;
+  axis: string;
+  ref: string;
+  hash: string;
+  fromHash: string;
+};
 
 type Row = {
   metric: "free-run-max-abs" | "free-run-rms";
@@ -273,6 +281,11 @@ try {
         `${at}: the document or its lock changed since the record was measured`
       );
       for (const child of record.children) {
+        const file = contentHash(snapshotOf(dir, child.ref));
+        expect(
+          file === child.hash,
+          `${at}: ${child.path} ${child.ref} changed since the record was measured (${file} vs ${child.hash})`
+        );
         const now = sourceHash(dir, child.ref);
         expect(
           now === child.fromHash,
@@ -354,6 +367,7 @@ try {
         fixture: { ms, ...fixture },
         children: b.snapshots.map((row) => ({
           ...row,
+          hash: contentHash(snapshotOf(dir, row.ref)),
           fromHash: sourceHash(dir, row.ref),
         })),
         error: rows,

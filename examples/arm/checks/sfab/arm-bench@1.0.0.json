@@ -29,12 +29,14 @@
       "path": "servo",
       "axis": "behaviour",
       "ref": "sfab/sg90-servo@1.0.0",
+      "hash": "188716ccef052f5ffe693c00b7f1fa3696df68bda36098ed1a11f647f175cd6b",
       "fromHash": "d5a94a97733dfec203fdc89bf0ccc0541d9b94fc801aaf6df3cac53a985aff81"
     },
     {
       "path": "uno.power",
       "axis": "behaviour",
       "ref": "sfab/uno-power-input@1.0.0",
+      "hash": "bbffdcaa713992a98759172c2442254e10853466d7b2bee57f264c84c42e2115",
       "fromHash": "a69863a300206173e76c97f90b81433406a97ffff4867739fd3845d95fe6740e"
     }
   ],

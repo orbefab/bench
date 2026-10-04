@@ -639,16 +639,16 @@ type AssemblyCheck = {
   fixture: { ms: number; hash: string; lock: string };
   detailed: { default: LevelSpec; paths?: Record<string, LevelSpec> };
   snapshot: { default: LevelSpec; paths?: Record<string, LevelSpec> };
-  children: { path: string; axis: string; ref: string; fromHash: string }[];
+  children: { path: string; axis: string; ref: string; hash: string; fromHash: string }[];
   quantities: string[];                              // "instance.path.port.field"
   error: { metric: "free-run-max-abs" | "free-run-rms"; quantity: string; value: number;
            heldOut: "fixture"; baseline: "detailed" }[];
 };
 ```
 
-An assembly check lives under `<project>/checks/` and records one assembly run twice on its own fixture: the document as it is (its firmware, supplies and play), with `detailed` as its play levels and then with `snapshot`. `fixture.hash` and `fixture.lock` are the content hashes of the document and its lockfile. `children` are the snapshots the snapshot side runs, each with its capture-source signature, so a child that goes stale makes the record stale. Each quantity is `Sim.portReading` at an instance's port, sampled every 10 ms frame; the rows are the gap between the two runs, max-abs and rms. `examples/arm/checks/sfab/arm-bench@1.0.0.json` is the arm bench with the servo group and the Uno power input as snapshots.
+An assembly check lives under `<project>/checks/` and records one assembly run twice on its own fixture: the document as it is (its firmware, supplies and play), with `detailed` as its play levels and then with `snapshot`. `fixture.hash` and `fixture.lock` are the content hashes of the document and its lockfile. `children` are the snapshots the snapshot side runs, each with the content hash of its snapshot file and its capture-source signature, so a child that is edited or goes stale makes the record stale. The lockfile is hashed as a file; its pins are not re-resolved. Each quantity is `Sim.portReading` at an instance's port, sampled every 10 ms frame; the rows are the gap between the two runs, max-abs and rms. `examples/arm/checks/sfab/arm-bench@1.0.0.json` is the arm bench with the servo group and the Uno power input as snapshots.
 
-`assembly.selfcheck.ts` finds every record and fails when the document, the lock or a child's source changed, when the detailed side runs a snapshot, when the snapshot side runs a different set than `children`, or when a remeasured gap is more than 1e-4 relative from its row. Pass means the remeasure matches the stored gap. A child's stated errors are measured on its own fixture and do not add up at a shared port: on the arm bench the servo's current error crosses the USB port's resistance into `uno.VBUS.voltage`. No acceptance bound per quantity is stated yet, and any other world, supply, firmware, seed or step is unchecked. `--write` remeasures and rewrites the hashes, `children` and the rows.
+`assembly.selfcheck.ts` finds every record and fails when the document, the lock, a child's snapshot file or its source changed, when the detailed side runs a snapshot, when the snapshot side runs a different set than `children`, or when a remeasured gap is more than 1e-4 relative from its row. Pass means the remeasure matches the stored gap. A child's stated errors are measured on its own fixture and do not add up at a shared port: on the arm bench the servo's current error crosses the USB port's resistance into `uno.VBUS.voltage`. No acceptance bound per quantity is stated yet, and any other world, supply, firmware, seed or step is unchecked. Engine code is checked only through the remeasure. `--write` remeasures and rewrites the hashes, `children` and the rows.
 
 ## 7. Fixture
 
