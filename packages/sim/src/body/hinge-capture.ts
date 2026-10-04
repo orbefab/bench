@@ -16,8 +16,8 @@ import {
 
 import { collapse, gearTrainXml, hingeXml } from "@sfab-bench/engine-body";
 import { contentHash, lintSnapshot, sortValue } from "@sfab-bench/parts";
-
 import type { CaptureEnv } from "../capture";
+import { hingeSignature } from "../capture-signature";
 
 const STEP_S = 0.001;
 
@@ -59,6 +59,16 @@ export async function writeHingeSnapshot(
 ): Promise<void> {
   const part = readPart(input.catalog, input.entry.part, env);
   const train = gearTrainOf(part, input.entry.sourceLevel);
+  const source = {
+    level: input.entry.sourceLevel,
+    variant: part.axes?.body?.[input.entry.sourceLevel]?.default ?? "",
+  };
+  const fromHash = hingeSignature(part, source);
+  if (!fromHash) {
+    throw new Error(
+      `${part.id} class ${source.level} body is not a gear train`
+    );
+  }
   const typeId = typeof part.type === "string" ? part.type : part.type.id;
   const type = readType(input.catalog, typeId, env);
   const fixturePath = env.join(
@@ -195,8 +205,9 @@ export async function writeHingeSnapshot(
       from: {
         part: part.id,
         level: input.entry.sourceLevel,
-        hash: contentHash(train),
+        hash: fromHash,
       },
+      variant: source.variant,
       fixture: {
         ref: input.entry.fixture,
         hash: contentHash(fixture),

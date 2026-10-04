@@ -1035,10 +1035,15 @@ export type RunReport = {
     /** Envelope warnings for this instance. Absent when the row has none. */
     envelope?: string[];
     /**
-     * The capture's `from.hash` no longer matches the part at `from.level`.
-     * Absent when the capture is fresh or the hash was not checked.
+     * The capture's `from.hash` no longer matches its source. Absent when
+     * the capture is fresh or was not checked.
      */
     stale?: true;
+    /**
+     * Why the capture's source could not be checked. A row with a
+     * `from.hash` and neither `stale` nor `unchecked` is fresh.
+     */
+    unchecked?: string;
   }[];
   snapshotQuality: string;
   notSimulated: {

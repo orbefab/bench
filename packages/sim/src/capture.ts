@@ -34,11 +34,8 @@ import {
   writeHingeSnapshot,
 } from "./body/hinge-capture";
 import { branchDc } from "./branch-dc";
-import {
-  assemblyStampOf,
-  type BoardStamp,
-  describeNetlist,
-} from "./circuit-stamp";
+import { stampSignature } from "./capture-signature";
+import { assemblyStampOf, type BoardStamp } from "./circuit-stamp";
 import type { StampEnv } from "./env";
 import {
   type GroupCaptureEntry,
@@ -368,7 +365,10 @@ async function captureEntry(
   );
 
   const partType = partTypeOf(config.part, catalog, env, opts.libraryDir);
-  const hash = contentHash(describeNetlist(stamp, 0, "header"));
+  const hash = stampSignature(stamp, {
+    level: config.baseline.level,
+    variant: config.variant,
+  });
   const bench = benchVersions(env);
   const scenes = Object.entries(config.cases ?? {}).map(([name, row]) => ({
     name,

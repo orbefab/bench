@@ -158,7 +158,8 @@ A parked part tab holds no socket; the server's idle timer stops that
 document's worker. The web editor reads
 `WorldView.tree` for the part tree, the card, and warning markers. L1 bubbles a composite's
 free nets into ports. L3, at plan time, recomputes a running capture's
-`from.hash` and marks it stale without changing its frames.
+`from.hash` with the capture runner's own signature and marks it stale
+(or unchecked, with why) without changing its frames.
 
 **Plugin seams** are compile-time registries of in-repo packages:
 

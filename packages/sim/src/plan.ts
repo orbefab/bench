@@ -1770,9 +1770,10 @@ export function planWorld(
 }
 
 /**
- * A capture is stale when its stored hash no longer matches the part.
- * It still runs. A hash that cannot be recomputed is left unmarked. Only
- * a snapshot this run loaded is checked, so the view marks those options.
+ * A capture is stale when its stored signature no longer matches its
+ * source. It still runs. A signature that cannot be recomputed marks the
+ * row unchecked, with why. Only a snapshot this run loaded is checked, so
+ * the view marks those options.
  */
 function noteFreshness(
   report: RunReport | null,
@@ -1795,7 +1796,11 @@ function noteFreshness(
       { catalogDir: catalog, worldDir: world, assetRoot: world },
       stamp
     );
-    if (!fresh.checked || fresh.hash === from.hash) continue;
+    if (!fresh.checked) {
+      row.unchecked = fresh.reason;
+      continue;
+    }
+    if (fresh.hash === from.hash) continue;
     row.stale = true;
     markStaleOptions(
       tree?.nodes ?? [],

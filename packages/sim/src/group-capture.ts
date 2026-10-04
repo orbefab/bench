@@ -19,8 +19,8 @@ import {
 import { contentHash, lintSnapshot, sortValue } from "@sfab-bench/parts";
 
 import type { CaptureEnv } from "./capture";
+import { groupSignature } from "./capture-signature";
 import type { AssignedPart } from "./circuit-stamp";
-import { groupHash } from "./freshness";
 import type { RunPlan } from "./plan";
 
 /** The servo pulse map spans 180°. */
@@ -137,18 +137,30 @@ export async function writeGroupSnapshot(
       return null;
     }
   };
+  const readType = (id: string): PartTypeFile | null => {
+    try {
+      return JSON.parse(
+        env.readText(env.join(input.catalog, "types", `${id}.json`))
+      ) as PartTypeFile;
+    } catch {
+      return null;
+    }
+  };
   const part = read(entry.part);
   if (!part) throw new Error(`${entry.part} is not in the catalog`);
-  const fromHash = groupHash(entry.part, entry.sourceLevel, read);
+  const source = {
+    level: entry.sourceLevel,
+    variant: part.axes?.behaviour?.[entry.sourceLevel]?.default ?? "",
+  };
+  const fromHash = groupSignature(entry.part, source, read, readType);
   if (!fromHash) {
     throw new Error(
       `${entry.part} class ${entry.sourceLevel} behaviour is not a composite`
     );
   }
   const typeId = typeof part.type === "string" ? part.type : part.type.id;
-  const type = JSON.parse(
-    env.readText(env.join(input.catalog, "types", `${typeId}.json`))
-  ) as PartTypeFile;
+  const type = typeof part.type === "string" ? readType(typeId) : part.type;
+  if (!type) throw new Error(`${entry.part} type ${typeId} did not load`);
   const power = onePort(type, "power", (decl) => decl.role === "power");
   const shaft = onePort(
     type,
@@ -191,6 +203,7 @@ export async function writeGroupSnapshot(
       provenance: {
         source: "captured",
         from: { part: entry.part, level: entry.sourceLevel, hash: fromHash },
+        variant: source.variant,
         fixture: {
           ref: `${entry.scene.project}/${entry.scene.world}`,
           hash: contentHash(JSON.parse(worldText) as unknown),

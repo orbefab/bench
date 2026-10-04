@@ -13,13 +13,10 @@ import {
   ROOT_PATH,
 } from "@sfab-bench/contract";
 import {
-  AVR_PIN,
   type AvrPinParams,
-  Capacitor,
-  Diode,
+  type Diode,
   type Element,
   Pin,
-  Resistor,
 } from "@sfab-bench/engine-circuit";
 import {
   buildNets,
@@ -1152,41 +1149,6 @@ function stampOf(
   });
   if (!stamp) throw new Error(`${partId} variant ${variant} stamped nothing`);
   return stamp;
-}
-
-/** Flattened front end. Capacitors are included; they are open at DC. */
-export function describeNetlist(
-  stamp: BoardStamp,
-  rSeries: number,
-  feed: RailFeed
-): unknown {
-  const realized = realize(stamp, feed, AVR_PIN);
-  return {
-    rSeries,
-    feed: realized.feedNode,
-    board: realized.boardNode,
-    elements: realized.elements.map((el) => describeElement(el)),
-  };
-}
-
-function describeElement(el: Element): unknown {
-  if (el instanceof Resistor) {
-    return { id: el.id, form: el.form, R: el.R, nodes: [...el.nodes()] };
-  }
-  if (el instanceof Capacitor) {
-    return { id: el.id, form: el.form, C: el.C, nodes: [...el.nodes()] };
-  }
-  if (el instanceof Diode) {
-    return {
-      id: el.id,
-      form: el.form,
-      Is: el.params.Is,
-      N: el.params.N,
-      Rs: el.params.Rs,
-      nodes: [...el.nodes()],
-    };
-  }
-  return { id: el.id, form: el.form, nodes: [...el.nodes()] };
 }
 
 export function liveNets(nets: readonly LiveNet[]): NetPorts[] {

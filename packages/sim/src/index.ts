@@ -34,7 +34,6 @@ export {
   type CircuitInst,
   circuitNumbers,
   connectorPort,
-  describeNetlist,
   groundPorts,
   isCircuitForm,
   ldoLaw,

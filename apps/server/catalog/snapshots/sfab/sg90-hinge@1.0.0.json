@@ -74,7 +74,7 @@
       "seed": 20260927
     },
     "from": {
-      "hash": "2e78acd2aa1df5fb3b41cde5006fa7bda7d1ad891c185bc14f51b5c795766aeb",
+      "hash": "b6229d561a6a23cdd37e26040d73b742e12d444adb2fdaed2012fc0298d3716e",
       "level": "2",
       "part": "sfab/sg90@1.0.0"
     },
@@ -82,7 +82,8 @@
     "tool": {
       "name": "sfab-bench-capture",
       "version": "1"
-    }
+    },
+    "variant": "gear-train"
   },
   "quality": "Q2a"
 }

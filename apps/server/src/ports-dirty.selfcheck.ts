@@ -309,23 +309,21 @@ function freshToday() {
     nodeStampEnv
   );
   expect(
-    asRecorded.checked &&
-      legacy.checked &&
-      asRecorded.hash === legacy.hash &&
-      asRecorded.hash === power.provenance.from?.hash,
-    "a snapshot without variant and instance falls back to the config, same hash"
+    asRecorded.checked && asRecorded.hash === power.provenance.from?.hash,
+    "the recorded variant and instance give the recorded hash"
+  );
+  expect(
+    !legacy.checked && legacy.reason.includes("variant"),
+    "a snapshot without a variant is unchecked, and says so"
   );
   const moved = provenanceHash(
     { ...power, provenance: { ...power.provenance, variant: "no-such" } },
     opts,
     nodeStampEnv
   );
-  expect(
-    !moved.checked,
-    "the recorded variant wins over the config: a wrong one is not silently repaired"
-  );
+  expect(!moved.checked, "a wrong recorded variant is not silently repaired");
   console.log(
-    "fresh from provenance: variant and instance recorded, config only for a snapshot without them"
+    "fresh from provenance: variant and instance recorded; without them, unchecked"
   );
 }
 

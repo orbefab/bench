@@ -58,7 +58,7 @@
       "seed": 20260927
     },
     "from": {
-      "hash": "d6febbce50169e98d09c056e807d2af997bc1392d0894cc1e49dc5d4381e1474",
+      "hash": "e061c16e10a57b7d5c03c8b3588926e14481ab0ebe4678b8e439d2de2d401bb7",
       "level": "2",
       "part": "sfab/led-module-red@1.0.0"
     },
