@@ -20,6 +20,7 @@ import {
   wireGraph,
 } from "../wiring";
 import { simMs, stepS } from "./common";
+import { bindShafts } from "./shafts";
 import { solveSupplies } from "./solve";
 import type { Load, ServoDrive, SessionState, SupplySpec } from "./state";
 
@@ -190,6 +191,7 @@ export function bindPower(s: SessionState, plan: RunPlan) {
     s.loads.push(load);
   }
   bindRails(s);
+  bindShafts(s, plan);
   solveSupplies(s);
   latchSupplyNodes(s);
   stampNodes(s, simMs(s));

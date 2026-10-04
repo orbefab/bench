@@ -33,6 +33,11 @@ export type SupplyCtx = {
  */
 export type FormAdapter = {
   id: string;
+  /**
+   * Ports the stamp reads. Absent: every port of the type. A type that
+   * lacks one of these does not run this form.
+   */
+  ports?: readonly string[];
   stamp?: (
     part: AssignedPart,
     assigned: readonly AssignedPart[]

@@ -118,6 +118,7 @@ import {
 } from "./session/recorder";
 import { solveSupplies } from "./session/solve";
 import { createState, type HeldFailure } from "./session/state";
+import { bodySceneOf } from "./shafts";
 import { targetPosition } from "./targets";
 import {
   applyGpioDrives,
@@ -494,6 +495,8 @@ function createSession(host: SimHost) {
     s.pendingNotes.length = 0;
     s.boards = [];
     s.loads = [];
+    s.controls = [];
+    s.shafts = [];
     s.rangers = [];
     s.inputNets = [];
     s.runPlan = null;
@@ -569,7 +572,7 @@ function createSession(host: SimHost) {
       return false;
     }
     const bytesReader = s.host.readerFor(root, s.worldRel);
-    const compiled = await compileWorld(planned.plan, bytesReader);
+    const compiled = await compileWorld(bodySceneOf(planned.plan), bytesReader);
     if (!compiled.ok) {
       fail(s, compiled.errors);
       return false;

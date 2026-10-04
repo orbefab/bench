@@ -10,6 +10,13 @@ import { targetPosition } from "../targets";
 import { fail, simMs } from "./common";
 import { latchedBoardNode, latchedSupplyNode, powerBoardOf } from "./rails";
 import { scalar } from "./recorder";
+import {
+  applyShaftTorque,
+  latchControls,
+  noteShaftSeams,
+  rearmControls,
+  setControlTarget,
+} from "./shafts";
 import { warnEnvelope } from "./solve";
 import type { Load, ServoDrive, SessionState } from "./state";
 
@@ -24,6 +31,7 @@ export function rearmServos(s: SessionState, boardId: string, board: AvrBoard) {
     load.sample = null;
     load.stallMs = 0;
   }
+  rearmControls(s, boardId, board);
 }
 
 function jointNow(
@@ -127,6 +135,7 @@ export function latchServos(s: SessionState) {
     });
     drive.track = stepped.track;
   }
+  latchControls(s, simTime);
 }
 
 /** Motor torque from the rail solved for the latched command. */
@@ -156,6 +165,7 @@ export function applyTorque(s: SessionState) {
     s.sim.data.actuator(load.partId).ctrl = torque;
     if (held) drive.track = blankTrack();
   }
+  applyShaftTorque(s);
 }
 
 /** Display state from the sample that solved the rail and the joint after the step. */
@@ -245,6 +255,7 @@ export function noteMotorSeams(s: SessionState): void {
     });
     noted = true;
   }
+  if (noteShaftSeams(s, dt)) noted = true;
   if (!noted) return;
   const closed = s.seams.endStep();
   if (!closed.closed || !s.runReport) return;
@@ -269,9 +280,14 @@ export function setTarget(s: SessionState, partId: string, radians: number) {
     fail(s, [], `no actuator for part "${partId}".`);
     return;
   }
+  const degrees = (radians * 180) / Math.PI;
   const drive = s.loads.find((item) => item.partId === partId)?.drive;
-  if (!drive || drive.board) return;
-  drive.manualDeg = (radians * 180) / Math.PI;
+  if (!drive) {
+    setControlTarget(s, partId, degrees);
+    return;
+  }
+  if (drive.board) return;
+  drive.manualDeg = degrees;
 }
 
 /**

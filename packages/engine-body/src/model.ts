@@ -35,6 +35,11 @@ export type BodyScene = {
     targets: WorldTarget[];
   };
   robots: { id: string; urdf: string; pose: WorldPose }[];
+  /**
+   * Actuated joints. Each one with `drives` gets a torque actuator named
+   * `id`. `motor` replaces the joint's armature, friction and damping;
+   * absent keeps the URDF's.
+   */
   parts: {
     id: string;
     drives?: { robot: string; joint: string };
@@ -571,7 +576,7 @@ export async function compileWorld(
     });
 
     for (const part of worldDoc.parts) {
-      if (!part.drives || !part.motor) continue;
+      if (!part.drives) continue;
       const defaults = mj.mjs_getSpecDefault(scene);
       if (!defaults) throw new Error("MuJoCo spec has no default");
       const actuator = mj.mjs_addActuator(world, defaults);

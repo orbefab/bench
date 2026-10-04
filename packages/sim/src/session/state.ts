@@ -25,6 +25,7 @@ import type {
   ToWorker,
 } from "../sim";
 import type { gpioInputNets, PowerFeeds } from "../wiring";
+import type { ControlRuntime, ShaftRuntime } from "./shafts";
 
 export type LiveWorld = CompiledWorld & {
   data: InstanceType<CompiledWorld["mj"]["MjData"]>;
@@ -166,6 +167,10 @@ export type SessionState = {
   specs: BoardSpec[];
   boards: AvrBoard[];
   loads: Load[];
+  /** `servo-control@1` parts, bound after the rails. */
+  controls: ControlRuntime[];
+  /** Joints circuit parts turn or read, bound after the rails. */
+  shafts: ShaftRuntime[];
   rangers: RangerRuntime[];
   boardPower: Map<string, BoardPower>;
   supplySpecs: SupplySpec[];
@@ -253,6 +258,8 @@ export function createState(host: SimHost): SessionState {
     specs: [],
     boards: [],
     loads: [],
+    controls: [],
+    shafts: [],
     rangers: [],
     boardPower: new Map<string, BoardPower>(),
     supplySpecs: [],

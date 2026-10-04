@@ -7,6 +7,7 @@ import type { MotorTrip, RailCircuit } from "../rail-circuit";
 import { sampleLoad } from "./actuators";
 import { stepS } from "./common";
 import { boardsFed, drivenBoard, loadBoard } from "./rails";
+import { driversTripped, prepareShafts, readShafts } from "./shafts";
 import type { Load, SessionState } from "./state";
 
 /** One warning per path and ref when an observed bound is outside. */
@@ -226,8 +227,14 @@ function tripsOf(
       if (load?.drive?.board?.id !== board.id) continue;
       if (load.sample && !load.sample.limp) motors.push(i);
     }
-    if (motors.length > 0) {
-      trips.push({ boardId: board.id, assertV: power.assertVoltage, motors });
+    const drivers = driversTripped(s, circuit, board.id);
+    if (motors.length > 0 || drivers.length > 0) {
+      trips.push({
+        boardId: board.id,
+        assertV: power.assertVoltage,
+        motors,
+        ...(drivers.length > 0 ? { drivers } : {}),
+      });
     }
   }
   return trips;
@@ -335,6 +342,7 @@ function solveOneRail(
  */
 export function solveSupplies(s: SessionState) {
   for (const load of s.loads) sampleLoad(s, load);
+  prepareShafts(s);
   const rangerFixed = new Map<string, number>();
   const rangerOnBoard = new Map<string, number>();
   for (const ranger of s.rangers) {
@@ -377,6 +385,7 @@ export function solveSupplies(s: SessionState) {
     }
     solveOneRail(s, supply.id, fixed, rangerOnBoard);
   }
+  readShafts(s);
   for (const supply of s.supplySpecs) {
     const circuit = s.rails.get(supply.id)?.circuit;
     // The supply record is the terminal. The board node is reported on

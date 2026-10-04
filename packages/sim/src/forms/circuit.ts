@@ -4,13 +4,17 @@
 import type { BehaviourImpl, FormId } from "@sfab-bench/contract";
 import { FORM_PARAMS } from "@sfab-bench/contract";
 import {
+  BridgeDriver,
   Capacitor,
   Comparator,
+  CurrentLoad,
+  DcWinding,
   Diode,
   type DiodeParams,
   LawTable,
   LdoRegulator,
   PmosChannel,
+  Potentiometer,
   PtcFuseElement,
   type PtcFuseParams,
   Resistor,
@@ -188,6 +192,71 @@ function stampComparator(part: AssignedPart): StampedElements {
   };
 }
 
+/** `dc-motor@1`: the winding. The run holds its shaft speed each master step. */
+function stampWinding(part: AssignedPart): StampedElements {
+  return {
+    elements: [
+      new DcWinding(
+        part.path,
+        need(part, "A"),
+        need(part, "B"),
+        needNum(part, "R"),
+        part.params.L ?? 0,
+        needNum(part, "K")
+      ),
+    ],
+    capacitive: false,
+  };
+}
+
+/**
+ * Knee of the control's quiescent draw, volts. Below it the draw falls
+ * with the supply, the way a board's own load does.
+ */
+export const CONTROL_KNEE_V = 1;
+
+/**
+ * `servo-control@1`: the averaged bridge on `M+`/`M-` and the quiescent
+ * draw on `V+`. The run sets the bridge ratio from the pulse and the
+ * latched sense ratio.
+ */
+function stampServoControl(part: AssignedPart): StampedElements {
+  const vp = need(part, "V+");
+  const gnd = need(part, "GND");
+  const quiescent = new CurrentLoad(`${part.path}#q`, vp, gnd, CONTROL_KNEE_V);
+  quiescent.amps = needNum(part, "quiescent");
+  return {
+    elements: [
+      new BridgeDriver(
+        part.path,
+        vp,
+        gnd,
+        need(part, "M+"),
+        need(part, "M-"),
+        need(part, "sense")
+      ),
+      quiescent,
+    ],
+    capacitive: false,
+  };
+}
+
+/** `potentiometer@1`: the track and the wiper. The run holds the wiper each master step. */
+function stampPotentiometer(part: AssignedPart): StampedElements {
+  return {
+    elements: [
+      new Potentiometer(
+        part.path,
+        need(part, "A"),
+        need(part, "W"),
+        need(part, "B"),
+        needNum(part, "R")
+      ),
+    ],
+    capacitive: false,
+  };
+}
+
 /** The trailing branch of the old chain. Any form it does not know is a diode. */
 export function stampDiode(part: AssignedPart): StampedElements {
   const params: DiodeParams = {
@@ -204,8 +273,12 @@ export function stampDiode(part: AssignedPart): StampedElements {
   };
 }
 
-function circuit(id: string, stamp: FormAdapter["stamp"]): FormAdapter {
-  return { id, stamp, parse: parseCircuitParams };
+function circuit(
+  id: string,
+  stamp: FormAdapter["stamp"],
+  ports?: readonly string[]
+): FormAdapter {
+  return { id, stamp, parse: parseCircuitParams, ...(ports ? { ports } : {}) };
 }
 
 export const circuitAdapters: FormAdapter[] = [
@@ -216,5 +289,14 @@ export const circuitAdapters: FormAdapter[] = [
   circuit("pmos-switch@1", stampPmos),
   circuit("ldo-regulator@1", stampLdo),
   circuit("comparator@1", stampComparator),
+  circuit("dc-motor@1", stampWinding, ["A", "B"]),
+  circuit("servo-control@1", stampServoControl, [
+    "V+",
+    "GND",
+    "M+",
+    "M-",
+    "sense",
+  ]),
+  circuit("potentiometer@1", stampPotentiometer, ["A", "W", "B"]),
   { id: "table@1", stamp: stampTable },
 ];

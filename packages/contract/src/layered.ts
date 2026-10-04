@@ -354,6 +354,8 @@ export type FormId =
   | "slew@1"
   | "position-servo@1"
   | "dc-motor@1"
+  | "servo-control@1"
+  | "potentiometer@1"
   | "thevenin-limit@1"
   | "ideal-voltage@1"
   | "battery@1"
@@ -409,6 +411,10 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
     },
     optional: ["L"],
   },
+  "servo-control@1": {
+    params: { eSat: "Angle", quiescent: "Current", travel: "Angle" },
+  },
+  "potentiometer@1": { params: { R: "Resistance", travel: "Angle" } },
   "thevenin-limit@1": {
     params: { V: "Voltage", Rs: "Resistance", Ilimit: "Current" },
   },

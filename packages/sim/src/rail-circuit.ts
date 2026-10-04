@@ -23,9 +23,11 @@ import {
   BatteryElement,
   type BatteryParams,
   type Braking,
+  BridgeDriver,
   BridgeMotor,
   Comparator,
   CurrentLoad,
+  DcWinding,
   Diode,
   type Element,
   Engine,
@@ -166,6 +168,8 @@ export type MotorTrip = {
   boardId: string;
   assertV: number;
   motors: readonly number[];
+  /** Bridge drivers (element ids) whose pulse comes from that board. */
+  drivers?: readonly string[];
 };
 
 /** One slice of a master step, between pin edges. */
@@ -334,11 +338,33 @@ export class RailCircuit {
     for (const [id, node] of built.extraNodes) this.extraNodes.set(id, node);
     this.pruned = built.pruned;
     for (const [id, nodes] of built.partNodes) this.partNodes.set(id, nodes);
+    for (const el of built.engine.elements) {
+      if (el instanceof BridgeDriver) this.drivers.push(el);
+      if (el instanceof DcWinding) this.windings.push(el);
+    }
   }
 
   /** Scene parts this rail dropped because a node was open. */
   readonly pruned: readonly string[] = [];
   private readonly partNodes = new Map<string, readonly string[]>();
+  private readonly drivers: BridgeDriver[] = [];
+  private readonly windings: DcWinding[] = [];
+  /** Mean current of each winding over the last solve, by element id. */
+  private readonly charged = new Map<string, number>();
+
+  /** A stamped element by id. Null when this rail does not have it. */
+  element(id: string): Element | null {
+    return this.engine.elements.find((item) => item.id === id) ?? null;
+  }
+
+  /**
+   * Amperes a `dc-motor@1` winding carried over the last master step, the
+   * time mean of its sub-steps. A bridge opened mid-step by a trip
+   * carries the share before it. Null when the winding is not here.
+   */
+  windingCurrent(id: string): number | null {
+    return this.charged.get(id) ?? null;
+  }
 
   elementCurrent(id: string): number | null {
     const el = this.engine.elements.find((item) => item.id === id);
@@ -675,10 +701,14 @@ export class RailCircuit {
     const winding = this.winding;
     const onShare = this.onShare;
     onShare.fill(1);
-    const pending = this.trips.filter((trip) => trip.motors.length > 0);
+    const pending = this.trips.filter(
+      (trip) => trip.motors.length > 0 || (trip.drivers?.length ?? 0) > 0
+    );
     this.trips = [];
     const opened: number[] = [];
     let elapsed = 0;
+    const windings = this.windings;
+    const charge = new Float64Array(windings.length);
     // Before the step is noted: a trip at this sub-step keeps the current
     // the motor ran on, and opens it for the sub-steps after.
     const trip = (dt: number) => {
@@ -696,6 +726,10 @@ export class RailCircuit {
           onShare[index] = Math.min(1, elapsed / this.masterS);
           motor.connected = false;
           opened.push(index);
+        }
+        for (const id of armed.drivers ?? []) {
+          const driver = this.drivers.find((item) => item.id === id);
+          if (driver) driver.connected = false;
         }
       }
     };
@@ -718,6 +752,11 @@ export class RailCircuit {
       }
     };
     const note = (dt: number) => {
+      for (let i = 0; i < windings.length; i++) {
+        charge[i] =
+          (charge[i] as number) +
+          this.engine.branchCurrent((windings[i] as DcWinding).id) * dt;
+      }
       trip(dt);
       noteSources();
       if (!many) {
@@ -784,6 +823,16 @@ export class RailCircuit {
       fuse.advance(fuse.current(voltage), this.masterS);
     for (const channel of this.channels) channel.latch(voltage);
     for (const cmp of this.comparators) cmp.latch(voltage);
+    for (const driver of this.drivers) driver.latch(voltage);
+    for (let i = 0; i < windings.length; i++) {
+      const id = (windings[i] as DcWinding).id;
+      this.charged.set(
+        id,
+        elapsed > 0
+          ? (charge[i] as number) / elapsed
+          : this.engine.branchCurrent(id)
+      );
+    }
     this.battery?.advance(this.current, this.masterS);
   }
 

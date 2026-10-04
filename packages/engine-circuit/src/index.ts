@@ -20,6 +20,15 @@ export {
   type TraceCase,
 } from "./circuits";
 export { Comparator } from "./comparator";
+export {
+  BridgeDriver,
+  DcWinding,
+  type HeldElement,
+  isHeld,
+  MIN_SEGMENT,
+  OPEN_OUTPUT_OHMS,
+  Potentiometer,
+} from "./drive";
 export type { Element } from "./element";
 export {
   type Braking,

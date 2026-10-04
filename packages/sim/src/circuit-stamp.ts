@@ -63,6 +63,9 @@ export const CIRCUIT_FORMS = [
   "pmos-switch@1",
   "ldo-regulator@1",
   "comparator@1",
+  "dc-motor@1",
+  "servo-control@1",
+  "potentiometer@1",
 ] as const;
 export type CircuitForm = (typeof CIRCUIT_FORMS)[number];
 

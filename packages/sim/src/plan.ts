@@ -71,6 +71,7 @@ import type { PlanEnv, StampEnv } from "./env";
 import { formAdapter } from "./forms";
 import { provenanceHash } from "./freshness";
 import type { RangerLaw, RunRanger } from "./ranger";
+import { coupleShafts, type RunControl, type RunShaft } from "./shafts";
 import { readTargets } from "./targets";
 import { runTree } from "./tree";
 import { type PowerWiring, suppliesOnPort } from "./wiring";
@@ -258,7 +259,7 @@ export type RunPart = {
   };
 };
 
-export type { RunRanger };
+export type { RunControl, RunRanger, RunShaft };
 
 /**
  * What one run executes. Not a file format. Instance ids are the ones
@@ -311,6 +312,10 @@ export type RunPlan = {
    * island rail, with both boards' node names. Absent when there are none.
    */
   spans?: { part: AssignedPart; boards: string[] }[];
+  /** Joints that circuit parts turn or read. Absent when there are none. */
+  shafts?: RunShaft[];
+  /** `servo-control@1` parts. Absent when there are none. */
+  controls?: RunControl[];
   /**
    * Parts that sit idle or fell back. The run still starts. Absent when
    * every part placed.
@@ -723,6 +728,11 @@ function digitalPeer(
   return null;
 }
 
+/** Ports a form stamps that this instance's type does not have. */
+function formPortGap(inst: LiveInstance, ports: readonly string[]): string[] {
+  return ports.filter((name) => !inst.type.ports[name]);
+}
+
 function circuitInstOf(inst: LiveInstance): CircuitInst | null {
   const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
   if (
@@ -734,9 +744,12 @@ function circuitInstOf(inst: LiveInstance): CircuitInst | null {
   }
   const params = circuitNumbers(behaviour, inst.params);
   if (!params) return null;
+  const stamped = formAdapter(behaviour.form)?.ports;
+  if (stamped && formPortGap(inst, stamped).length > 0) return null;
   const ports: Record<string, string> = {};
   for (const [name, decl] of Object.entries(inst.type.ports)) {
     if (decl.internal) continue;
+    if (stamped && !stamped.includes(name)) continue;
     ports[name] = `${inst.path}.${name}`;
   }
   const ldo = ldoLaw(behaviour, inst.params);
@@ -883,7 +896,14 @@ function runtimeGap(inst: LiveInstance): string {
   if (inst.declaredOnly) return "no runtime for a declared-only part";
   const behaviour = selectedBehaviour(inst);
   if (!behaviour) return "no runtime";
-  if (behaviour.kind === "form") return `no runtime for form ${behaviour.form}`;
+  if (behaviour.kind === "form") {
+    const stamped = formAdapter(behaviour.form)?.ports;
+    const gap = stamped ? formPortGap(inst, stamped) : [];
+    if (gap.length > 0) {
+      return `form ${behaviour.form} stamps ports ${stamped?.join(", ")}, and ${inst.type.id} lacks ${gap.join(", ")}`;
+    }
+    return `no runtime for form ${behaviour.form}`;
+  }
   return `no runtime for ${behaviour.kind}`;
 }
 
@@ -1001,12 +1021,16 @@ function build(
   const rangers: RunRanger[] = [];
   const boxes: RunBox[] = [];
   const circuits: CircuitInst[] = [];
+  const trainParts: LiveInstance[] = [];
 
   // An if-chain on the selected behaviour. A composite is a shell and
   // is skipped. What runs: firmware; form resistor@1, capacitor@1 and
   // diode@1; form multibody@1 with a urdf body; form thevenin-limit@1;
-  // form dc-motor@1 on a type with one logic input, with a lumped joint,
-  // a hinge@1 snapshot, or the collapse of a gear train; form ranger@1. Anything else is a plan
+  // form position-servo@1 on a type with one logic input, with a lumped
+  // joint, a hinge@1 snapshot, or the collapse of a gear train; forms
+  // dc-motor@1, servo-control@1 and potentiometer@1, coupled to a joint
+  // after the loop; a gear-train body with no behaviour, the collapse a
+  // motor reaches through it; form ranger@1. Anything else is a plan
   // error that names the path.
   const byPath = new Map(loaded.resolved.map((item) => [item.path, item]));
   for (const inst of loaded.resolved) {
@@ -1309,7 +1333,38 @@ function build(
       if (inst.pose) pushBox(boxes, inst, "part");
       continue;
     }
+    if (bodyImpl?.kind === "gear-train" && !behaviour) {
+      // Runs as the collapse of the joint a motor reaches through it.
+      trainParts.push(inst);
+      continue;
+    }
     diags.push(cannot(inst, runtimeGap(inst), "no-runtime"));
+  }
+
+  const coupled = coupleShafts({
+    circuits,
+    resolved: loaded.resolved,
+    nets: loaded.nets,
+    boards,
+    drivenJoints: new Set(
+      parts.flatMap((part) =>
+        part.drives ? [`${part.drives.robot}/${part.drives.joint}`] : []
+      )
+    ),
+  });
+  for (const row of coupled.idle) {
+    const inst = byPath.get(row.path);
+    if (inst) diags.push(cannot(inst, row.detail, "wiring"));
+  }
+  const idleShafts = new Set(coupled.idle.map((row) => row.path));
+  for (let i = circuits.length - 1; i >= 0; i--) {
+    if (idleShafts.has(circuits[i]?.path ?? "")) circuits.splice(i, 1);
+  }
+  for (const inst of trainParts) {
+    if (coupled.trains.has(inst.path)) continue;
+    diags.push(
+      cannot(inst, "the gear train couples no motor to a joint", "wiring")
+    );
   }
 
   const nets = liveNets(loaded.nets);
@@ -1338,9 +1393,64 @@ function build(
     }
     return boards.filter((board) => found.has(board.id));
   };
+  // A part whose nets reach no board and no supply (a winding between a
+  // bridge's outputs) takes the home of the circuit parts it shares a
+  // non-ground net with.
+  const homes = new Map(
+    circuits.map((part) => [
+      part.path,
+      {
+        hit: ownersOf(part),
+        reached: suppliesReached(part, supplies, nets),
+      },
+    ])
+  );
+  const netsOf = (part: CircuitInst): Set<string> => {
+    const ids = new Set<string>();
+    for (const full of Object.values(part.ports)) {
+      if (ground.has(full)) continue;
+      const net = nets.find((item) =>
+        item.ports.some((port) => port.full === full)
+      );
+      if (net) ids.add(net.ports.map((port) => port.full).sort()[0] ?? full);
+    }
+    return ids;
+  };
+  const homeless = (path: string) => {
+    const home = homes.get(path);
+    return !home || (home.hit.length === 0 && home.reached.length === 0);
+  };
+  // Homed through a neighbour, so it touches no board: the board takes it
+  // as an extra part.
+  const inherited = new Set<string>();
+  for (const part of circuits) {
+    if (!homeless(part.path)) continue;
+    const seen = new Set([part.path]);
+    const queue = [part];
+    let found: { hit: RunBoard[]; reached: string[] } | null = null;
+    while (queue.length > 0 && !found) {
+      const at = queue.shift();
+      if (!at) break;
+      const mine = netsOf(at);
+      for (const other of circuits) {
+        if (seen.has(other.path)) continue;
+        if (![...netsOf(other)].some((id) => mine.has(id))) continue;
+        seen.add(other.path);
+        if (!homeless(other.path)) {
+          found = homes.get(other.path) ?? null;
+          break;
+        }
+        queue.push(other);
+      }
+    }
+    if (found) {
+      homes.set(part.path, found);
+      inherited.add(part.path);
+    }
+  }
   const owners = new Map<string, RunBoard[]>();
   for (const part of circuits) {
-    const hit = ownersOf(part);
+    const hit = homes.get(part.path)?.hit ?? [];
     owners.set(part.path, hit);
     if (hit.length >= 2) {
       spans.push({
@@ -1349,7 +1459,7 @@ function build(
       });
       continue;
     }
-    const reached = suppliesReached(part, supplies, nets);
+    const reached = homes.get(part.path)?.reached ?? [];
     if (reached.length >= 2) {
       if (hit.length >= 1) continue;
       const homeSupply = reached[0];
@@ -1455,7 +1565,17 @@ function build(
             (part.path === other.id || part.path.startsWith(`${other.id}.`))
         );
       }),
-      also: alsoByBoard.get(board.id),
+      also: [
+        ...(alsoByBoard.get(board.id) ?? []),
+        ...stampParts.filter((part) => {
+          const hit = owners.get(part.path) ?? [];
+          return (
+            inherited.has(part.path) &&
+            hit.length === 1 &&
+            hit[0]?.id === board.id
+          );
+        }),
+      ],
       nets,
     });
     if (stamp) board.stamp = stamp;
@@ -1538,6 +1658,8 @@ function build(
       ),
       report: loaded.report,
       ...(spans.length > 0 ? { spans } : {}),
+      ...(coupled.shafts.length > 0 ? { shafts: coupled.shafts } : {}),
+      ...(coupled.controls.length > 0 ? { controls: coupled.controls } : {}),
       ...(diags.length > 0 ? { degraded: diags } : {}),
       tree: runTree({
         run,
