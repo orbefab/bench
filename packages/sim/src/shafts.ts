@@ -120,7 +120,7 @@ function reachJoint(
       if (port.full === full) return false;
       const inst = byPath.get(port.path);
       if (bodyOf(inst)?.kind !== "gear-train" || !inst) return false;
-      return rotationalPorts(inst.type.ports, "in")[0] === port.port;
+      return rotationalPorts(inst.type.ports, "in").includes(port.port);
     });
     if (!next) return { ok: false, detail: "its shaft reaches no joint" };
     if (train) {
@@ -136,6 +136,12 @@ function reachJoint(
     }
     if (gearTrainErrors(inst.part.id, body).length > 0) {
       return { ok: false, detail: `gear train ${inst.path} does not walk` };
+    }
+    if (rotationalPorts(inst.type.ports, "in").length !== 1) {
+      return {
+        ok: false,
+        detail: `gear train ${inst.path} needs one rotational input`,
+      };
     }
     const outs = rotationalPorts(inst.type.ports, "out");
     if (outs.length !== 1 || !outs[0]) {

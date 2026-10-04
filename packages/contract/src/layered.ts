@@ -891,7 +891,7 @@ export type EditRefusal = {
 /** A wire joining a port to itself, or ports of two domains. */
 export type EditRefusalCode = "wire-self" | "wire-domain";
 
-/** Circuit-to-body cut of a `dc-motor@1` servo. */
+/** Circuit-to-body cut of a `position-servo@1` servo or a `dc-motor@1` shaft. */
 export type SeamKind = "motor";
 
 /**

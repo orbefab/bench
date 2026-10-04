@@ -349,6 +349,8 @@ export class RailCircuit {
   private readonly partNodes = new Map<string, readonly string[]>();
   private readonly drivers: BridgeDriver[] = [];
   private readonly windings: DcWinding[] = [];
+  /** Each winding's charge over the solve in progress, coulombs. */
+  private charge = new Float64Array(0);
   /** Mean current of each winding over the last solve, by element id. */
   private readonly charged = new Map<string, number>();
 
@@ -708,7 +710,11 @@ export class RailCircuit {
     const opened: number[] = [];
     let elapsed = 0;
     const windings = this.windings;
-    const charge = new Float64Array(windings.length);
+    if (this.charge.length !== windings.length) {
+      this.charge = new Float64Array(windings.length);
+    }
+    const charge = this.charge;
+    charge.fill(0);
     // Before the step is noted: a trip at this sub-step keeps the current
     // the motor ran on, and opens it for the sub-steps after.
     const trip = (dt: number) => {
