@@ -519,7 +519,7 @@ function servoPulseUs(angle: number): number {
     const out = join(root, "snap.json");
     await captureFromConfig({
       config,
-      libraryDir: root,
+      projectDir: root,
       outFile: out,
       freeRun: false,
     });

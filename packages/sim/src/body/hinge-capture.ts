@@ -18,6 +18,7 @@ import { collapse, gearTrainXml, hingeXml } from "@sfab-bench/engine-body";
 import { contentHash, lintSnapshot, sortValue } from "@sfab-bench/parts";
 import type { CaptureEnv } from "../capture";
 import { hingeSignature } from "../capture-signature";
+import type { CaptureSource } from "../capture-source";
 
 const STEP_S = 0.001;
 
@@ -35,6 +36,8 @@ export type HingeCaptureEntry = {
 
 export type HingeCaptureInput = {
   catalog: string;
+  /** Where the part, its type and the fixture are read. */
+  source: CaptureSource;
   entry: HingeCaptureEntry;
   created: string;
   tool: { name: string; version: string };
@@ -57,7 +60,8 @@ export async function writeHingeSnapshot(
   input: HingeCaptureInput,
   env: CaptureEnv
 ): Promise<void> {
-  const part = readPart(input.catalog, input.entry.part, env);
+  const part = input.source.part(input.entry.part)?.part;
+  if (!part) throw new Error(`${input.entry.part} did not load`);
   const train = gearTrainOf(part, input.entry.sourceLevel);
   const source = {
     level: input.entry.sourceLevel,
@@ -69,13 +73,10 @@ export async function writeHingeSnapshot(
       `${part.id} class ${source.level} body is not a gear train`
     );
   }
-  const typeId = typeof part.type === "string" ? part.type : part.type.id;
-  const type = readType(input.catalog, typeId, env);
-  const fixturePath = env.join(
-    input.catalog,
-    "fixtures",
-    `${input.entry.fixture}.fixture.json`
-  );
+  const type = input.source.typeOf(part);
+  if (!type) throw new Error(`${part.id} type did not load`);
+  const typeId = type.id;
+  const fixturePath = input.source.fixture(input.entry.fixture);
   const fixture = JSON.parse(env.readText(fixturePath)) as FixtureFile;
   if (fixture.format !== FIXTURE_FORMAT) {
     throw new Error(`${input.entry.fixture} is not ${FIXTURE_FORMAT}`);
@@ -425,27 +426,6 @@ function pair(value: unknown): [number, number] | null {
 
 function round9(n: number): number {
   return Math.round(n * 1e9) / 1e9;
-}
-
-function readPart(catalog: string, id: string, env: CaptureEnv): PartFile {
-  return JSON.parse(env.readText(partPath(catalog, id, env))) as PartFile;
-}
-
-function readType(catalog: string, id: string, env: CaptureEnv): PartTypeFile {
-  return JSON.parse(
-    env.readText(env.join(catalog, "types", `${id}.json`))
-  ) as PartTypeFile;
-}
-
-function partPath(catalog: string, id: string, env: CaptureEnv): string {
-  const slash = id.indexOf("/");
-  const at = id.lastIndexOf("@");
-  return env.join(
-    catalog,
-    "parts",
-    id.slice(0, slash),
-    `${id.slice(slash + 1, at)}@${id.slice(at + 1)}.json`
-  );
 }
 
 function snapshotPath(catalog: string, id: string, env: CaptureEnv): string {

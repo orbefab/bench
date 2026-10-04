@@ -25,7 +25,6 @@ import {
 import {
   contentHash,
   lintSnapshot,
-  loadPartById,
   type Store,
   sortValue,
 } from "@sfab-bench/parts";
@@ -34,14 +33,12 @@ import {
   writeHingeSnapshot,
 } from "./body/hinge-capture";
 import { branchDc } from "./branch-dc";
+import { captureProblem } from "./capture-recipe";
 import { stampSignature } from "./capture-signature";
+import { type CaptureSource, captureSource } from "./capture-source";
 import { assemblyStampOf, type BoardStamp } from "./circuit-stamp";
 import type { StampEnv } from "./env";
-import {
-  type GroupCaptureEntry,
-  isGroupForm,
-  writeGroupSnapshot,
-} from "./group-capture";
+import { type GroupCaptureEntry, writeGroupSnapshot } from "./group-capture";
 import type { PlanResult } from "./plan";
 
 export type FreeCase = {
@@ -161,7 +158,11 @@ export type CaptureRun = {
   fixtureFile?: string;
   config?: CaptureFile<AnyCaptureEntry> | AnyCaptureEntry;
   catalogDir?: string;
-  libraryDir?: string;
+  /**
+   * The project the capture reads its source from, before the catalog:
+   * parts, types and fixtures. Absent, the catalog alone.
+   */
+  projectDir?: string;
   /** Where to write. Absent, the fixture id names the catalog snapshot. */
   outFile?: string;
   /** Default true when `config.cases` has scenes. */
@@ -271,15 +272,19 @@ async function captureEntry(
   env: CaptureEnv,
   stampEnv: StampEnv
 ): Promise<CaptureStats> {
+  const source = captureSource(catalog, opts.projectDir, env);
+  const problem = captureProblem(
+    config,
+    opts.fixtureFile ? withFixture(source, opts.fixtureFile) : source
+  );
+  if (problem) throw new Error(problem);
   if ("scene" in config) {
-    if (!isGroupForm(config.form)) {
-      throw new Error(`${config.id}: no group reduction to ${config.form}`);
-    }
     const group = progressOf(opts, 1);
     group.check();
     await writeGroupSnapshot(
       {
         catalog,
+        source,
         entry: config,
         created: file.created,
         tool: file.tool,
@@ -297,6 +302,7 @@ async function captureEntry(
     await writeHingeSnapshot(
       {
         catalog,
+        source,
         entry: config,
         created: file.created,
         tool: file.tool,
@@ -308,17 +314,15 @@ async function captureEntry(
     await hinge.step("hinge snapshot");
     return emptyStats();
   }
-  const across = acrossOf(config, catalog, env, opts.libraryDir);
-  const stampOpts = {
-    catalogDir: catalog,
-    boardId: config.instance,
-    ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),
-  };
+  const across = acrossOf(config, source);
   const stamp = assemblyStampOf(
     config.part,
     config.variant,
     {
-      ...stampOpts,
+      catalogDir: catalog,
+      worldDir: source.worldDir,
+      assetRoot: source.worldDir,
+      boardId: config.instance,
       across,
     },
     stampEnv
@@ -330,11 +334,7 @@ async function captureEntry(
   }
   const dc = (amps: number) => branchDc(stamp, across[0], across[1], amps);
   const fixture = config.sweep.fixture
-    ? readFixture(
-        opts.fixtureFile ??
-          env.join(catalog, "fixtures", `${config.sweep.fixture}.fixture.json`),
-        env
-      )
+    ? readFixture(opts.fixtureFile ?? source.fixture(config.sweep.fixture), env)
     : null;
   const sweep = fixture
     ? sweepsOf(fixture, config)
@@ -364,7 +364,7 @@ async function captureEntry(
     )
   );
 
-  const partType = partTypeOf(config.part, catalog, env, opts.libraryDir);
+  const type = typeOfPart(config.part, source);
   const hash = stampSignature(stamp, {
     level: config.baseline.level,
     variant: config.variant,
@@ -387,7 +387,7 @@ async function captureEntry(
     fixtureRef: config.sweep.fixture ?? config.id,
     config,
     file,
-    partType,
+    partType: type.id,
     hash,
     bench,
     envelopeMaxA,
@@ -410,7 +410,7 @@ async function captureEntry(
         : "none-available",
       quality: "Q1",
     });
-    const lint = lintBoard(base, partType, catalog, env);
+    const lint = lintBoard(base, type);
     if (lint.diagnostics.length > 0) {
       throw new Error(
         `snapshot lint ${lint.quality}: ${lint.diagnostics.map((d) => d.message).join("; ")}`
@@ -473,7 +473,7 @@ async function captureEntry(
     ],
     quality: "Q2a",
   });
-  const lint = lintBoard(done, partType, catalog, env);
+  const lint = lintBoard(done, type);
   if (lint.diagnostics.length > 0 || lint.quality !== "Q2a") {
     const text = lint.diagnostics.map((diag) => diag.message).join("; ");
     throw new Error(`snapshot lint ${lint.quality}: ${text}`);
@@ -503,37 +503,19 @@ function snapshotPath(catalog: string, id: string, env: CaptureEnv): string {
   return env.join(catalog, "snapshots", publisher, `${name}@${version}.json`);
 }
 
-function partTypeOf(
-  partId: string,
-  catalog: string,
-  env: CaptureEnv,
-  libraryDir?: string
-): string {
-  const worldDir = env.join(catalog, ".board-stamp-world");
-  const loaded = loadPartById(
-    worldDir,
-    {
-      store: env.store,
-      catalogDir: catalog,
-      assetRoot: catalog,
-      ...(libraryDir ? { libraryDir } : {}),
-    },
-    partId
-  );
-  if (!("part" in loaded)) throw new Error(loaded.message);
-  const type = loaded.part.type;
-  return typeof type === "string" ? type : type.id;
+/** The part's type as the source reads it: the project's, else the catalog's. */
+function typeOfPart(partId: string, source: CaptureSource): PartTypeFile {
+  const found = source.part(partId);
+  if (!found) throw new Error(`${partId} did not load`);
+  const type = source.typeOf(found.part);
+  if (!type) throw new Error(`${partId} type did not load`);
+  return type;
 }
-
-function lintBoard(
-  snap: SnapshotFile,
-  partType: string,
-  catalog: string,
-  env: CaptureEnv
-) {
-  const type = JSON.parse(
-    env.readText(env.join(catalog, "types", `${partType}.json`))
-  ) as PartTypeFile;
+/** The source with one fixture file in place of the one it would read. */
+function withFixture(source: CaptureSource, file: string): CaptureSource {
+  return { ...source, fixture: () => file };
+}
+function lintBoard(snap: SnapshotFile, type: PartTypeFile) {
   return lintSnapshot(snap, { plausible: type.plausible, ports: type.ports });
 }
 
@@ -641,15 +623,10 @@ function sweepsOf(
 
 function acrossOf(
   entry: CaptureEntry,
-  catalog: string,
-  env: CaptureEnv,
-  libraryDir?: string
+  source: CaptureSource
 ): [string, string] {
   if (entry.across && entry.across.length === 2) return entry.across;
-  const typeId = partTypeOf(entry.part, catalog, env, libraryDir);
-  const type = JSON.parse(
-    env.readText(env.join(catalog, "types", `${typeId}.json`))
-  ) as PartTypeFile;
+  const type = typeOfPart(entry.part, source);
   const exposed = Object.entries(type.ports)
     .filter(([, decl]) => decl.role !== "ground")
     .map(([name]) => name);

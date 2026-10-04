@@ -152,10 +152,6 @@ async function run(
   if ("error" in level) return failed(level.error);
   const config = captureFileFor(recipe, catalog);
   if ("error" in config) return failed(config.error);
-  const fixtureId = "sweep" in recipe ? recipe.sweep.fixture : undefined;
-  const projectFixture = fixtureId
-    ? join(root, "fixtures", `${fixtureId}.fixture.json`)
-    : null;
   const tmp = serverCaptureEnv.makeTemp("sfab-capture-out-");
   let snapshot: string;
   try {
@@ -165,10 +161,9 @@ async function run(
       {
         config,
         catalogDir: catalog,
-        ...(inProject ? { libraryDir: root } : {}),
-        ...(projectFixture && nodeStore.exists(projectFixture)
-          ? { fixtureFile: projectFixture }
-          : {}),
+        // The source as the card shows it: the project's parts, types and
+        // fixtures over the catalog's, for a project part or a catalog one.
+        projectDir: root,
         outFile: out,
         signal: job.controller.signal,
         pause: job.pause,

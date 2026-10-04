@@ -276,7 +276,7 @@ function freshToday() {
       const snap = JSON.parse(readFileSync(file, "utf8")) as SnapshotFile;
       const fresh = provenanceHash(
         snap,
-        { catalogDir: catalog, worldDir: catalog, assetRoot: catalog },
+        { catalogDir: catalog, worldDir: catalog },
         nodeStampEnv
       );
       const stored = snap.provenance?.from?.hash;
@@ -295,7 +295,7 @@ function freshToday() {
       "utf8"
     )
   ) as SnapshotFile;
-  const opts = { catalogDir: catalog, worldDir: catalog, assetRoot: catalog };
+  const opts = { catalogDir: catalog, worldDir: catalog };
   expect(
     power.provenance.variant === "netlist" &&
       power.provenance.instance === "power",
@@ -513,7 +513,6 @@ async function proveCapture() {
       {
         catalogDir: catalog,
         worldDir: absolutePath(project),
-        assetRoot: absolutePath(project),
       },
       nodeStampEnv
     );

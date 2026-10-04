@@ -36,10 +36,11 @@ import {
 } from "@sfab-bench/parts";
 
 import {
-  type CaptureRecipeSource,
   captureLevelFor,
+  captureProblem,
   captureRecipeFor,
 } from "./capture-recipe";
+import { type CaptureSource, captureSource } from "./capture-source";
 import { chipFactsOf, missingChipFacts } from "./chip-host";
 import { formAdapter } from "./forms";
 
@@ -138,11 +139,7 @@ export function runTree(input: {
     return located(id).place;
   };
 
-  const recipes = {
-    catalogDir: input.catalogDir,
-    store: input.store,
-    join: input.join,
-  };
+  const recipes = captureSource(input.catalogDir, input.projectDir, input);
   const nodes = new Map<string, WorldViewNode>();
   for (const inst of input.resolved) {
     const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
@@ -438,7 +435,7 @@ function levelAxes(
     /** Set on a project part: does this snapshot file sit in the project's `snapshots/`? */
     inProject?: (ref: string) => boolean;
     /** Absent on a node that is never captured (ground, target). */
-    capture?: { typeId: string; source: CaptureRecipeSource };
+    capture?: { typeId: string; source: CaptureSource };
     /** Looks up a composite's parts, so a declared-only one is seen. */
     partFile?: (partId: string) => PartFile | null;
   }
@@ -516,11 +513,14 @@ function sourceOf(
   };
 }
 
-/** The same lookup and `into` rule the capture job uses. */
+/**
+ * The same lookup, `into` rule and source check the capture job runs, on
+ * the same capture source.
+ */
 function captureOf(
   part: PartFile,
   axis: CaptureAxisName,
-  input: { typeId: string; source: CaptureRecipeSource }
+  input: { typeId: string; source: CaptureSource }
 ): WorldViewCapture {
   const recipe = captureRecipeFor(part, axis, input.source);
   if (!recipe) {
@@ -528,6 +528,8 @@ function captureOf(
   }
   const level = captureLevelFor(part, axis, recipe);
   if ("error" in level) return { ready: false, reason: level.error };
+  const problem = captureProblem(recipe, input.source);
+  if (problem) return { ready: false, reason: problem };
   return { ready: true };
 }
 

@@ -68,7 +68,7 @@ function signatureWith(
     }
     return provenanceHash(
       snap,
-      { catalogDir: catalog, worldDir: project, assetRoot: project },
+      { catalogDir: catalog, worldDir: project },
       nodeStampEnv
     );
   } finally {

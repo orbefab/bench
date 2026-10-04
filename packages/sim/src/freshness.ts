@@ -2,17 +2,18 @@
  * Whether a capture's `from.hash` still matches its source. The level,
  * variant and (for a sweep) the stamped instance come from the snapshot's
  * provenance; the signature is the one the capture runner wrote
- * (`capture-signature.ts`). One stamp or one hash per snapshot per plan,
+ * (`capture-signature.ts`), read through the same capture source: the
+ * project, then the catalog. One stamp or one hash per snapshot per plan,
  * not per step.
  */
-import type { PartTypeFile, SnapshotFile } from "@sfab-bench/contract";
-import { loadPartById, loadTypeById, type Store } from "@sfab-bench/parts";
+import type { SnapshotFile } from "@sfab-bench/contract";
 
 import {
   groupSignature,
   hingeSignature,
   stampSignature,
 } from "./capture-signature";
+import { captureSource } from "./capture-source";
 import { assemblyStampOf } from "./circuit-stamp";
 import type { StampEnv } from "./env";
 
@@ -27,7 +28,7 @@ export type Freshness =
  */
 export function provenanceHash(
   file: SnapshotFile,
-  opts: { catalogDir: string; worldDir: string; assetRoot: string },
+  opts: { catalogDir: string; worldDir: string },
   env: StampEnv
 ): Freshness {
   const from = file.provenance.from;
@@ -40,11 +41,8 @@ export function provenanceHash(
     return { checked: false, reason: "the provenance names no variant" };
   }
   const source = { level: from.level, variant };
-  const lib = libOpts(opts, env.store);
-  const readPart = (id: string) => {
-    const found = loadPartById(opts.worldDir, lib, id);
-    return "part" in found ? found.part : null;
-  };
+  const read = captureSource(opts.catalogDir, opts.worldDir, env);
+  const readPart = (id: string) => read.part(id)?.part ?? null;
   const unbuilt = (what: string): Freshness => ({
     checked: false,
     reason: `${from.part} class ${from.level} variant ${variant} is not ${what}`,
@@ -60,10 +58,12 @@ export function provenanceHash(
     // captured from the group running.
     const across = pair(file.params.across);
     if (file.axis === "behaviour" && !across) {
-      const hash = groupSignature(from.part, source, readPart, (id) => {
-        const found = loadTypeById(opts.worldDir, lib, id);
-        return "type" in found ? (found.type as PartTypeFile) : null;
-      });
+      const hash = groupSignature(
+        from.part,
+        source,
+        readPart,
+        (id) => read.type(id)?.type ?? null
+      );
       return hash ? { checked: true, hash } : unbuilt("a composite");
     }
     if (!across) return unbuilt("a group or a sweep");
@@ -76,8 +76,8 @@ export function provenanceHash(
       variant,
       {
         catalogDir: opts.catalogDir,
-        worldDir: opts.worldDir,
-        assetRoot: opts.assetRoot,
+        worldDir: read.worldDir,
+        assetRoot: read.worldDir,
         boardId: instance,
         across,
       },
@@ -98,15 +98,4 @@ function pair(value: unknown): [string, string] | null {
   const b = value[1];
   if (typeof a !== "string" || typeof b !== "string") return null;
   return [a, b];
-}
-
-function libOpts(
-  opts: { catalogDir: string; assetRoot: string },
-  store: Store
-) {
-  return {
-    store,
-    catalogDir: opts.catalogDir,
-    assetRoot: opts.assetRoot,
-  };
 }

@@ -4,6 +4,12 @@
  * names a part type. The error rows run both levels on one fixture world
  * and compare the instance at its own ports: the angle of its rotational
  * output and the current into its power input.
+ *
+ * The part, every part its netlist reaches and their types are read from
+ * the capture source (the project, then the catalog) and staged into the
+ * fixture world's copy, so the run measures what the signature names. A
+ * part that is not the scene instance's own part takes that instance's
+ * place when its type is the same.
  */
 import {
   type FormId,
@@ -16,10 +22,19 @@ import {
   SNAPSHOT_FORMAT,
   type SnapshotFile,
 } from "@sfab-bench/contract";
-import { contentHash, lintSnapshot, sortValue } from "@sfab-bench/parts";
+import {
+  contentHash,
+  documentNetlist,
+  environmentKind,
+  lintSnapshot,
+  loadPartById,
+  runRootOf,
+  sortValue,
+} from "@sfab-bench/parts";
 
 import type { CaptureEnv } from "./capture";
 import { groupSignature } from "./capture-signature";
+import type { CaptureSource } from "./capture-source";
 import type { AssignedPart } from "./circuit-stamp";
 import type { RunPlan } from "./plan";
 
@@ -33,6 +48,8 @@ export type GroupCaptureEntry = {
 
 export type GroupCaptureInput = {
   catalog: string;
+  /** Where the part, the parts it reaches and their types are read. */
+  source: CaptureSource;
   entry: GroupCaptureEntry;
   created: string;
   tool: { name: string; version: string };
@@ -129,25 +146,21 @@ export async function writeGroupSnapshot(
   const { entry } = input;
   const reduce = REDUCERS[entry.form];
   if (!reduce) throw new Error(`no group reduction to ${entry.form}`);
+  // Everything the signature reads, as the source read it, to stage.
+  const parts = new Map<string, { part: PartFile; inProject: boolean }>();
+  const types = new Map<string, { type: PartTypeFile; inProject: boolean }>();
   const read = (id: string): PartFile | null => {
-    const file = refPath(env.join(input.catalog, "parts"), id, env);
-    try {
-      return JSON.parse(env.readText(file)) as PartFile;
-    } catch {
-      return null;
-    }
+    const found = input.source.part(id);
+    if (found) parts.set(id, found);
+    return found?.part ?? null;
   };
   const readType = (id: string): PartTypeFile | null => {
-    try {
-      return JSON.parse(
-        env.readText(env.join(input.catalog, "types", `${id}.json`))
-      ) as PartTypeFile;
-    } catch {
-      return null;
-    }
+    const found = input.source.type(id);
+    if (found) types.set(id, found);
+    return found?.type ?? null;
   };
   const part = read(entry.part);
-  if (!part) throw new Error(`${entry.part} is not in the catalog`);
+  if (!part) throw new Error(`${entry.part} did not load`);
   const source = {
     level: entry.sourceLevel,
     variant: part.axes?.behaviour?.[entry.sourceLevel]?.default ?? "",
@@ -158,9 +171,9 @@ export async function writeGroupSnapshot(
       `${entry.part} class ${entry.sourceLevel} behaviour is not a composite`
     );
   }
-  const typeId = typeof part.type === "string" ? part.type : part.type.id;
-  const type = typeof part.type === "string" ? readType(typeId) : part.type;
-  if (!type) throw new Error(`${entry.part} type ${typeId} did not load`);
+  const type = input.source.typeOf(part);
+  if (!type) throw new Error(`${entry.part} type did not load`);
+  const typeId = type.id;
   const power = onePort(type, "power", (decl) => decl.role === "power");
   const shaft = onePort(
     type,
@@ -172,7 +185,14 @@ export async function writeGroupSnapshot(
   const root = env.makeTemp("sfab-capture-");
   try {
     env.copyTree(env.join(env.examplesDir(), entry.scene.project), root);
-    const worldText = env.readText(env.join(root, entry.scene.world));
+    stage(root, parts, types, env);
+    const worldText = placeInstance(
+      root,
+      input,
+      env.readText(env.join(root, entry.scene.world)),
+      typeId,
+      env
+    );
     const deep = writeSide(root, entry, "deep", worldText, env);
     const snapWorld = writeSide(root, entry, "snap", worldText, env);
     const planned = env.plan(root, deep);
@@ -317,6 +337,89 @@ function onePort(
     throw new Error(`${type.id} needs one ${label} port, has ${names.length}`);
   }
   return name;
+}
+
+/**
+ * Write each part and type the signature read into the fixture copy: the
+ * project's file over the copy's, and a catalog one by removing the copy's
+ * own shadow, so the run reads exactly what was signed.
+ */
+function stage(
+  root: string,
+  parts: Map<string, { part: PartFile; inProject: boolean }>,
+  types: Map<string, { type: PartTypeFile; inProject: boolean }>,
+  env: CaptureEnv
+): void {
+  for (const [id, found] of parts) {
+    const file = refPath(env.join(root, "parts"), id, env);
+    if (found.inProject) writeJson(file, found.part, env);
+    else env.removeTree(file);
+  }
+  for (const [id, found] of types) {
+    const file = env.join(root, "types", `${id}.json`);
+    if (found.inProject) writeJson(file, found.type, env);
+    else env.removeTree(file);
+  }
+}
+
+/**
+ * The scene world's text with the scene instance running the captured
+ * part. When the instance already names it, the text is unchanged. Else
+ * the composite that declares the instance (the world, or a part under it,
+ * found the way the loader names paths) points it at the captured part,
+ * which must be of the same type.
+ */
+function placeInstance(
+  root: string,
+  input: GroupCaptureInput,
+  worldText: string,
+  typeId: string,
+  env: CaptureEnv
+): string {
+  const { entry } = input;
+  const lib = { store: env.store, catalogDir: input.catalog, assetRoot: root };
+  const load = (ref: string | PartFile): PartFile | null => {
+    if (typeof ref !== "string") return ref;
+    const found = loadPartById(root, lib, ref);
+    return "part" in found ? found.part : null;
+  };
+  const world = JSON.parse(worldText) as PartFile;
+  const run = runRootOf(world, (id) => {
+    const found = load(id);
+    return found ? environmentKind(found) : "other";
+  });
+  const where = `${entry.scene.world} instance ${entry.scene.instance}`;
+  let holder: PartFile | null = run.unwrapped ? load(run.stage.part) : world;
+  const segments = entry.scene.instance.split(".");
+  const name = segments.pop() ?? "";
+  for (const segment of segments) {
+    const child = holder && documentNetlist(holder)?.instances[segment];
+    holder = child ? load(child.part) : null;
+  }
+  const slot = holder && documentNetlist(holder)?.instances[name];
+  if (!holder || !slot) throw new Error(`${where} does not exist`);
+  const from = slot.part;
+  if (typeof from !== "string") {
+    throw new Error(`${where} is an inline part; name a part file instead`);
+  }
+  if (from === entry.part) return worldText;
+  const was = load(from);
+  const wasType = was ? input.source.typeOf(was)?.id : undefined;
+  if (wasType !== typeId) {
+    throw new Error(
+      `${where} is a ${wasType ?? "part that did not load"}; ${entry.part} is a ${typeId}`
+    );
+  }
+  for (const level of Object.values(holder.axes?.behaviour ?? {})) {
+    for (const variant of Object.values(level?.variants ?? {})) {
+      const declared =
+        variant.kind === "composite" ? variant.netlist.instances[name] : null;
+      if (declared?.part === from) declared.part = entry.part;
+    }
+  }
+  if (holder.id === world.id) return JSON.stringify(holder);
+  writeJson(refPath(env.join(root, "parts"), holder.id, env), holder, env);
+  return worldText;
 }
 
 /** A copy of the scene world with the instance's levels for one side. */

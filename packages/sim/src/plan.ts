@@ -1793,7 +1793,7 @@ function noteFreshness(
     if (!snap) continue;
     const fresh = provenanceHash(
       snap.file,
-      { catalogDir: catalog, worldDir: world, assetRoot: world },
+      { catalogDir: catalog, worldDir: world },
       stamp
     );
     if (!fresh.checked) {

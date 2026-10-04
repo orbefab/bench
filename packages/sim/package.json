@@ -22,6 +22,7 @@
     "./analog-pin": "./src/analog-pin.ts",
     "./capture": "./src/capture.ts",
     "./capture-recipe": "./src/capture-recipe.ts",
+    "./capture-source": "./src/capture-source.ts",
     "./hinge-capture": "./src/body/hinge-capture.ts",
     "./env": "./src/env.ts",
     "./freshness": "./src/freshness.ts",

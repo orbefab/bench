@@ -1,4 +1,7 @@
-/** Which recipe captures a part's axis, and which level takes the result. */
+/**
+ * Which recipe captures a part's axis, which level takes the result, and
+ * whether the part's source can run it.
+ */
 import type {
   CaptureAxisName,
   CaptureRecipe,
@@ -8,7 +11,9 @@ import type { Store } from "@sfab-bench/parts";
 
 import type { HingeCaptureEntry } from "./body/hinge-capture";
 import type { AnyCaptureEntry, CaptureEntry, CaptureFile } from "./capture";
-import type { GroupCaptureEntry } from "./group-capture";
+import { groupSignature, hingeSignature } from "./capture-signature";
+import type { CaptureSource } from "./capture-source";
+import { type GroupCaptureEntry, isGroupForm } from "./group-capture";
 
 export type CaptureAxis = CaptureAxisName;
 
@@ -98,4 +103,50 @@ export function captureLevelFor(
     };
   }
   return { level: first };
+}
+
+/**
+ * Why the source cannot run this recipe, or null. The capture runners
+ * refuse with the same reason, so the card's readiness and the run agree.
+ * A fixture the run reads (a sweep's fixture file, a hinge's) must exist
+ * in the project or the catalog. What only the run can show (a stamp that
+ * does not build, a scene instance of another type) fails the run.
+ */
+export function captureProblem(
+  entry: AnyCaptureEntry,
+  source: CaptureSource
+): string | null {
+  const found = source.part(entry.part);
+  if (!found) return `${entry.part} did not load`;
+  const { part } = found;
+  if (!source.typeOf(part)) return `${entry.part} type did not load`;
+  const fixture = (id: string) =>
+    source.store.exists(source.fixture(id)) ? null : `no fixture ${id}`;
+  if ("scene" in entry) {
+    if (!isGroupForm(entry.form)) {
+      return `no group reduction to ${entry.form}`;
+    }
+    const variant = part.axes?.behaviour?.[entry.sourceLevel]?.default ?? "";
+    const read = (id: string) => source.part(id)?.part ?? null;
+    const readType = (id: string) => source.type(id)?.type ?? null;
+    const hash = groupSignature(
+      entry.part,
+      { level: entry.sourceLevel, variant },
+      read,
+      readType
+    );
+    return hash
+      ? null
+      : `${entry.part} class ${entry.sourceLevel} behaviour is not a composite`;
+  }
+  if ("form" in entry) {
+    const variant = part.axes?.body?.[entry.sourceLevel]?.default ?? "";
+    if (!hingeSignature(part, { level: entry.sourceLevel, variant })) {
+      return `${entry.part} class ${entry.sourceLevel} body is not a gear train`;
+    }
+    return fixture(entry.fixture);
+  }
+  return entry.sweep.fixture
+    ? fixture(entry.sweep.fixture)
+    : `${entry.part} capture needs a fixture`;
 }
