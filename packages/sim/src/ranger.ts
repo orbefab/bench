@@ -53,9 +53,14 @@ export type RunRanger = {
   pose: Pose;
   law: RangerLaw;
   pins: Record<string, RunPin>;
-  /** Board pin that drives Trig. Null when Trig is unwired. */
+  /**
+   * The type's trigger (logic in) and echo (logic out) ports. Null when
+   * the type declares none.
+   */
+  ports: { trig: string | null; echo: string | null };
+  /** Board pin that drives the trigger. Null when it is unwired. */
   trig: { boardId: string; bit: number } | null;
-  /** Board pin Echo drives. Null when Echo is unwired. */
+  /** Board pin the echo drives. Null when it is unwired. */
   echo: { boardId: string; bit: number } | null;
 };
 

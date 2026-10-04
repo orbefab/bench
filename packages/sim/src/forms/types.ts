@@ -1,12 +1,13 @@
 /**
  * Form adapters. Stamps moved from the circuit and plan if-chains (layered-sim A2b).
  */
-import type { BehaviourImpl } from "@sfab-bench/contract";
+import type { BehaviourImpl, DiagCode, Pose } from "@sfab-bench/contract";
 import type { Diode, Element } from "@sfab-bench/engine-circuit";
 import type { LiveInstance } from "@sfab-bench/parts";
 
 import type { AssignedPart } from "../circuit-stamp";
 import type { RunPin, RunSupply } from "../plan";
+import type { RunRanger } from "../ranger";
 
 export type StampedElements = {
   elements: Element[];
@@ -14,22 +15,30 @@ export type StampedElements = {
   led?: { path: string; diode: Diode };
 };
 
-/** What one supply form needs from the plan. The plan still owns the arrays. */
-export type SupplyCtx = {
+/** What one placed form needs from the plan. The plan still owns the arrays. */
+export type PlaceCtx = {
   inst: LiveInstance;
-  /** The selected behaviour. A supply place is only called for a form. */
+  /** The selected behaviour. Place is only called for a form. */
   behaviour: BehaviourImpl;
   typeId: string;
+  /** Card and recording label: the part id without publisher or version. */
+  model: string;
   numbers(): Record<string, number> | null;
   pins(): Record<string, RunPin>;
-  reject(detail: string): void;
-  add(supply: RunSupply): void;
-  box(): void;
+  /** The instance's pose in the document frame. */
+  pose(): Pose;
+  /** The board pin wired to `port`, when that wire lands on board GPIO. */
+  peer(port: string): { boardId: string; bit: number } | null;
+  /** A degraded row for this instance. Default code `bad-params`. */
+  reject(detail: string, code?: DiagCode): void;
+  addSupply(supply: RunSupply): void;
+  addRanger(ranger: RunRanger): void;
+  box(pick: "supply" | "part"): void;
 };
 
 /**
- * One form id. A circuit form stamps rail elements. A supply form places
- * itself on the plan. Param parse may call into parts.
+ * One form id. A circuit form stamps rail elements. A supply or sensor
+ * form places itself on the plan. Param parse may call into parts.
  */
 export type FormAdapter = {
   id: string;
@@ -57,5 +66,10 @@ export type FormAdapter = {
     behaviour: BehaviourImpl,
     params: Record<string, number | string | boolean>
   ) => Record<string, number> | null;
-  place?: (ctx: SupplyCtx) => void;
+  place?: (ctx: PlaceCtx) => void;
+  /**
+   * The form casts rays into the body world. A run with one moves every
+   * geom out of the ray group except targets and static primitives.
+   */
+  rays?: boolean;
 };

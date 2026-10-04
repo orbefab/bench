@@ -79,7 +79,7 @@ import {
 import type { PlanEnv, StampEnv } from "./env";
 import { formAdapter } from "./forms";
 import { provenanceHash } from "./freshness";
-import type { RangerLaw, RunRanger } from "./ranger";
+import type { RunRanger } from "./ranger";
 import { coupleShafts, type RunControl, type RunShaft } from "./shafts";
 import { readTargets } from "./targets";
 import { runTree } from "./tree";
@@ -322,6 +322,12 @@ export type RunPlan = {
    * `build` always sets this, possibly empty.
    */
   rangers?: RunRanger[];
+  /**
+   * A placed form casts rays into the body world (`FormAdapter.rays`).
+   * The body model then keeps only targets and static primitives in the
+   * ray group. Absent: no form casts.
+   */
+  rays?: boolean;
   /** Electrical pairs only. Mechanical links are `parts[].drives`. */
   wires: [string, string][];
   /** The scene's own electrical wires as authored, for the cards. */
@@ -1019,22 +1025,6 @@ function stampSupply(
   });
 }
 
-function rangerLaw(numbers: Record<string, number>): RangerLaw {
-  return {
-    c: numbers.c ?? 0,
-    rangeMin: numbers.rangeMin ?? 0,
-    rangeMax: numbers.rangeMax ?? 0,
-    beamHalf: numbers.beamHalf ?? 0,
-    trigMin: numbers.trigMin ?? 0,
-    echoDelay: numbers.echoDelay ?? 0,
-    echoTimeout: numbers.echoTimeout ?? 0,
-    working: numbers.working ?? 0,
-    quiescent: numbers.quiescent ?? 0,
-    vMin: numbers.vMin ?? 0,
-    face: numbers.face ?? 0,
-  };
-}
-
 function build(
   loaded: LoadResult,
   assetRoot: string,
@@ -1050,6 +1040,8 @@ function build(
   const parts: RunPart[] = [];
   const leaves: { id: string; model: string }[] = [];
   const rangers: RunRanger[] = [];
+  // A placed form that casts rays into the body world.
+  let rays = false;
   const boxes: RunBox[] = [];
   const circuits: CircuitInst[] = [];
   const trainParts: LiveInstance[] = [];
@@ -1061,8 +1053,8 @@ function build(
   // joint, a hinge@1 snapshot, or the collapse of a gear train; forms
   // dc-motor@1, servo-control@1 and potentiometer@1, coupled to a joint
   // after the loop; a gear-train body with no behaviour, the collapse a
-  // motor reaches through it; form ranger@1. Anything else is a plan
-  // error that names the path.
+  // motor reaches through it; a form whose adapter places it (the
+  // supplies, ranger@1). Anything else is a plan error that names the path.
   const byPath = new Map(loaded.resolved.map((item) => [item.path, item]));
   const scene = scenePoses(loaded.resolved);
   const poseOf = (inst: LiveInstance): Pose => scene.get(inst.path) ?? IDENTITY;
@@ -1214,25 +1206,30 @@ function build(
       });
       continue;
     }
-    const place =
-      behaviour?.kind === "form"
-        ? formAdapter(behaviour.form)?.place
-        : undefined;
-    if (place && behaviour?.kind === "form") {
-      place({
+    const adapter =
+      behaviour?.kind === "form" ? formAdapter(behaviour.form) : undefined;
+    if (adapter?.place && behaviour?.kind === "form") {
+      if (adapter.rays) rays = true;
+      adapter.place({
         inst,
         behaviour,
         typeId,
+        model: shortName(inst.part.id),
         numbers: () => formNumbers(inst),
         pins: () => pinsOf(inst.type.ports),
-        reject: (detail) => {
-          diags.push(cannot(inst, detail, "bad-params"));
+        pose: () => poseOf(inst),
+        peer: (port) => digitalPeer(inst, port, loaded, boards),
+        reject: (detail, code = "bad-params") => {
+          diags.push(cannot(inst, detail, code));
         },
-        add: (supply) => {
+        addSupply: (supply) => {
           supplies.push(supply);
         },
-        box: () => {
-          pushBox(boxes, inst, poseOf(inst), "supply");
+        addRanger: (ranger) => {
+          rangers.push(ranger);
+        },
+        box: (pick) => {
+          pushBox(boxes, inst, poseOf(inst), pick);
         },
       });
       continue;
@@ -1295,26 +1292,6 @@ function build(
         ...(hinge.bodySnapshot ? { bodySnapshot: hinge.bodySnapshot } : {}),
         ...behaviourSnapshotOf(inst, loaded),
         ...(drives ? { drives } : {}),
-      });
-      pushBox(boxes, inst, poseOf(inst), "part");
-      continue;
-    }
-    if (behaviour?.kind === "form" && behaviour.form === "ranger@1") {
-      const numbers = formNumbers(inst);
-      if (!numbers) {
-        diags.push(cannot(inst, "the run needs ranger@1"));
-        continue;
-      }
-      // The ray uses this scene pose for the whole run. A sensor on a
-      // moving link is not supported yet.
-      rangers.push({
-        id: inst.path,
-        model: shortName(inst.part.id),
-        pose: poseOf(inst),
-        law: rangerLaw(numbers),
-        pins: pinsOf(inst.type.ports),
-        trig: digitalPeer(inst, "Trig", loaded, boards),
-        echo: digitalPeer(inst, "Echo", loaded, boards),
       });
       pushBox(boxes, inst, poseOf(inst), "part");
       continue;
@@ -1646,6 +1623,7 @@ function build(
       parts,
       leaves,
       rangers,
+      ...(rays ? { rays } : {}),
       boxes,
       wires: electricalWires(loaded.nets),
       shownWires: authoredWires(loaded.nets, loaded.wires),

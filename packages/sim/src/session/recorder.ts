@@ -15,7 +15,7 @@ import {
   type WorldState,
 } from "@sfab-bench/contract";
 import type { RunPlan } from "../plan";
-import { probeTracks } from "../probe";
+import { type ProbeIndex, probeTracks } from "../probe";
 import type { RailCircuit } from "../rail-circuit";
 import { motionRank, RunRecorder, timelineFromRead } from "../record";
 import type { RecordBody, RecordQuery, ToWorker } from "../sim";
@@ -586,7 +586,16 @@ export function record(s: SessionState, query: RecordQuery): RecordBody {
     const pins: Record<string, readonly string[]> = {};
     for (const board of s.runPlan?.boards ?? [])
       pins[board.id] = board.pinOrder;
-    const probed = probeTracks(read, query.tracks, { shafts, pins });
+    const rangers: NonNullable<ProbeIndex["rangers"]> = {};
+    for (const ranger of s.runPlan?.rangers ?? []) {
+      rangers[ranger.id] = {
+        power: Object.keys(ranger.pins).filter(
+          (pin) => ranger.pins[pin]?.kind === "power"
+        ),
+        echo: ranger.ports.echo,
+      };
+    }
+    const probed = probeTracks(read, query.tracks, { shafts, pins, rangers });
     return {
       op: "timeline",
       id: info.id,

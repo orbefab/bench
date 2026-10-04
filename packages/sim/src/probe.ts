@@ -20,6 +20,12 @@ export type ProbeIndex = {
   shafts: Record<string, string>;
   /** Board id to exposed GPIO names, in pin-state order. */
   pins: Record<string, readonly string[]>;
+  /**
+   * Ranger id to the ports its recorded row answers: the power ports
+   * (voltage and current) and the echo port (echo width). Absent ids read
+   * nothing.
+   */
+  rangers?: Record<string, { power: readonly string[]; echo: string | null }>;
 };
 
 type Kind = "servo" | "ranger" | "supply" | "board" | "robot";
@@ -107,13 +113,14 @@ function channelsOf(
     return [];
   }
   if (kind === "ranger") {
-    if (port === "VCC") {
+    const ports = index.rangers?.[instance];
+    if (ports?.power.includes(port)) {
       return [
         { unit: "V", pick: partChannel(instance, (p) => p.voltage) },
         { unit: "A", pick: partChannel(instance, (p) => p.current) },
       ];
     }
-    if (port === "Echo") {
+    if (ports && port === ports.echo) {
       return [
         {
           unit: "ms",

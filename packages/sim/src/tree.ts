@@ -535,7 +535,6 @@ function captureOf(
 
 const SCENE_FORMS = new Set([
   "position-servo@1",
-  "ranger@1",
   "multibody@1",
   "ground-plane@1",
   "target@1",

@@ -80,12 +80,7 @@ function endpointPin(plan: PowerWiring, endpoint: string): RunPin | null {
   const part = plan.parts.find((item) => item.id === split.inst);
   if (part) return part.pins[split.port] ?? null;
   const ranger = plan.rangers?.find((item) => item.id === split.inst);
-  if (ranger && split.port === "VCC") {
-    return { kind: "power", output: false, digital: false, pwm: false };
-  }
-  if (ranger && split.port === "GND") {
-    return { kind: "ground", output: false, digital: false, pwm: false };
-  }
+  if (ranger) return ranger.pins[split.port] ?? null;
   const supply = plan.supplies.find((item) => item.id === split.inst);
   if (supply) return supply.pins[split.port] ?? null;
   return null;
@@ -266,7 +261,13 @@ export function powerFeedsOf(plan: RunPlan): PowerFeeds {
     parts[part.id] = feed ?? regulatedSupply(plan, boards, reached);
   }
   for (const ranger of plan.rangers ?? []) {
-    const hit = reachedFrom(`${ranger.id}.VCC`, adjacent);
+    const hit = new Set<string>();
+    for (const [pin, spec] of Object.entries(ranger.pins)) {
+      if (spec.kind !== "power") continue;
+      for (const node of reachedFrom(`${ranger.id}.${pin}`, adjacent)) {
+        hit.add(node);
+      }
+    }
     parts[ranger.id] =
       supplyOn(plan, hit) ?? regulatedSupply(plan, boards, hit);
   }

@@ -46,7 +46,11 @@ export type BodyScene = {
     motor?: BodyMotor;
     torqueNm?: number;
   }[];
-  rangers?: { length: number };
+  /**
+   * A part in the run casts rays. Rays test group 0, so only targets and
+   * static primitives stay there.
+   */
+  rays?: boolean;
 };
 
 const TIMESTEP_S = 0.001;
@@ -620,10 +624,10 @@ export async function compileWorld(
     applyServoTorqueClamp(mj, model, worldDoc);
     applyServoDynamics(mj, model, worldDoc);
     applyLimitSolref(mj, model, urdfLimitSolref(worldDoc, files));
-    // Rays test group 0. With a ranger in the run, only targets and
+    // Rays test group 0. With a part that casts rays, only targets and
     // static primitives stay there. Robots and the ground move to
-    // group 1. A world with no ranger keeps every geom in the default group.
-    if ((worldDoc.rangers?.length ?? 0) > 0) {
+    // group 1. A world with none keeps every geom in the default group.
+    if (worldDoc.rays === true) {
       const geomModel = model;
       const groups = geomModel.geom_group as Uint8Array;
       for (let i = 0; i < geomModel.ngeom; i++) groups[i] = 1;
