@@ -5,7 +5,6 @@
  */
 import type { MainModule, MjData, MjModel } from "@mujoco/mujoco";
 import {
-  FIXTURE_FORMAT,
   type FixtureFile,
   type GearTrain,
   type PartFile,
@@ -76,11 +75,8 @@ export async function writeHingeSnapshot(
   const type = input.source.typeOf(part);
   if (!type) throw new Error(`${part.id} type did not load`);
   const typeId = type.id;
-  const fixturePath = input.source.fixture(input.entry.fixture);
-  const fixture = JSON.parse(env.readText(fixturePath)) as FixtureFile;
-  if (fixture.format !== FIXTURE_FORMAT) {
-    throw new Error(`${input.entry.fixture} is not ${FIXTURE_FORMAT}`);
-  }
+  const fixture = input.source.readFixture(input.entry.fixture);
+  if (typeof fixture === "string") throw new Error(fixture);
   const hinge = collapse(train);
   const cases = casesOf(fixture);
   const mj = await mujoco();
@@ -244,6 +240,26 @@ function gearTrainOf(
     throw new Error(`${part.id} class ${level} body is not a gear train`);
   }
   return impl;
+}
+
+/**
+ * Why this part and type cannot take a hinge capture, or null: the type
+ * names its rotational output and the part rates that shaft's speed and
+ * torque (the fixture must reach both).
+ */
+export function hingeProblem(
+  part: PartFile,
+  type: PartTypeFile
+): string | null {
+  const shaft = Object.values(type.ports).some(
+    (decl) => decl.domain === "rotational" && decl.direction === "out"
+  );
+  if (!shaft) return `${type.id} has no rotational output`;
+  const ratings = part.ratings?.shaft;
+  if (!pair(ratings?.speed) || !pair(ratings?.torque)) {
+    return `${part.id} shaft has no speed and torque ratings`;
+  }
+  return null;
 }
 
 function shaftName(type: PartTypeFile): string {

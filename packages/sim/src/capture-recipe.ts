@@ -5,15 +5,21 @@
 import type {
   CaptureAxisName,
   CaptureRecipe,
+  FixtureFile,
   PartFile,
+  PartTypeFile,
 } from "@sfab-bench/contract";
 import type { Store } from "@sfab-bench/parts";
 
-import type { HingeCaptureEntry } from "./body/hinge-capture";
+import { type HingeCaptureEntry, hingeProblem } from "./body/hinge-capture";
 import type { AnyCaptureEntry, CaptureEntry, CaptureFile } from "./capture";
 import { groupSignature, hingeSignature } from "./capture-signature";
 import type { CaptureSource } from "./capture-source";
-import { type GroupCaptureEntry, isGroupForm } from "./group-capture";
+import {
+  type GroupCaptureEntry,
+  groupPorts,
+  isGroupForm,
+} from "./group-capture";
 
 export type CaptureAxis = CaptureAxisName;
 
@@ -109,8 +115,9 @@ export function captureLevelFor(
  * Why the source cannot run this recipe, or null. The capture runners
  * refuse with the same reason, so the card's readiness and the run agree.
  * A fixture the run reads (a sweep's fixture file, a hinge's) must exist
- * in the project or the catalog. What only the run can show (a stamp that
- * does not build, a scene instance of another type) fails the run.
+ * in the project or the catalog and parse. What only the run can show (a
+ * stamp that does not build, a scene instance of another type) fails the
+ * run.
  */
 export function captureProblem(
   entry: AnyCaptureEntry,
@@ -119,13 +126,14 @@ export function captureProblem(
   const found = source.part(entry.part);
   if (!found) return `${entry.part} did not load`;
   const { part } = found;
-  if (!source.typeOf(part)) return `${entry.part} type did not load`;
-  const fixture = (id: string) =>
-    source.store.exists(source.fixture(id)) ? null : `no fixture ${id}`;
+  const type = source.typeOf(part);
+  if (!type) return `${entry.part} type did not load`;
   if ("scene" in entry) {
     if (!isGroupForm(entry.form)) {
       return `no group reduction to ${entry.form}`;
     }
+    const ports = groupPorts(type);
+    if (typeof ports === "string") return ports;
     const variant = part.axes?.behaviour?.[entry.sourceLevel]?.default ?? "";
     const read = (id: string) => source.part(id)?.part ?? null;
     const readType = (id: string) => source.type(id)?.type ?? null;
@@ -144,9 +152,44 @@ export function captureProblem(
     if (!hingeSignature(part, { level: entry.sourceLevel, variant })) {
       return `${entry.part} class ${entry.sourceLevel} body is not a gear train`;
     }
-    return fixture(entry.fixture);
+    const fixture = source.readFixture(entry.fixture);
+    if (typeof fixture === "string") return fixture;
+    return hingeProblem(part, type);
   }
-  return entry.sweep.fixture
-    ? fixture(entry.sweep.fixture)
-    : `${entry.part} capture needs a fixture`;
+  const across = acrossFor(entry, type);
+  if (typeof across === "string") return across;
+  if (!entry.sweep.fixture) return `${entry.part} capture needs a fixture`;
+  const fixture = source.readFixture(entry.sweep.fixture);
+  if (typeof fixture === "string") return fixture;
+  const sweep = currentSweep(fixture, entry);
+  return typeof sweep === "string" ? sweep : null;
+}
+
+/** The entry's port pair, or why it has none. */
+export function acrossFor(
+  entry: CaptureEntry,
+  type: PartTypeFile
+): [string, string] | string {
+  if (entry.across && entry.across.length === 2) return entry.across;
+  const exposed = Object.entries(type.ports)
+    .filter(([, decl]) => decl.role !== "ground")
+    .map(([name]) => name);
+  return exposed.length >= 2
+    ? `${entry.part} has ${exposed.join(" and ")} exposed and no across`
+    : `${entry.part} capture entry has no across`;
+}
+
+/** The fixture's current sweep through the entry's port, or why none. */
+export function currentSweep(
+  fixture: FixtureFile,
+  entry: CaptureEntry
+): number[] | string {
+  const current = fixture.sweeps.find(
+    (row) =>
+      row.port === (entry.sweep.currentPort ?? entry.through) &&
+      row.quantity === entry.sweep.currentQuantity
+  );
+  return current
+    ? current.values
+    : `${entry.part} fixture has no current sweep`;
 }

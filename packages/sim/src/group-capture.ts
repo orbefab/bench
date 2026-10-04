@@ -15,6 +15,7 @@ import {
   type FormId,
   type GroupCaptureRecipe,
   type LevelSpec,
+  type NetlistInstance,
   type PartFile,
   type PartTypeFile,
   type RecordedFrame,
@@ -24,7 +25,6 @@ import {
 } from "@sfab-bench/contract";
 import {
   contentHash,
-  documentNetlist,
   environmentKind,
   lintSnapshot,
   loadPartById,
@@ -147,7 +147,10 @@ export async function writeGroupSnapshot(
   const reduce = REDUCERS[entry.form];
   if (!reduce) throw new Error(`no group reduction to ${entry.form}`);
   // Everything the signature reads, as the source read it, to stage.
-  const parts = new Map<string, { part: PartFile; inProject: boolean }>();
+  const parts = new Map<
+    string,
+    { part: PartFile; inProject: boolean; overlay?: string }
+  >();
   const types = new Map<string, { type: PartTypeFile; inProject: boolean }>();
   const read = (id: string): PartFile | null => {
     const found = input.source.part(id);
@@ -174,12 +177,9 @@ export async function writeGroupSnapshot(
   const type = input.source.typeOf(part);
   if (!type) throw new Error(`${entry.part} type did not load`);
   const typeId = type.id;
-  const power = onePort(type, "power", (decl) => decl.role === "power");
-  const shaft = onePort(
-    type,
-    "rotational",
-    (decl) => decl.domain === "rotational"
-  );
+  const ports = groupPorts(type);
+  if (typeof ports === "string") throw new Error(ports);
+  const { power, shaft } = ports;
   const { instance } = entry.scene;
 
   const root = env.makeTemp("sfab-capture-");
@@ -324,36 +324,65 @@ function lintOf(snap: SnapshotFile, type: PartTypeFile) {
   });
 }
 
+/**
+ * The ports a group capture compares at: the type's one power input and
+ * its one rotational port. A string says why the type has no such pair.
+ */
+export function groupPorts(
+  type: PartTypeFile
+): { power: string; shaft: string } | string {
+  const power = onePort(type, "power", (decl) => decl.role === "power");
+  if (typeof power === "string") return power;
+  const shaft = onePort(
+    type,
+    "rotational",
+    (decl) => decl.domain === "rotational"
+  );
+  if (typeof shaft === "string") return shaft;
+  return { power: power.name, shaft: shaft.name };
+}
+
 function onePort(
   type: PartTypeFile,
   label: string,
   match: (decl: PartTypeFile["ports"][string]) => boolean
-): string {
+): { name: string } | string {
   const names = Object.entries(type.ports)
     .filter(([, decl]) => match(decl))
     .map(([name]) => name);
   const [name, ...more] = names;
   if (!name || more.length > 0) {
-    throw new Error(`${type.id} needs one ${label} port, has ${names.length}`);
+    return `${type.id} needs one ${label} port, has ${names.length}`;
   }
-  return name;
+  return { name };
 }
 
 /**
- * Write each part and type the signature read into the fixture copy: the
- * project's file over the copy's, and a catalog one by removing the copy's
- * own shadow, so the run reads exactly what was signed.
+ * Write each part and type the signature read into the fixture copy, so
+ * the run reads exactly what was signed: the project's file over the
+ * copy's; a catalog one by removing the copy's own shadow, with the
+ * project's level overlay for it when there is one (the loader merges it
+ * the same way there), and the copy's own overlay removed when not.
  */
 function stage(
   root: string,
-  parts: Map<string, { part: PartFile; inProject: boolean }>,
+  parts: Map<string, { part: PartFile; inProject: boolean; overlay?: string }>,
   types: Map<string, { type: PartTypeFile; inProject: boolean }>,
   env: CaptureEnv
 ): void {
   for (const [id, found] of parts) {
     const file = refPath(env.join(root, "parts"), id, env);
-    if (found.inProject) writeJson(file, found.part, env);
-    else env.removeTree(file);
+    if (found.inProject) {
+      writeJson(file, found.part, env);
+      continue;
+    }
+    env.removeTree(file);
+    const overlay = refPath(env.join(root, "overlays"), id, env).replace(
+      /\.json$/,
+      ".levels.json"
+    );
+    if (found.overlay) env.writeText(overlay, env.readText(found.overlay));
+    else env.removeTree(overlay);
   }
   for (const [id, found] of types) {
     const file = env.join(root, "types", `${id}.json`);
@@ -362,12 +391,28 @@ function stage(
   }
 }
 
+/** Every slot a part's composites declare under one name, at any level. */
+function slotsOf(part: PartFile, name: string): NetlistInstance[] {
+  const out: NetlistInstance[] = [];
+  for (const level of Object.values(part.axes?.behaviour ?? {})) {
+    for (const variant of Object.values(level?.variants ?? {})) {
+      if (variant.kind !== "composite") continue;
+      const slot = variant.netlist.instances[name];
+      if (slot) out.push(slot);
+    }
+  }
+  return out;
+}
+
 /**
  * The scene world's text with the scene instance running the captured
  * part. When the instance already names it, the text is unchanged. Else
  * the composite that declares the instance (the world, or a part under it,
- * found the way the loader names paths) points it at the captured part,
- * which must be of the same type.
+ * walked from where the loader starts paths) points it at the captured
+ * part, at every level that declares it. Refused: a captured part of
+ * another type, an inline instance, a path whose levels name different
+ * parts, and a declaring part the scene holds more than once (each copy
+ * would run the captured part, while the levels name only this path).
  */
 function placeInstance(
   root: string,
@@ -389,16 +434,26 @@ function placeInstance(
     return found ? environmentKind(found) : "other";
   });
   const where = `${entry.scene.world} instance ${entry.scene.instance}`;
+  /** The one part every level of `part` names at `name`. */
+  const oneRef = (part: PartFile, name: string): string | PartFile => {
+    const refs = slotsOf(part, name).map((slot) => slot.part);
+    const [first, ...rest] = refs;
+    if (first === undefined) throw new Error(`${where} does not exist`);
+    if (rest.some((ref) => ref !== first)) {
+      throw new Error(
+        `${where}: ${part.id} names different parts at ${name} on different levels`
+      );
+    }
+    return first;
+  };
   let holder: PartFile | null = run.unwrapped ? load(run.stage.part) : world;
   const segments = entry.scene.instance.split(".");
   const name = segments.pop() ?? "";
   for (const segment of segments) {
-    const child = holder && documentNetlist(holder)?.instances[segment];
-    holder = child ? load(child.part) : null;
+    holder = holder ? load(oneRef(holder, segment)) : null;
   }
-  const slot = holder && documentNetlist(holder)?.instances[name];
-  if (!holder || !slot) throw new Error(`${where} does not exist`);
-  const from = slot.part;
+  if (!holder) throw new Error(`${where} does not exist`);
+  const from = oneRef(holder, name);
   if (typeof from !== "string") {
     throw new Error(`${where} is an inline part; name a part file instead`);
   }
@@ -410,16 +465,49 @@ function placeInstance(
       `${where} is a ${wasType ?? "part that did not load"}; ${entry.part} is a ${typeId}`
     );
   }
-  for (const level of Object.values(holder.axes?.behaviour ?? {})) {
-    for (const variant of Object.values(level?.variants ?? {})) {
-      const declared =
-        variant.kind === "composite" ? variant.netlist.instances[name] : null;
-      if (declared?.part === from) declared.part = entry.part;
+  if (holder.id !== world.id) {
+    const copies = instancesOf(world, holder.id, load, new Set());
+    if (copies !== 1) {
+      throw new Error(
+        `${where}: ${holder.id} is in the scene ${copies} times; each would run ${entry.part}`
+      );
     }
   }
+  for (const slot of slotsOf(holder, name)) slot.part = entry.part;
   if (holder.id === world.id) return JSON.stringify(holder);
   writeJson(refPath(env.join(root, "parts"), holder.id, env), holder, env);
   return worldText;
+}
+
+/** How many instances of `id` are under `part`, at any level. */
+function instancesOf(
+  part: PartFile,
+  id: string,
+  load: (ref: string | PartFile) => PartFile | null,
+  walking: Set<string>
+): number {
+  if (walking.has(part.id)) return 0;
+  walking.add(part.id);
+  let count = 0;
+  const names = new Set<string>();
+  for (const level of Object.values(part.axes?.behaviour ?? {})) {
+    for (const variant of Object.values(level?.variants ?? {})) {
+      if (variant.kind !== "composite") continue;
+      for (const name of Object.keys(variant.netlist.instances)) {
+        names.add(name);
+      }
+    }
+  }
+  for (const name of names) {
+    const refs = new Set(slotsOf(part, name).map((slot) => slot.part));
+    for (const ref of refs) {
+      if (ref === id) count += 1;
+      const child = load(ref);
+      if (child) count += instancesOf(child, id, load, walking);
+    }
+  }
+  walking.delete(part.id);
+  return count;
 }
 
 /** A copy of the scene world with the instance's levels for one side. */

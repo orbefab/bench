@@ -5,13 +5,17 @@
  * - a group capture of a project shadow with an edited child (the SG90
  *   control's `eSat`) reduces the edited value, and is fresh in that
  *   project and stale against the catalog alone;
+ * - a project level overlay on a catalog child (a class 2 control the
+ *   group's deep side then runs) is run, not only signed;
  * - a project-only group (its own id, inline type, its own control) runs
  *   in the scene in place of the scene's instance of the same type; one
  *   of another type is refused;
  * - a hinge capture of a project shadow with an edited gear train fits
  *   that train (output friction ×1.1: a heavier rotor no longer reaches
  *   the shaft's rated speed on the fixture, and the runner refuses it); a project-only part's hinge capture works;
- * - the card's readiness and the run refuse a source with the same reason;
+ * - the card's readiness and the run refuse a source with the same reason,
+ *   and the shared check names a group type with no shaft and a fixture
+ *   that does not parse, as the runner does;
  * - the catalog's bytes do not change.
  */
 
@@ -38,6 +42,8 @@ import type {
   WorldViewNode,
 } from "@sfab-bench/contract";
 import type { AnyCaptureEntry, CaptureFile } from "@sfab-bench/sim/capture";
+import { captureProblem } from "@sfab-bench/sim/capture-recipe";
+import { captureSource } from "@sfab-bench/sim/capture-source";
 import { provenanceHash } from "@sfab-bench/sim/freshness";
 import { viewOf } from "@sfab-bench/sim/view";
 import { captureFromConfig } from "./capture";
@@ -193,6 +199,36 @@ try {
   );
   rmSync(partFile(project, CONTROL));
 
+  // A level overlay on the catalog control adds class 2, which the deep
+  // side's behaviour 2 then runs: the capture runs it, not only signs it.
+  const tuned = structuredClone(
+    catalogPart(CONTROL).axes?.behaviour?.["1"]?.variants.model
+  );
+  if (tuned?.kind !== "form") throw new Error("the control has no model form");
+  (tuned.params as Record<string, number>).eSat = 0.45;
+  const overlayFile = join(
+    project,
+    "overlays/sfab/sg90-control@1.0.0.levels.json"
+  );
+  writeJson(overlayFile, {
+    format: "sfab.level-overlay@1",
+    part: CONTROL,
+    axes: { behaviour: { "2": { variants: { tuned } } } },
+  });
+  const overlaid = await capture(
+    project,
+    groupEntry(SG90, "sfab/sg90-servo@1.0.0")
+  );
+  expect(
+    overlaid.params.eSat === 0.45,
+    `the overlay capture reduced eSat ${overlaid.params.eSat}`
+  );
+  freshIn(project, overlaid, "control overlay");
+  rmSync(overlayFile);
+  console.log(
+    `capture-source: a class 2 overlay on the catalog control is run: eSat ${overlaid.params.eSat}, fresh`
+  );
+
   // 2. A project-only group: its own id, an inline type, its own control.
   const LOCAL = "local/servo@1.0.0";
   const LOCAL_CONTROL = "local/servo-control@1.0.0";
@@ -317,6 +353,49 @@ try {
   console.log(`capture-source: readiness and the run both refuse: ${reason}`);
 } finally {
   rmSync(arm, { recursive: true, force: true });
+}
+
+// The shared check's other source refusals, against the runner's.
+const odd = mkdtempSync(join(tmpdir(), "capture-source-odd-"));
+try {
+  const source = captureSource(catalog, odd, nodeStampEnv);
+  const servoType = readJson<PartTypeFile>(
+    join(catalog, "types", "hobby-servo-3wire.json")
+  );
+  const noShaft = catalogPart(SG90);
+  noShaft.id = "local/no-shaft@1.0.0";
+  noShaft.type = {
+    ...servoType,
+    id: "hobby-servo-no-shaft",
+    ports: Object.fromEntries(
+      Object.entries(servoType.ports).filter(
+        ([, decl]) => decl.domain !== "rotational"
+      )
+    ),
+  };
+  writeJson(partFile(odd, noShaft.id), noShaft);
+  const shaftless = groupEntry(noShaft.id, "local/no-shaft-group@1.0.0");
+  const said = captureProblem(shaftless, source);
+  const ran = await refusal(odd, shaftless);
+  expect(
+    said !== null && said === ran && said.includes("rotational"),
+    `a type with no shaft: readiness "${said}", the run "${ran}"`
+  );
+  writeJson(join(odd, "fixtures/sfab/sg90-body.fixture.json"), {
+    format: "not-a-fixture",
+  });
+  const hinge = hingeEntry(SG90, "sfab/sg90-hinge@1.0.0");
+  const badFixture = captureProblem(hinge, source);
+  const hingeRan = await refusal(odd, hinge);
+  expect(
+    badFixture !== null && badFixture === hingeRan,
+    `a bad fixture: readiness "${badFixture}", the run "${hingeRan}"`
+  );
+  console.log(
+    `capture-source: readiness and the run refuse alike: ${said}; ${badFixture}`
+  );
+} finally {
+  rmSync(odd, { recursive: true, force: true });
 }
 
 expect(treeHash(catalog) === catalogBefore, "a capture changed the catalog");

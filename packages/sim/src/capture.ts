@@ -33,9 +33,13 @@ import {
   writeHingeSnapshot,
 } from "./body/hinge-capture";
 import { branchDc } from "./branch-dc";
-import { captureProblem } from "./capture-recipe";
+import { acrossFor, captureProblem, currentSweep } from "./capture-recipe";
 import { stampSignature } from "./capture-signature";
-import { type CaptureSource, captureSource } from "./capture-source";
+import {
+  type CaptureSource,
+  captureSource,
+  readFixtureFile,
+} from "./capture-source";
 import { assemblyStampOf, type BoardStamp } from "./circuit-stamp";
 import type { StampEnv } from "./env";
 import { type GroupCaptureEntry, writeGroupSnapshot } from "./group-capture";
@@ -272,11 +276,11 @@ async function captureEntry(
   env: CaptureEnv,
   stampEnv: StampEnv
 ): Promise<CaptureStats> {
-  const source = captureSource(catalog, opts.projectDir, env);
-  const problem = captureProblem(
-    config,
-    opts.fixtureFile ? withFixture(source, opts.fixtureFile) : source
-  );
+  const projected = captureSource(catalog, opts.projectDir, env);
+  const source = opts.fixtureFile
+    ? withFixture(projected, opts.fixtureFile)
+    : projected;
+  const problem = captureProblem(config, source);
   if (problem) throw new Error(problem);
   if ("scene" in config) {
     const group = progressOf(opts, 1);
@@ -314,7 +318,8 @@ async function captureEntry(
     await hinge.step("hinge snapshot");
     return emptyStats();
   }
-  const across = acrossOf(config, source);
+  const across = acrossFor(config, typeOfPart(config.part, source));
+  if (typeof across === "string") throw new Error(across);
   const stamp = assemblyStampOf(
     config.part,
     config.variant,
@@ -334,10 +339,10 @@ async function captureEntry(
   }
   const dc = (amps: number) => branchDc(stamp, across[0], across[1], amps);
   const fixture = config.sweep.fixture
-    ? readFixture(opts.fixtureFile ?? source.fixture(config.sweep.fixture), env)
+    ? fixtureOf(source, config.sweep.fixture)
     : null;
   const sweep = fixture
-    ? sweepsOf(fixture, config)
+    ? { current: sweepOf(fixture, config) }
     : { current: config.sweep.current ?? [] };
   const tripA = sweep.current[sweep.current.length - 1] ?? 0;
   const envelopeMaxA = sweep.current[sweep.current.length - 1];
@@ -513,7 +518,11 @@ function typeOfPart(partId: string, source: CaptureSource): PartTypeFile {
 }
 /** The source with one fixture file in place of the one it would read. */
 function withFixture(source: CaptureSource, file: string): CaptureSource {
-  return { ...source, fixture: () => file };
+  return {
+    ...source,
+    fixture: () => file,
+    readFixture: (id) => readFixtureFile(source.store, file, id),
+  };
 }
 function lintBoard(snap: SnapshotFile, type: PartTypeFile) {
   return lintSnapshot(snap, { plausible: type.plausible, ports: type.ports });
@@ -598,43 +607,16 @@ function writeSnapshot(
   return json;
 }
 
-function readFixture(file: string, env: CaptureEnv): FixtureFile {
-  const fixture = JSON.parse(env.readText(file)) as FixtureFile;
-  if (fixture.format !== FIXTURE_FORMAT) {
-    throw new Error(`fixture format ${fixture.format}`);
-  }
+function fixtureOf(source: CaptureSource, id: string): FixtureFile {
+  const fixture = source.readFixture(id);
+  if (typeof fixture === "string") throw new Error(fixture);
   return fixture;
 }
 
-function sweepsOf(
-  fixture: FixtureFile,
-  entry: CaptureEntry
-): { current: number[] } {
-  const current = fixture.sweeps.find(
-    (row) =>
-      row.port === (entry.sweep.currentPort ?? entry.through) &&
-      row.quantity === entry.sweep.currentQuantity
-  );
-  if (!current) {
-    throw new Error(`${entry.part} fixture has no current sweep`);
-  }
-  return { current: current.values };
-}
-
-function acrossOf(
-  entry: CaptureEntry,
-  source: CaptureSource
-): [string, string] {
-  if (entry.across && entry.across.length === 2) return entry.across;
-  const type = typeOfPart(entry.part, source);
-  const exposed = Object.entries(type.ports)
-    .filter(([, decl]) => decl.role !== "ground")
-    .map(([name]) => name);
-  throw new Error(
-    exposed.length >= 2
-      ? `${entry.part} has ${exposed.join(" and ")} exposed and no across`
-      : `${entry.part} capture entry has no across`
-  );
+function sweepOf(fixture: FixtureFile, entry: CaptureEntry): number[] {
+  const current = currentSweep(fixture, entry);
+  if (typeof current === "string") throw new Error(current);
+  return current;
 }
 
 function benchVersions(env: CaptureEnv): {
