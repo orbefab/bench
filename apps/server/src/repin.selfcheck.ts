@@ -367,6 +367,36 @@ try {
   console.log(
     "repin: a run cut off before staging completes or between renames resumes from its journal"
   );
+  // IC5: cut off between the snapshot provenance rename and the first lock.
+  {
+    const { root, opts } = copy();
+    edit(join(root, "catalog/types/hobby-servo-3wire.json"), (type) => {
+      (type.plausible as Record<string, number[]>).Voltage = [-1, 13];
+    });
+    const servo = join(root, "catalog/snapshots/sfab/sg90-servo@1.0.0.json");
+    const old = readFileSync(servo, "utf8");
+    try {
+      await repin({
+        ...opts,
+        step: (now) => {
+          if (now === "rename 0") throw new Error("crash");
+        },
+      });
+    } catch {}
+    const journal = JSON.parse(readFileSync(opts.journal, "utf8")) as {
+      files: { file: string }[];
+    };
+    expect(journal.files[0]?.file === servo, "provenance is renamed first");
+    expect(readFileSync(servo, "utf8") !== old, "the provenance landed");
+    expect(lockErrors(root, ARM).length > 0, "the locks did not");
+    const done = await repin(opts);
+    expect(done.wrote && done.refusals.length === 0, "resumed");
+    expect(staleSnapshots(root).length === 0, "every snapshot is fresh");
+    expect(lockErrors(root, ARM).length === 0, "the arm lock is clean");
+    console.log(
+      "repin: a run cut off between the provenance and lock renames resumes"
+    );
+  }
   {
     const { root, opts } = copy();
     citeSg90(root);
