@@ -649,7 +649,7 @@ Every error, warning and degraded row carries a `code`. The list is closed (`DIA
 | `snapshot` | A snapshot the linter refuses, or one that does not fit the part that names it. |
 | `stale-capture` | A snapshot whose source part changed since the capture. |
 | `shadowed-part` | A project part shadows a catalog part of the same id. |
-| `level-ports` | Two runnable composite levels of one part expose different port sets. |
+| `level-ports` | Two composite behaviour levels of one part expose different port sets. |
 | `broken-port` | A wire or `expose` names a port or instance that is not there. |
 | `wiring` | A wire joins ports of different domains. |
 | `rating` | A driver and receiver are logic-incompatible, or a source is outside a power input's rating. |

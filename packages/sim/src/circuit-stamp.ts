@@ -49,6 +49,7 @@ import {
   boardResetPort,
   chipExposure,
   chipFactsOf,
+  missingChipFacts,
 } from "./chip-host";
 import type { StampEnv } from "./env";
 import { formAdapter, stampDiode } from "./forms";
@@ -989,7 +990,13 @@ function stampOf(
   let powerPort: string | undefined;
   let resetFraction: number | null = null;
   if (isFirmware) {
-    if (!facts) throw new Error(`${partId} has no chip rail`);
+    if (!facts) {
+      const missing =
+        behaviour?.kind === "firmware"
+          ? missingChipFacts(behaviour).join(", ")
+          : "a firmware chip";
+      throw new Error(`${partId} lacks ${missing}`);
+    }
     powerPort = railPowerPorts(board.type.ports, facts.railVoltage)[0];
     resetFraction = facts.resetFraction;
     if (!powerPort) throw new Error(`${partId} has no power port`);
