@@ -29,10 +29,13 @@ expect(bands(0) === "none" && bands(Number.NaN) === "none", "no code");
 expect(colorOf("red") === "#e53935", "named colour");
 expect(colorOf("#12AB34") === "#12AB34", "hex colour");
 expect(colorOf("plaid", "#000000") === "#000000", "unknown colour");
-const blue = boardTexture("#1d6fa5");
+// The board texture is neutral and shared: the material carries the
+// board's colour, so a board draws in the colour its params name.
+const vias = boardTexture();
+const pixels = vias.image.data as Uint8Array;
 expect(
-  blue === boardTexture("#1d6fa5") && blue !== boardTexture("#1f6f43"),
-  "board textures are cached by colour"
+  vias === boardTexture() && pixels[0] === 255 && pixels[2] === 255,
+  "one shared board texture, white between the vias"
 );
 
 const fallback = new THREE.MeshStandardMaterial();
@@ -99,6 +102,23 @@ for (const id of Object.keys(FORM_BUILDERS)) {
   );
   disposeVisual(group, fallback);
 }
+
+// A pcb's board is the colour its params name.
+let boardColor = "";
+buildVisual(
+  [0.045, 0.018, 0.008],
+  { form: "pcb@1", params: { color: "#1d6fa5" } },
+  fallback
+).traverse((node) => {
+  if (
+    node instanceof THREE.Mesh &&
+    node.material instanceof THREE.MeshStandardMaterial &&
+    node.material.map
+  ) {
+    boardColor = node.material.color.getHexString();
+  }
+});
+expect(boardColor === "1d6fa5", `pcb board colour #${boardColor}`);
 
 // The axial form carries one band mesh per colour: 220 Ω adds four.
 const count = (params: Record<string, number>) => {

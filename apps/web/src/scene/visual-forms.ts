@@ -135,25 +135,24 @@ function cylinderX(
 const textureCache = new Map<string, THREE.DataTexture>();
 
 /**
- * A board's surface: the base colour with a sparse grid of lighter vias.
- * Cached by colour, so every board of one colour shares it.
+ * A board's surface: white with a sparse grid of darker vias. It is
+ * neutral, so the material's colour is the board's colour (the texture
+ * multiplies it) and highlights still lerp that colour. One texture is
+ * shared by every board.
  */
-export function boardTexture(color: string): THREE.DataTexture {
-  const key = `board:${color}`;
+export function boardTexture(): THREE.DataTexture {
+  const key = "board";
   const cached = textureCache.get(key);
   if (cached) return cached;
   const size = 32;
-  const base = new THREE.Color(color);
-  const via = base.clone().lerp(new THREE.Color("#ffffff"), 0.35);
   const data = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const dot = x % 8 === 3 && y % 8 === 5;
-      const c = dot ? via : base;
+      const shade = x % 8 === 3 && y % 8 === 5 ? 150 : 255;
       const i = (y * size + x) * 4;
-      data[i] = Math.round(c.r * 255);
-      data[i + 1] = Math.round(c.g * 255);
-      data[i + 2] = Math.round(c.b * 255);
+      data[i] = shade;
+      data[i + 1] = shade;
+      data[i + 2] = shade;
       data[i + 3] = 255;
     }
   }
@@ -444,9 +443,7 @@ const lensForm: FormBuilder = ({ size, params }) => {
     group.add(
       mesh(
         new THREE.BoxGeometry(x, y, thick),
-        material(colorOf(board, "#1f6f43"), {
-          map: boardTexture(colorOf(board)),
-        }),
+        material(colorOf(board, "#1f6f43"), { map: boardTexture() }),
         [0, 0, floor + thick / 2]
       )
     );
@@ -504,7 +501,7 @@ const pcbForm: FormBuilder = ({ size, params }) => {
   const color = colorOf(text(params, "color", "#1d6fa5"));
   const thick = Math.min(num(params, "thickness", 0.0016), z);
   const top = -z / 2 + thick;
-  const slab = boardTexture(color);
+  const slab = boardTexture();
   group.add(
     mesh(new THREE.BoxGeometry(x, y, thick), material(color, { map: slab }), [
       0,
