@@ -122,6 +122,12 @@ unpowered.wires = unpowered.wires.filter(
 );
 writeDraft(root, "unpowered.world.json", unpowered);
 
+// A second board pin on the servo's signal net: the pulse is not bound, and
+// the part's degraded row is on read_world's warnings.
+const unbound = structuredClone(arm);
+unbound.wires = [...unbound.wires, ["uno.D10", "servo.signal"]];
+writeDraft(root, "unbound.world.json", unbound);
+
 const events: WorldServerMessage[] = [];
 const held: WorldHandle[] = [];
 
@@ -784,6 +790,22 @@ try {
         ),
         `unpowered diagnostics ${JSON.stringify(notes)}`
       );
+
+      const split = await call(worldTools.world_status, {
+        world: "unbound.world.json",
+      });
+      expect(!errorOf(split), `unbound ${JSON.stringify(split)}`);
+      const splitWarnings =
+        isRecord(split) && Array.isArray(split.warnings) ? split.warnings : [];
+      expect(
+        splitWarnings.some(
+          (line) =>
+            typeof line === "string" &&
+            line.startsWith("servo: ") &&
+            line.includes("signal reaches 2 board pins")
+        ),
+        `unbound warnings ${JSON.stringify(splitWarnings)}`
+      );
     }
   );
 } finally {
@@ -792,6 +814,7 @@ try {
   await stopWorld(root, "parts/sfab/arm-stall@1.0.0.json");
   await stopWorld(root, "two.world.json");
   await stopWorld(root, "unpowered.world.json");
+  await stopWorld(root, "unbound.world.json");
   closeRootWatches();
   rmSync(root, { recursive: true, force: true });
 }

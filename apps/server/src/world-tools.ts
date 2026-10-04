@@ -248,10 +248,19 @@ function liveWarnings(
   documentMessages: readonly string[]
 ): string[] {
   const out: string[] = [];
+  const boardIds = Object.keys(state.boards);
   for (const [id, board] of Object.entries(state.boards)) {
     for (const warning of board.warnings ?? []) {
       out.push(`${id}: ${warning.message}`);
     }
+  }
+  // A degraded row on a part, not a board, is not on a board's list: an
+  // unbound ranger or servo port, a shaft that reaches no joint.
+  for (const row of state.diagnostics ?? []) {
+    const onBoard = boardIds.some(
+      (id) => row.path === id || row.path.startsWith(`${id}.`)
+    );
+    if (!onBoard) out.push(`${row.path}: ${row.message}`);
   }
   const limits = jointLimits(loaded.root, loaded.world, loaded.plan);
   const units = jointUnits(loaded.root, loaded.world, loaded.plan);

@@ -50,6 +50,11 @@ export type WorldViewBoard = {
    * running level stamps no onboard LED.
    */
   ledPin: string | null;
+  /**
+   * The board's power pin, whose node is the board voltage (`5V` on the Nano
+   * and the Uno, `VCC` on the Pro Micro). The card labels that voltage with it.
+   */
+  voltagePin: string;
 };
 
 export type WorldViewSupply = {

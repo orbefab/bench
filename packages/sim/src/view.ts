@@ -44,6 +44,7 @@ export function viewOf(plan: RunPlan): WorldView {
       clock: board.clock,
       pins: board.pinOrder,
       ledPin: board.stamp?.ledPin ?? null,
+      voltagePin: board.voltagePin,
     })),
     supplies: plan.supplies.map((supply) => ({
       id: supply.id,

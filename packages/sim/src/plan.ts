@@ -1752,14 +1752,20 @@ export function planWorld(
   if (!built.plan) {
     return { ok: false, errors: [schema("World file did not load.")] };
   }
-  const fromLoad = loaded.diagnostics
-    .filter((diag) => diag.severity === "error")
-    .map((diag) => present(diag));
+  const loadErrors = loaded.diagnostics.filter(
+    (diag) => diag.severity === "error"
+  );
+  const fromLoad = loadErrors.map((diag) => present(diag));
   const rows = [...fromLoad, ...built.diags.map((diag) => present(diag))];
   if (rows.length > 0) {
     built.plan.degraded = rows;
     if (built.plan.report) {
-      const drop = new Set(rows.map((row) => row.message));
+      // A load error that became a degraded row leaves the errors. The
+      // report holds it as the loader worded it, before `present`.
+      const drop = new Set([
+        ...loadErrors.map((diag) => diag.message),
+        ...rows.map((row) => row.message),
+      ]);
       built.plan.report = {
         ...built.plan.report,
         errors: built.plan.report.errors.filter(

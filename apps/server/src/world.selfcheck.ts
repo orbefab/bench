@@ -405,9 +405,12 @@ try {
   const quad = perSecond(fourRun);
   const pair = both / (one + snap);
   const scale = quad / one;
-  console.log(
-    `world cost (${cpus()[0]?.model ?? "unknown cpu"}, wall ms per simulated s): detailed ${one.toFixed(0)}, snapshot ${snap.toFixed(0)}, world of both ${both.toFixed(0)} (${pair.toFixed(2)}× the two alone), four detailed ${quad.toFixed(0)} (${scale.toFixed(2)}× one)`
-  );
+  // Wall time varies run to run: print it only on request, so the check's
+  // log stays byte-identical (docs/testing.md). The ratios still gate.
+  if (process.env.BENCH_TIMINGS === "1")
+    console.log(
+      `world cost (${cpus()[0]?.model ?? "unknown cpu"}, wall ms per simulated s): detailed ${one.toFixed(0)}, snapshot ${snap.toFixed(0)}, world of both ${both.toFixed(0)} (${pair.toFixed(2)}× the two alone), four detailed ${quad.toFixed(0)} (${scale.toFixed(2)}× one)`
+    );
   expect(pair > 0.6 && pair < 1.6, `world / both alone ${pair}`);
   expect(scale > 2.5 && scale < 6, `four / one ${scale}`);
   console.log("world.selfcheck ok");

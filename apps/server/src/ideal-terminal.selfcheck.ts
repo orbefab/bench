@@ -211,6 +211,7 @@ function terminalPlan(
 ): {
   board: RunBoard | undefined;
   rows: string[];
+  errors: string[];
 } {
   const dir = mkdtempSync(join(tmpdir(), "sfab-pin-map-"));
   try {
@@ -251,6 +252,7 @@ function terminalPlan(
       rows: (planned.plan.degraded ?? [])
         .filter((row) => row.path === boardId || row.path === NANO)
         .map((row) => row.message),
+      errors: (planned.plan.report?.errors ?? []).map((row) => row.message),
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -446,6 +448,11 @@ try {
     expect(
       !got.board && named,
       `root ${label}: board ${got.board ? pinFacts(got.board) : "idle"}, rows ${JSON.stringify(got.rows)}`
+    );
+    // The lint error is a degraded row now, not also a report error.
+    expect(
+      !got.errors.some((row) => row.includes(want)),
+      `root ${label}: still a report error ${JSON.stringify(got.errors)}`
     );
     console.log(`ideal-terminal: root ${label} → idle (${want})`);
   }

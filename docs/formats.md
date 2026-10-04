@@ -706,10 +706,11 @@ Every error, warning and degraded row carries a `code`. The list is closed (`DIA
 | `lock` | The lockfile does not match what the world resolves. |
 | `snapshot` | A snapshot the linter refuses, or one that does not fit the part that names it. |
 | `stale-capture` | A snapshot whose source part changed since the capture. |
+| `unchecked-capture` | A snapshot whose freshness the run cannot check: its provenance names no variant, or the group reaches a part with a snapshot variant. The tree marks the path; the card gives the reason. |
 | `shadowed-part` | A project part shadows a catalog part of the same id. |
 | `level-ports` | Two composite behaviour levels of one part expose different port sets. |
 | `broken-port` | A wire or `expose` names a port or instance that is not there. |
-| `wiring` | A wire joins ports of different domains. |
+| `wiring` | A connection the run cannot use as wired: a wire joins ports of different domains; a GPIO consumer's net reaches more than one board pin (the port is unbound); a motor shaft reaches no joint, or crosses more than one gear train; a gear train couples no motor to a joint. |
 | `rating` | A driver and receiver are logic-incompatible, or a source is outside a power input's rating. |
 | `idle` | A part that cannot run at its level for a reason no other code names. |
 | `unpowered` | A part no supply reaches. |

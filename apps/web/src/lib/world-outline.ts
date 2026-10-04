@@ -40,6 +40,8 @@ export type WorldOutlineBoard = {
   ledPin?: string | null;
   /** The chip's name and clock. Absent or null when the view names none. */
   clock?: ChipClock | null;
+  /** The board's power pin. Absent on a hand-built outline. */
+  voltagePin?: string;
 };
 
 export type WorldOutlineWire = {
@@ -93,6 +95,7 @@ export type WorldOutlineInput = {
     minOperatingVoltage?: number | null;
     ledPin?: string | null;
     clock?: ChipClock | null;
+    voltagePin?: string;
   }[];
   parts?: readonly {
     id: string;
@@ -244,6 +247,7 @@ export function buildWorldOutline(
         : {}),
       ...(board.ledPin !== undefined ? { ledPin: board.ledPin } : {}),
       ...(board.clock !== undefined ? { clock: board.clock } : {}),
+      ...(board.voltagePin ? { voltagePin: board.voltagePin } : {}),
     })),
     supplies: supplyFeeds(world),
     targets: (world.targets ?? []).map((target) => target.id),

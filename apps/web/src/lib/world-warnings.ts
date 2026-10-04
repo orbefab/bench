@@ -43,6 +43,7 @@ export type WarningSource = {
     path: string;
     envelope?: readonly string[];
     stale?: true;
+    unchecked?: string | null;
   }[];
 };
 
@@ -77,6 +78,13 @@ export function warningsByPath(
       add(snap.path, line, "envelope");
     }
     if (snap.stale) add(snap.path, "This capture is stale.", "stale-capture");
+    if (snap.unchecked) {
+      add(
+        snap.path,
+        `Freshness not checked: ${snap.unchecked}.`,
+        "unchecked-capture"
+      );
+    }
   }
   return map;
 }

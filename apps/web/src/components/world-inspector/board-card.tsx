@@ -207,7 +207,7 @@ export function BoardBody({
         }
       />
       <Field
-        label="5V"
+        label={info?.voltagePin ?? "Board voltage"}
         value={
           scrub.playhead !== null
             ? recorded

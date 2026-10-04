@@ -932,6 +932,7 @@ export const DIAG_CODES = [
   "lock",
   "snapshot",
   "stale-capture",
+  "unchecked-capture",
   "shadowed-part",
   "level-ports",
   // Wiring and ratings.

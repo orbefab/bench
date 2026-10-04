@@ -131,6 +131,10 @@ expect(
   view.boards.find((item) => item.id === "promicro")?.ledPin === "RXLED",
   "the onboard LED is the RX LED, not D13"
 );
+expect(
+  view.boards.find((item) => item.id === "promicro")?.voltagePin === "VCC",
+  "the card labels the board voltage VCC, not 5V"
+);
 const clock = view.boards.find((item) => item.id === "promicro")?.clock;
 expect(
   clock?.label === "ATmega32U4" && clock.hz === 16_000_000,
