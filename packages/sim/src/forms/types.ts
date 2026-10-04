@@ -7,7 +7,7 @@ import type { LiveInstance } from "@sfab-bench/parts";
 
 import type { AssignedPart } from "../circuit-stamp";
 import type { RunPin, RunSupply } from "../plan";
-import type { RunRanger } from "../ranger";
+import type { PlacedRanger } from "../ranger";
 
 export type StampedElements = {
   elements: Element[];
@@ -27,12 +27,11 @@ export type PlaceCtx = {
   pins(): Record<string, RunPin>;
   /** The instance's pose in the document frame. */
   pose(): Pose;
-  /** The board pin wired to `port`, when that wire lands on board GPIO. */
-  peer(port: string): { boardId: string; bit: number } | null;
   /** A degraded row for this instance. Default code `bad-params`. */
   reject(detail: string, code?: DiagCode): void;
   addSupply(supply: RunSupply): void;
-  addRanger(ranger: RunRanger): void;
+  /** The plan binds `trig` and `echo` once every board is planned. */
+  addRanger(ranger: PlacedRanger): void;
   box(pick: "supply" | "part"): void;
 };
 

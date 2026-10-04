@@ -5,10 +5,7 @@ import type { RunPin, RunPlan } from "./plan";
 
 export type { PowerFeeds };
 
-/**
- * A servo signal tied straight to one board GPIO pin. Direct pairs only:
- * a wire is `["uno.D9", "servo.signal"]`, not a net of several hops.
- */
+/** A servo signal and the board GPIO pin on its net. */
 export type ServoSignalDrive = {
   partId: string;
   boardId: string;
@@ -22,34 +19,19 @@ export type PowerWiring = Pick<
 >;
 
 /**
- * Each servo whose signal pin has a direct wire to a board digital GPIO.
- * Anything else is not driven: no wire, a supply pin, or a hop through
- * another part. A0–A5 count (D-018). The first matching pair wins.
+ * Each servo the plan bound to a board digital GPIO: the one such pin on
+ * its signal's net (`gpio-binding.ts`). A0–A5 count (D-018). No pin, or
+ * more than one, is not driven.
  */
 export function servoSignalDrives(plan: RunPlan): ServoSignalDrive[] {
   const drives: ServoSignalDrive[] = [];
   for (const part of plan.parts) {
-    if (part.drive.kind !== "servo") continue;
-    const signal = part.drive.pin;
-    let found: ServoSignalDrive | null = null;
-    for (const wire of plan.wires) {
-      const left = splitPortRef(wire[0]);
-      const right = splitPortRef(wire[1]);
-      if (!left || !right) continue;
-      const other =
-        left.inst === part.id && left.port === signal
-          ? right
-          : right.inst === part.id && right.port === signal
-            ? left
-            : null;
-      if (!other) continue;
-      const board = plan.boards.find((item) => item.id === other.inst);
-      const spec = board?.pins[other.port];
-      if (!board || !spec?.digital) continue;
-      found = { partId: part.id, boardId: board.id, pin: other.port };
-      break;
-    }
-    if (found) drives.push(found);
+    if (part.drive.kind !== "servo" || !part.drive.gpio) continue;
+    drives.push({
+      partId: part.id,
+      boardId: part.drive.gpio.boardId,
+      pin: part.drive.gpio.pin,
+    });
   }
   return drives;
 }

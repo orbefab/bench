@@ -58,11 +58,17 @@ export type RunRanger = {
    * the type declares none.
    */
   ports: { trig: string | null; echo: string | null };
-  /** Board pin that drives the trigger. Null when it is unwired. */
+  /**
+   * Board pin that drives the trigger: the one digital board pin on the
+   * trigger's net. Null when there is none, or more than one.
+   */
   trig: { boardId: string; bit: number } | null;
-  /** Board pin the echo drives. Null when it is unwired. */
+  /** Board pin the echo drives, by the same rule. */
   echo: { boardId: string; bit: number } | null;
 };
+
+/** A ranger as its form places it, before the plan binds its pins. */
+export type PlacedRanger = Omit<RunRanger, "trig" | "echo">;
 
 export type RangerRay = {
   mj_ray(

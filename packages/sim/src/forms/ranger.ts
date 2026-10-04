@@ -58,8 +58,6 @@ function placeRanger(ctx: PlaceCtx): void {
     law: rangerLaw(numbers),
     pins: ctx.pins(),
     ports: { trig, echo },
-    trig: trig ? ctx.peer(trig) : null,
-    echo: echo ? ctx.peer(echo) : null,
   });
   ctx.box("part");
 }

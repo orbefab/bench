@@ -79,7 +79,8 @@ import {
 import type { PlanEnv, StampEnv } from "./env";
 import { formAdapter } from "./forms";
 import { provenanceHash } from "./freshness";
-import type { RunRanger } from "./ranger";
+import { gpioIndex } from "./gpio-binding";
+import type { PlacedRanger, RunRanger } from "./ranger";
 import { coupleShafts, type RunControl, type RunShaft } from "./shafts";
 import { readTargets } from "./targets";
 import { runTree } from "./tree";
@@ -264,7 +265,15 @@ export type RunPart = {
   /** Part type id, for example `hobby-servo-3wire`. */
   type: string;
   pins: Record<string, RunPin>;
-  drive: { kind: "servo"; pin: string };
+  /**
+   * `pin` is the type's one logic input. `gpio` is the board pin on its
+   * net (`gpio-binding.ts`); absent when none or more than one is.
+   */
+  drive: {
+    kind: "servo";
+    pin: string;
+    gpio?: { boardId: string; pin: string };
+  };
   supply?: { nominal: number; min: number; max: number };
   torqueNm?: number;
   motor?: RunMotor;
@@ -771,27 +780,18 @@ function rangePair(
   return null;
 }
 
-function digitalPeer(
-  inst: LiveInstance,
-  port: string,
-  loaded: LoadResult,
-  boards: readonly RunBoard[]
-): { boardId: string; bit: number } | null {
-  for (const wire of loaded.wires) {
-    const other =
-      wire.a.path === inst.path && wire.a.port === port
-        ? wire.b
-        : wire.b.path === inst.path && wire.b.port === port
-          ? wire.a
-          : null;
-    if (!other) continue;
-    const board = boards.find((item) => item.id === other.path);
-    if (!board) continue;
-    const bit = pinIndex(board.pinOrder, other.port);
-    if (bit === undefined) continue;
-    return { boardId: other.path, bit };
-  }
-  return null;
+/** A logic port left unbound: its net reaches more than one board pin. */
+function unbound(inst: LiveInstance, port: string, detail: string): Diagnostic {
+  return {
+    severity: "degraded",
+    code: "wiring",
+    path: inst.path,
+    port,
+    quantity: "Net",
+    left: "several board pins",
+    right: "one",
+    message: `${inst.path} port ${port} quantity Net: ${detail} (several board pins vs one)`,
+  };
 }
 
 function supplyGround(
@@ -1044,7 +1044,7 @@ function build(
   const supplies: RunSupply[] = [];
   const parts: RunPart[] = [];
   const leaves: { id: string; model: string }[] = [];
-  const rangers: RunRanger[] = [];
+  const placedRangers: PlacedRanger[] = [];
   // A placed form that casts rays into the body world.
   let rays = false;
   const boxes: RunBox[] = [];
@@ -1224,7 +1224,6 @@ function build(
         numbers: () => formNumbers(inst),
         pins: () => pinsOf(inst.type.ports),
         pose: () => poseOf(inst),
-        peer: (port) => digitalPeer(inst, port, loaded, boards),
         reject: (detail, code = "bad-params") => {
           diags.push(cannot(inst, detail, code));
         },
@@ -1232,7 +1231,7 @@ function build(
           supplies.push(supply);
         },
         addRanger: (ranger) => {
-          rangers.push(ranger);
+          placedRangers.push(ranger);
         },
         box: (pick) => {
           pushBox(boxes, inst, poseOf(inst), pick);
@@ -1326,11 +1325,35 @@ function build(
     diags.push(cannot(inst, runtimeGap(inst), "no-runtime"));
   }
 
+  // Every board is planned: bind each consumer's logic port to the board
+  // pin on its resolved net.
+  const gpio = gpioIndex(loaded.nets, boards);
+  const bindPort = (path: string, port: string | null) => {
+    if (port === null) return null;
+    const reach = gpio(path, port);
+    const inst = byPath.get(path);
+    if (reach.detail && inst) diags.push(unbound(inst, port, reach.detail));
+    return reach.pin;
+  };
+  const rangers: RunRanger[] = placedRangers.map((ranger) => {
+    const trig = bindPort(ranger.id, ranger.ports.trig);
+    const echo = bindPort(ranger.id, ranger.ports.echo);
+    return {
+      ...ranger,
+      trig: trig ? { boardId: trig.boardId, bit: trig.bit } : null,
+      echo: echo ? { boardId: echo.boardId, bit: echo.bit } : null,
+    };
+  });
+  for (const part of parts) {
+    const pin = bindPort(part.id, part.drive.pin);
+    if (pin) part.drive.gpio = { boardId: pin.boardId, pin: pin.pin };
+  }
+
   const coupled = coupleShafts({
     circuits,
     resolved: loaded.resolved,
     nets: loaded.nets,
-    boards,
+    gpio: bindPort,
     drivenJoints: new Set(
       parts.flatMap((part) =>
         part.drives ? [`${part.drives.robot}/${part.drives.joint}`] : []

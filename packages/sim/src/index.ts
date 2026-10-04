@@ -49,6 +49,13 @@ export {
 } from "./circuit-stamp";
 export type { PlanEnv, StampEnv } from "./env";
 export {
+  type GpioHost,
+  type GpioLookup,
+  type GpioPin,
+  type GpioReach,
+  gpioIndex,
+} from "./gpio-binding";
+export {
   type PlanResult,
   planWorld,
   type RunBoard,

@@ -243,10 +243,8 @@ export function coupleShafts(input: {
   circuits: readonly CircuitInst[];
   resolved: readonly LiveInstance[];
   nets: readonly LiveNet[];
-  boards: readonly {
-    id: string;
-    pins: Record<string, { digital: boolean }>;
-  }[];
+  /** The board pin on a port's net (`gpio-binding.ts`), null when unbound. */
+  gpio: (path: string, port: string) => { boardId: string; pin: string } | null;
   drivenJoints: ReadonlySet<string>;
 }): Coupled {
   const byPath = new Map(input.resolved.map((inst) => [inst.path, inst]));
@@ -260,7 +258,7 @@ export function coupleShafts(input: {
     if (part.form === "servo-control@1") {
       controls.push({
         path: part.path,
-        signal: pulsePin(inst, input.nets, input.boards),
+        signal: pulsePin(inst, input.gpio),
         eSat: part.params.eSat ?? 0,
         travel: part.params.travel ?? 0,
       });
@@ -364,14 +362,10 @@ export function coupleShafts(input: {
   };
 }
 
-/** The digital board pin on the net of the instance's one logic input. */
+/** The board pin on the net of the instance's one logic input. */
 function pulsePin(
   inst: LiveInstance,
-  nets: readonly LiveNet[],
-  boards: readonly {
-    id: string;
-    pins: Record<string, { digital: boolean }>;
-  }[]
+  gpio: (path: string, port: string) => { boardId: string; pin: string } | null
 ): { boardId: string; pin: string } | null {
   const inputs = Object.entries(inst.type.ports)
     .filter(
@@ -383,16 +377,8 @@ function pulsePin(
     .map(([name]) => name);
   const [port] = inputs;
   if (!port || inputs.length > 1) return null;
-  const full = `${inst.path}.${port}`;
-  const net = nets.find((item) => item.ports.some((end) => end.full === full));
-  if (!net) return null;
-  for (const end of net.ports) {
-    const board = boards.find((item) => item.id === end.path);
-    if (board?.pins[end.port]?.digital) {
-      return { boardId: board.id, pin: end.port };
-    }
-  }
-  return null;
+  const pin = gpio(inst.path, port);
+  return pin ? { boardId: pin.boardId, pin: pin.pin } : null;
 }
 
 /**
