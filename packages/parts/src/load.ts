@@ -430,6 +430,38 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
           continue;
         }
       }
+      if (ask.axis === "behaviour" && found.loaded.file.form !== "table@1") {
+        // A behaviour snapshot in any other form runs as that form, with
+        // the file's params: the run dispatches on the form, not on
+        // where its numbers came from.
+        const file = found.loaded.file;
+        const wrong =
+          file.axis !== "behaviour"
+            ? `snapshot ${ask.ref} is a ${file.axis} snapshot`
+            : type && file.partType !== type.id
+              ? `snapshot ${ask.ref} partType ${file.partType} is not ${type.id}`
+              : null;
+        if (wrong) {
+          diagnostics.push(
+            makeDiag({
+              severity: "error",
+              code: "snapshot",
+              path: inst.path,
+              port: "behaviour",
+              quantity: "Form",
+              left: file.form,
+              right: type?.id ?? "-",
+              detail: wrong,
+            })
+          );
+          continue;
+        }
+        const selected = inst.axes.behaviour;
+        inst.axes.behaviour = {
+          ...selected,
+          impl: formOfSnapshot(file, selected.impl as BehaviourImpl),
+        };
+      }
       remember(snapshots, found.loaded);
       snapshotRuns.push({
         path: inst.path,
@@ -517,6 +549,18 @@ function provenanceOf(
       ? { tool: { name: source.tool.name, version: source.tool.version } }
       : {}),
   };
+}
+
+/** A non-table behaviour snapshot as the form variant it stands for. */
+function formOfSnapshot(
+  file: LoadedSnapshot["file"],
+  variant: BehaviourImpl
+): BehaviourImpl {
+  const params: Record<string, number> = {};
+  for (const [key, value] of Object.entries(file.params)) {
+    if (typeof value === "number") params[key] = value;
+  }
+  return { kind: "form", form: file.form, params, omits: variant.omits };
 }
 
 function remember(rows: LoadedSnapshot[], loaded: LoadedSnapshot): void {
