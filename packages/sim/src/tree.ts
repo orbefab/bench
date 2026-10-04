@@ -532,7 +532,7 @@ function captureOf(
 }
 
 const SCENE_FORMS = new Set([
-  "dc-motor@1",
+  "position-servo@1",
   "ranger@1",
   "multibody@1",
   "ground-plane@1",

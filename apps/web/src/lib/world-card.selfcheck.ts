@@ -26,7 +26,7 @@ const node: WorldViewNode = {
         {
           class: 1,
           variant: "motor",
-          label: "dc-motor@1",
+          label: "position-servo@1",
           runnable: true,
         },
         {

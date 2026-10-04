@@ -387,7 +387,7 @@ try {
             variants: {
               lag: {
                 kind: "form",
-                form: "dc-motor@1",
+                form: "position-servo@1",
                 params: {
                   K: 1,
                   R: 3,

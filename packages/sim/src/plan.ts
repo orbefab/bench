@@ -1182,25 +1182,28 @@ function build(
       });
       continue;
     }
-    if (behaviour?.kind === "form" && behaviour.form === "dc-motor@1") {
+    if (behaviour?.kind === "form" && behaviour.form === "position-servo@1") {
       const numbers = formNumbers(inst);
       const hinge = jointOf(inst, loaded);
       if (!numbers || !hinge) {
         diags.push(
-          cannot(inst, "the run needs dc-motor@1 and a lumped joint or a hinge")
+          cannot(
+            inst,
+            "the run needs position-servo@1 and a lumped joint or a hinge"
+          )
         );
         continue;
       }
-      // The motor runs behind a hobby servo's control loop, which reads
-      // the type's one logic input. A bare motor would need a driver.
+      // The whole servo as one law: its control loop reads the type's one
+      // logic input. A bare winding is `dc-motor@1`, driven by its nets.
       const [signal, ...extra] = logicInputs(inst.type.ports);
       if (!signal || extra.length > 0) {
         diags.push(
           cannot(
             inst,
             signal
-              ? `dc-motor@1 runs as a servo, and this type has ${extra.length + 1} logic inputs`
-              : "dc-motor@1 runs as a servo, and this type has no logic input for its pulse"
+              ? `position-servo@1 reads one pulse, and this type has ${extra.length + 1} logic inputs`
+              : "position-servo@1 reads one pulse, and this type has no logic input for it"
           )
         );
         continue;

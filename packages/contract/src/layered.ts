@@ -352,6 +352,7 @@ export type Netlist = {
 
 export type FormId =
   | "slew@1"
+  | "position-servo@1"
   | "dc-motor@1"
   | "thevenin-limit@1"
   | "ideal-voltage@1"
@@ -388,7 +389,7 @@ export type FormDef = {
  */
 export const FORM_PARAMS: Record<FormId, FormDef> = {
   "slew@1": { params: { omega: "AngularVelocity" } },
-  "dc-motor@1": {
+  "position-servo@1": {
     params: {
       K: "TorquePerCurrent",
       R: "Resistance",
@@ -396,6 +397,15 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
       efficiency: "Dimensionless",
       eSat: "Angle",
       quiescent: "Current",
+    },
+    optional: ["L"],
+  },
+  "dc-motor@1": {
+    params: {
+      K: "TorquePerCurrent",
+      R: "Resistance",
+      L: "Inductance",
+      efficiency: "Dimensionless",
     },
     optional: ["L"],
   },

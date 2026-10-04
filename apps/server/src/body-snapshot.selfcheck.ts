@@ -444,7 +444,7 @@ function snapshotBody(id: string, ref: string) {
           variants: {
             datasheet: {
               kind: "form",
-              form: "dc-motor@1",
+              form: "position-servo@1",
               params: {
                 K: 0.458,
                 R: 7.1,
@@ -490,7 +490,7 @@ function idleTrainPart() {
           variants: {
             law: {
               kind: "form",
-              form: "dc-motor@1",
+              form: "position-servo@1",
               params: {
                 K: 0.458,
                 R: 7.1,
@@ -578,7 +578,7 @@ function twoBody() {
           variants: {
             datasheet: {
               kind: "form",
-              form: "dc-motor@1",
+              form: "position-servo@1",
               params: {
                 K: 0.458,
                 R: 7.1,

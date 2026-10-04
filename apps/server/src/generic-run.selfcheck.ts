@@ -1165,8 +1165,8 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
   }
 }
 
-// dc-motor@1 runs behind the servo's control loop, which reads the type's
-// logic input. A bare motor has none, so it is refused, not run as a servo.
+// position-servo@1 is the whole servo as one law; its loop reads the type's
+// logic input. A motor type has none, so the law is refused there.
 {
   const dir = mkdtempSync(join(tmpdir(), "sfab-bare-motor-"));
   try {
@@ -1181,7 +1181,7 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
             variants: {
               law: {
                 kind: "form",
-                form: "dc-motor@1",
+                form: "position-servo@1",
                 params: {
                   K: 0.05,
                   R: 2,

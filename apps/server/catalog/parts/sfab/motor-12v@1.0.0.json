@@ -26,9 +26,7 @@
             "params": {
               "K": 0.05,
               "R": 2,
-              "efficiency": 0.7,
-              "eSat": 0.2,
-              "quiescent": 0.02
+              "efficiency": 0.7
             },
             "omits": ["inductance", "heat", "brush drop"]
           }
