@@ -1095,8 +1095,8 @@ export class Sim {
   }
   /**
    * The instance at `path` read at its own port after the last solve:
-   * volts and amperes on a rail, the driven joint's angle on a port no
-   * wire reaches. Null when neither reads.
+   * volts and amperes on a rail, the driven joint's angle on a port on a
+   * rotational net. Null when neither reads.
    */
   portReading(path: string, port: string): PortReading | null {
     return this.session.portReading(path, port);

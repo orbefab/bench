@@ -9,8 +9,9 @@
  *   form port behind each of the part's own ports. A form the rail holds
  *   as a lumped slot, not as elements, reads its own draw on its power
  *   port.
- * - A port no electrical wire reaches: the angle of the joint the
- *   instance drives. An electrical port no rail holds has no reading.
+ * - A port on a rotational net: the angle of the joint the instance
+ *   drives. Any other port, or a name the instance does not have, has no
+ *   reading.
  */
 
 import type { RailCircuit } from "../rail-circuit";
@@ -24,7 +25,7 @@ export type PortReading = {
    * rail, and where the run does not attribute a current to this port.
    */
   current: number | null;
-  /** Radians of the joint the instance drives. Null on a wired port. */
+  /** Radians of the joint the instance drives. Null off a rotational net. */
   angle: number | null;
 };
 
@@ -72,10 +73,10 @@ export function portReading(
       angle: null,
     };
   }
-  const wired = s.runPlan.wires.some(
-    ([first, other]) => first === full || other === full
+  const rotational = s.runReport?.nets.some(
+    (row) => row.domain === "rotational" && row.ports.includes(full)
   );
-  if (wired) return null;
+  if (!rotational) return null;
   const angle = drivenAngle(s, path);
   return angle === null ? null : { voltage: null, current: null, angle };
 }

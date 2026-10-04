@@ -31,15 +31,17 @@ import {
   type LiveInstance,
   type LiveNet,
   type LoadedPart,
+  type LoadedSnapshot,
   type LoadedType,
   ldoFrom,
   lintLibrary,
   loadPartById,
-  loadSnapshot,
   loadTypeById,
   netlistOf,
   resolveLevels,
+  resolveSnapshots,
   type SnapshotEnvelope,
+  siValue,
   type TableLaw,
   tableLawOf,
 } from "@sfab-bench/parts";
@@ -746,55 +748,33 @@ function variantSlot(
   throw new Error(`${part.id} variant ${variant} is not a circuit assembly`);
 }
 
-/** A `table@1` behaviour, stamped on its `across` ports. */
-function snapshotInstOf(
-  inst: LiveInstance,
-  catalogDir: string,
-  worldDir: string,
-  files: StampEnv
-): CircuitInst | null {
-  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
-  if (behaviour?.kind !== "snapshot") return null;
-  const found = loadSnapshot(
-    files.absolutePath(worldDir),
-    {
-      store: files.store,
-      catalogDir: files.absolutePath(catalogDir),
-      assetRoot: files.absolutePath(catalogDir),
-    },
-    behaviour.ref,
-    inst.type
-  );
-  if (!found.loaded) {
-    const text = found.diagnostics.map((diag) => diag.message).join("; ");
-    throw new Error(
-      text || `${inst.path} snapshot ${behaviour.ref} did not load`
-    );
-  }
-  const law = tableLawOf(found.loaded.file);
-  const envelope = envelopeOf(found.loaded.file);
-  if (!law || !envelope || found.loaded.file.form !== "table@1") {
-    throw new Error(`${inst.path} snapshot ${behaviour.ref} is not table@1`);
-  }
-  const ports: Record<string, string> = {};
-  for (const name of law.across) ports[name] = `${inst.path}.${name}`;
-  return {
-    path: inst.path,
-    form: "table@1",
-    typeId: inst.type.id,
-    params: {},
-    ports,
-    table: { ref: behaviour.ref, law, envelope },
-  };
+/** The behaviour an instance runs, when it has one. */
+function selectedBehaviour(inst: {
+  axes: { behaviour: { impl: unknown } };
+}): BehaviourImpl | null {
+  const behaviour = inst.axes.behaviour.impl;
+  if (!behaviour || typeof behaviour !== "object") return null;
+  return behaviour as BehaviourImpl;
 }
 
-function circuitInstOf(inst: {
-  path: string;
-  params: Record<string, number | string | boolean>;
-  type: { id: string; ports: Record<string, PortDecl> };
-  axes: { behaviour: { impl: unknown } };
-}): CircuitInst | null {
-  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+/** The form's ports the part lacks, after the form's `bind`. */
+export function formPortGap(
+  inst: LiveInstance,
+  ports: readonly string[]
+): string[] {
+  const behaviour = selectedBehaviour(inst);
+  const bind = behaviour?.kind === "form" ? behaviour.bind : undefined;
+  return ports.filter((name) => !inst.type.ports[bind?.[name] ?? name]);
+}
+
+/**
+ * A circuit form, stamped on the form's ports. Each is keyed by the form's
+ * port; the value is the part's own port (after `bind`), where the wires
+ * land. Null when the behaviour is no circuit form, its params do not
+ * parse, or the part lacks a port the form stamps.
+ */
+export function circuitInstOf(inst: LiveInstance): CircuitInst | null {
+  const behaviour = selectedBehaviour(inst);
   if (
     !behaviour ||
     behaviour.kind !== "form" ||
@@ -804,10 +784,19 @@ function circuitInstOf(inst: {
   }
   const params = circuitNumbers(behaviour, inst.params);
   if (!params) return null;
+  const stamped = formAdapter(behaviour.form)?.ports;
+  if (stamped && formPortGap(inst, stamped).length > 0) return null;
   const ports: Record<string, string> = {};
-  for (const [name, decl] of Object.entries(inst.type.ports)) {
-    if (decl.internal) continue;
-    ports[name] = `${inst.path}.${name}`;
+  if (behaviour.bind && stamped) {
+    for (const name of stamped) {
+      ports[name] = `${inst.path}.${behaviour.bind[name] ?? name}`;
+    }
+  } else {
+    for (const [name, decl] of Object.entries(inst.type.ports)) {
+      if (decl.internal) continue;
+      if (stamped && !stamped.includes(name)) continue;
+      ports[name] = `${inst.path}.${name}`;
+    }
   }
   const ldo = ldoLaw(behaviour, inst.params);
   if (ldo === null) return null;
@@ -819,6 +808,71 @@ function circuitInstOf(inst: {
     ports,
     ...(ldo ? { ldo } : {}),
   };
+}
+
+/**
+ * A `table@1` snapshot, stamped on its `across` ports. A string is why it
+ * cannot run.
+ */
+export function tableInstOf(
+  inst: LiveInstance,
+  snapshot: LoadedSnapshot
+): CircuitInst | string {
+  const ref = snapshot.id;
+  const law = tableLawOf(snapshot.file);
+  const envelope = envelopeOf(snapshot.file);
+  if (!law || !envelope || snapshot.file.form !== "table@1") {
+    return `snapshot ${ref} did not load as table@1`;
+  }
+  const missing = law.across.filter((name) => !inst.type.ports[name]);
+  if (missing.length > 0) {
+    return `snapshot ${ref} across port ${missing.join(", ")} is not on ${inst.type.id}`;
+  }
+  const ports: Record<string, string> = {};
+  for (const name of law.across) ports[name] = `${inst.path}.${name}`;
+  return {
+    path: inst.path,
+    form: "table@1",
+    typeId: inst.type.id,
+    params: {},
+    ports,
+    table: { ref, law, envelope },
+  };
+}
+
+/** A circuit part that runs a snapshot keeps its bounds, by its own ports. */
+export function withWatch(
+  circuit: CircuitInst,
+  snapshot: LoadedSnapshot | undefined
+): CircuitInst {
+  if (!snapshot) return circuit;
+  const ports: Record<string, string> = {};
+  for (const [name, full] of Object.entries(circuit.ports)) {
+    ports[name] = full.slice(circuit.path.length + 1);
+  }
+  return {
+    ...circuit,
+    watch: {
+      ref: snapshot.id,
+      bounds: boundPairs(snapshot.file.envelope.bounds),
+      ports,
+    },
+  };
+}
+
+/** Envelope bounds as SI `[lo, hi]` pairs. */
+export function boundPairs(
+  bounds: Record<string, unknown>
+): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  for (const [key, range] of Object.entries(bounds)) {
+    if (!Array.isArray(range) || range.length < 2) continue;
+    const lo = range[0];
+    const hi = range[1];
+    if (typeof lo !== "number" || typeof hi !== "number") continue;
+    out[key] = [siValue(lo), siValue(hi)];
+  }
+  return out;
 }
 
 /**
@@ -982,6 +1036,17 @@ function stampOf(
     throw new Error(errors.map((diag) => diag.message).join("; "));
   }
   const { instances } = resolveLevels(lib, compileRules(lib.run));
+  // The world load's snapshot resolution, so a snapshot runs nested the
+  // way it runs on its own. A stamp has no instance to idle: it fails.
+  const resolution = resolveSnapshots(lib, libOpts, instances);
+  const unresolved = resolution.diagnostics.filter(
+    (diag) => diag.severity === "error"
+  );
+  if (unresolved.length > 0) {
+    throw new Error(
+      unresolved.map((diag) => `${diag.path}: ${diag.message}`).join("; ")
+    );
+  }
   const board = instances.find((inst) => inst.path === boardId);
   if (!board || !netlistOf(board)) {
     throw new Error(
@@ -1005,8 +1070,16 @@ function stampOf(
   }
   const circuitParts: CircuitInst[] = [];
   for (const inst of instances) {
-    const row =
-      circuitInstOf(inst) ?? snapshotInstOf(inst, catalogDir, worldDir, files);
+    const ran = resolution.runs.find(
+      (run) => run.path === inst.path && run.axis === "behaviour"
+    );
+    const snapshot = ran
+      ? resolution.snapshots.find((row) => row.id === ran.ref)
+      : undefined;
+    const circuit = circuitInstOf(inst);
+    const table = !circuit && snapshot ? tableInstOf(inst, snapshot) : null;
+    if (typeof table === "string") throw new Error(`${inst.path}: ${table}`);
+    const row = circuit ? withWatch(circuit, snapshot) : table;
     if (row) circuitParts.push(row);
   }
   const built = buildNets(instances, undefined);

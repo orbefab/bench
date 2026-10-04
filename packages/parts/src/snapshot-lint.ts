@@ -440,6 +440,213 @@ function hingeErrors(
   return diags;
 }
 
+const METRICS = new Set([
+  "static-max-abs",
+  "free-run-max-abs",
+  "free-run-rms",
+  "step-rise",
+]);
+const HELD_OUT = new Set(["fixture", "use-like", "both"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStrings(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
+/**
+ * The file's shape, before any rule reads a field: the fields every form
+ * has, with the right kinds. A file that fails here is not linted.
+ */
+export function parseSnapshot(
+  raw: unknown,
+  id: string
+): { file: SnapshotFile | null; diagnostics: Diagnostic[] } {
+  const wrong = (field: string, want: string): Diagnostic =>
+    makeDiag({
+      severity: "error",
+      code: "schema",
+      path: id,
+      port: field,
+      quantity: "Snapshot",
+      left: "invalid",
+      right: want,
+      detail: `snapshot field ${field} is not ${want}`,
+    });
+  if (!isRecord(raw))
+    return { file: null, diagnostics: [wrong("file", "an object")] };
+  const diagnostics: Diagnostic[] = [];
+  for (const key of ["format", "part", "partType", "form"] as const) {
+    if (typeof raw[key] !== "string") diagnostics.push(wrong(key, "a string"));
+  }
+  if (raw.axis !== "behaviour" && raw.axis !== "body") {
+    diagnostics.push(wrong("axis", "behaviour or body"));
+  }
+  if (!isRecord(raw.params)) diagnostics.push(wrong("params", "an object"));
+  const ports = raw.ports;
+  if (
+    !isRecord(ports) ||
+    !isStrings(ports.inputs) ||
+    !isStrings(ports.outputs)
+  ) {
+    diagnostics.push(wrong("ports", "inputs and outputs, lists of port.field"));
+  }
+  if (!isRecord(raw.envelope) || !isRecord(raw.envelope.bounds)) {
+    diagnostics.push(wrong("envelope", "an object with bounds"));
+  }
+  if (
+    raw.error !== "none-available" &&
+    !(Array.isArray(raw.error) && raw.error.every(isRecord))
+  ) {
+    diagnostics.push(wrong("error", "none-available or a list of rows"));
+  }
+  if (!isRecord(raw.provenance))
+    diagnostics.push(wrong("provenance", "an object"));
+  if (raw.bind !== undefined && !isRecord(raw.bind)) {
+    diagnostics.push(wrong("bind", "an object"));
+  }
+  if (diagnostics.length > 0) return { file: null, diagnostics };
+  return { file: raw as unknown as SnapshotFile, diagnostics };
+}
+
+/** `port.field` on a port the type declares, with a field its domain has. */
+function portQuantity(item: string, ports: Record<string, PortDecl>): boolean {
+  const dot = item.lastIndexOf(".");
+  if (dot <= 0) return false;
+  return (
+    ports[item.slice(0, dot)] !== undefined &&
+    boundQuantity(item, ports) !== null
+  );
+}
+
+/**
+ * What the evidence says, checked against what it can mean: each error
+ * row a known metric on a declared port quantity, finite and not
+ * negative; each bound finite and ordered; each named port quantity the
+ * part's; each number finite.
+ */
+function evidenceErrors(
+  snap: SnapshotFile,
+  ctx: SnapshotLintContext
+): Diagnostic[] {
+  const path = snap.part || "snapshot";
+  const diags: Diagnostic[] = [];
+  const say = (port: string, left: string, right: string, detail: string) =>
+    diags.push(
+      makeDiag({
+        severity: "error",
+        code: "snapshot",
+        path,
+        port,
+        quantity: "Snapshot",
+        left,
+        right,
+        detail,
+      })
+    );
+  for (const [key, value] of Object.entries(snap.params)) {
+    const items = Array.isArray(value) ? value : [value];
+    for (const item of items) {
+      const n = numeric(item);
+      if (n !== null && !Number.isFinite(n)) {
+        say(key, String(n), "finite", `param ${key} is not finite`);
+      }
+    }
+  }
+  for (const [key, bound] of Object.entries(snap.envelope.bounds)) {
+    const lo = Array.isArray(bound) ? numeric(bound[0]) : null;
+    const hi = Array.isArray(bound) ? numeric(bound[1]) : null;
+    if (
+      lo === null ||
+      hi === null ||
+      !Number.isFinite(lo) ||
+      !Number.isFinite(hi) ||
+      lo > hi
+    ) {
+      say(
+        key,
+        JSON.stringify(bound),
+        "[low, high]",
+        `envelope ${key} is not a finite low to high range`
+      );
+    }
+  }
+  if (Array.isArray(snap.error)) {
+    for (const row of snap.error) {
+      const where = String(row.quantity);
+      if (!METRICS.has(row.metric)) {
+        say(
+          where,
+          String(row.metric),
+          "a known metric",
+          `error metric ${row.metric} is not known`
+        );
+      }
+      if (!HELD_OUT.has(row.heldOut)) {
+        say(
+          where,
+          String(row.heldOut),
+          "fixture, use-like or both",
+          `error row ${where} has no held-out set`
+        );
+      }
+      if (
+        typeof row.value !== "number" ||
+        !Number.isFinite(row.value) ||
+        row.value < 0
+      ) {
+        say(
+          where,
+          String(row.value),
+          ">= 0",
+          `error ${where} is not a finite non-negative number`
+        );
+      }
+      const base = row.baseline?.value;
+      if (
+        row.baseline !== undefined &&
+        (typeof base !== "number" || !Number.isFinite(base))
+      ) {
+        say(
+          where,
+          String(base),
+          "finite",
+          `error ${where} baseline is not finite`
+        );
+      }
+      if (
+        ctx.ports &&
+        (typeof row.quantity !== "string" ||
+          !portQuantity(row.quantity, ctx.ports))
+      ) {
+        say(
+          where,
+          where,
+          snap.partType,
+          `error quantity ${where} is not a port quantity of ${snap.partType}`
+        );
+      }
+    }
+  }
+  // A hinge names its own rotational ports (`hingeErrors`).
+  if (ctx.ports && snap.form !== "hinge@1") {
+    for (const item of [...snap.ports.inputs, ...snap.ports.outputs]) {
+      if (portQuantity(item, ctx.ports)) continue;
+      say(
+        item,
+        item,
+        snap.partType,
+        `port quantity ${item} is not on ${snap.partType}`
+      );
+    }
+  }
+  return diags;
+}
+
 /** A snapshot must not carry its fixture's supply. */
 export const FIXTURE_SUPPLY = "a snapshot must not carry its fixture's supply";
 
@@ -550,6 +757,7 @@ export function lintSnapshot(
   diagnostics.push(...bindErrors(snap, ctx));
   diagnostics.push(...hingeErrors(snap, ctx));
   diagnostics.push(...plausibleErrors(snap, ctx));
+  diagnostics.push(...evidenceErrors(snap, ctx));
   const quality = earned(snap, diagnostics.length > 0);
   if (snap.quality && exceeds(snap.quality, quality)) {
     diagnostics.push(

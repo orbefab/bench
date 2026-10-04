@@ -12,7 +12,8 @@
  * - the world runs twice, the group in detail and the group as its
  *   snapshot, and each run's report says so;
  * - every port quantity the snapshot names is read on both runs through
- *   `Sim.portReading`, every 10 ms frame;
+ *   `Sim.portReading`, every 10 ms frame, and a port name the part does
+ *   not have reads nothing;
  * - on the fixture the capture recorded, the gap is the stated error
  *   (free-run max-abs and rms) to `DRIFT`;
  * - elsewhere the gap is printed beside the stated error. A world that is
@@ -253,6 +254,10 @@ async function runSide(
       }
     };
     sample();
+    // A name the part does not have reads nothing, on either side.
+    if (sim.portReading(path, "no-such-port") !== null) {
+      throw new Error(`${world}: ${path}.no-such-port has a reading`);
+    }
     for (let t = 0; t < ms; t += RECORD_FRAME_MS) {
       await sim.step(RECORD_FRAME_MS);
       sample();

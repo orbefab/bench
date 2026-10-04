@@ -145,7 +145,17 @@ export {
   type TableLaw,
   tableLawOf,
 } from "./snapshot-law";
-export { FIXTURE_SUPPLY, lintSnapshot } from "./snapshot-lint";
-export { type LoadedSnapshot, loadSnapshot } from "./snapshot-load";
+export { FIXTURE_SUPPLY, lintSnapshot, parseSnapshot } from "./snapshot-lint";
+export {
+  type LoadedSnapshot,
+  loadSnapshot,
+  type SnapshotOwner,
+} from "./snapshot-load";
+export {
+  resolveSnapshots,
+  type SnapshotRan,
+  type SnapshotResolution,
+  type SnapshotRun,
+} from "./snapshot-resolve";
 export type { Store } from "./store";
 export { UnionFind } from "./union-find";

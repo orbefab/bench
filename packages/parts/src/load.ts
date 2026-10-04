@@ -3,7 +3,6 @@
 import {
   AXES,
   type BehaviourImpl,
-  type BodyImpl,
   DEFAULT_TIMESTEP_S,
   type Diagnostic,
   type LevelClass,
@@ -13,8 +12,6 @@ import {
   type PartFile,
   ROOT_PATH,
   type RunReport,
-  type SiNumber,
-  type SnapshotFile,
   SUPPLY_FORMS,
   stepsPerMs,
 } from "@sfab-bench/contract";
@@ -39,6 +36,7 @@ import { buildNets, type LiveNet, type Wire } from "./nets";
 import { buildReport } from "./report";
 import { makeDiag } from "./si";
 import { type LoadedSnapshot, loadSnapshot } from "./snapshot-load";
+import { resolveSnapshots, type SnapshotRun } from "./snapshot-resolve";
 
 export type LoadOptions = LibraryOptions;
 
@@ -152,7 +150,7 @@ export type LoadResult = {
   /** Snapshots an instance actually runs. Others stay off the lock. */
   snapshots: LoadedSnapshot[];
   /** Path, axis and ref of each snapshot the resolved levels run. */
-  snapshotRuns: { path: string; axis: "behaviour" | "body"; ref: string }[];
+  snapshotRuns: SnapshotRun[];
 };
 
 export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
@@ -377,110 +375,9 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     lib.run.play.levels.nets
   );
   diagnostics.push(...broken);
-  const snapshots: LoadedSnapshot[] = [];
-  const snapshotRuns: LoadResult["snapshotRuns"] = [];
-  const ran: {
-    path: string;
-    axis: "behaviour" | "body";
-    ref: string;
-    quality: string;
-    error: LoadedSnapshot["file"]["error"];
-    provenance: RunReport["snapshots"][number]["provenance"];
-    bounds: LoadedSnapshot["file"]["envelope"]["bounds"];
-  }[] = [];
-  for (const inst of resolved.instances) {
-    for (const ask of snapshotAsks(inst)) {
-      let type = null;
-      try {
-        type = typeOf(lib, inst.part);
-      } catch {
-        type = null;
-      }
-      const found = loadSnapshot(lib.worldDir, opts, ask.ref, type);
-      diagnostics.push(...found.diagnostics);
-      if (!found.loaded) continue;
-      if (ask.axis === "body") {
-        const file = found.loaded.file;
-        if (file.form !== "hinge@1" || file.axis !== "body") {
-          diagnostics.push(
-            makeDiag({
-              severity: "error",
-              code: "snapshot",
-              path: inst.path,
-              port: "body",
-              quantity: "Form",
-              left: file.form,
-              right: "hinge@1",
-              detail: `snapshot ${ask.ref} is not a body hinge`,
-            })
-          );
-          continue;
-        }
-        if (type && file.partType !== type.id) {
-          diagnostics.push(
-            makeDiag({
-              severity: "error",
-              code: "snapshot",
-              path: inst.path,
-              port: "body",
-              quantity: "PartType",
-              left: file.partType,
-              right: type.id,
-              detail: `snapshot ${ask.ref} partType ${file.partType} is not ${type.id}`,
-            })
-          );
-          continue;
-        }
-      }
-      if (ask.axis === "behaviour" && found.loaded.file.form !== "table@1") {
-        // A behaviour snapshot in any other form runs as that form, with
-        // the file's params: the run dispatches on the form, not on
-        // where its numbers came from.
-        const file = found.loaded.file;
-        const wrong =
-          file.axis !== "behaviour"
-            ? `snapshot ${ask.ref} is a ${file.axis} snapshot`
-            : type && file.partType !== type.id
-              ? `snapshot ${ask.ref} partType ${file.partType} is not ${type.id}`
-              : null;
-        if (wrong) {
-          diagnostics.push(
-            makeDiag({
-              severity: "error",
-              code: "snapshot",
-              path: inst.path,
-              port: "behaviour",
-              quantity: "Form",
-              left: file.form,
-              right: type?.id ?? "-",
-              detail: wrong,
-            })
-          );
-          continue;
-        }
-        const selected = inst.axes.behaviour;
-        inst.axes.behaviour = {
-          ...selected,
-          impl: formOfSnapshot(file, selected.impl as BehaviourImpl),
-        };
-      }
-      remember(snapshots, found.loaded);
-      snapshotRuns.push({
-        path: inst.path,
-        axis: ask.axis,
-        ref: ask.ref,
-      });
-      ran.push({
-        path: inst.path,
-        axis: ask.axis,
-        ref: ask.ref,
-        quality: inst.foreign ? "Q1" : found.loaded.quality,
-        error: found.loaded.file.error,
-        provenance: provenanceOf(found.loaded.file),
-        bounds: found.loaded.file.envelope.bounds,
-      });
-    }
-  }
+  const resolution = resolveSnapshots(lib, opts, resolved.instances);
+  diagnostics.push(...resolution.diagnostics);
+  const { snapshots, runs: snapshotRuns, ran } = resolution;
 
   const pins: LockSnapshot[] = snapshots.map((row) => ({
     id: row.id,
@@ -530,75 +427,4 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     snapshots,
     snapshotRuns,
   };
-}
-
-function provenanceOf(
-  file: SnapshotFile
-): RunReport["snapshots"][number]["provenance"] {
-  const source = file.provenance;
-  return {
-    source: source.source,
-    ...(source.from
-      ? {
-          from: {
-            part: source.from.part,
-            level: source.from.level,
-            hash: source.from.hash,
-          },
-        }
-      : {}),
-    ...(source.fixture ? { fixture: source.fixture.ref } : {}),
-    ...(source.tool
-      ? { tool: { name: source.tool.name, version: source.tool.version } }
-      : {}),
-  };
-}
-
-/** A non-table behaviour snapshot as the form variant it stands for. */
-function formOfSnapshot(
-  file: LoadedSnapshot["file"],
-  variant: BehaviourImpl
-): BehaviourImpl {
-  // A number or a tagged SI number, as the linter accepts; the form reads
-  // either. Strings and arrays are table data, not form params.
-  const params: Record<string, SiNumber> = {};
-  for (const [key, value] of Object.entries(file.params)) {
-    const tagged = value as unknown as { v?: unknown } | null;
-    if (
-      typeof value === "number" ||
-      (tagged && typeof tagged === "object" && typeof tagged.v === "number")
-    ) {
-      params[key] = value as unknown as SiNumber;
-    }
-  }
-  return {
-    kind: "form",
-    form: file.form,
-    params,
-    ...(file.bind ? { bind: { ...file.bind } } : {}),
-    omits: variant.omits,
-  };
-}
-
-function remember(rows: LoadedSnapshot[], loaded: LoadedSnapshot): void {
-  if (!rows.some((row) => row.id === loaded.id)) rows.push(loaded);
-}
-
-type SnapshotAsk = {
-  ref: string;
-  axis: "behaviour" | "body";
-};
-
-/** Snapshots this instance's selected behaviour and body run. */
-function snapshotAsks(inst: LiveInstance): SnapshotAsk[] {
-  const asks: SnapshotAsk[] = [];
-  const impl = inst.axes.behaviour.impl as BehaviourImpl | null;
-  if (impl?.kind === "snapshot") {
-    asks.push({ ref: impl.ref, axis: "behaviour" });
-  }
-  const body = inst.axes.body.impl as BodyImpl | null;
-  if (body?.kind === "snapshot") {
-    asks.push({ ref: body.ref, axis: "body" });
-  }
-  return asks;
 }
