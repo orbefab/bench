@@ -406,7 +406,7 @@ try {
               ? rms
               : null;
         if (got === null) continue;
-        const drift = (got - row.value) / row.value;
+        const drift = (got - row.value) / Math.max(Math.abs(row.value), 1e-12);
         console.log(`    ${row.metric}: ${drift.toExponential(2)} off`);
         expect(
           Math.abs(drift) <= DRIFT,

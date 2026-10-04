@@ -9,7 +9,8 @@
  *   form port behind each of the part's own ports. A form the rail holds
  *   as a lumped slot, not as elements, reads its own draw on its power
  *   port.
- * - A port on no rail: the angle of the joint the instance drives.
+ * - A port no electrical wire reaches: the angle of the joint the
+ *   instance drives. An electrical port no rail holds has no reading.
  */
 
 import type { RailCircuit } from "../rail-circuit";
@@ -23,7 +24,7 @@ export type PortReading = {
    * rail, and where the run does not attribute a current to this port.
    */
   current: number | null;
-  /** Radians of the joint the instance drives. Null on a rail. */
+  /** Radians of the joint the instance drives. Null on a wired port. */
   angle: number | null;
 };
 
@@ -46,15 +47,16 @@ export function portReading(
   port: string
 ): PortReading | null {
   if (!s.runPlan) return null;
-  const net = netOf(s.runPlan.wires, `${path}.${port}`);
+  const full = `${path}.${port}`;
+  const net = netOf(s.runPlan.wires, full);
   const seen = new Set<RailCircuit>();
   for (const group of s.rails.values()) {
     const circuit = group.circuit;
     if (seen.has(circuit)) continue;
     seen.add(circuit);
     let node: string | null = null;
-    for (const full of net) {
-      node = circuit.stampedNode(full);
+    for (const member of net) {
+      node = circuit.stampedNode(member);
       if (node !== null) break;
     }
     const elements = circuit.elementsUnder(path);
@@ -70,6 +72,10 @@ export function portReading(
       angle: null,
     };
   }
+  const wired = s.runPlan.wires.some(
+    ([first, other]) => first === full || other === full
+  );
+  if (wired) return null;
   const angle = drivenAngle(s, path);
   return angle === null ? null : { voltage: null, current: null, angle };
 }
