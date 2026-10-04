@@ -8,7 +8,9 @@
  * The analytic answer is the periodic steady state of that RC, from the
  * chip part's `roh` / `rol` / `rLeak` and the solved board node. One Nano
  * runs from a bench supply on its 5V pin; a copy runs from USB, whose
- * SS14 lowers its node, and is evaluated at that node.
+ * SS14 lowers its node, and is evaluated at that node. Their grounds are
+ * tied, so the two supplies are one rail: its frame is taken once, and
+ * both boards keep their band.
  */
 
 import { ok as expect } from "node:assert/strict";

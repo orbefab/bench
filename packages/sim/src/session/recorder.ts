@@ -286,14 +286,18 @@ function fillRecorder(s: SessionState, full: boolean) {
     rec.supplyCurrent[i] = live?.current ?? 0;
     rec.supplySoc[i] = live?.soc ?? Number.NaN;
   }
-  const ledFrames = new Map<string, ReturnType<RailCircuit["takeLedFrame"]>>();
+  // Keyed by circuit: two supplies on one island are one rail, taken once.
+  const ledFrames = new Map<
+    RailCircuit,
+    ReturnType<RailCircuit["takeLedFrame"]>
+  >();
   const ledFrameOf = (supplyId: string) => {
-    const cached = ledFrames.get(supplyId);
-    if (cached) return cached;
     const circuit = s.rails.get(supplyId)?.circuit;
     if (!circuit) return undefined;
+    const cached = ledFrames.get(circuit);
+    if (cached) return cached;
     const frame = full ? circuit.takeLedFrame() : undefined;
-    if (frame) ledFrames.set(supplyId, frame);
+    if (frame) ledFrames.set(circuit, frame);
     return frame;
   };
   for (let i = 0; i < lay.boards.length; i++) {
@@ -315,14 +319,17 @@ function fillRecorder(s: SessionState, full: boolean) {
     rec.inReset[i] = board?.inReset ? 1 : 0;
     rec.belowSoa[i] = board && boardInSoa(s, board) ? 1 : 0;
   }
-  const pinFrames = new Map<string, ReturnType<RailCircuit["takePinFrame"]>>();
+  const pinFrames = new Map<
+    RailCircuit,
+    ReturnType<RailCircuit["takePinFrame"]>
+  >();
   const pinFrameOf = (supplyId: string) => {
-    const cached = pinFrames.get(supplyId);
-    if (cached) return cached;
     const circuit = s.rails.get(supplyId)?.circuit;
     if (!circuit) return undefined;
+    const cached = pinFrames.get(circuit);
+    if (cached) return cached;
     const frame = full ? circuit.takePinFrame() : undefined;
-    if (frame) pinFrames.set(supplyId, frame);
+    if (frame) pinFrames.set(circuit, frame);
     return frame;
   };
   for (let k = 0; k < rec.pinPaths.length; k++) {

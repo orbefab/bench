@@ -60,7 +60,7 @@
     {
       "id": "sfab/pwm-rc-scene@1.0.0",
       "path": "parts/sfab/pwm-rc-scene@1.0.0.json",
-      "sha256": "a89ea4f2a46d31b69623af042bb05b3f5f2de44593b9fbe93b29a967d0e5e64e",
+      "sha256": "3ec7eda7dc155b261bf4964ee6c963db31c2d9da1850e3cd8d20cbf75cd3378e",
       "source": "world",
       "version": "1.0.0"
     },

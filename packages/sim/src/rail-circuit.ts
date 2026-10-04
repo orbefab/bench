@@ -710,8 +710,12 @@ export class RailCircuit {
     if (!(dt > 0) || this.drives.length === 0) return;
     const span = this.pinSpan;
     const next = span + dt;
+    const folded = new Set<string>();
     for (const row of this.drives) {
       const node = row.pin.pinNode;
+      // Two pins on one net share a node: fold it once per step.
+      if (folded.has(node)) continue;
+      folded.add(node);
       const v = this.engine.voltage(node);
       const seen = span === 0 ? undefined : this.pinFrame.get(node);
       if (!seen) {

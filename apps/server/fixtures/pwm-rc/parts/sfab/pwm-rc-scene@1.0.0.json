@@ -72,7 +72,8 @@
                 ["nanoUsb.D9", "rUsb.A"],
                 ["rUsb.B", "cUsb.A"],
                 ["cUsb.A", "nanoUsb.D2"],
-                ["cUsb.B", "nanoUsb.GND"]
+                ["cUsb.B", "nanoUsb.GND"],
+                ["nano.GND", "nanoUsb.GND"]
               ],
               "expose": {}
             }
