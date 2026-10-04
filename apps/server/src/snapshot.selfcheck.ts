@@ -307,19 +307,19 @@ try {
     `path 2 ran ${highNano.variant} class ${highNano.class}`
   );
   expect(highNano.reason === "path rule nano", highNano.reason);
-  expect(high.snapshots.length === 0, "path 2 ran a snapshot");
+  expect(nanoSnapshots(high).length === 0, "path 2 ran a snapshot");
   expect(
     lowNano.class === 1 && lowNano.variant === "avr8js",
     `path 1 ran ${lowNano.variant} class ${lowNano.class}`
   );
   expect(lowNano.reason === "path rule nano", lowNano.reason);
   expect(
-    low.snapshots.length === 1 &&
-      low.snapshots[0]?.ref === SNAPSHOT_ID &&
-      low.snapshots[0]?.path === "nano.power",
+    nanoSnapshots(low).length === 1 &&
+      nanoSnapshots(low)[0]?.ref === SNAPSHOT_ID &&
+      nanoSnapshots(low)[0]?.path === "nano.power",
     `path 1 snapshot ${low.snapshots.map((row) => `${row.path} ${row.ref}`).join(",")}`
   );
-  expect(low.snapshots[0]?.quality === "Q1", "path 1 quality");
+  expect(nanoSnapshots(low)[0]?.quality === "Q1", "path 1 quality");
   const omits = low.notSimulated.find(
     (row) => row.path === "nano" && row.axis === "behaviour"
   );
@@ -389,8 +389,9 @@ expect(
   canonicalJson(first) === canonicalJson(second),
   "reports differ across loads"
 );
-expect(first.snapshots[0]?.quality === "Q1", "report quality");
-expect(Array.isArray(first.snapshots[0]?.error), "report error");
+const firstPower = first.snapshots.find((row) => row.ref === SNAPSHOT_ID);
+expect(firstPower?.quality === "Q1", "report quality");
+expect(Array.isArray(firstPower?.error), "report error");
 const reported = first.notSimulated.find(
   (row) => row.path === "nano" && row.axis === "behaviour"
 );
@@ -424,6 +425,13 @@ function open(project: string, world: string): RunReport {
     `${world} plan has no nano level for world_status`
   );
   return report;
+}
+
+/** The Nano's own snapshots; the SG90 beside it runs one too. */
+function nanoSnapshots(report: RunReport): RunReport["snapshots"] {
+  return report.snapshots.filter(
+    (row) => row.path === "nano" || row.path.startsWith("nano.")
+  );
 }
 
 function levelRow(report: RunReport, path: string) {

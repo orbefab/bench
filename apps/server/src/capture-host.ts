@@ -16,12 +16,12 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
-import type { CaptureEnv } from "@sfab-bench/sim";
+import { type CaptureEnv, planWorld } from "@sfab-bench/sim";
 
 import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { nodeStore } from "./world/node-store";
-import { catalogRoot } from "./world/plan-host";
+import { catalogRoot, nodePlanEnv } from "./world/plan-host";
 
 function benchVersions(): { version: string; mujoco: string; avr8js: string } {
   const pkg = JSON.parse(
@@ -123,6 +123,7 @@ export const nodeCaptureEnv: CaptureEnv = {
   },
   runWorld: runWorldIn(false),
   bench: benchVersions,
+  plan: (project, world) => planWorld(project, world, nodePlanEnv),
 };
 
 export const serverCaptureEnv: CaptureEnv = {

@@ -2,20 +2,23 @@
  * The SG90 run from its four sub-parts (layered-sim step 3). The arm
  * sweeps 10°, 90° and 120° three ways:
  *
- * - S: the whole-servo law (`position-servo@1`) on its lumped body.
+ * - S: the whole-servo law (`position-servo@1`) on its lumped body. Its
+ *   class-1 default is `group`, the snapshot captured from G.
  * - C: that law on the gear-train body's rigid collapse.
  * - G: the catalog SG90 at behaviour class 2, its four children. A
  *   `dc-motor@1` winding behind the `gears` train, a `potentiometer@1`
  *   on the output, and a `servo-control@1` bridge that reads the wiper.
  *
  * C and G share the joint terms and the motor law, so they agree within
- * the control's one-step sense lag. G against S is the gap a group
- * snapshot has to close (step 4). It is printed, not asserted.
+ * the control's one-step sense lag. That gap is the snapshot's stated
+ * error. G against S adds the lumped body's fitted armature; it is
+ * printed, not asserted.
  */
 
 import { deepStrictEqual, ok as expect } from "node:assert/strict";
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -37,10 +40,12 @@ import {
   vSource,
 } from "@sfab-bench/engine-circuit";
 import { sha256Bytes } from "@sfab-bench/parts";
+import { planWorld } from "@sfab-bench/sim";
 import { Sim } from "@sfab-bench/sim/sim";
+import { captureFromConfig } from "./capture";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { packageVersion } from "./world/package-version";
-import { nodePlanEnv } from "./world/plan-host";
+import { catalogRoot, nodePlanEnv } from "./world/plan-host";
 
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
@@ -248,7 +253,7 @@ try {
     );
   }
   for (const row of [
-    "servo behaviour 1/datasheet form position-servo@1",
+    "servo behaviour 1/group snapshot sfab/sg90-servo@1.0.0",
     "servo body 1/lumped lumped",
   ]) {
     expect(
@@ -329,11 +334,142 @@ try {
     expect(held < 1e-4, `G vs C held current at ${ms} ms: ${held} A`);
   }
 
-  // The group snapshot's target (step 4). Recorded, not asserted.
+  // The lumped body's armature is fitted to the datasheet speed, not to
+  // the train. Recorded, not asserted: a bench measurement decides it.
   const gs = worst(g.joint, s.joint);
   const gsI = worst(g.current, s.current);
   console.log(
     `G vs S: joint max|Δ| ${gs.delta.toFixed(3)}° at ${gs.atMs} ms; usb current max|Δ| ${(gsI.delta * 1000).toFixed(2)} mA at ${gsI.atMs} ms`
+  );
+
+  // The class-1 default is the snapshot captured from G. Its params are
+  // the authored law's, reduced from the four children, so it runs bit
+  // for bit as `datasheet`. Its stated error is G vs C at the servo's
+  // ports, and a second capture writes the same bytes.
+  const snapFile = join(catalogRoot(), "snapshots/sfab/sg90-servo@1.0.0.json");
+  const snap = JSON.parse(readFileSync(snapFile, "utf8")) as {
+    params: Record<string, number>;
+    error: { metric: string; quantity: string; value: number }[];
+  };
+  const stated = (metric: string, quantity: string) =>
+    snap.error.find((row) => row.metric === metric && row.quantity === quantity)
+      ?.value ?? Number.NaN;
+  const d = await runWorld(
+    dir,
+    world(
+      "grp-d-1000us",
+      {
+        default: 1,
+        paths: { servo: { behaviour: { class: 1, variant: "datasheet" } } },
+      },
+      0.001
+    )
+  );
+  deepStrictEqual(s.joint, d.joint);
+  deepStrictEqual(s.current, d.current);
+  deepStrictEqual(s.part, d.part);
+  const row = s.report?.snapshots.find(
+    (item) => item.ref === "sfab/sg90-servo@1.0.0"
+  );
+  expect(
+    row?.quality === "Q2a" && !row.stale,
+    `S snapshot row ${JSON.stringify(row)}`
+  );
+  const angleErr = Math.abs(
+    stated("free-run-max-abs", "shaft.angle") - (gc.delta * Math.PI) / 180
+  );
+  const currentErr = Math.abs(
+    stated("free-run-max-abs", "V+.current") - partI.delta
+  );
+  expect(angleErr < 1e-8, `stated angle error off by ${angleErr} rad`);
+  expect(currentErr < 1e-8, `stated current error off by ${currentErr} A`);
+  const config = JSON.parse(
+    readFileSync(join(catalogRoot(), "fixtures/capture.config.json"), "utf8")
+  ) as { entries: { id: string }[] };
+  const entry = config.entries.find(
+    (item) => item.id === "sfab/sg90-servo@1.0.0"
+  );
+  expect(entry, "group capture entry");
+  const againDir = mkdtempSync(join(tmpdir(), "sfab-group-again-"));
+  try {
+    const again = join(againDir, "sg90-servo@1.0.0.json");
+    await captureFromConfig({
+      config: { ...config, entries: [entry] } as never,
+      outFile: again,
+    });
+    expect(
+      readFileSync(again).equals(readFileSync(snapFile)),
+      "second group capture differs"
+    );
+  } finally {
+    rmSync(againDir, { recursive: true, force: true });
+  }
+  console.log(
+    `group snapshot: ${Object.entries(snap.params)
+      .map(([key, value]) => `${key} ${value}`)
+      .join(
+        ", "
+      )}; runs as datasheet bit for bit; states shaft.angle ${stated("free-run-max-abs", "shaft.angle")} rad, V+.current ${stated("free-run-max-abs", "V+.current")} A; second capture byte-identical`
+  );
+
+  // A child edit makes the capture stale. A snapshot on the wrong axis,
+  // or of another part type, does not run as the law.
+  const sWorld = coarse.s;
+  const report = () => {
+    const planned = planWorld(dir, sWorld, nodePlanEnv);
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((item) => item.message).join("; "));
+    }
+    return planned.plan;
+  };
+  const potFile = join(parts, "sg90-pot@1.0.0.json");
+  const pot = readFileSync(join(catalog, "sg90-pot@1.0.0.json"), "utf8");
+  writeFileSync(potFile, pot.replace('"R": 5000', '"R": 5100'));
+  const stale = report().report;
+  expect(
+    stale?.snapshots.find((item) => item.ref === "sfab/sg90-servo@1.0.0")
+      ?.stale === true &&
+      stale.warnings.some((item) => item.code === "stale-capture"),
+    "a pot edit leaves the group capture fresh"
+  );
+  rmSync(potFile);
+  mkdirSync(join(dir, "snapshots/sfab"), { recursive: true });
+  const local = join(dir, "snapshots/sfab/sg90-servo@1.0.0.json");
+  const text = readFileSync(snapFile, "utf8");
+  for (const [label, edited, detail] of [
+    [
+      "axis",
+      readFileSync(
+        join(catalogRoot(), "snapshots/sfab/sg90-hinge@1.0.0.json"),
+        "utf8"
+      ),
+      "sfab/sg90-servo@1.0.0 is a body snapshot",
+    ],
+    [
+      "partType",
+      text.replace(
+        '"partType": "hobby-servo-3wire"',
+        '"partType": "potentiometer"'
+      ),
+      "partType potentiometer is not hobby-servo-3wire",
+    ],
+  ] as const) {
+    writeFileSync(local, edited);
+    const plan = report();
+    const said = [
+      ...(plan.report?.errors ?? []),
+      ...(plan.report?.warnings ?? []),
+      ...(plan.degraded ?? []),
+    ].map((item) => item.message);
+    expect(
+      said.some((message) => message.includes(detail)) &&
+        !plan.parts.some((item) => item.id === "servo"),
+      `wrong ${label}: ${said.join(" | ")}`
+    );
+  }
+  rmSync(local);
+  console.log(
+    "group snapshot: stale on a child edit; wrong axis and part type refused"
   );
 } finally {
   rmSync(dir, { recursive: true, force: true });

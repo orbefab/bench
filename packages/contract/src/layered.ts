@@ -703,7 +703,28 @@ export type CaptureRecipe =
       heldOut: "fixture";
       sourceLevel: "0" | "1" | "2" | "3";
       into?: string;
-    };
+    }
+  | GroupCaptureRecipe;
+
+/**
+ * A behaviour snapshot in `form`, reduced from the composite at
+ * `sourceLevel`. Both levels run on one scene world and are compared at
+ * the instance's own ports.
+ */
+export type GroupCaptureRecipe = {
+  form: Exclude<FormId, "hinge@1" | "table@1">;
+  sourceLevel: "0" | "1" | "2" | "3";
+  baseline: { level: string; value: number };
+  heldOut: "fixture";
+  /** A world in the bench's `examples/<project>` holding the part at `instance`. */
+  scene: { project: string; world: string; instance: string; ms: number };
+  /** `play.levels.paths[instance]` on the deep side and the snapshot side. */
+  deep: LevelSpec;
+  snap: LevelSpec;
+  /** Volts a resistive draw inside the group is counted at. */
+  vNominal: number;
+  into?: string;
+};
 
 export type PartFile = {
   format: typeof PART_FORMAT;

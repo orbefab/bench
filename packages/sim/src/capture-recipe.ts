@@ -8,6 +8,7 @@ import type { Store } from "@sfab-bench/parts";
 
 import type { HingeCaptureEntry } from "./body/hinge-capture";
 import type { AnyCaptureEntry, CaptureEntry, CaptureFile } from "./capture";
+import type { GroupCaptureEntry } from "./group-capture";
 
 export type CaptureAxis = CaptureAxisName;
 
@@ -18,7 +19,7 @@ export type CaptureRecipeSource = {
 };
 
 function axisOf(entry: AnyCaptureEntry | CaptureRecipe): CaptureAxis {
-  return "form" in entry ? "body" : "behaviour";
+  return "form" in entry && entry.form === "hinge@1" ? "body" : "behaviour";
 }
 
 function entryOf(id: string, recipe: CaptureRecipe): AnyCaptureEntry {
@@ -34,7 +35,7 @@ export function captureRecipeFor(
   part: PartFile,
   axis: "behaviour",
   source: CaptureRecipeSource
-): CaptureEntry | null;
+): CaptureEntry | GroupCaptureEntry | null;
 export function captureRecipeFor(
   part: PartFile,
   axis: "body",

@@ -238,6 +238,7 @@ console.log(`parts: ${modulePart?.id} · ${modulePart?.model}`);
   deepStrictEqual(servoOptions, [
     "0:slew:false:no runtime for form slew@1",
     "1:datasheet:true:",
+    "1:group:true:",
     "2:netlist:true:",
   ]);
   expect(

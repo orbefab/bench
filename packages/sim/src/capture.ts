@@ -33,6 +33,12 @@ import {
   describeNetlist,
 } from "./circuit-stamp";
 import type { StampEnv } from "./env";
+import {
+  type GroupCaptureEntry,
+  isGroupForm,
+  writeGroupSnapshot,
+} from "./group-capture";
+import type { PlanResult } from "./plan";
 
 export type FreeCase = {
   firmware: string;
@@ -48,7 +54,10 @@ export type CaptureFile<E = CaptureEntry> = {
   entries: E[];
 };
 
-export type AnyCaptureEntry = CaptureEntry | HingeCaptureEntry;
+export type AnyCaptureEntry =
+  | CaptureEntry
+  | HingeCaptureEntry
+  | GroupCaptureEntry;
 
 export type FreeRunSpec = {
   project: string;
@@ -137,6 +146,8 @@ export type CaptureEnv = {
     ms: number
   ): Promise<{ state: WorldState; read: RecordingRead }>;
   bench(): { version: string; mujoco: string; avr8js: string };
+  /** The run plan of a world, for a group capture's reduction. */
+  plan(project: string, world: string): PlanResult;
 };
 
 export type CaptureRun = {
@@ -214,6 +225,20 @@ export async function captureFromConfig(
   return ran;
 }
 
+/** A snapshot capture that is not a table writes no table stats. */
+function emptyStats(): CaptureStats {
+  return {
+    staticMaxAbsMv: 0,
+    lineMaxAbsMv: 0,
+    knots: 0,
+    tripA: 0,
+    envelopeMaxA: 0,
+    cases: [],
+    moveUsPerMs: { class1: 0, class2: 0 },
+    json: "",
+  };
+}
+
 function readCaptureFile(
   catalog: string,
   inline: CaptureRun["config"],
@@ -240,6 +265,26 @@ async function captureEntry(
   env: CaptureEnv,
   stampEnv: StampEnv
 ): Promise<CaptureStats> {
+  if ("scene" in config) {
+    if (!isGroupForm(config.form)) {
+      throw new Error(`${config.id}: no group reduction to ${config.form}`);
+    }
+    const group = progressOf(opts, 1);
+    group.check();
+    await writeGroupSnapshot(
+      {
+        catalog,
+        entry: config,
+        created: file.created,
+        tool: file.tool,
+        bench: benchVersions(env),
+        ...(opts.outFile ? { outFile: opts.outFile } : {}),
+      },
+      env
+    );
+    await group.step("group snapshot");
+    return emptyStats();
+  }
   if ("form" in config) {
     const hinge = progressOf(opts, 1);
     hinge.check();
@@ -255,16 +300,7 @@ async function captureEntry(
       env
     );
     await hinge.step("hinge snapshot");
-    return {
-      staticMaxAbsMv: 0,
-      lineMaxAbsMv: 0,
-      knots: 0,
-      tripA: 0,
-      envelopeMaxA: 0,
-      cases: [],
-      moveUsPerMs: { class1: 0, class2: 0 },
-      json: "",
-    };
+    return emptyStats();
   }
   const across = acrossOf(config, catalog, env, opts.libraryDir);
   const stampOpts = {

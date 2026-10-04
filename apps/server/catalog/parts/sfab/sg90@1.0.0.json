@@ -63,7 +63,7 @@
         }
       },
       "1": {
-        "default": "datasheet",
+        "default": "group",
         "variants": {
           "datasheet": {
             "kind": "form",
@@ -76,6 +76,16 @@
               "quiescent": 0.01
             },
             "omits": ["gear backlash", "motor inductance", "winding heat"]
+          },
+          "group": {
+            "kind": "snapshot",
+            "ref": "sfab/sg90-servo@1.0.0",
+            "omits": [
+              "gear backlash",
+              "motor inductance",
+              "winding heat",
+              "wiper sense lag"
+            ]
           }
         }
       },
@@ -139,7 +149,11 @@
               "frictionloss": 0.002,
               "damping": 0.0025
             },
-            "omits": ["gear-stage bodies", "case flex"]
+            "omits": [
+              "gear-stage bodies",
+              "case flex",
+              "reflected armature: 5e-5 is fitted to the datasheet speed, 7.4× below the class-2 collapse; a bench measurement decides"
+            ]
           },
           "collapsed": {
             "kind": "snapshot",

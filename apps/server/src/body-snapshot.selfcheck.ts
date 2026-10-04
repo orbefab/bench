@@ -326,8 +326,9 @@ try {
   if (!collapsedPlan.ok) throw new Error("unreachable");
   const card = levelCard(collapsedPlan.plan.report ?? null, "servo");
   expect(
-    card?.snapshot?.ref === "body sfab/sg90-hinge@1.0.0" &&
-      card.snapshot.quality === "Q2a",
+    card?.snapshot?.ref ===
+      "body sfab/sg90-hinge@1.0.0, sfab/sg90-servo@1.0.0" &&
+      card.snapshot.quality === "Q2a, Q2a",
     `card ${card?.snapshot?.ref} ${card?.snapshot?.quality}`
   );
   console.log(
