@@ -123,8 +123,24 @@ expect(
 expect(
   class1Power?.range.join(" | ") === "VBUS current 0 to 900 mA" &&
     class1Power.stale === false &&
+    class1Power.unchecked === null &&
     class1Power.warnings.length === 0,
-  `run card range ${class1Power?.range.join(" | ")} stale ${class1Power?.stale}`
+  `run card range ${class1Power?.range.join(" | ")} stale ${class1Power?.stale} unchecked ${class1Power?.unchecked}`
+);
+// A row freshness could not check carries its reason to the card.
+const UNCHECKED =
+  "the group reaches sfab/x@1.0.0, whose snapshot files its signature does not cover";
+const uncheckedReport = structuredClone(class1.report);
+const uncheckedRow = uncheckedReport?.snapshots.find(
+  (row) => row.path === "nano.power"
+);
+if (uncheckedRow) uncheckedRow.unchecked = UNCHECKED;
+const uncheckedPower = levelCard(uncheckedReport, "nano")?.nested.find(
+  (row) => row.path === "nano.power"
+);
+expect(
+  uncheckedPower?.unchecked === UNCHECKED && uncheckedPower.stale === false,
+  `unchecked card ${uncheckedPower?.unchecked}`
 );
 expect(
   rangeLine("shaft.speed", [-10.472, 10.472]) ===

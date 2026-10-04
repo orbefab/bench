@@ -146,13 +146,13 @@
     {
       "id": "sfab/sg90-servo@1.0.0",
       "path": "../../apps/server/catalog/snapshots/sfab/sg90-servo@1.0.0.json",
-      "sha256": "41125bba6d2aa4ec2764e5b9b3e954eed0b7dad2902c36fb6abb5d7ac396b91b",
+      "sha256": "fcdfd1a019ab26134b14e6e03c9ed1d00d016fcd75be4a44a47940520e05c8c4",
       "source": "catalog"
     },
     {
       "id": "sfab/uno-power-input@1.0.0",
       "path": "../../apps/server/catalog/snapshots/sfab/uno-power-input@1.0.0.json",
-      "sha256": "bbffdcaa713992a98759172c2442254e10853466d7b2bee57f264c84c42e2115",
+      "sha256": "e2192dad68ca6e4f5cd626297f86ae291099e153d7e0da34ed9752853221e3b4",
       "source": "catalog"
     }
   ],

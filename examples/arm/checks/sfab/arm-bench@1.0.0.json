@@ -4,7 +4,7 @@
   "fixture": {
     "ms": 3000,
     "hash": "df2d684f5916cb5437e3246dac29db74fd0bb5a187120f585881631e45450e27",
-    "lock": "72cbd245fc549e745a6c4e82422c246ead0398c3a19e5fa50e98fc69c0e65343"
+    "lock": "6dfac69ccfcdd036d80ab2f2b12297806940895b21de864b9688a1b78edf5860"
   },
   "detailed": {
     "default": 2
@@ -29,15 +29,15 @@
       "path": "servo",
       "axis": "behaviour",
       "ref": "sfab/sg90-servo@1.0.0",
-      "hash": "41125bba6d2aa4ec2764e5b9b3e954eed0b7dad2902c36fb6abb5d7ac396b91b",
-      "fromHash": "d5a94a97733dfec203fdc89bf0ccc0541d9b94fc801aaf6df3cac53a985aff81"
+      "hash": "fcdfd1a019ab26134b14e6e03c9ed1d00d016fcd75be4a44a47940520e05c8c4",
+      "fromHash": "d23aa87bc5973fdb1d777f45a1e5470adc94d2f843067cd252730a7072217a44"
     },
     {
       "path": "uno.power",
       "axis": "behaviour",
       "ref": "sfab/uno-power-input@1.0.0",
-      "hash": "bbffdcaa713992a98759172c2442254e10853466d7b2bee57f264c84c42e2115",
-      "fromHash": "a69863a300206173e76c97f90b81433406a97ffff4867739fd3845d95fe6740e"
+      "hash": "e2192dad68ca6e4f5cd626297f86ae291099e153d7e0da34ed9752853221e3b4",
+      "fromHash": "a04c7ac1ad244c8106449bd8841c29b8f53af5e5e0744b32e912c1bb4bd34590"
     }
   ],
   "quantities": [

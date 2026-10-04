@@ -30,6 +30,8 @@ export type LevelSnapshot = {
   warnings: string[];
   /** The part changed since this snapshot was captured. */
   stale: boolean;
+  /** Why freshness could not be checked. Null when it was. */
+  unchecked: string | null;
 };
 
 /** What one inspector card shows for an instance. Null when the report has no row. */
@@ -106,6 +108,7 @@ function snapshotOf(path: string, rows: RunReport["snapshots"]): LevelSnapshot {
       range: [],
       warnings: [],
       stale: false,
+      unchecked: null,
     };
   }
   const errors: string[] = [];
@@ -127,6 +130,10 @@ function snapshotOf(path: string, rows: RunReport["snapshots"]): LevelSnapshot {
     range,
     warnings,
     stale: rows.some((row) => row.stale === true),
+    unchecked:
+      rows
+        .flatMap((row) => (row.unchecked ? [row.unchecked] : []))
+        .join("; ") || null,
   };
 }
 

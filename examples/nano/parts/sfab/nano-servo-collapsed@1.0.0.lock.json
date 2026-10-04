@@ -132,13 +132,13 @@
     {
       "id": "sfab/sg90-hinge@1.0.0",
       "path": "../../apps/server/catalog/snapshots/sfab/sg90-hinge@1.0.0.json",
-      "sha256": "443638cb7b0266765bb673d508cda906abc2bb89fa34e620076ae47305011f08",
+      "sha256": "6ea741b4d601e75071b85703ac6519a9ba6f850736c03bec85cdc1f23bb313a0",
       "source": "catalog"
     },
     {
       "id": "sfab/sg90-servo@1.0.0",
       "path": "../../apps/server/catalog/snapshots/sfab/sg90-servo@1.0.0.json",
-      "sha256": "41125bba6d2aa4ec2764e5b9b3e954eed0b7dad2902c36fb6abb5d7ac396b91b",
+      "sha256": "fcdfd1a019ab26134b14e6e03c9ed1d00d016fcd75be4a44a47940520e05c8c4",
       "source": "catalog"
     }
   ],

@@ -9,7 +9,7 @@
 import type { SnapshotFile } from "@sfab-bench/contract";
 
 import {
-  groupSignature,
+  groupSource,
   hingeSignature,
   stampSignature,
 } from "./capture-signature";
@@ -58,13 +58,20 @@ export function provenanceHash(
     // captured from the group running.
     const across = pair(file.params.across);
     if (file.axis === "behaviour" && !across) {
-      const hash = groupSignature(
+      const group = groupSource(
         from.part,
         source,
         readPart,
         (id) => read.type(id)?.type ?? null
       );
-      return hash ? { checked: true, hash } : unbuilt("a composite");
+      if (!group) return unbuilt("a composite");
+      if (group.nested.length > 0) {
+        return {
+          checked: false,
+          reason: `the group reaches ${group.nested.join(", ")}, whose snapshot files its signature does not cover`,
+        };
+      }
+      return { checked: true, hash: group.hash };
     }
     if (!across) return unbuilt("a group or a sweep");
     const instance = file.provenance.instance;

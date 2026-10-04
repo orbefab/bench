@@ -7,14 +7,18 @@
  * built from it:
  * - a static sweep: the stamp it swept, every part with the form, the
  *   numbers that form parsed, its nodes, and any table or regulator law;
- * - a group: the source composite, the root's type and body axis, and
- *   every part and type the netlist reaches;
- * - a hinge: the gear train.
+ * - a group: the source composite, the root's type, body axis and
+ *   ratings, and every part and type the netlist reaches with their
+ *   ratings (a run reads ratings: the servo's torque clamp, its supply,
+ *   a motor's net torque);
+ * - a hinge: the gear train and the part's ratings (the capture bounds
+ *   its envelope by the shaft's).
  *
  * Each names the level and variant it read. Visual axes, citations and
  * snapshot bounds are not the source, so editing them leaves a capture
  * fresh. A group's signature does not open a snapshot file a child
- * selects; the catalog groups run their children as forms.
+ * selects: a group that reaches a child with a snapshot variant lists it
+ * in `nested`, and freshness reports that capture unchecked.
  */
 import type {
   BehaviourImpl,
@@ -26,7 +30,7 @@ import { contentHash } from "@sfab-bench/parts";
 import type { BoardStamp } from "./circuit-stamp";
 
 /** Bumped when what a signature covers changes. */
-export const CAPTURE_SIGNATURE = "sfab.capture-source@2";
+export const CAPTURE_SIGNATURE = "sfab.capture-source@3";
 
 /** A static sweep's source: the stamp, before any engine element. */
 export function stampSignature(
@@ -45,18 +49,19 @@ export function stampSignature(
 }
 
 /**
- * A group's source: the composite at `level`/`variant`, the root's type
- * and body axis (the snapshot side may run any of its body levels), and
- * every part the netlist reaches with its type, through the composites
- * of those parts too. Null when that variant is not a composite, or a
- * part or type is missing.
+ * A group's source: the composite at `level`/`variant`, the root's type,
+ * body axis (the snapshot side may run any of its body levels) and
+ * ratings, and every part the netlist reaches with its type, through the
+ * composites of those parts too. `nested` names the reached parts with a
+ * snapshot variant, whose files the hash does not cover. Null when that
+ * variant is not a composite, or a part or type is missing.
  */
-export function groupSignature(
+export function groupSource(
   partId: string,
   source: { level: string; variant: string },
   read: (id: string) => PartFile | null,
   readType: (id: string) => PartTypeFile | null
-): string | null {
+): { hash: string; nested: string[] } | null {
   const root = read(partId);
   const impl =
     root?.axes?.behaviour?.[source.level as "0"]?.variants[source.variant];
@@ -72,6 +77,7 @@ export function groupSignature(
   };
   if (!typeOf(root)) return null;
   const parts: Record<string, unknown> = {};
+  const nested: string[] = [];
   const queue = childrenOf(impl);
   for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
     if (parts[id]) continue;
@@ -81,24 +87,38 @@ export function groupSignature(
     for (const axis of Object.values(child.axes ?? {})) {
       for (const level of Object.values(axis ?? {})) {
         for (const variant of Object.values(level?.variants ?? {})) {
-          queue.push(...childrenOf(variant as BehaviourImpl));
+          const row = variant as BehaviourImpl;
+          if (row.kind === "snapshot" && !nested.includes(id)) nested.push(id);
+          queue.push(...childrenOf(row));
         }
       }
     }
   }
-  return contentHash({
+  const hash = contentHash({
     signature: CAPTURE_SIGNATURE,
     kind: "group",
     ...source,
     impl,
     type: root.type,
     body: root.axes?.body ?? null,
+    ratings: root.ratings ?? null,
     parts,
     types,
   });
+  return { hash, nested };
 }
 
-/** A hinge's source: the gear train at `level`/`variant`. */
+/** The hash of `groupSource`. */
+export function groupSignature(
+  partId: string,
+  source: { level: string; variant: string },
+  read: (id: string) => PartFile | null,
+  readType: (id: string) => PartTypeFile | null
+): string | null {
+  return groupSource(partId, source, read, readType)?.hash ?? null;
+}
+
+/** A hinge's source: the gear train at `level`/`variant`, and the part's ratings. */
 export function hingeSignature(
   part: PartFile,
   source: { level: string; variant: string }
@@ -110,12 +130,13 @@ export function hingeSignature(
     kind: "hinge",
     ...source,
     train: impl,
+    ratings: part.ratings ?? null,
   });
 }
 
 /**
- * A part as a group's source: what decides how it runs. Its citations,
- * ratings, capture recipe and visual axis do not.
+ * A part as a group's source: what decides how it runs, its ratings
+ * included. Its citations, capture recipe and visual axis do not.
  */
 function sourceOf(part: PartFile): unknown {
   return {
@@ -124,6 +145,7 @@ function sourceOf(part: PartFile): unknown {
     declaredOnly: part.declaredOnly ?? false,
     behaviour: part.axes?.behaviour ?? null,
     body: part.axes?.body ?? null,
+    ratings: part.ratings ?? null,
   };
 }
 

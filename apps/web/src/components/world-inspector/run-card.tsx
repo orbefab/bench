@@ -59,7 +59,15 @@ function SnapshotBlock({
             <Tag text="stale" tone="warn" />
           </span>
         ) : null}
+        {snapshot.unchecked ? (
+          <span title={snapshot.unchecked}>
+            <Tag text="unchecked" />
+          </span>
+        ) : null}
       </div>
+      {snapshot.unchecked ? (
+        <Lines label="Freshness not checked" lines={[snapshot.unchecked]} />
+      ) : null}
       <Lines
         label="Stated error"
         lines={snapshot.errors.length ? snapshot.errors : ["none stated"]}

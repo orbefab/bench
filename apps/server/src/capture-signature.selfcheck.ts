@@ -7,6 +7,11 @@
  * - a law param of a part inside the source dirties it: the Uno power
  *   input's PTC fuse `rCold` and PMOS `rds`/`vth`, the SG90 control's
  *   `eSat`, the SG90 gear train;
+ * - so does a rating the run or the capture reads (layered-sim M3b): the
+ *   SG90's shaft torque (the servo clamp, the hinge envelope) and its
+ *   control's `V+` voltage;
+ * - a group that reaches a child with a snapshot variant is unchecked,
+ *   with the child named;
  * - an edit that cannot change the run leaves it fresh: a child's visual
  *   axis or citations, the root's visual axis;
  * - a provenance that does not name its variant is unchecked, with why;
@@ -93,6 +98,13 @@ function gearTrain(part: PartFile): { shafts: { inertia: number }[] } {
   return impl as unknown as { shafts: { inertia: number }[] };
 }
 
+/** The part's rating record for `port`. */
+function rating(part: PartFile, port: string): Record<string, unknown> {
+  const row = (part.ratings as Record<string, Record<string, unknown>>)?.[port];
+  if (!row) throw new Error(`${part.id} has no ${port} rating`);
+  return row;
+}
+
 const dropVisual: Edit = (part) => {
   if (part.axes) part.axes.visual = undefined;
 };
@@ -165,6 +177,18 @@ const cases: [string, SnapshotFile, Record<string, Edit>, boolean][] = [
     true,
   ],
   [
+    "sg90 root shaft torque 0.176 → 0.001 N·m",
+    snapshot("sg90-servo"),
+    { [SG90]: (part) => (rating(part, "shaft").torque = [-0.001, 0.001]) },
+    true,
+  ],
+  [
+    "sg90 control V+ voltage 4.8–6 → 4.8–5.5 V",
+    snapshot("sg90-servo"),
+    { [CONTROL]: (part) => (rating(part, "V+").voltage = [4.8, 5.5]) },
+    true,
+  ],
+  [
     "sg90 control visual axis",
     snapshot("sg90-servo"),
     { [CONTROL]: dropVisual },
@@ -175,6 +199,12 @@ const cases: [string, SnapshotFile, Record<string, Edit>, boolean][] = [
     "hinge gear-train inertia ×2",
     snapshot("sg90-hinge"),
     { [SG90]: (part) => (gearTrain(part).shafts[0].inertia *= 2) },
+    true,
+  ],
+  [
+    "hinge shaft torque 0.176 → 0.001 N·m",
+    snapshot("sg90-hinge"),
+    { [SG90]: (part) => (rating(part, "shaft").torque = [-0.001, 0.001]) },
     true,
   ],
   [
@@ -204,6 +234,26 @@ expect(
   "a capture with no variant is checked"
 );
 console.log(`capture-signature: no variant → unchecked (${unnamed.reason})`);
+
+// A child with a snapshot variant: its file is outside the signature.
+const MOTOR = "sfab/sg90-motor@1.0.0";
+const nestedRun = signatureWith(snapshot("sg90-servo"), {
+  [MOTOR]: (part) => {
+    const behaviour = (part.axes?.behaviour ?? {}) as Record<string, unknown>;
+    behaviour["0"] = {
+      default: "table",
+      variants: { table: { kind: "snapshot", ref: "sfab/sg90-motor-table" } },
+    };
+    (part.axes as Record<string, unknown>).behaviour = behaviour;
+  },
+});
+expect(
+  !nestedRun.checked && nestedRun.reason.includes(MOTOR),
+  `a nested snapshot child is checked: ${JSON.stringify(nestedRun)}`
+);
+console.log(
+  `capture-signature: a child with a snapshot variant → unchecked (${nestedRun.reason})`
+);
 
 // 4. In a world: the Uno capture's report row.
 const root = mkdtempSync(join(tmpdir(), "capture-signature-arm-"));
