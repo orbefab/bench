@@ -1,7 +1,7 @@
 # Bench — user manual (target)
 
 **Audience:** someone using Bench, and implementers checking *what* the product does.
-**Status:** accepted 2026-09-27. This is the target product; it reads as if the app already exists. What runs today, and the order the rest gets built in, is [`product.md`](product.md) › Ranked next (A1–A6). How to install and open a folder today is [`user/`](user/).
+**Status:** accepted 2026-09-27; amended 2026-10-04 (looking at one part, the bench, capture runs, accuracy). This is the target product; it reads as if the app already exists. What runs today, and the order the rest gets built in, is [`product.md`](product.md) › Ranked next (A1–A6). How to install and open a folder today is [`user/`](user/).
 **Pair with:** [`architecture.md`](architecture.md) (engines, layers, plugin seams), [ADR 0011](decisions/0011-one-document-kind.md) (one document kind), [ADR 0012](decisions/0012-layers-and-plugin-seams.md) (layers and plugin seams). The decisions behind this page are [`notes/2026-09-27-bench-alignment.md`](notes/2026-09-27-bench-alignment.md).
 
 This page does not describe file schemas, solvers, or code layout.
@@ -20,14 +20,29 @@ You drive it two ways, and they are **peers**: the editor's tools, and chat with
 
 ## The screen
 
-- **Left — tree:** quiet list of what's in the open part (subparts and wires). Rows are mostly bare (name + indent), with a small warning icon when something is wrong. **One selection at a time** (v1). **No outliner search** in v1.
+- **Left — tree:** quiet list of what's in the open part (subparts and wires). It holds the whole hierarchy: a row with parts inside it expands in place, down to leaf parts, like a CAD assembly tree. Rows are mostly bare (name + indent), with an **eye** and a small warning icon when something is wrong. **One selection at a time** (v1). **No outliner search** in v1.
 - **Center — stage:** the 3D view. Empty ports show as markers. A lonely part sits on a **visual grid only**: nothing invisible is holding it up or powering it.
 - **Right — card:** the selected thing: ports, live signals (they follow the playhead while scrubbing), params, one **level picker per axis** the part has, warnings, Capture, Open part, Rename part file, level history. With nothing selected, the card is the open part's own card, and it shows its **play settings** (gravity, seed, time step).
 - **Right — chat:** a collapsible panel beside the card. The agent sees the open part and the selection and edits through the same edits as the tools.
 - **Top — tabs + thin breadcrumb:** each open part file is a tab (CAD-style). Opening a child part opens or focuses its tab; the previous tab **parks**.
 - **Under stage — timeline:** play, pause, scrub. **Always** there. Capture progress also uses this bar while a capture runs.
 
-Quest uses this same full chrome, just tighter. No special agent play/pause controls and no stored "agent ran this" badge in the UI: conversation history is enough.
+Quest uses this same full chrome, just tighter: the tree, card and timeline are panels in the room, and you point and click with the controller. Hide, Isolate and show inner parts work there exactly as on the Mac; there are no Quest-only gestures. No special agent play/pause controls and no stored "agent ran this" badge in the UI: conversation history is enough.
+
+---
+
+## Looking at one part
+
+Zoom is the camera, as in any 3D viewer. It never changes what is simulated. To look at one part among many (one servo of six in a robot), you have two ways, and both keep the simulation as it is:
+
+- **Isolate** (row ⋯, or **I**): stay in the open part, hide everything else, and frame the selection. The part keeps running in context: the robot's supply, firmware and load still drive it. A bar over the stage says what is isolated; **Show all** or **Esc** leaves.
+- **Open part** (row ⋯, or the card): open that part's own file in a new tab, alone. Nothing powers or drives it there unless you add it (see Capture & levels).
+
+**Hide and show.** The eye on a row hides or shows that instance in 3D. A hidden part keeps simulating; hiding is only what you see.
+
+**Show inner parts.** A part made of parts draws its own outside by default (the servo's case). The eye on its inner rows draws its parts in place instead (motor, gears, pot, control board). This is a view choice, separate from the **level** the part runs at: a servo can show its inner parts while it runs as a snapshot, and the other way round.
+
+Hide, Isolate and show inner parts are your view, like the camera and the selection: they are kept per screen, not saved in the part, so the Quest can isolate one servo while the Mac shows the whole robot.
 
 ---
 
@@ -109,7 +124,7 @@ Each tool is a mode on the stage. A tool makes ordinary edits, so undo, the agen
 | **Mount** | Attach a part to a body (a servo onto a bracket, a sensor onto a link), so it moves with it. |
 | **Wire** (**W**) | Click **port → port in 3D** (card wiring is backup). **Esc** or **click empty** cancels. Wires are parts too: they show as **instance rows** in the tree, endpoints on the card or on hover; **select → Delete/Backspace** removes one. Wires are **not** added from the library picker. |
 | **Probe** | Pick a port while playing and watch its quantities (volts, amps, torque, angle) as a trace on the timeline. A board pin with a circuit on its net shows its solved node: each frame's mean, with a faint band from its lowest to its highest step (a PWM pin's square wave, an RC node's ripple). A pin with no circuit shows its logic level times the board node. |
-| **Fixture** | Build a test bench around the selected part: a supply, a load, a scripted input. This is where you Capture from (see below). |
+| **Fixture** | Build a test bench around the selected part: a new part with the selected part inside it, plus the instruments you Add and wire (a supply, a signal source, a load). This is where you usually Capture from (see below). |
 
 Later tools: joints between bodies, measure (distance, angle, clearance), targets and scripted paths, sensor frames, clips from the timeline.
 
@@ -141,7 +156,11 @@ Parking a tab (switching away) **drops the live run** (file and view/selection s
 
 **Capture** freezes the **selected part's** behaviour at its ports into a **level** on **that part**, not into a new kind of document and not into the fixture parent.
 
-- You usually Capture from a fixture (a parent that may include supplies). The supply stays in the fixture; it is **not** baked into the capture. Later parents bring their own power. Outside the capture regime, you get **envelope** warnings.
+- **The bench is the parent.** Capture runs on the selected part inside whatever part holds it, powers it and drives it: a robot, or a **bench** you made for capturing. A bench is an ordinary part: the part under test, plus instruments you Add, place and wire like anything else. The supply, signal source and load stay in the bench; they are **not** baked into the capture. Later parents bring their own power. Outside the range the bench drove it through, you get **envelope** warnings.
+- **Instruments.** A **signal source** and a **load** (a dynamometer for a shaft) play a **program**: a short list of segments (hold, step, ramp, chirp, random), each with a time and a level, edited on the instrument's card or by the agent. Something a real rig would swap between runs, such as a flywheel, is a bench param with several values; Capture runs the bench once per value. A bench can also hold a board with firmware, and a robot is a bench whose program is its firmware.
+- **A capture is its own run.** Capture runs the open part from t = 0 in the background, for as long as its programs last, and records the selected part's ports at every step. The live run you are watching is not touched. The same bench gives the same capture, so when the part changes and its capture goes stale, Bench can run the capture again and show how far it moved. There is no capture from what you just played.
+- **Nothing to capture.** A servo opened alone has no power. Capture still runs; when the part saw no power or no drive at its ports, the result says so, and suggests a new part around it: Add a power source, place it, wire it (or ask the agent to). Bench does not build the bench for you.
+- **Where it came from.** Each captured level names the bench it was captured on. A capture on a robot covers only what that robot did; a capture on a sweep bench covers the part's ratings.
 - You do **not** have to Open the child first: Capture works from the current playable document on the **selection**.
 - Captures **stack as history** on that part. Pick among levels on the card (**Live** when available, plus captures; unavailable options grayed). **Delete** old history entries from the card.
 - **The Capture button.** Each axis that can capture has its own **Capture** button, under that axis's picker. When it can't run, it is disabled and the card says why beside it, in the server's words: "no capture recipe for <part type>", "<part> has no behaviour level that holds a snapshot; name one with \"into\" in the capture recipe", or "<part> has no behaviour level <n> to capture into". It is also disabled while another capture is running in this world ("a capture is running"). Pressing it captures the selected instance's part on that axis.
@@ -163,7 +182,17 @@ Parking a tab (switching away) **drops the live run** (file and view/selection s
 
 ## Warnings
 
-Problems show **three ways**: a small icon on the tree row (hover for a short why), a callout in 3D, and full text on the card. A fallback level, an idle part, a placeholder, an envelope excursion, a stale capture, and a broken port each show there.
+Problems show **three ways**: a small icon on the tree row (hover for a short why), a callout in 3D, and full text on the card. A fallback level, an idle part, a placeholder, an envelope excursion, a stale capture, a broken port, and a gap over budget each show there.
+
+## Accuracy
+
+A part running on a snapshot says how true it is. Its card lists, for each port it is checked at, the **gap** between the snapshot and the detailed part on the same run, and the **resolution** it is judged against: the smallest difference the part on the other end of that port can tell apart (a servo's deadband, a chip's ADC step), as its datasheet states it. The worst instant counts, not the average.
+
+- **Within:** the gap is smaller than the resolution. Nothing else shows.
+- **Over by x:** the gap is larger, by x. It shows amber on the card and as a warning, with the margin. It is a known limit of that snapshot, stated, not hidden.
+- A quantity that nothing on the other end reads (the current a servo draws, for example) shows its gap with no verdict.
+
+The **ghost** (a toggle on the card) runs the other level beside the live one, drawn translucent, so the gap is visible as motion.
 
 ---
 
@@ -175,6 +204,7 @@ Problems show **three ways**: a small icon on the tree row (hover for a short wh
 | Delete / Backspace | Delete selection (e.g. wire) |
 | Esc | Cancel (e.g. in-progress wire) |
 | W | Wire tool |
+| I | Isolate the selection (Esc leaves) |
 | ⌘/Ctrl+Z · ⌘/Ctrl+Shift+Z | Undo / redo |
 
 ---
@@ -190,8 +220,11 @@ On the card, **contextual import** per category, not one mega Import menu. Bench
 | You want… | You do… |
 |-----------|---------|
 | Test a servo with power | Parent part = servo + supply (+ wires); Play |
-| Reuse cheap behaviour | Select the servo → Capture → pick that level later |
+| Reuse cheap behaviour | Put the servo on a bench (supply + signal source + load) → select it → Capture → pick that level later |
+| Look at one servo inside a robot | Row ⋯ → Isolate (it keeps running in the robot) |
+| See inside the servo | Show its inner rows (the eye); its level is unchanged |
 | Edit the servo's insides | Open part (new tab) |
+| Know how true a snapshot is | Its card: gap, resolution, within / over |
 | Call it "left servo" in this robot only | Rename the **tree instance** |
 | Rename the library servo file | Card → **Rename part file** |
 | Rename a bubbled port | Not in v1: names are pin-derived, and fixed once used |
