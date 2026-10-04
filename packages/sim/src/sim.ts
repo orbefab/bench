@@ -118,6 +118,7 @@ import {
   ghostWorldText,
   measurePairs,
 } from "./session/ghost";
+import { type PortReading, portReading } from "./session/ports";
 import { bindPower, latchSupplyNodes, stampNodes } from "./session/rails";
 import {
   answerRecord,
@@ -1032,6 +1033,7 @@ function createSession(host: SimHost) {
     pause,
     dispose: close,
     branchReading,
+    portReading: (path: string, port: string) => portReading(s, path, port),
     /** The ghost's last frame, or null when there is no ghost. */
     ghost: () => (ghost ? ghostState(ghost.reading) : null),
     /** For a ghost run inside this module only. */
@@ -1090,6 +1092,13 @@ export class Sim {
   }
   dispose(): void {
     this.session.dispose();
+  }
+  /**
+   * The instance at `path` read at its own electrical port after the last
+   * solve. Null when no rail holds that port.
+   */
+  portReading(path: string, port: string): PortReading | null {
+    return this.session.portReading(path, port);
   }
   /** The snapshot ghost's frame. Null when the run has none. */
   ghost(): WorldGhostState | null {
