@@ -62,6 +62,29 @@
       "baseline": "detailed"
     },
     {
+      "metric": "step-max",
+      "quantity": "servo.shaft.angle",
+      "value": 0.005436726271,
+      "heldOut": "fixture",
+      "baseline": "detailed",
+      "pairs": 3001,
+      "unmatched": 0,
+      "at": {
+        "ms": 1224,
+        "detailed": 1.629387769,
+        "snapshot": 1.623951042
+      }
+    },
+    {
+      "metric": "step-rms",
+      "quantity": "servo.shaft.angle",
+      "value": 0.001149827248,
+      "heldOut": "fixture",
+      "baseline": "detailed",
+      "pairs": 3001,
+      "unmatched": 0
+    },
+    {
       "metric": "free-run-max-abs",
       "quantity": "servo.V+.current",
       "value": 0.01311073258,
@@ -74,6 +97,29 @@
       "value": 0.001011569533,
       "heldOut": "fixture",
       "baseline": "detailed"
+    },
+    {
+      "metric": "step-max",
+      "quantity": "servo.V+.current",
+      "value": 0.02001575555,
+      "heldOut": "fixture",
+      "baseline": "detailed",
+      "pairs": 3001,
+      "unmatched": 0,
+      "at": {
+        "ms": 1164,
+        "detailed": 0.08949933949,
+        "snapshot": 0.06948358393
+      }
+    },
+    {
+      "metric": "step-rms",
+      "quantity": "servo.V+.current",
+      "value": 0.001343812453,
+      "heldOut": "fixture",
+      "baseline": "detailed",
+      "pairs": 3001,
+      "unmatched": 0
     },
     {
       "metric": "free-run-max-abs",
@@ -90,6 +136,29 @@
       "baseline": "detailed"
     },
     {
+      "metric": "step-max",
+      "quantity": "uno.5V.voltage",
+      "value": 0.01434094895,
+      "heldOut": "fixture",
+      "baseline": "detailed",
+      "pairs": 3001,
+      "unmatched": 0,
+      "at": {
+        "ms": 1164,
+        "detailed": 4.900825706,
+        "snapshot": 4.915166655
+      }
+    },
+    {
+      "metric": "step-rms",
+      "quantity": "uno.5V.voltage",
+      "value": 0.0009708500518,
+      "heldOut": "fixture",
+      "baseline": "detailed",
+      "pairs": 3001,
+      "unmatched": 0
+    },
+    {
       "metric": "free-run-max-abs",
       "quantity": "uno.VBUS.voltage",
       "value": 0.006643428343,
@@ -102,6 +171,118 @@
       "value": 0.0005157804783,
       "heldOut": "fixture",
       "baseline": "detailed"
+    },
+    {
+      "metric": "step-max",
+      "quantity": "uno.VBUS.voltage",
+      "value": 0.01009925982,
+      "heldOut": "fixture",
+      "baseline": "detailed",
+      "pairs": 3001,
+      "unmatched": 0,
+      "at": {
+        "ms": 1164,
+        "detailed": 4.930158948,
+        "snapshot": 4.940258208
+      }
+    },
+    {
+      "metric": "step-rms",
+      "quantity": "uno.VBUS.voltage",
+      "value": 0.0006836972195,
+      "heldOut": "fixture",
+      "baseline": "detailed",
+      "pairs": 3001,
+      "unmatched": 0
     }
-  ]
+  ],
+  "observations": [
+    {
+      "quantity": "servo.shaft.angle",
+      "cadence": "frame",
+      "phase": "body",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "servo.shaft.angle",
+      "cadence": "step",
+      "phase": "body",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "servo.V+.current",
+      "cadence": "frame",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "servo.V+.current",
+      "cadence": "step",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "uno.5V.voltage",
+      "cadence": "frame",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "uno.5V.voltage",
+      "cadence": "step",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "uno.VBUS.voltage",
+      "cadence": "frame",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "uno.VBUS.voltage",
+      "cadence": "step",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    }
+  ],
+  "identity": "71591dccc1a71bec98352f450eaace6ea77142361237b757829b00485ca5abb4",
+  "domain": {
+    "detailed": {
+      "envelope": [],
+      "stale": [],
+      "unchecked": [],
+      "degraded": []
+    },
+    "snapshot": {
+      "envelope": [
+        {
+          "path": "uno.power",
+          "ref": "sfab/uno-power-input@1.0.0",
+          "port": "VBUS",
+          "quantity": "Current",
+          "range": "0..0.5"
+        }
+      ],
+      "stale": [],
+      "unchecked": [],
+      "degraded": []
+    }
+  }
 }

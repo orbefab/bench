@@ -17,6 +17,7 @@ import { logicLevel, logicThresholds } from "@sfab-bench/parts";
 import { analogRead } from "../analog-pin";
 import type { RunPlan } from "../plan";
 import { runningReset } from "../power";
+import type { ConversionEvent } from "../sim";
 import { applyGpioDrives, gpioInputNets, powerFeedsOf } from "../wiring";
 import { rearmRangers, rearmServos } from "./actuators";
 import { post, simMs, stepCount, stepEndMs, thrownMessage } from "./common";
@@ -136,6 +137,7 @@ function bootBoard(s: SessionState, spec: BoardSpec): AvrBoard {
     return board;
   }
   board.load(parsed.bytes);
+  s.mountStep.set(spec.id, stepCount(s));
   // Named once, after a successful load. A missing image or a dead supply
   // returns above and does not announce a gap the run never reached.
   if (board.running) {
@@ -408,6 +410,27 @@ function noteAdc(s: SessionState, boardId: string, sample: AdcConversion) {
   });
 }
 
+/** A conversion for `Sim.observe`, at the instant it started. */
+function noteConversion(
+  s: SessionState,
+  board: AvrBoard,
+  sample: AdcConversion
+) {
+  const mountStep = s.mountStep.get(board.id) ?? 0;
+  const event: ConversionEvent = {
+    board: board.id,
+    mux: sample.mux,
+    ref: sample.ref,
+    vRef: sample.vRef,
+    voltage: sample.voltage,
+    count: sample.count,
+    mountStep,
+    cycle: sample.cycle,
+    ms: mountStep / s.perMs + (sample.cycle * 1000) / board.hz,
+  };
+  for (const observer of s.observers) observer.conversion?.(event);
+}
+
 /**
  * AVCC is the latched board node. AREF is 0: the shipped boards have no
  * AREF port, and the pin circuit is omitted. A planned board names each
@@ -450,9 +473,10 @@ function attachAnalog(s: SessionState, board: AvrBoard) {
       });
       return port ? { ...read, mux: port } : read;
     },
-    ...(s.adcTrace
-      ? { converted: (sample: AdcConversion) => noteAdc(s, board.id, sample) }
-      : {}),
+    converted: (sample: AdcConversion) => {
+      if (s.adcTrace) noteAdc(s, board.id, sample);
+      if (s.observers.size > 0) noteConversion(s, board, sample);
+    },
   });
 }
 

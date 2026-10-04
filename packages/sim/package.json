@@ -26,6 +26,8 @@
     "./hinge-capture": "./src/body/hinge-capture.ts",
     "./env": "./src/env.ts",
     "./freshness": "./src/freshness.ts",
+    "./observe": "./src/observe.ts",
+    "./compare": "./src/compare.ts",
     "./sim": "./src/sim.ts"
   },
   "scripts": {

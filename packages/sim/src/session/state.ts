@@ -22,6 +22,7 @@ import type {
   AdcSampleStamp,
   SerialChunk,
   SimHost,
+  SimObserver,
   ToWorker,
 } from "../sim";
 import type { gpioInputNets, PowerFeeds } from "../wiring";
@@ -195,6 +196,13 @@ export type SessionState = {
   latchedRail: Map<string, number>;
   adcNodes: AdcNodeStamp[];
   adcSamples: AdcSampleStamp[];
+  /** Listeners from `Sim.observe`. They outlive a reload. */
+  readonly observers: Set<SimObserver>;
+  /**
+   * The master step count at which each board's current CPU was mounted.
+   * With the CPU's own cycle count it names a conversion's exact instant.
+   */
+  mountStep: Map<string, number>;
   /** Test only. Absent on load, stamps and samples are not allocated. */
   adcTrace: boolean;
   /** Test only. A tripped fuse starts hot, before the first solve. */
@@ -276,6 +284,8 @@ export function createState(host: SimHost): SessionState {
     latchedRail: new Map<string, number>(),
     adcNodes: [],
     adcSamples: [],
+    observers: new Set<SimObserver>(),
+    mountStep: new Map<string, number>(),
     adcTrace: false,
     fuseStart: "cold",
     rails: new Map<string, RailGroup>(),

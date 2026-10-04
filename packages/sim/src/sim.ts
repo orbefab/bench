@@ -246,6 +246,36 @@ export type AdcTrace = {
   samples: AdcSampleStamp[];
 };
 
+/**
+ * A conversion seen through `Sim.observe`, at the instant it started: the
+ * reader's held sample and its latched reference. `mountStep` (the master
+ * step count when the board's CPU was mounted) and `cycle` (that CPU's own
+ * count) name the instant exactly; `ms` is the same instant in simulated
+ * milliseconds, for display and ordering.
+ */
+export type ConversionEvent = {
+  board: string;
+  mux: string;
+  ref: string;
+  vRef: number;
+  voltage: number;
+  count: number;
+  mountStep: number;
+  cycle: number;
+  ms: number;
+};
+
+/**
+ * Listens to a run as it advances. `step` is called at the end of every
+ * master step, after that step's rail solve and body step, with the count
+ * of master steps since load. `conversion` is called when a board's ADC
+ * starts a conversion. A listener reads; it must not change the run.
+ */
+export type SimObserver = {
+  step?(n: number, perMs: number): void;
+  conversion?(event: ConversionEvent): void;
+};
+
 export type ToWorker =
   | {
       type: "load";
@@ -470,8 +500,11 @@ function createSession(host: SimHost) {
         continue;
       }
       if (!stepped.reboot) continue;
-      if (!board.reboot(ended === "pin" ? EXTERNAL_RESET : BROWNOUT_RESET))
-        continue;
+      const mounted = board.reboot(
+        ended === "pin" ? EXTERNAL_RESET : BROWNOUT_RESET
+      );
+      s.mountStep.set(board.id, stepCount(s));
+      if (!mounted) continue;
       applyInputNets(s);
       const regs = board.peekRegs();
       const pins = boardPinState(
@@ -519,6 +552,10 @@ function createSession(host: SimHost) {
     if (stepCount(s) % s.perMs === 0) recordStep(s);
     else foldStep(s);
     stampNodes(s, stepCount(s) / s.perMs);
+    if (s.observers.size > 0) {
+      const n = stepCount(s);
+      for (const observer of s.observers) observer.step?.(n, s.perMs);
+    }
   }
 
   /** One simulated millisecond: `perMs` master steps. */
@@ -659,6 +696,7 @@ function createSession(host: SimHost) {
     s.latchedRail = new Map();
     s.adcNodes = [];
     s.adcSamples = [];
+    s.mountStep = new Map();
     s.rails = new Map();
     s.driveAtStart.clear();
     s.stepPulses.clear();
@@ -1041,6 +1079,12 @@ function createSession(host: SimHost) {
     dispose: close,
     branchReading,
     portReading: (path: string, port: string) => portReading(s, path, port),
+    observe(observer: SimObserver): () => void {
+      s.observers.add(observer);
+      return () => {
+        s.observers.delete(observer);
+      };
+    },
     /** The ghost's last frame, or null when there is no ghost. */
     ghost: () => (ghost ? ghostState(ghost.reading) : null),
     /** For a ghost run inside this module only. */
@@ -1107,6 +1151,13 @@ export class Sim {
    */
   portReading(path: string, port: string): PortReading | null {
     return this.session.portReading(path, port);
+  }
+  /**
+   * Call `observer` at every master step and conversion until the
+   * returned function is called. Listeners outlive a reload.
+   */
+  observe(observer: SimObserver): () => void {
+    return this.session.observe(observer);
   }
   /** The snapshot ghost's frame. Null when the run has none. */
   ghost(): WorldGhostState | null {
