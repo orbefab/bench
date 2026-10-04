@@ -10,6 +10,8 @@ import type { Engine, FixtureFile, GearTrain } from "@sfab-bench/contract";
 import { BodyEngine, collapse } from "@sfab-bench/engine-body";
 import { CircuitEngine } from "@sfab-bench/engine-circuit";
 import { McuEngine, parseIntelHex } from "@sfab-bench/engine-mcu";
+import { loadTypeById, logicThresholds } from "@sfab-bench/parts";
+import { nodeStore } from "./world/node-store";
 import { catalogRoot } from "./world/plan";
 
 const STEP = 0.001;
@@ -49,12 +51,21 @@ const STEP = 0.001;
     ...Array.from({ length: 6 }, (_, n) => `PB${n}`),
     ...Array.from({ length: 6 }, (_, n) => `PC${n}`),
   ];
+  const catalog = catalogRoot();
+  const nano = loadTypeById(
+    catalog,
+    { store: nodeStore, catalogDir: catalog, assetRoot: catalog },
+    "arduino-nano"
+  );
+  if (!("type" in nano)) throw new Error("arduino-nano type did not load");
   mcu.init({
     chip: "atmega328p",
     firmware: parsed.bytes,
     brownoutVoltage: 2.7,
     pins,
     wire,
+    edges: (pin: string, supply: number) =>
+      logicThresholds(nano.type.ports[pin]?.ratings?.logic, supply),
   });
   mcu.write("supply", "voltage", 5);
   mcu.advance(0.001);
@@ -68,9 +79,21 @@ const STEP = 0.001;
   expect(line === "10\r\n", `first serial line ${JSON.stringify(line)}`);
   const drive = mcu.read("D13", "voltage");
   expect(drive === 0, `D13 ${drive}`);
+  // 0.3·VCC / 0.6·VCC at 5 V: 1.5 V and 3.0 V. Between them the level holds.
+  const levels = [2.0, 3.5, 2.5, 1.4, 2.5].map((volts) => {
+    mcu.write("D2", "voltage", volts);
+    return mcu.read("D2", "level");
+  });
+  expect(
+    JSON.stringify(levels) === "[0,1,1,0,0]",
+    `D2 levels ${JSON.stringify(levels)}`
+  );
   mcu.dispose();
   console.log(
     'engine mcu: first serial line 10 (nano-led serial "10\\r\\n90\\r\\n" first line at 0.001 s)'
+  );
+  console.log(
+    "engine mcu: D2 at 2.0 / 3.5 / 2.5 / 1.4 / 2.5 V reads 0 1 1 0 0 (vil 0.3·VCC, vih 0.6·VCC at 5 V)"
   );
 }
 

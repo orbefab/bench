@@ -54,13 +54,20 @@ type PortDecl = {
 type Ratings = {
   voltage?: Range; absMaxVoltage?: Range;
   current?: Range; absMaxCurrent?: Range;
-  logic?: { vil?: SiNumber; vih?: SiNumber; vol?: SiNumber; voh?: SiNumber };
+  logic?: {
+    vil?: LogicThreshold; vih?: LogicThreshold;
+    vol?: SiNumber; voh?: SiNumber;
+    vcc?: SiNumber;                       // the supply these were cited at
+  };
   frequency?: Range; torque?: Range; speed?: Range;
   temperature?: Range; resistance?: Range;
 };
 
+type LogicThreshold = SiNumber | [number, number];   // volts, or [k, b] = k·vcc + b
 type BusDecl = { ports: string[]; protocol: string };   // "uart", "i2c", "spi"; transaction level later
 ```
+
+**Logic thresholds.** A number is volts. A datasheet row stated against the supply is `[k, b]`, meaning `k·vcc + b`: the 328P's GPIO are `[0.3, 0]` / `[0.6, 0]` (VIL max 0.3·VCC, VIH min 0.6·VCC), its RESET `[0.1, 0]` / `[0.9, 0]` (VIL2 / VIH2), the 32U4's GPIO `[0.2, -0.1]` / `[0.2, 0.9]`. The 32U4's RESET cites no pair and has none. A port with a `[k, b]` threshold cites `vcc`, the supply its absolute values were stated at; without it the check is a `rating` error. One resolver, `logicThresholds(logic, vcc)` in `packages/parts`, serves both readers: the static check resolves at the cited `vcc`, a run at the solved board node. In a run, a GPIO whose net has a circuit (the pin is stamped) reads its solved node before the CPU, the ADC's one-step lag: above VIH high, below VIL low, and between them the last level holds, starting low. There is no hysteresis constant; the VIL–VIH band is the datasheet's guaranteed one. A pin with no circuit on its net keeps the wire walk (another output, then ground, then a supply). Runtime reset stays the chip's `resetFraction`.
 
 **Port templates** (D-023.6): a type may declare repeated pins as a template, e.g. `{ "id": "D{n}", "n": [0, 13], "pwm": [3, 5, 6, 9, 10, 11], "role": "logic" }`. The loader expands the template, and the checker, lockfile and reports see only expanded ports.
 

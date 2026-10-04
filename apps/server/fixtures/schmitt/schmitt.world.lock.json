@@ -3,84 +3,70 @@
   "parts": [
     {
       "id": "sfab/ams1117-5v0@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/ams1117-5v0@1.0.0.json",
+      "path": "../../catalog/parts/sfab/ams1117-5v0@1.0.0.json",
       "sha256": "c281e6eb07d81239ece3c741c7159a87bc06a929817e371df963c12081f4c1d5",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/atmega328p@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/atmega328p@1.0.0.json",
+      "path": "../../catalog/parts/sfab/atmega328p@1.0.0.json",
       "sha256": "30f66bc05c824634d2d827dcef394913876aeb46d688c14312c062e270d826f1",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/capacitor@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/capacitor@1.0.0.json",
+      "path": "../../catalog/parts/sfab/capacitor@1.0.0.json",
       "sha256": "4cd09ef3beba925f97d238c6078aec4b927cc94621011cb534bb313140b60e8e",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/diode-ss14@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/diode-ss14@1.0.0.json",
+      "path": "../../catalog/parts/sfab/diode-ss14@1.0.0.json",
       "sha256": "fce139f01a88f129dc3bb08187ec91a7bc5c6b84c3b3a8ec2e08a785837cc059",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
-      "id": "sfab/ground-plane@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/ground-plane@1.0.0.json",
-      "sha256": "5cc420e61c09a8ba6fa67e94c8fa03cf2f900815b609c9adc3a9e390d0778705",
-      "source": "catalog",
-      "version": "1.0.0"
-    },
-    {
       "id": "sfab/led-red@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/led-red@1.0.0.json",
+      "path": "../../catalog/parts/sfab/led-red@1.0.0.json",
       "sha256": "978afceecf704a2c1ddc169d1f88948f2a325961a9bfbed2be7024104063160e",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/nano-ch340@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
+      "path": "../../catalog/parts/sfab/nano-ch340@1.0.0.json",
       "sha256": "6436cb8d3dc960bb663431ff7ddec0f4beaa7cdd0ecb579e652c3241d2c1281f",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
-      "id": "sfab/nano-led-scene@1.0.0",
-      "path": "parts/sfab/nano-led-scene@1.0.0.json",
-      "sha256": "763242a75200d4f0b53cdd10face8e04ac67190db29f1d18b6c49801a3755ff7",
-      "source": "world",
-      "version": "1.0.0"
-    },
-    {
-      "id": "sfab/nano-led@1.0.0",
-      "path": "parts/sfab/nano-led@1.0.0.json",
-      "sha256": "76e104abc0de66f37fd74fc5200ffa1937d808e51dc0ed5841398911969710ac",
-      "source": "world",
-      "version": "1.0.0"
-    },
-    {
       "id": "sfab/nano-power-input@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/nano-power-input@1.0.0.json",
+      "path": "../../catalog/parts/sfab/nano-power-input@1.0.0.json",
       "sha256": "ef18c2c2c99e144010837c110869aaaa5ce717276f93f7922de41ce66c6d2cf8",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/resistor@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/resistor@1.0.0.json",
+      "path": "../../catalog/parts/sfab/resistor@1.0.0.json",
       "sha256": "024bdac8454537a929890377b64bf8da0e42a392822b93d70cbf2077d3c007db",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
+      "id": "sfab/schmitt-scene@1.0.0",
+      "path": "parts/sfab/schmitt-scene@1.0.0.json",
+      "sha256": "70adb0e668062e6750520c1056d3c27926c8471762dcf424a5371374a692a873",
+      "source": "world",
+      "version": "1.0.0"
+    },
+    {
       "id": "sfab/usb-port-500ma@1.0.0",
-      "path": "../../apps/server/catalog/parts/sfab/usb-port-500ma@1.0.0.json",
+      "path": "../../catalog/parts/sfab/usb-port-500ma@1.0.0.json",
       "sha256": "4eb1ed6007fd6046ee8d025f2ff70852d9b27bfd460278ab23689ed48f277521",
       "source": "catalog",
       "version": "1.0.0"
@@ -89,70 +75,64 @@
   "types": [
     {
       "id": "arduino-nano",
-      "path": "../../apps/server/catalog/types/arduino-nano.json",
+      "path": "../../catalog/types/arduino-nano.json",
       "sha256": "73fa98c2369ea632fc69b297b14bfa520a4146769dabe83f9ddccaa32c2295c7",
       "source": "catalog"
     },
     {
       "id": "assembly",
-      "path": "../../apps/server/catalog/types/assembly.json",
+      "path": "../../catalog/types/assembly.json",
       "sha256": "d3d12a01bb5564827caab4bf45b624199124264c89dc582d46f4775b83a34c41",
       "source": "catalog"
     },
     {
       "id": "atmega328p",
-      "path": "../../apps/server/catalog/types/atmega328p.json",
+      "path": "../../catalog/types/atmega328p.json",
       "sha256": "5be01c47cb06fdedecf5b231c0d327290926e88dfe8a6f09ba05929eaeca3b3a",
       "source": "catalog"
     },
     {
       "id": "capacitor",
-      "path": "../../apps/server/catalog/types/capacitor.json",
+      "path": "../../catalog/types/capacitor.json",
       "sha256": "cb8a7070edcaad83051a688cc5fefdca8a5800e597892d549cbfbccfdbb3ef13",
       "source": "catalog"
     },
     {
       "id": "diode",
-      "path": "../../apps/server/catalog/types/diode.json",
+      "path": "../../catalog/types/diode.json",
       "sha256": "2acc095e3190263e167b598d47f2917d373f1275d1adc18f8be244738794dce4",
       "source": "catalog"
     },
     {
-      "id": "ground-plane",
-      "path": "../../apps/server/catalog/types/ground-plane.json",
-      "sha256": "7b70fb6dbc50d1c03f6b4673b8950070c1e5dcf58402b6990f133e0d5767487b",
-      "source": "catalog"
-    },
-    {
       "id": "ldo-regulator",
-      "path": "../../apps/server/catalog/types/ldo-regulator.json",
+      "path": "../../catalog/types/ldo-regulator.json",
       "sha256": "b1528afe2e4f4af1e5bc9e6203b7be8d21b1b8af8f0ab41d1cf743792c51cad7",
       "source": "catalog"
     },
     {
       "id": "led",
-      "path": "../../apps/server/catalog/types/led.json",
+      "path": "../../catalog/types/led.json",
       "sha256": "9a85dfd184a8511510d43d79cede9e2f01d69f3113e02b250c4c790cb47e385f",
       "source": "catalog"
     },
     {
       "id": "power-input",
-      "path": "../../apps/server/catalog/types/power-input.json",
+      "path": "../../catalog/types/power-input.json",
       "sha256": "c2f57cf7a811e28b1c6cf44aefc7a5797cf1edbf729b09696f9ed10f331ef808",
       "source": "catalog"
     },
     {
       "id": "resistor",
-      "path": "../../apps/server/catalog/types/resistor.json",
+      "path": "../../catalog/types/resistor.json",
       "sha256": "bd300d9ec35ce882fb73a75fd9afb9739844b5567ec263ed41d8d7416eee04e6",
       "source": "catalog"
     },
     {
       "id": "usb-a-port",
-      "path": "../../apps/server/catalog/types/usb-a-port.json",
+      "path": "../../catalog/types/usb-a-port.json",
       "sha256": "6168a3742bb9784135d8cb737bfe8b431571531e8a36d8baec0b9eb597ea2f5c",
       "source": "catalog"
     }
   ],
-  "world": "nano-led@1.0.0"
+  "world": "schmitt.world"
 }

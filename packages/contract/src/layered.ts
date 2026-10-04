@@ -143,11 +143,24 @@ export type Range = [SiNumber, SiNumber];
 export type Vec3 = [number, number, number];
 export type Sym6 = [number, number, number, number, number, number];
 
+/**
+ * An input threshold. A number is volts. `[k, b]` is `k·vcc + b` volts, for
+ * a datasheet row that states it against the supply (the 328P's
+ * `0.6·VCC`).
+ */
+export type LogicThreshold = SiNumber | readonly [number, number];
+
+/**
+ * `vcc`: the supply the absolute values here were cited at. The static
+ * check resolves a `[k, b]` threshold at it; a run resolves it at the
+ * solved board node. Required when either threshold is `[k, b]`.
+ */
 export type LogicRatings = {
-  vil?: SiNumber;
-  vih?: SiNumber;
+  vil?: LogicThreshold;
+  vih?: LogicThreshold;
   vol?: SiNumber;
   voh?: SiNumber;
+  vcc?: SiNumber;
 };
 
 export type Ratings = {
@@ -177,6 +190,7 @@ export const RATING_FIELD_QUANTITY: Record<string, Quantity> = {
   vih: "Voltage",
   vol: "Voltage",
   voh: "Voltage",
+  vcc: "Voltage",
 };
 
 export type PortRole = "power" | "ground" | "logic" | "analog";

@@ -89,7 +89,7 @@
     {
       "id": "atmega32u4",
       "path": "../../apps/server/catalog/types/atmega32u4.json",
-      "sha256": "3574ba12e2c8d8dabc31f5f3f945a9562ff21120fe19110ee03c0ad507f2e233",
+      "sha256": "722ff24344f1dfece8df21c80f6fcffbfae2697c590c84c7ea13e1d9a52218d1",
       "source": "catalog"
     },
     {
@@ -143,7 +143,7 @@
     {
       "id": "sparkfun-pro-micro",
       "path": "../../apps/server/catalog/types/sparkfun-pro-micro.json",
-      "sha256": "3e47bed215fdebaf0c1fe2dbbc985ecdda1d91fa6bc03c35d9c73ac81764f367",
+      "sha256": "9e7841a432d148eada6a3aa46c033baa1ef6c192681881934aa91234c9eee99d",
       "source": "catalog"
     }
   ],

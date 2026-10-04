@@ -178,6 +178,9 @@ type RailPiece = {
   drive: readonly { bit: number; mode: PinMode; boardId?: string }[];
 };
 
+/** A stamped GPIO element: the drive the firmware sets and its node. */
+type DrivePin = { setMode(mode: PinMode): void; readonly pinNode: string };
+
 export class RailCircuit {
   /**
    * Winding current each motor charged to the last master step: its end
@@ -239,7 +242,7 @@ export class RailCircuit {
   private readonly drives: {
     bit: number;
     port: string;
-    pin: { setMode(mode: PinMode): void };
+    pin: DrivePin;
   }[];
   private readonly ledDiodes: { path: string; diode: Diode }[];
   private readonly ledAlias: string;
@@ -275,7 +278,7 @@ export class RailCircuit {
   private readonly boardNodes = new Map<string, string>();
   private readonly boardDrives = new Map<
     string,
-    { bit: number; pin: { setMode(mode: PinMode): void } }[]
+    { bit: number; port: string; pin: DrivePin }[]
   >();
   private readonly readings = new Map<string, BoardReading>();
   /** Lowest reset margin of each board this step, when it has a reset node. */
@@ -519,6 +522,15 @@ export class RailCircuit {
 
   driveBitsOf(id: string): readonly number[] {
     return this.pinsOf(id).map((row) => row.bit);
+  }
+
+  /** Solved voltage of each stamped pin of board `id`, after the last solve. */
+  pinVolts(id: string): { bit: number; port: string; volts: number }[] {
+    return this.pinsOf(id).map((row) => ({
+      bit: row.bit,
+      port: row.port,
+      volts: this.engine.voltage(row.pin.pinNode),
+    }));
   }
 
   setBoardDrive(id: string, bit: number, mode: PinMode): void {
@@ -948,7 +960,7 @@ type Assembled = {
   drives: {
     bit: number;
     port: string;
-    pin: { setMode(mode: PinMode): void };
+    pin: DrivePin;
   }[];
   ledDiodes: { path: string; diode: Diode }[];
   ledAlias: string;
@@ -962,10 +974,7 @@ type Assembled = {
   boardOrder: string[];
   boardLoads: Map<string, CurrentLoad>;
   boardNodes: Map<string, string>;
-  boardDrives: Map<
-    string,
-    { bit: number; pin: { setMode(mode: PinMode): void } }[]
-  >;
+  boardDrives: Map<string, { bit: number; port: string; pin: DrivePin }[]>;
   boardResets: Map<string, { node: string; fraction: number | null }>;
   boardPorts: Map<string, Readonly<Record<string, string>>>;
   extraNodes: Map<string, string>;
@@ -1080,7 +1089,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   const boardNodes = new Map<string, string>();
   const boardDrives = new Map<
     string,
-    { bit: number; port: string; pin: { setMode(mode: PinMode): void } }[]
+    { bit: number; port: string; pin: DrivePin }[]
   >();
   const boardResets = new Map<
     string,
@@ -1092,7 +1101,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   const drives: {
     bit: number;
     port: string;
-    pin: { setMode(mode: PinMode): void };
+    pin: DrivePin;
   }[] = [];
   const loads: CurrentLoad[] = [];
   let stamped: Element[] = [];

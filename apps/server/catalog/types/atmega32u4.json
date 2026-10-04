@@ -17,7 +17,13 @@
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
-        "logic": { "vil": 0.9, "vih": 1.9, "vol": 0.7, "voh": 4.2 }
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
       }
     },
     {
@@ -30,7 +36,13 @@
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
-        "logic": { "vil": 0.9, "vih": 1.9, "vol": 0.7, "voh": 4.2 }
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
       }
     },
     {
@@ -44,7 +56,13 @@
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
-        "logic": { "vil": 0.9, "vih": 1.9, "vol": 0.7, "voh": 4.2 }
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
       }
     },
     {
@@ -57,7 +75,13 @@
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
-        "logic": { "vil": 0.9, "vih": 1.9, "vol": 0.7, "voh": 4.2 }
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
       }
     },
     {
@@ -70,7 +94,13 @@
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
-        "logic": { "vil": 0.9, "vih": 1.9, "vol": 0.7, "voh": 4.2 }
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
       }
     }
   ],
@@ -82,7 +112,13 @@
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
-        "logic": { "vil": 0.9, "vih": 1.9, "vol": 0.7, "voh": 4.2 }
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
       }
     },
     "PE6": {
@@ -92,7 +128,13 @@
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
-        "logic": { "vil": 0.9, "vih": 1.9, "vol": 0.7, "voh": 4.2 }
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
       }
     },
     "VCC": {
@@ -126,31 +168,41 @@
       "domain": "electrical",
       "role": "analog",
       "direction": "passive",
-      "ratings": { "absMaxVoltage": [-0.5, 5.5] }
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5]
+      }
     },
     "AREF": {
       "domain": "electrical",
       "role": "analog",
       "direction": "in",
-      "ratings": { "absMaxVoltage": [-0.5, 5.5] }
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5]
+      }
     },
     "VBUS": {
       "domain": "electrical",
       "role": "analog",
       "direction": "in",
-      "ratings": { "absMaxVoltage": [-0.5, 6] }
+      "ratings": {
+        "absMaxVoltage": [-0.5, 6]
+      }
     },
     "D+": {
       "domain": "electrical",
       "role": "analog",
       "direction": "inout",
-      "ratings": { "absMaxVoltage": [-0.5, 5.5] }
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5]
+      }
     },
     "D-": {
       "domain": "electrical",
       "role": "analog",
       "direction": "inout",
-      "ratings": { "absMaxVoltage": [-0.5, 5.5] }
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5]
+      }
     },
     "GND": {
       "domain": "electrical",
@@ -167,8 +219,7 @@
       "role": "logic",
       "direction": "in",
       "ratings": {
-        "absMaxVoltage": [-0.5, 13],
-        "logic": { "vil": 0.9, "vih": 1.9, "vol": 0.7, "voh": 4.2 }
+        "absMaxVoltage": [-0.5, 13]
       }
     }
   }

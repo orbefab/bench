@@ -83,6 +83,14 @@ export {
   verifyLock,
   writeLock,
 } from "./lock";
+export {
+  citedVcc,
+  isSupplyThreshold,
+  type LogicThresholds,
+  logicLevel,
+  logicThresholds,
+  thresholdVolts,
+} from "./logic";
 export { mergeFormParams } from "./merge";
 export {
   buildNets,

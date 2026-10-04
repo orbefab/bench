@@ -13,6 +13,7 @@ import {
   FIRMWARE_RELOADED,
   parseIntelHex,
 } from "@sfab-bench/engine-mcu";
+import { logicLevel, logicThresholds } from "@sfab-bench/parts";
 import { analogRead } from "../analog-pin";
 import type { RunPlan } from "../plan";
 import { runningReset } from "../power";
@@ -199,12 +200,56 @@ export function applyInputNets(s: SessionState) {
 }
 
 export function bindInputNets(s: SessionState, plan: RunPlan) {
-  s.inputNets = gpioInputNets(plan);
+  // A pin with a circuit on its net reads the solved node (`samplePins`).
+  s.inputNets = gpioInputNets(plan).filter(
+    (net) => !stampedBitsOf(s, net.boardId).includes(net.bit)
+  );
   const refresh = () => applyInputNets(s);
   for (const board of s.boards) {
     board.onPinsChanged = s.inputNets.length > 0 ? refresh : null;
   }
   applyInputNets(s);
+}
+
+function circuitOf(s: SessionState, boardId: string) {
+  const supplyId = s.boardPower.get(boardId)?.supplyId;
+  return supplyId ? s.rails.get(supplyId)?.circuit : undefined;
+}
+
+function stampedBitsOf(s: SessionState, boardId: string): readonly number[] {
+  return circuitOf(s, boardId)?.driveBitsOf(boardId) ?? [];
+}
+
+/**
+ * Each stamped GPIO input reads its solved node against the port's
+ * thresholds, resolved at the latched board node. Called before the CPUs,
+ * so the read is the previous solve: the ADC's one-step lag. Between VIL
+ * and VIH the last level holds. A pin with no circuit keeps the wire walk.
+ */
+export function samplePins(s: SessionState) {
+  if (!s.runPlan) return;
+  for (const board of s.boards) {
+    const spec = s.runPlan.boards.find((item) => item.id === board.id);
+    const circuit = circuitOf(s, board.id);
+    if (!spec || !circuit) continue;
+    const vcc = s.latchedNode.get(board.id) ?? 0;
+    let latch = s.pinLatch.get(board.id);
+    if (!latch) {
+      latch = new Map<number, boolean>();
+      s.pinLatch.set(board.id, latch);
+    }
+    for (const row of circuit.pinVolts(board.id)) {
+      const logic = spec.pins[row.port]?.logic;
+      if (!logic) continue;
+      const level = logicLevel(
+        row.volts,
+        logicThresholds(logic, vcc),
+        latch.get(row.bit) ?? false
+      );
+      latch.set(row.bit, level);
+      board.setDriven(row.bit, level);
+    }
+  }
 }
 
 /** Onboard LED current. Present when this rail stamped `onboardLedPath(board)`. */

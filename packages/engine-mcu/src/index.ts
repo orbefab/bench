@@ -22,6 +22,6 @@ export {
   chipSpec,
   requireChipSpec,
 } from "./chips";
-export { McuEngine, type McuEngineSpec } from "./face";
+export { McuEngine, type McuEngineSpec, type PinEdges } from "./face";
 export { FLASH_BYTES, type IntelHex, parseIntelHex } from "./ihex";
 export { SERIAL_CAP, type SerialPage, SerialRing } from "./serial-ring";

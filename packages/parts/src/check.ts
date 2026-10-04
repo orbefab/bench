@@ -6,6 +6,7 @@ import {
   type Diagnostic,
   FORM_PARAMS,
   isParamRef,
+  type LogicRatings,
   QUANTITY_DIM,
   type Quantity,
   RATING_FIELD_QUANTITY,
@@ -18,6 +19,12 @@ import {
 import { batteryFrom, ocvAt } from "./battery";
 import { boardHostOf } from "./board-host";
 import type { LiveInstance } from "./levels";
+import {
+  citedVcc,
+  isSupplyThreshold,
+  logicThresholds,
+  thresholdVolts,
+} from "./logic";
 import { mergeFormParams } from "./merge";
 import { collectPorts, type LiveNet, type LivePort, type Wire } from "./nets";
 import { resolve } from "./path";
@@ -91,6 +98,49 @@ function walkRating(
       checkTag(diags, instancePath, port, expected, value, key);
     }
   }
+}
+
+/**
+ * A `[k, b]` threshold is two numbers, and the port's logic (type and part
+ * merged) cites the `vcc` the static check resolves it at.
+ */
+function supplyThresholdDiags(inst: LiveInstance): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const ports = new Set([
+    ...Object.keys(inst.type.ports),
+    ...Object.keys(inst.part.ratings ?? {}),
+  ]);
+  for (const port of ports) {
+    const logic: Record<string, unknown> = {
+      ...inst.type.ports[port]?.ratings?.logic,
+      ...inst.part.ratings?.[port]?.logic,
+    };
+    for (const key of ["vil", "vih"]) {
+      const value = logic[key];
+      if (!Array.isArray(value)) continue;
+      const pair =
+        value.length === 2 && value.every((n) => typeof n === "number");
+      const detail = !pair
+        ? `logic.${key} is not [k, b]`
+        : logic.vcc === undefined
+          ? `logic.${key} is [k, b] and logic has no vcc`
+          : null;
+      if (!detail) continue;
+      diags.push(
+        makeDiag({
+          severity: "error",
+          code: "rating",
+          path: inst.path,
+          port,
+          quantity: "Voltage",
+          left: JSON.stringify(value),
+          right: "vcc",
+          detail,
+        })
+      );
+    }
+  }
+  return diags;
 }
 
 function isTag(
@@ -231,10 +281,13 @@ function walkPlausible(
 ): void {
   for (const [key, value] of Object.entries(rating)) {
     if (key === "logic" && value && typeof value === "object") {
-      for (const [lk, lv] of Object.entries(value as Record<string, unknown>)) {
+      const logic = value as LogicRatings;
+      for (const [lk, lv] of Object.entries(logic)) {
         const quantity = RATING_FIELD_QUANTITY[lk];
         if (!quantity) continue;
-        const n = numberOf(lv);
+        const n = isSupplyThreshold(lv)
+          ? thresholdVolts(lv, citedVcc(logic))
+          : numberOf(lv);
         if (n !== null) check(port, `logic.${lk}`, quantity, n);
       }
       continue;
@@ -301,11 +354,16 @@ function missingPort(
   });
 }
 
+/** Volts at the cited `logic.vcc`; a `[k, b]` threshold resolves there. */
 function logicNumber(
   ratings: Ratings,
   key: "vil" | "vih" | "vol" | "voh"
 ): number | null {
-  const raw = ratings.logic?.[key];
+  const logic = ratings.logic;
+  if (key === "vil" || key === "vih") {
+    return logicThresholds(logic, citedVcc(logic))[key];
+  }
+  const raw = logic?.[key];
   if (raw === undefined) return null;
   return siValue(raw);
 }
@@ -588,7 +646,11 @@ export function checkWorld(
   const byPath = new Map(instances.map((inst) => [inst.path, inst]));
   const diags: Diagnostic[] = [];
   for (const inst of instances) {
-    diags.push(...tagDiags(inst), ...plausibilityDiags(inst));
+    diags.push(
+      ...tagDiags(inst),
+      ...supplyThresholdDiags(inst),
+      ...plausibilityDiags(inst)
+    );
   }
   diags.push(...wireDiags(instances, wires));
   for (const net of nets) {

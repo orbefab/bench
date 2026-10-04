@@ -244,6 +244,11 @@ export type SessionState = {
   layout: RecLayout | null;
   /** Drive mode of each stamped pin at the start of this millisecond. */
   readonly driveAtStart: Map<string, Map<number, PinMode>>;
+  /**
+   * Input level of each stamped GPIO, per board and bit. A node between
+   * VIL and VIH keeps it. Starts low.
+   */
+  readonly pinLatch: Map<string, Map<number, boolean>>;
 };
 
 export function createState(host: SimHost): SessionState {
@@ -303,5 +308,6 @@ export function createState(host: SimHost): SessionState {
     pendingNotes: [],
     layout: null,
     driveAtStart: new Map<string, Map<number, PinMode>>(),
+    pinLatch: new Map<string, Map<number, boolean>>(),
   };
 }

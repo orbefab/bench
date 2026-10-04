@@ -17,14 +17,21 @@ export type McuEngineSpec = {
   wire?: readonly string[];
   /** Header names in that same order. `read` and `write` use these. */
   pins?: readonly string[];
+  /**
+   * A header's input edges at `supply` volts, from its port's `vil` / `vih`.
+   * Required to `write` a pin voltage.
+   */
+  edges?: (pin: string, supply: number) => PinEdges;
 };
 
-const LOGIC_HIGH = 0.6;
+/** Volts. Low below `vil`, high above `vih`; between them the level holds. */
+export type PinEdges = { vil: number | null; vih: number | null };
 
 /**
  * Port face of one registered AVR chip.
  * `supply.voltage` is the rail. A pin's `voltage` is its drive, or the
- * voltage written onto an input. `serial.tx` is the next USART byte
+ * voltage written onto an input; its `level` (1 or 0) is what the CPU
+ * reads from that voltage. `serial.tx` is the next USART byte
  * (0–255, or −1 when the buffer is empty) and `serial.rx` accepts one.
  */
 export class McuEngine implements Engine {
@@ -36,6 +43,8 @@ export class McuEngine implements Engine {
   private pendingTx = "";
   private pins: readonly string[] = [];
   private readonly pinVolts = new Map<number, number>();
+  private readonly levels = new Map<number, boolean>();
+  private edges: McuEngineSpec["edges"] = undefined;
 
   constructor(id = "mcu") {
     this.id = id;
@@ -49,6 +58,8 @@ export class McuEngine implements Engine {
     this.pendingTx = "";
     this.pins = parsed.pins ?? [];
     this.pinVolts.clear();
+    this.levels.clear();
+    this.edges = parsed.edges;
     const board = new AvrBoard(
       this.id,
       requireChipSpec(parsed.chip),
@@ -80,6 +91,7 @@ export class McuEngine implements Engine {
     }
     if (port === "supply" && quantity === "voltage") return this.supply;
     const bit = this.pinBit(port);
+    if (quantity === "level") return this.levels.get(bit) ? 1 : 0;
     if (quantity !== "voltage") {
       throw new Error(`mcu engine has no quantity ${quantity}`);
     }
@@ -107,8 +119,17 @@ export class McuEngine implements Engine {
     if (quantity !== "voltage") {
       throw new Error(`mcu engine cannot write ${port}.${quantity}`);
     }
+    const edges = this.edges?.(port, this.supply);
+    if (!edges) throw new Error(`mcu engine has no input edges for ${port}`);
     this.pinVolts.set(bit, value);
-    const high = value >= LOGIC_HIGH * Math.max(this.supply, 1e-9);
+    const previous = this.levels.get(bit) ?? false;
+    const high =
+      edges.vih !== null && value > edges.vih
+        ? true
+        : edges.vil !== null && value < edges.vil
+          ? false
+          : previous;
+    this.levels.set(bit, high);
     board.setDriven(bit, high);
   }
 
@@ -117,6 +138,7 @@ export class McuEngine implements Engine {
     this.board = null;
     this.pendingTx = "";
     this.pinVolts.clear();
+    this.levels.clear();
   }
 
   private applySupply(): void {

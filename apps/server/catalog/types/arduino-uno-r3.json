@@ -17,10 +17,11 @@
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
         "logic": {
-          "vil": 1.5,
-          "vih": 3,
+          "vil": [0.3, 0],
+          "vih": [0.6, 0],
           "vol": 0.9,
-          "voh": 4.2
+          "voh": 4.2,
+          "vcc": 5
         }
       }
     },
@@ -35,10 +36,11 @@
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
         "logic": {
-          "vil": 1.5,
-          "vih": 3,
+          "vil": [0.3, 0],
+          "vih": [0.6, 0],
           "vol": 0.9,
-          "voh": 4.2
+          "voh": 4.2,
+          "vcc": 5
         }
       }
     }
@@ -94,10 +96,9 @@
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "logic": {
-          "vil": 1.5,
-          "vih": 3,
-          "vol": 0.9,
-          "voh": 4.2
+          "vil": [0.1, 0],
+          "vih": [0.9, 0],
+          "vcc": 5
         }
       }
     }

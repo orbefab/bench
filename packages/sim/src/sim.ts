@@ -96,6 +96,7 @@ import {
   postState,
   reloadBoard,
   resetPinLowOf,
+  samplePins,
   serialIn,
   snapshotDriveModes,
   stepBoard,
@@ -426,6 +427,7 @@ function createSession(host: SimHost) {
     }
     latchSupplyNodes(s);
     snapshotDriveModes(s);
+    samplePins(s);
     const already = new Set<string>();
     for (const board of s.boards) {
       const power = s.boardPower.get(board.id);
@@ -471,6 +473,7 @@ function createSession(host: SimHost) {
       if (!board.reboot(ended === "pin" ? EXTERNAL_RESET : BROWNOUT_RESET))
         continue;
       applyInputNets(s);
+      samplePins(s);
       const regs = board.peekRegs();
       const pins = boardPinState(
         board.peekPins(),
@@ -738,6 +741,7 @@ function createSession(host: SimHost) {
     s.reportPending = s.runReport !== null;
     s.envelopeWarned.clear();
     s.batteryWarned.clear();
+    s.pinLatch.clear();
     fillBoardPower(s, s.runPlan);
     loadBoards(s, s.runPlan);
     bindPower(s, s.runPlan);
@@ -762,6 +766,7 @@ function createSession(host: SimHost) {
     openRecorder(s);
     s.pendingNotes.push(...holds);
     latchSupplyNodes(s);
+    samplePins(s);
     await buildGhost(root);
     post(s, {
       type: "ready",

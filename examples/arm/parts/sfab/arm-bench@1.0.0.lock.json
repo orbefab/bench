@@ -154,7 +154,7 @@
     {
       "id": "arduino-uno-r3",
       "path": "../../apps/server/catalog/types/arduino-uno-r3.json",
-      "sha256": "38b9cc7eb6efdc96e2dd28d1bac093e7439556f99ac53b29775658a732495aec",
+      "sha256": "6568cd9feb6b3b8d7d7e2eacaedcee7dd190175ea2d1d14cdb5524269af1546f",
       "source": "catalog"
     },
     {
@@ -166,7 +166,7 @@
     {
       "id": "atmega328p",
       "path": "../../apps/server/catalog/types/atmega328p.json",
-      "sha256": "557592500146c6bb6c1296efcc81c224456b5cbc7a3e28284f539d040b35f5df",
+      "sha256": "5be01c47cb06fdedecf5b231c0d327290926e88dfe8a6f09ba05929eaeca3b3a",
       "source": "catalog"
     },
     {

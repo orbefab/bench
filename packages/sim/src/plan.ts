@@ -8,6 +8,7 @@ import {
   type DiagCode,
   type Diagnostic,
   isParamRef,
+  type LogicRatings,
   type PortDecl,
   type Pose,
   pinIndex,
@@ -100,6 +101,8 @@ export type RunPin = {
   output: boolean;
   digital: boolean;
   pwm: boolean;
+  /** The port's input thresholds. A stamped GPIO reads its node against them. */
+  logic?: LogicRatings;
 };
 
 export type RunMotor = {
@@ -435,11 +438,13 @@ function pinOf(decl: PortDecl): RunPin | null {
     };
   }
   if (decl.role === "logic" && decl.direction === "inout") {
+    const logic = decl.ratings?.logic;
     return {
       kind: "gpio",
       output: true,
       digital: true,
       pwm: decl.pwm === true,
+      ...(logic ? { logic } : {}),
     };
   }
   if (decl.role === "logic" && decl.direction === "in") {

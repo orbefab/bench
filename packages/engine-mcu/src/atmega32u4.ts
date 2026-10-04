@@ -14,6 +14,7 @@ import {
   timer0Config,
   timer1Config,
 } from "avr8js";
+import { BANDGAP_V } from "./board-adc";
 import type { ChipPin, ChipSpec } from "./chips";
 
 /** PLLCSR, data space. IO 0x29. PLOCK (bit 0) follows PLLE (bit 1). */
@@ -194,7 +195,7 @@ const usart1 = {
  * ADC. Same register addresses as the 328P, vector 29. MUX5 (ADCSRB bit 5,
  * moved for avr8js by `placeMux5`) ORs 0x20 into the channel, so the mask
  * keeps that bit. Channels 8–13 are mux 0x20–0x25. ADC2 and ADC3 do not exist. Mux 0x1e is
- * the 1.1 V bandgap (Table 8-3, typical). Mux 0x27 is the temperature sensor;
+ * the bandgap, the same `BANDGAP_V` as the 328P (1.1 V, Table 8-3, typical). Mux 0x27 is the temperature sensor;
  * it is omitted so a conversion there reads 0 rather than the 328P's 314 mV.
  * REFS 11 is the internal 2.56 V reference (Table 29-7, VINT typical).
  */
@@ -215,7 +216,7 @@ const adc: ADCConfig = {
     5: { type: ADCMuxInputType.SingleEnded, channel: 5 },
     6: { type: ADCMuxInputType.SingleEnded, channel: 6 },
     7: { type: ADCMuxInputType.SingleEnded, channel: 7 },
-    30: { type: ADCMuxInputType.Constant, voltage: 1.1 },
+    30: { type: ADCMuxInputType.Constant, voltage: BANDGAP_V },
     31: { type: ADCMuxInputType.Constant, voltage: 0 },
     32: { type: ADCMuxInputType.SingleEnded, channel: 8 },
     33: { type: ADCMuxInputType.SingleEnded, channel: 9 },
