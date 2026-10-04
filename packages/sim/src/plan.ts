@@ -66,7 +66,7 @@ import {
   circuitInstOf,
   circuitNumbers,
   connectorPort,
-  formPortGap,
+  formGapSentence,
   groundPorts,
   isCircuitForm,
   ldoLaw,
@@ -940,12 +940,7 @@ function runtimeGap(inst: LiveInstance): string {
   const behaviour = selectedBehaviour(inst);
   if (!behaviour) return "no runtime";
   if (behaviour.kind === "form") {
-    const stamped = formAdapter(behaviour.form)?.ports;
-    const gap = stamped ? formPortGap(inst, stamped) : [];
-    if (gap.length > 0) {
-      return `form ${behaviour.form} stamps ports ${stamped?.join(", ")}, and ${inst.type.id} lacks ${gap.join(", ")}`;
-    }
-    return `no runtime for form ${behaviour.form}`;
+    return formGapSentence(inst) ?? `no runtime for form ${behaviour.form}`;
   }
   return `no runtime for ${behaviour.kind}`;
 }
@@ -1315,9 +1310,15 @@ function build(
     }
     if (behaviour?.kind === "snapshot") {
       const found = behaviourSnapshotFile(inst, loaded);
-      const table = found
-        ? tableInstOf(inst, found)
-        : `snapshot ${behaviour.ref} did not load as table@1`;
+      if (!found) {
+        // The load's own row (missing, unreadable, refused by the lint)
+        // is on this instance already and says why it idles.
+        if (!loaded.diagnostics.some((diag) => diag.path === inst.path)) {
+          diags.push(cannot(inst, `snapshot ${behaviour.ref} did not load`));
+        }
+        continue;
+      }
+      const table = tableInstOf(inst, found);
       if (typeof table === "string") {
         diags.push(cannot(inst, table));
         continue;

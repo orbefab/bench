@@ -5,8 +5,10 @@
  * step together, so the gap between their shoulders is the snapshot's
  * error in this world.
  *
- * - The ghost is the snapshot run: its gap equals the gap to that world
- *   run on its own (C), frame for frame.
+ * - The ghost is the snapshot run: its final gap equals the absolute
+ *   gap between the shoulders of the two runs alone (detailed and C),
+ *   and its max over every ms is at least the largest gap between their
+ *   recorded frames. Gaps are absolute, so a mirrored shoulder passes.
  * - The ghost does not move the run: the detailed run with a ghost ends
  *   where it ends without one.
  * - The gap is the snapshot's stated size: above zero, under 0.4°.

@@ -119,6 +119,23 @@ for (const [label, change] of nonsense) {
 const parsed = parseSnapshot({ format: "sfab.snapshot@1", part: 3 }, "probe");
 expect(parsed.file === null, "a shapeless snapshot parses");
 expect(parsed.diagnostics.length > 0, "a shapeless snapshot has no diagnostic");
+const statistical = parseSnapshot(
+  {
+    ...structuredClone(servo),
+    envelope: {
+      bounds: servo.envelope.bounds,
+      data: { kind: "mahalanobis", mean: [0], cov: [[1]], limit: 3 },
+    },
+  },
+  "probe"
+);
+expect(
+  statistical.file === null &&
+    statistical.diagnostics.some((diag) =>
+      diag.message.includes("envelope.data is not supported")
+    ),
+  `a statistical envelope parses: ${statistical.diagnostics.map((diag) => diag.message).join("; ")}`
+);
 const probeFile = join(catalog, "snapshots/sfab/probe@1.0.0.json");
 const notJson = loadSnapshot(
   "/probe",
@@ -135,7 +152,9 @@ expect(
   notJson.diagnostics.length > 0,
   "a file that is not JSON has no diagnostic"
 );
-console.log("snapshot-boundary: not JSON, shapeless → diagnostics");
+console.log(
+  "snapshot-boundary: not JSON, shapeless, statistical envelope → diagnostics"
+);
 
 // 3. Of another type, selected in arm-bench at `uno.power`.
 const unoFile = snapshotFile("uno-power-input");

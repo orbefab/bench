@@ -7,6 +7,7 @@ import {
   cpSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -31,7 +32,7 @@ import {
 } from "@sfab-bench/parts";
 import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
 import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
-import { captureCatalog, type FreeRunSpec, runClassScenes } from "./capture";
+import { captureFromConfig, type FreeRunSpec, runClassScenes } from "./capture";
 import { closeRootWatches } from "./projects";
 import { boardStampOf } from "./world/circuit-stamp";
 import { attachWorld, stopWorld } from "./world/host";
@@ -75,11 +76,30 @@ function mustFail(snap: SnapshotFile, needle: string, label: string): void {
   expect(text.includes(needle), `${label} missed ${needle}: ${text}`);
 }
 
-const before = readFileSync(snapFile(), "utf8");
-const stats = await captureCatalog();
-const after = readFileSync(snapFile(), "utf8");
-expect(before === after, "capture did not reproduce the committed snapshot");
-console.log("capture reproducible: byte-identical");
+// The capture runs on a copy of the catalog, so a failed or killed run
+// cannot leave a committed snapshot half-written. Every entry it writes
+// must match the committed bytes.
+const captureDir = mkdtempSync(join(tmpdir(), "sfab-capture-"));
+let stats: Awaited<ReturnType<typeof captureFromConfig>>;
+let after: string;
+try {
+  cpSync(catalogRoot(), captureDir, { recursive: true });
+  stats = await captureFromConfig({ catalogDir: captureDir });
+  const snapshots = join("snapshots", "sfab");
+  const names = readdirSync(join(catalogRoot(), snapshots));
+  for (const name of names) {
+    const committed = readFileSync(
+      join(catalogRoot(), snapshots, name),
+      "utf8"
+    );
+    const fresh = readFileSync(join(captureDir, snapshots, name), "utf8");
+    expect(committed === fresh, `capture did not reproduce ${name}`);
+  }
+  after = readFileSync(snapFile(), "utf8");
+  console.log(`capture reproducible: ${names.length} snapshots byte-identical`);
+} finally {
+  rmSync(captureDir, { recursive: true, force: true });
+}
 
 const committed = JSON.parse(after) as SnapshotFile;
 const clean = lint(committed);

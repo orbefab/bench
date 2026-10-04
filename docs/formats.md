@@ -156,7 +156,7 @@ Every implementation carries `omits: string[]`: the effects this level leaves ou
 ```ts
 type BehaviourImpl = { omits: string[] } & (
   | { kind: "form"; form: FormId; params: Record<string, SiNumber>;
-      bind?: Record<string, string> }                 // the form's port → this part's port (a snapshot in another form)
+      bind?: Record<string, string> }                 // the form's port → this part's port, for a form that lists its ports (the snapshot lint, section 6)
   | { kind: "snapshot"; ref: string }
   | { kind: "composite"; netlist: Netlist }
   | { kind: "firmware"; chip: string; imageParam?: string; params?: Record<string, number>; fuses?: Record<string, string>; resetPort?: string; pinMapFrom?: { class: LevelClass; variant: string; instance: string }; railVoltage?: number; resetFraction?: number; minOperatingVoltage?: number }
@@ -529,8 +529,7 @@ type Snapshot = {
   bind?: Record<string, string>;                         // the form's port → the part's port, when they differ
   params: Record<string, number | string | (number | string)[]>; // behaviour: no joint terms (D-023.1). hinge@1: the joint terms.
   envelope: {
-    bounds: Record<string, Range>;                       // "port.quantity": [lo, hi] (D-023.2)
-    data?: { kind: "mahalanobis"; mean: number[]; cov: number[][]; limit: number };
+    bounds: Record<string, Range>;                       // "port.quantity": [lo, hi] (D-023.2); no other field
   };
   error: "none-available" | { metric: "static-max-abs" | "free-run-max-abs" | "free-run-rms" | "step-rise"; quantity: string; value: number;
                               corner?: "typ" | "min" | "max"; heldOut: "fixture" | "use-like" | "both";
@@ -589,21 +588,22 @@ A behaviour snapshot whose form is not `table@1` runs as that form, with the fil
 | Q1 | plausibility checks pass |
 | Q2a | captured, with a measured free-run error against the source |
 | Q2b | measured against a real rig |
-| Q3 | both Q2a and Q2b |
+| Q3 | reserved: no evidence earns it yet, so a claim of Q3 is an error |
 
 Foreign parts are capped (D-009).
 
 The linter is per form. It rejects, and a snapshot that fails cannot run:
 - missing provenance (a captured snapshot also needs `from`, `fixture`, and `tool`);
+- an envelope with any field besides `bounds` (a statistical envelope such as `data` is not read by the run, so it is refused rather than ignored);
 - an `across` port that is not on the type, in any form (the stale check stamps that pair);
 - for `table@1`: an axis that is not monotone; a table that does not cover its envelope (the current knots span the current bound); an envelope that bounds a supply quantity or a port the part does not declare, or a `supplyPort`, `supplyRef`, or `supplyAffine` param (a snapshot must not carry its fixture's supply); a listed port quantity the declarations do not match;
-- a `bind` value that is not a port on the type, or a port bound twice;
+- a `bind` key that is not a port the form stamps, a value that is not a port on the type, or a port bound twice. Only forms that list their ports read a `bind`: `diode@1` and `led@1` (`A`, `K`), `dc-motor@1` (`A`, `B`), `servo-control@1` (`V+`, `GND`, `M+`, `M-`, `sense`), `potentiometer@1` (`A`, `W`, `B`). Any other form stamps the part's own ports, so a `bind` on it is an error. The library lint applies the same rule to a part's own `form` level;
 - for `hinge@1`: an axis other than body; a body snapshot that is not `hinge@1`; a param that is missing, non-finite or negative; `armature` that is not greater than 0; a port quantity that is not angle, speed or torque on a declared rotational port; an envelope key that is not on that port;
 - a missing output that the part type lists in `requiredOutputs` (no such list means no extra output is required);
 - values outside the part type's plausible ranges (a current of 10 A or more is also shown in mA);
 - non-physical output: voltage at a **0 V setpoint**, checked only inside the envelope, and only when that envelope includes 0 V.
 
-Quality in the file is a claim. The linter grants Q0, Q1, Q2a, Q2b, or Q3 from the provenance and the error rows, and a claim above that grant is an error. The loader uses the grant only when the file is clean. A captured free-run row with a baseline earns Q2a. A `static-max-abs` row alone stays Q1.
+Quality in the file is a claim. The linter grants Q0, Q1, Q2a, or Q2b from the provenance and the error rows, and a claim above that grant is an error. The loader uses the grant only when the file is clean. A captured free-run row with a baseline earns Q2a. A `static-max-abs` row alone stays Q1.
 
 ### Capture
 

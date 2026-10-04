@@ -20,6 +20,7 @@ import {
 } from "@sfab-bench/contract";
 
 import { batteryFrom } from "./battery";
+import { bindProblems } from "./bind";
 import { PIN_MAP_FIELD, pinMapRefusal, pinMapSource } from "./board-host";
 import { comparatorFrom } from "./comparator";
 import {
@@ -711,7 +712,7 @@ export function lintLibrary(lib: Library): Diagnostic[] {
         }
       }
     }
-    lintAxes(part, diags);
+    lintAxes(part, type, diags);
   }
   for (const loaded of lib.parts.values()) {
     lintNetlist(lib, loaded.part, diags);
@@ -720,7 +721,11 @@ export function lintLibrary(lib: Library): Diagnostic[] {
   return diags;
 }
 
-function lintAxes(part: PartFile, diags: Diagnostic[]): void {
+function lintAxes(
+  part: PartFile,
+  type: PartTypeFile,
+  diags: Diagnostic[]
+): void {
   lintLevelPorts(part, diags);
   for (const axis of ["behaviour", "body", "visual"] as const) {
     const map = part.axes?.[axis];
@@ -744,7 +749,7 @@ function lintAxes(part: PartFile, diags: Diagnostic[]): void {
       }
       if (axis === "behaviour") {
         for (const [name, variant] of Object.entries(slot.variants)) {
-          lintBehaviour(part.id, name, variant as BehaviourImpl, diags);
+          lintBehaviour(part.id, name, variant as BehaviourImpl, type, diags);
         }
       }
       if (axis === "body") {
@@ -805,6 +810,7 @@ function lintBehaviour(
   partId: string,
   name: string,
   variant: BehaviourImpl,
+  type: PartTypeFile,
   diags: Diagnostic[]
 ): void {
   if (!Array.isArray(variant.omits)) {
@@ -871,6 +877,25 @@ function lintBehaviour(
       })
     );
     return;
+  }
+  for (const row of bindProblems(
+    variant.form,
+    variant.bind ?? {},
+    type.ports,
+    type.id
+  )) {
+    diags.push(
+      makeDiag({
+        severity: "error",
+        code: "schema",
+        path: partId,
+        port: name,
+        quantity: "Form",
+        left: row.key,
+        right: row.value,
+        detail: row.reason,
+      })
+    );
   }
   const optional = new Set(form.optional ?? []);
   const tables = new Set(form.tables ?? []);

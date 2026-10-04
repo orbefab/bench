@@ -282,12 +282,13 @@ function stampLed(part: AssignedPart): StampedElements {
   };
 }
 
+/** The stamped port list is the form's own (`FORM_PARAMS`), shared with the bind lint. */
 function circuit(
-  id: string,
+  id: FormId,
   stamp: FormAdapter["stamp"],
-  ports?: readonly string[],
   supply?: Pick<FormAdapter, "power" | "unpowered">
 ): FormAdapter {
+  const ports = FORM_PARAMS[id].ports;
   return {
     id,
     stamp,
@@ -300,32 +301,26 @@ function circuit(
 export const circuitAdapters: FormAdapter[] = [
   circuit("resistor@1", stampResistor),
   circuit("capacitor@1", stampCapacitor),
-  circuit("diode@1", stampDiode, ["A", "K"]),
-  circuit("led@1", stampLed, ["A", "K"]),
+  circuit("diode@1", stampDiode),
+  circuit("led@1", stampLed),
   circuit("ptc-fuse@1", stampPtc),
   circuit("pmos-switch@1", stampPmos),
   // Unpowered, the regulator's output is open: its reverse path is in the
   // parts' omits.
-  circuit("ldo-regulator@1", stampLdo, undefined, {
+  circuit("ldo-regulator@1", stampLdo, {
     power: { from: "IN", to: ["OUT"] },
   }),
   // Unpowered, both output rails are `VN`: the output sits at its
   // negative rail whatever the inputs.
-  circuit("comparator@1", stampComparator, undefined, {
+  circuit("comparator@1", stampComparator, {
     power: { from: "VP", to: ["OUT"] },
     unpowered: (part) =>
       part.nodes.VN === undefined
         ? null
         : { ...part, nodes: { ...part.nodes, VP: part.nodes.VN } },
   }),
-  circuit("dc-motor@1", stampWinding, ["A", "B"]),
-  circuit("servo-control@1", stampServoControl, [
-    "V+",
-    "GND",
-    "M+",
-    "M-",
-    "sense",
-  ]),
-  circuit("potentiometer@1", stampPotentiometer, ["A", "W", "B"]),
+  circuit("dc-motor@1", stampWinding),
+  circuit("servo-control@1", stampServoControl),
+  circuit("potentiometer@1", stampPotentiometer),
   { id: "table@1", stamp: stampTable },
 ];

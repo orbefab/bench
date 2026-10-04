@@ -286,6 +286,31 @@ function pinHigh(state: WorldState, bit: number): boolean {
     );
     if (!hit) throw new Error("unreachable");
     console.log(`degraded ${hit.path}: ${hit.message}`);
+    // A refused snapshot says why once; it never also claims a table.
+    expect(
+      !said.some((item) => item.message.includes("table@1")),
+      `a refused diode snapshot also says table@1: ${said.map((item) => item.message).join(" | ")}`
+    );
+    // A key the form does not stamp is refused too, not left to the stamp.
+    const key = structuredClone(snap);
+    key.bind = { anode: "IN", K: "GND" };
+    writeFileSync(snapPath, `${JSON.stringify(key)}\n`);
+    const keyPlan = planWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
+    const keySaid = keyPlan.ok
+      ? [
+          ...(keyPlan.plan.degraded ?? []),
+          ...(keyPlan.plan.report?.errors ?? []),
+        ]
+      : keyPlan.errors;
+    const keyHit = keySaid.find((item) =>
+      item.message.includes("diode@1 stamps no port anode")
+    );
+    expect(
+      keyHit?.path === "module" &&
+        !keySaid.some((item) => item.message.includes("table@1")),
+      `no bind-key diagnostic: ${keySaid.map((item) => item.message).join(" | ")}`
+    );
+    console.log(`degraded ${keyHit.path}: ${keyHit.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

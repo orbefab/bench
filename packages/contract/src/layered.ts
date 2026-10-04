@@ -398,6 +398,12 @@ export type FormDef = {
   optional?: readonly string[];
   /** Param names that hold a table, not one SI number. */
   tables?: readonly string[];
+  /**
+   * The ports the form stamps, by its own names; a `bind` maps them onto
+   * the part's ports. Absent, the form stamps every port the part type
+   * declares and reads no `bind`.
+   */
+  ports?: readonly string[];
 };
 
 /**
@@ -425,11 +431,16 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
       efficiency: "Dimensionless",
     },
     optional: ["L"],
+    ports: ["A", "B"],
   },
   "servo-control@1": {
     params: { eSat: "Angle", quiescent: "Current", travel: "Angle" },
+    ports: ["V+", "GND", "M+", "M-", "sense"],
   },
-  "potentiometer@1": { params: { R: "Resistance", travel: "Angle" } },
+  "potentiometer@1": {
+    params: { R: "Resistance", travel: "Angle" },
+    ports: ["A", "W", "B"],
+  },
   "thevenin-limit@1": {
     params: { V: "Voltage", Rs: "Resistance", Ilimit: "Current" },
   },
@@ -466,11 +477,13 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
   "diode@1": {
     params: { Is: "Current", N: "Dimensionless", Rs: "Resistance" },
     optional: ["Rs"],
+    ports: ["A", "K"],
   },
   /** A diode that emits light: the `diode@1` law, its current recorded as the LED's. */
   "led@1": {
     params: { Is: "Current", N: "Dimensionless", Rs: "Resistance" },
     optional: ["Rs"],
+    ports: ["A", "K"],
   },
   "ptc-fuse@1": {
     params: {
@@ -1116,15 +1129,7 @@ export type SnapshotFile = {
    * `iSense` is 1 (current into the first port) or -1 (current out of it).
    */
   params: Record<string, number | string | (number | string)[]>;
-  envelope: {
-    bounds: Record<string, Range>;
-    data?: {
-      kind: "mahalanobis";
-      mean: number[];
-      cov: number[][];
-      limit: number;
-    };
-  };
+  envelope: { bounds: Record<string, Range> };
   error:
     | "none-available"
     | {

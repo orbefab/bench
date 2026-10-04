@@ -345,11 +345,15 @@ export function noteShaftSeams(s: SessionState, dt: number): boolean {
     const omegaAfter = scalar(
       sim.data.jnt(shaft.jointName).qvel as Float64Array
     );
+    // An open bridge sends nothing, so its seam is priced at rest, as the
+    // lumped seam prices a limp servo. The joint still moves.
+    const driver = shaft.part?.control?.driver;
+    const open = driver ? driver.connected !== true : false;
     s.seams.note({
       path: shaft.spec.id,
       dt,
       k: motor.spec.ratio * motor.spec.k,
-      omega: shaft.omegaBefore,
+      omega: open ? 0 : shaft.omegaBefore,
       current: motor.current,
       ctrl: sim.data.actuator(shaft.spec.id).ctrl as number,
       omegaBefore: shaft.omegaBefore,

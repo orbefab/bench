@@ -2,11 +2,20 @@
  * Energy residual at the motor seam (G2).
  * The arm's SG90 is the healthy run. A servo held on its joint stop is
  * the closed form (ω ≈ 0). A light joint, commanded after a quiet
- * window, grows the coupling lag until the seam is flagged.
+ * window, grows the coupling lag until the seam is flagged. An open
+ * bridge sends nothing while the joint swings, so its seam is priced at
+ * rest, as a limp lumped servo is.
  */
 
 import { ok as expect } from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -167,6 +176,42 @@ function ratioOf(row: SeamEnergy): number {
   console.log(
     `bench run 1100 ms: sent ${printed.sent.toFixed(6)} J equals the ledger`
   );
+}
+
+{
+  // The servo group (behaviour 2) with no pulse wire: the bridge stays
+  // open, and sideways gravity swings the arm through it.
+  const dir = mkdtempSync(join(tmpdir(), "sfab-seam-open-"));
+  try {
+    cpSync(armDir, dir, { recursive: true });
+    const parts = join(dir, "parts", "sfab");
+    const sceneFile = join(parts, "arm-scene@1.0.0.json");
+    const scene = JSON.parse(readFileSync(sceneFile, "utf8"));
+    const netlist = scene.axes.behaviour["2"].variants.netlist.netlist;
+    netlist.wires = netlist.wires.filter(
+      (wire: string[]) => wire[1] !== "servo.signal"
+    );
+    writeFileSync(sceneFile, JSON.stringify(scene));
+    const benchFile = join(parts, "arm-open@1.0.0.json");
+    const bench = JSON.parse(
+      readFileSync(join(parts, "arm-bench@1.0.0.json"), "utf8")
+    );
+    bench.id = "sfab/arm-open@1.0.0";
+    bench.play.gravity = [0, -9.81, 0];
+    bench.play.levels = { default: 1, paths: { servo: { behaviour: 2 } } };
+    writeFileSync(benchFile, JSON.stringify(bench));
+    const report = await runWorld(dir, "parts/sfab/arm-open@1.0.0.json", 2000);
+    const row = report.seams?.find((item) => item.path === "servo");
+    expect(row, "the open bridge has no motor seam");
+    if (!row) throw new Error("unreachable");
+    expect(
+      row.received !== 0 && row.sent === 0 && row.declared === 0,
+      `an open bridge sent energy: ${seamLine(row)}`
+    );
+    console.log(`open bridge, arm swinging: ${seamLine(row)}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 const root = mkdtempSync(join(tmpdir(), "sfab-seam-"));

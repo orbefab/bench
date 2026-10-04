@@ -25,6 +25,7 @@ import {
   writeLock,
 } from "@sfab-bench/parts";
 import { nodeStore } from "./world/node-store";
+import { planWorld } from "./world/plan";
 
 const serverDir = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -162,6 +163,45 @@ line(
     motor12.diagnostics.filter((d) => d.severity === "warning").length === 1,
   `broken motor12 is a warning only (errors=${motor12.diagnostics.filter((d) => d.severity === "error").length})`
 );
+// The winding stamps A and B; the part binds them to its V+ and GND, so
+// the run's one reason is the shaft, not a port the type lacks.
+const motor12Plan = planWorld(
+  path.join(fixtures, "broken/motor12"),
+  "world.json"
+);
+const motor12Rows = motor12Plan.ok
+  ? (motor12Plan.plan.degraded ?? []).map((row) => row.message)
+  : [];
+line(
+  motor12Rows.length === 1 &&
+    motor12Rows[0]?.includes("shaft is on no net") === true,
+  `broken motor12 stamps its winding: ${JSON.stringify(motor12Rows)}`
+);
+{
+  // A bind key the form does not stamp is a lint error on the part.
+  const dir = mkdtempSync(path.join(tmpdir(), "sfab-motor-bind-"));
+  try {
+    cpSync(path.join(fixtures, "broken/motor12"), dir, { recursive: true });
+    const motor = readJson<PartFile>(
+      path.join(catalogDir, "parts/sfab/motor-12v@1.0.0.json")
+    );
+    const law = motor.axes?.behaviour?.["1"]?.variants.law;
+    if (law?.kind !== "form") throw new Error("motor-12v has no form law");
+    law.bind = { Z: "V+", B: "GND" };
+    writeFileSync(
+      path.join(dir, "parts/sfab/motor-12v@1.0.0.json"),
+      JSON.stringify(motor)
+    );
+    const bad = loadWorldV2(path.join(dir, "world.json"), opts);
+    const said = bad.diagnostics.filter((d) => d.severity === "error");
+    line(
+      said.some((d) => d.message.includes("dc-motor@1 stamps no port Z")),
+      `a part bind key the form does not stamp is an error: ${said.map((d) => d.message).join(" | ")}`
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 broken(
   "unit-swap",
   "error",

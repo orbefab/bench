@@ -454,11 +454,15 @@ const lensForm: FormBuilder = ({ size, params }) => {
   const radius = span / 2;
   const rimH = (z / 2 - floor) * 0.12 + z * 0.02;
   group.add(
-    mesh(cylinderZ(radius, rimH), material(tint, { opacity: 0.9 }), [
-      centreX,
-      0,
-      floor + rimH / 2,
-    ])
+    mesh(
+      cylinderZ(radius, rimH),
+      material(tint, {
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+      }),
+      [centreX, 0, floor + rimH / 2]
+    )
   );
   const lens = material(tint, {
     transparent: true,

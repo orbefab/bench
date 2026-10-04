@@ -8,6 +8,7 @@ import type {
   SnapshotQuality,
 } from "@sfab-bench/contract";
 
+import { bindProblems } from "./bind";
 import { makeDiag, siValue } from "./si";
 import { envelopeOf, tableLawOf } from "./snapshot-law";
 
@@ -225,7 +226,6 @@ function earned(snap: SnapshotFile, blocked: boolean): SnapshotQuality {
     snap.provenance.source === "captured" && freeRunMeasured(snap);
   const measured =
     snap.provenance.source === "measured" && freeRunMeasured(snap);
-  if (captured && measured) return "Q3";
   if (measured) return "Q2b";
   if (captured) return "Q2a";
   return "Q1";
@@ -302,36 +302,25 @@ function acrossPorts(
   return diags;
 }
 
-/** Each bound form port lands on a distinct port the part declares. */
+/** Each bound form port is one the form stamps, on a distinct port the part declares. */
 function bindErrors(
   snap: SnapshotFile,
   ctx: SnapshotLintContext
 ): Diagnostic[] {
   if (!snap.bind || !ctx.ports) return [];
-  const diags: Diagnostic[] = [];
-  const seen = new Set<string>();
-  for (const [form, part] of Object.entries(snap.bind)) {
-    const reason = !ctx.ports[part]
-      ? `bind ${form} → ${part}: ${part} is not on ${snap.partType}`
-      : seen.has(part)
-        ? `bind ${form} → ${part}: ${part} is bound twice`
-        : null;
-    seen.add(part);
-    if (!reason) continue;
-    diags.push(
+  return bindProblems(snap.form, snap.bind, ctx.ports, snap.partType).map(
+    (row) =>
       makeDiag({
         severity: "error",
         code: "snapshot",
         path: snap.part || "snapshot",
-        port: part,
+        port: row.value,
         quantity: "Snapshot",
-        left: form,
+        left: row.key,
         right: snap.partType,
-        detail: reason,
+        detail: row.reason,
       })
-    );
-  }
-  return diags;
+  );
 }
 
 const ROTATIONAL_FIELD: Record<string, Quantity> = {
@@ -497,6 +486,24 @@ export function parseSnapshot(
   }
   if (!isRecord(raw.envelope) || !isRecord(raw.envelope.bounds)) {
     diagnostics.push(wrong("envelope", "an object with bounds"));
+  } else {
+    // The run checks the bounds and nothing else, so a statistical
+    // envelope (`data`) or any other field is refused, not ignored.
+    for (const key of Object.keys(raw.envelope)) {
+      if (key === "bounds") continue;
+      diagnostics.push(
+        makeDiag({
+          severity: "error",
+          code: "schema",
+          path: id,
+          port: `envelope.${key}`,
+          quantity: "Snapshot",
+          left: "present",
+          right: "bounds only",
+          detail: `snapshot field envelope.${key} is not supported: the envelope is its bounds`,
+        })
+      );
+    }
   }
   if (
     raw.error !== "none-available" &&

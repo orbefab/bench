@@ -23,6 +23,7 @@
           "law": {
             "kind": "form",
             "form": "dc-motor@1",
+            "bind": { "A": "V+", "B": "GND" },
             "params": {
               "K": 0.05,
               "R": 2,

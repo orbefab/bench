@@ -16,6 +16,13 @@
       "version": "1.0.0"
     },
     {
+      "id": "sfab/atmega328p@1.0.0",
+      "path": "../../catalog/parts/sfab/atmega328p@1.0.0.json",
+      "sha256": "fee850fa2b568312ecd9fcb32df39d898d1bb999e2a1e67bc054014543e07125",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
       "id": "sfab/capacitor@1.0.0",
       "path": "../../catalog/parts/sfab/capacitor@1.0.0.json",
       "sha256": "4cd09ef3beba925f97d238c6078aec4b927cc94621011cb534bb313140b60e8e",
@@ -32,14 +39,14 @@
     {
       "id": "sfab/led-red@1.0.0",
       "path": "../../catalog/parts/sfab/led-red@1.0.0.json",
-      "sha256": "009dffe0e8b10c328b94459ec7eb1396ddb330fef5c95f92d7f74cf50981d9c2",
+      "sha256": "758d74b9a4750d4557d3727a359cbb8c605e565b5f47a3b13c03c0002e5deac6",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "6c76c5ea91412d0d4ea16ccdd2e90ed18eb62903bf91d165e2202536b5eef063",
+      "sha256": "4cc0c38e13a98d58c9de60030c48c617f7cd57d85720d4a1c517f9b929858802",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -53,7 +60,7 @@
     {
       "id": "sfab/resistor@1.0.0",
       "path": "../../catalog/parts/sfab/resistor@1.0.0.json",
-      "sha256": "4b38e5fa1fd847a3e8d52bfa23d65699a13bc9a9d2c62b20cf901ee222d6361a",
+      "sha256": "024bdac8454537a929890377b64bf8da0e42a392822b93d70cbf2077d3c007db",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -76,6 +83,12 @@
       "id": "assembly",
       "path": "../../catalog/types/assembly.json",
       "sha256": "d3d12a01bb5564827caab4bf45b624199124264c89dc582d46f4775b83a34c41",
+      "source": "catalog"
+    },
+    {
+      "id": "atmega328p",
+      "path": "../../catalog/types/atmega328p.json",
+      "sha256": "5be01c47cb06fdedecf5b231c0d327290926e88dfe8a6f09ba05929eaeca3b3a",
       "source": "catalog"
     },
     {

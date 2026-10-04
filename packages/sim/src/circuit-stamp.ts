@@ -808,6 +808,16 @@ export function formPortGap(
   return ports.filter((name) => !inst.type.ports[bind?.[name] ?? name]);
 }
 
+/** Why a form cannot stamp: the ports it stamps that the part lacks. */
+export function formGapSentence(inst: LiveInstance): string | null {
+  const behaviour = selectedBehaviour(inst);
+  if (behaviour?.kind !== "form") return null;
+  const stamped = formAdapter(behaviour.form)?.ports;
+  const gap = stamped ? formPortGap(inst, stamped) : [];
+  if (gap.length === 0) return null;
+  return `form ${behaviour.form} stamps ports ${stamped?.join(", ")}, and ${inst.type.id} lacks ${gap.join(", ")}`;
+}
+
 /**
  * A circuit form, stamped on the form's ports. Each is keyed by the form's
  * port; the value is the part's own port (after `bind`), where the wires
@@ -862,8 +872,11 @@ export function tableInstOf(
   const ref = snapshot.id;
   const law = tableLawOf(snapshot.file);
   const envelope = envelopeOf(snapshot.file);
-  if (!law || !envelope || snapshot.file.form !== "table@1") {
-    return `snapshot ${ref} did not load as table@1`;
+  if (snapshot.file.form !== "table@1") {
+    return `snapshot ${ref} is ${snapshot.file.form}, not table@1`;
+  }
+  if (!law || !envelope) {
+    return `snapshot ${ref} has no table law or envelope`;
   }
   const missing = law.across.filter((name) => !inst.type.ports[name]);
   if (missing.length > 0) {
@@ -1118,7 +1131,11 @@ function stampOf(
       ? resolution.snapshots.find((row) => row.id === ran.ref)
       : undefined;
     const circuit = circuitInstOf(inst);
-    const table = !circuit && snapshot ? tableInstOf(inst, snapshot) : null;
+    // A snapshot of another form already resolved to that form above.
+    const table =
+      !circuit && snapshot?.file.form === "table@1"
+        ? tableInstOf(inst, snapshot)
+        : null;
     if (typeof table === "string") throw new Error(`${inst.path}: ${table}`);
     const row = circuit ? withWatch(circuit, snapshot) : table;
     if (row) circuitParts.push(row);
@@ -1129,7 +1146,10 @@ function stampOf(
     const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
     if (behaviour?.kind === "composite" || inst === chip) continue;
     if (circuitParts.some((part) => part.path === inst.path)) continue;
-    throw new Error(`${partId}: ${inst.path} is not a circuit leaf`);
+    const gap = formGapSentence(inst);
+    throw new Error(
+      `${partId}: ${inst.path} is not a circuit leaf${gap ? `: ${gap}` : ""}`
+    );
   }
   const behaviour = (chip ?? board).axes.behaviour.impl as BehaviourImpl | null;
   const facts = behaviour?.kind === "firmware" ? chipFactsOf(behaviour) : null;
