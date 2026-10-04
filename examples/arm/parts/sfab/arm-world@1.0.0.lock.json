@@ -1,0 +1,270 @@
+{
+  "format": "sfab.lock@1",
+  "parts": [
+    {
+      "id": "sfab/arm-scene@1.0.0",
+      "path": "parts/sfab/arm-scene@1.0.0.json",
+      "sha256": "b8b9db828eae78857ef4995d850a9343af74e734c3caf0d449ec4e20024ced17",
+      "source": "world",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/arm-world@1.0.0",
+      "path": "inline",
+      "sha256": "78fafbcc67101365a632646253692cd03eeb78ebdf03cfa3ec1abd1aba69eb66",
+      "source": "inline",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/arm@1.0.0",
+      "path": "parts/sfab/arm@1.0.0.json",
+      "sha256": "838a06db114c887266bf157918da55459b3f1ff5d50316a7be55f51bbd045da6",
+      "source": "world",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/atmega328p@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/atmega328p@1.0.0.json",
+      "sha256": "fee850fa2b568312ecd9fcb32df39d898d1bb999e2a1e67bc054014543e07125",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/capacitor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/capacitor@1.0.0.json",
+      "sha256": "4cd09ef3beba925f97d238c6078aec4b927cc94621011cb534bb313140b60e8e",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/fdn340p@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/fdn340p@1.0.0.json",
+      "sha256": "6b6304c1237f783609efddf04cf47dbbf4a7d3d92dab973fa4a6f035124a1a6b",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/ground-plane@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/ground-plane@1.0.0.json",
+      "sha256": "5cc420e61c09a8ba6fa67e94c8fa03cf2f900815b609c9adc3a9e390d0778705",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/lmv358@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/lmv358@1.0.0.json",
+      "sha256": "27005cf0e6a34d30defc683ea3232231ff8d64078ec6ae3a469ebe89f55a7258",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/lp2985-3v3@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/lp2985-3v3@1.0.0.json",
+      "sha256": "77ea959415e4e1fce626874643d02e9fc8913d782085a27b296fd4d76fbd09e6",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/mf-msmf050@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/mf-msmf050@1.0.0.json",
+      "sha256": "18af07f63ce05bab7c68cdb00695804eb7f88e9a3cc8641cc8c3f4a273f4502b",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/ncp1117-5v0@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/ncp1117-5v0@1.0.0.json",
+      "sha256": "874ebfb9d7db35c0968e826bb1d4693d185092529710e16fb78122bdc2222d35",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/resistor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/resistor@1.0.0.json",
+      "sha256": "024bdac8454537a929890377b64bf8da0e42a392822b93d70cbf2077d3c007db",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90-control@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90-control@1.0.0.json",
+      "sha256": "bd87d317a3f795d707a60e0c513a929c057d43ed418d45675fc3f5acf42e3796",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90-gears@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90-gears@1.0.0.json",
+      "sha256": "01a96c75894ca0eeeb7049a85e7bf36d972930854ab985b28c6d5422b2cf53be",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90-motor@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90-motor@1.0.0.json",
+      "sha256": "d28543852f5612620444a51c0821f22233c84eaf91b918557fd6eb057f0215dd",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90-pot@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90-pot@1.0.0.json",
+      "sha256": "74a4252d50199b04f3c95a62380242072f8b4e94ca0d1630708d3f0579ae7d8e",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/sg90@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/sg90@1.0.0.json",
+      "sha256": "9da70501185f5a99ba57bad9f64c01d4f393c80ab269b9da7bfbdbd98f7d79ed",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/uno-power-input@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/uno-power-input@1.0.0.json",
+      "sha256": "c41d7a6d134e06b86b0e4d24b1a827f017165bf52bf74f4db8f7851033162ce5",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/uno-r3@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/uno-r3@1.0.0.json",
+      "sha256": "bd9e7aea99af8026ce486f465d8d4908218cb3b015d3727e74bbecaa3213573a",
+      "source": "catalog",
+      "version": "1.0.0"
+    },
+    {
+      "id": "sfab/usb-port-500ma@1.0.0",
+      "path": "../../apps/server/catalog/parts/sfab/usb-port-500ma@1.0.0.json",
+      "sha256": "4eb1ed6007fd6046ee8d025f2ff70852d9b27bfd460278ab23689ed48f277521",
+      "source": "catalog",
+      "version": "1.0.0"
+    }
+  ],
+  "snapshots": [
+    {
+      "id": "sfab/sg90-servo@1.0.0",
+      "path": "../../apps/server/catalog/snapshots/sfab/sg90-servo@1.0.0.json",
+      "sha256": "41125bba6d2aa4ec2764e5b9b3e954eed0b7dad2902c36fb6abb5d7ac396b91b",
+      "source": "catalog"
+    },
+    {
+      "id": "sfab/uno-power-input@1.0.0",
+      "path": "../../apps/server/catalog/snapshots/sfab/uno-power-input@1.0.0.json",
+      "sha256": "bbffdcaa713992a98759172c2442254e10853466d7b2bee57f264c84c42e2115",
+      "source": "catalog"
+    }
+  ],
+  "types": [
+    {
+      "id": "arduino-uno-r3",
+      "path": "../../apps/server/catalog/types/arduino-uno-r3.json",
+      "sha256": "6568cd9feb6b3b8d7d7e2eacaedcee7dd190175ea2d1d14cdb5524269af1546f",
+      "source": "catalog"
+    },
+    {
+      "id": "assembly",
+      "path": "../../apps/server/catalog/types/assembly.json",
+      "sha256": "d3d12a01bb5564827caab4bf45b624199124264c89dc582d46f4775b83a34c41",
+      "source": "catalog"
+    },
+    {
+      "id": "atmega328p",
+      "path": "../../apps/server/catalog/types/atmega328p.json",
+      "sha256": "5be01c47cb06fdedecf5b231c0d327290926e88dfe8a6f09ba05929eaeca3b3a",
+      "source": "catalog"
+    },
+    {
+      "id": "capacitor",
+      "path": "../../apps/server/catalog/types/capacitor.json",
+      "sha256": "cb8a7070edcaad83051a688cc5fefdca8a5800e597892d549cbfbccfdbb3ef13",
+      "source": "catalog"
+    },
+    {
+      "id": "comparator",
+      "path": "../../apps/server/catalog/types/comparator.json",
+      "sha256": "c2ac229afb1b86504d77562aca87a44f034af105ab1c451151e0e9647d58f88d",
+      "source": "catalog"
+    },
+    {
+      "id": "dc-motor-terminals",
+      "path": "../../apps/server/catalog/types/dc-motor-terminals.json",
+      "sha256": "dd0e94aafb85b2d9208cc7a1cf588ac35502f4047406429c22e557915588e20f",
+      "source": "catalog"
+    },
+    {
+      "id": "gear-train",
+      "path": "../../apps/server/catalog/types/gear-train.json",
+      "sha256": "9ae6f5da4b38030d227d1fb76d5dcefb902f1fb93bedd1d92d7556b9f1e0da2d",
+      "source": "catalog"
+    },
+    {
+      "id": "ground-plane",
+      "path": "../../apps/server/catalog/types/ground-plane.json",
+      "sha256": "7b70fb6dbc50d1c03f6b4673b8950070c1e5dcf58402b6990f133e0d5767487b",
+      "source": "catalog"
+    },
+    {
+      "id": "hobby-servo-3wire",
+      "path": "../../apps/server/catalog/types/hobby-servo-3wire.json",
+      "sha256": "3ce8b1451eb2ec1e9182375dca3d37da6d5cae639ad1113e3f32c7f1042d2d1f",
+      "source": "catalog"
+    },
+    {
+      "id": "ldo-regulator",
+      "path": "../../apps/server/catalog/types/ldo-regulator.json",
+      "sha256": "b1528afe2e4f4af1e5bc9e6203b7be8d21b1b8af8f0ab41d1cf743792c51cad7",
+      "source": "catalog"
+    },
+    {
+      "id": "pmos-switch",
+      "path": "../../apps/server/catalog/types/pmos-switch.json",
+      "sha256": "61000b474bc830a9eeeaf9f0340f3da45ebe29c188a4db96f8cd265ea1151065",
+      "source": "catalog"
+    },
+    {
+      "id": "potentiometer",
+      "path": "../../apps/server/catalog/types/potentiometer.json",
+      "sha256": "c3dbd8b5a5e46ad450b96003fdf8124c74feab642c0e541d9d9dca9461d08697",
+      "source": "catalog"
+    },
+    {
+      "id": "power-input",
+      "path": "../../apps/server/catalog/types/power-input.json",
+      "sha256": "c2f57cf7a811e28b1c6cf44aefc7a5797cf1edbf729b09696f9ed10f331ef808",
+      "source": "catalog"
+    },
+    {
+      "id": "ptc-fuse",
+      "path": "../../apps/server/catalog/types/ptc-fuse.json",
+      "sha256": "98c90dd5f9f84d9a2b772f9ff458ac149bbdb8b94e33269ba55802404ab0b69d",
+      "source": "catalog"
+    },
+    {
+      "id": "resistor",
+      "path": "../../apps/server/catalog/types/resistor.json",
+      "sha256": "bd300d9ec35ce882fb73a75fd9afb9739844b5567ec263ed41d8d7416eee04e6",
+      "source": "catalog"
+    },
+    {
+      "id": "robot-arm",
+      "path": "../../apps/server/catalog/types/robot-arm.json",
+      "sha256": "aef43a363fe939603e22a20328bf91bd899163bd24f9d96d797a71042ac361ef",
+      "source": "catalog"
+    },
+    {
+      "id": "servo-control-ic",
+      "path": "../../apps/server/catalog/types/servo-control-ic.json",
+      "sha256": "50934c47afa851a1a6b3bf8491312f734d979879c22debd13e6fa5ace12f2472",
+      "source": "catalog"
+    },
+    {
+      "id": "usb-a-port",
+      "path": "../../apps/server/catalog/types/usb-a-port.json",
+      "sha256": "6168a3742bb9784135d8cb737bfe8b431571531e8a36d8baec0b9eb597ea2f5c",
+      "source": "catalog"
+    }
+  ],
+  "world": "arm-world@1.0.0"
+}
