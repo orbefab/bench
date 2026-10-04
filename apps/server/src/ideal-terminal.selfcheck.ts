@@ -7,7 +7,7 @@
  * the chip part's id: a copy of the 328P under another id keeps the same
  * header, chip pins, ADC labels and reset port. A board whose firmware level
  * names no pin map, or one that does not resolve, sits idle with a named
- * row; it never runs as a bare chip.
+ * row, nested or at the root; it never runs as a bare chip.
  *
  * Copies `examples/nano`. Nothing under the catalog or the examples is written.
  */
@@ -200,22 +200,40 @@ const firmwareLevel = (part: PartFile) => {
   return impl;
 };
 
-/** The nano-led world on `ideal-terminal`, with project shadows of parts. */
-function terminalPlan(shadows: Shadow): {
+/**
+ * A world with the Nano on `ideal-terminal`, with project shadows of parts:
+ * the nano-led scene (the board at `nano`), or a document that unwraps to
+ * the Nano (the board at the root, which the loader does not idle).
+ */
+function terminalPlan(
+  shadows: Shadow,
+  at: "nested" | "root" = "nested"
+): {
   board: RunBoard | undefined;
   rows: string[];
 } {
   const dir = mkdtempSync(join(tmpdir(), "sfab-pin-map-"));
   try {
     cpSync(nanoDir, dir, { recursive: true });
-    const worldRel = "parts/sfab/nano-led@1.0.0.json";
-    const world = JSON.parse(readFileSync(join(dir, worldRel), "utf8")) as Doc;
-    if (!world.play?.levels) throw new Error("nano-led has no play.levels");
-    world.play.levels.paths = {
-      nano: { behaviour: { class: 1, variant: "ideal-terminal" } },
-    };
-    writeFileSync(join(dir, worldRel), JSON.stringify(world));
-    rmSync(join(dir, "parts/sfab/nano-led@1.0.0.lock.json"), { force: true });
+    const worldRel =
+      at === "root"
+        ? "parts/sfab/nano-root@1.0.0.json"
+        : "parts/sfab/nano-led@1.0.0.json";
+    if (at === "root") {
+      writeFileSync(join(dir, worldRel), JSON.stringify(nanoRoot()));
+    } else {
+      const world = JSON.parse(
+        readFileSync(join(dir, worldRel), "utf8")
+      ) as Doc;
+      if (!world.play?.levels) throw new Error("nano-led has no play.levels");
+      world.play.levels.paths = {
+        nano: { behaviour: { class: 1, variant: "ideal-terminal" } },
+      };
+      writeFileSync(join(dir, worldRel), JSON.stringify(world));
+      rmSync(join(dir, "parts/sfab/nano-led@1.0.0.lock.json"), {
+        force: true,
+      });
+    }
     for (const [id, edit] of Object.entries(shadows)) {
       const part = edit(catalogPart(id));
       writeFileSync(
@@ -227,15 +245,70 @@ function terminalPlan(shadows: Shadow): {
     if (!planned.ok) {
       throw new Error(planned.errors.map((item) => item.message).join("; "));
     }
+    const boardId = at === "root" ? "$root" : "nano";
     return {
-      board: planned.plan.boards.find((item) => item.id === "nano"),
+      board: planned.plan.boards.find((item) => item.id === boardId),
       rows: (planned.plan.degraded ?? [])
-        .filter((row) => row.path === "nano")
+        .filter((row) => row.path === boardId || row.path === NANO)
         .map((row) => row.message),
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** A document whose one instance is the Nano: the run stages it at the root. */
+function nanoRoot(): unknown {
+  const none = {
+    "0": {
+      default: "none",
+      variants: { none: { kind: "none", omits: ["none"] } },
+    },
+  };
+  return {
+    format: "sfab.part@1",
+    id: "sfab/nano-root@1.0.0",
+    type: "assembly",
+    play: {
+      gravity: [0, 0, -9.81],
+      seed: 1,
+      timestep: 0.001,
+      levels: {
+        default: 1,
+        paths: {
+          $root: { behaviour: { class: 1, variant: "ideal-terminal" } },
+        },
+      },
+    },
+    axes: {
+      behaviour: {
+        "2": {
+          default: "netlist",
+          variants: {
+            netlist: {
+              kind: "composite",
+              omits: ["the Nano alone"],
+              netlist: {
+                instances: {
+                  nano: {
+                    part: NANO,
+                    params: {
+                      firmware: "firmware/blink/blink.hex",
+                      source: "firmware/blink/blink.ino",
+                    },
+                  },
+                },
+                wires: [],
+                expose: {},
+              },
+            },
+          },
+        },
+      },
+      body: none,
+      visual: none,
+    },
+  };
 }
 
 const pinFacts = (board: RunBoard | undefined) =>
@@ -357,6 +430,24 @@ try {
       `${label}: board ${got.board ? "runs" : "idle"}, rows ${JSON.stringify(got.rows)}`
     );
     console.log(`ideal-terminal: ${label} → idle (${want})`);
+  }
+
+  // At the root the loader keeps the part; the planner idles the board on
+  // the lint's row, the chip mismatch included.
+  const rootStock = terminalPlan({}, "root");
+  expect(
+    pinFacts(rootStock.board) === pinFacts(stock.board) &&
+      rootStock.rows.length === 0,
+    `the Nano at the root: ${pinFacts(rootStock.board)} ${JSON.stringify(rootStock.rows)}`
+  );
+  for (const [label, shadows, want] of cases) {
+    const got = terminalPlan(shadows, "root");
+    const named = got.rows.some((row) => row.includes(want));
+    expect(
+      !got.board && named,
+      `root ${label}: board ${got.board ? pinFacts(got.board) : "idle"}, rows ${JSON.stringify(got.rows)}`
+    );
+    console.log(`ideal-terminal: root ${label} → idle (${want})`);
   }
   console.log(
     "ideal-terminal: the 328P under another id keeps D0–A5, PD0–PC5, ADC A0–A7 and RESET"

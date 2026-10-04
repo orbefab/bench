@@ -2,6 +2,7 @@
 
 import type {
   BehaviourImpl,
+  Diagnostic,
   Netlist,
   PartFile,
   PinMapRef,
@@ -43,9 +44,10 @@ export function boardHostOf(
  * A firmware level that is its own board has no chip child: its
  * `pinMapFrom` names the composite level of the same part whose expose is
  * the pin map, and the chip child in it. Empty for a bare chip, which names
- * none. The library lint refuses a part with a composite level whose
- * firmware level names none, or one that does not resolve, so such a
- * board never runs as a bare chip.
+ * none. A board whose map does not resolve is refused by the library lint
+ * (`lintPinMap`): the loader idles such a part below the root, and the
+ * planner idles it at the root (`pinMapRefused`). It never runs as a bare
+ * chip.
  */
 export function chipExposure(
   chip: LiveInstance,
@@ -60,6 +62,51 @@ export function chipExposure(
   return "error" in source
     ? new Map()
     : exposeOnto(source.netlist, source.instance);
+}
+
+/**
+ * Why a firmware level of `part`, running as its own board, has no pin map;
+ * null when it has one or is a bare chip. A part with a composite level is
+ * a board: its firmware level must name `pinMapFrom`, and the reference
+ * must resolve. A part with no composite level is a bare chip.
+ */
+export function pinMapRefusal(
+  part: PartFile,
+  firmware: Extract<BehaviourImpl, { kind: "firmware" }>
+): string | null {
+  const ref = firmware.pinMapFrom;
+  if (!ref) {
+    const board = Object.values(part.axes?.behaviour ?? {}).some((slot) =>
+      Object.values(slot?.variants ?? {}).some(
+        (impl) => impl.kind === "composite"
+      )
+    );
+    return board
+      ? "a board's firmware level names no pin map: set pinMapFrom to the composite level whose expose is the header"
+      : null;
+  }
+  const source = pinMapSource(part, ref);
+  return "error" in source ? `pinMapFrom: ${source.error}` : null;
+}
+
+/** The field the lint names on a refused pin map. */
+export const PIN_MAP_FIELD = "pinMapFrom";
+
+/**
+ * The lint's refusal of `part`'s pin map, among the load's diagnostics.
+ * The loader keeps a root part with a lint error; the planner reads this
+ * so a root board with no pin map sits idle too.
+ */
+export function pinMapRefused(
+  diagnostics: readonly Diagnostic[],
+  part: PartFile
+): Diagnostic | undefined {
+  return diagnostics.find(
+    (diag) =>
+      diag.severity === "error" &&
+      diag.path === part.id &&
+      diag.right === PIN_MAP_FIELD
+  );
 }
 
 /**

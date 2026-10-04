@@ -20,7 +20,7 @@ import {
 } from "@sfab-bench/contract";
 
 import { batteryFrom } from "./battery";
-import { pinMapSource } from "./board-host";
+import { PIN_MAP_FIELD, pinMapRefusal, pinMapSource } from "./board-host";
 import { comparatorFrom } from "./comparator";
 import {
   assetDir,
@@ -1131,10 +1131,10 @@ function lintPinMap(lib: Library, part: PartFile, diags: Diagnostic[]): void {
     const slot = behaviour[String(cls) as "0"];
     return slot ? Object.entries(slot.variants) : [];
   });
-  const board = slots.some(([, impl]) => impl.kind === "composite");
   for (const [name, impl] of slots) {
     if (impl.kind !== "firmware") continue;
-    const fail = (left: string, detail: string) =>
+    const ref = impl.pinMapFrom;
+    const fail = (detail: string) =>
       diags.push(
         makeDiag({
           severity: "error",
@@ -1142,29 +1142,18 @@ function lintPinMap(lib: Library, part: PartFile, diags: Diagnostic[]): void {
           path: part.id,
           port: name,
           quantity: "Level",
-          left,
-          right: "pinMapFrom",
+          left: ref ? `${ref.class}/${ref.variant}/${ref.instance}` : "missing",
+          right: PIN_MAP_FIELD,
           detail,
         })
       );
-    const ref = impl.pinMapFrom;
-    if (!ref) {
-      if (board) {
-        fail(
-          "missing",
-          `firmware level ${name} of a board names no pin map: set pinMapFrom to the composite level whose expose is the header`
-        );
-      }
+    const refusal = pinMapRefusal(part, impl);
+    if (refusal) {
+      fail(refusal);
       continue;
     }
-    const source = pinMapSource(part, ref);
-    if ("error" in source) {
-      fail(
-        `${ref.class}/${ref.variant}/${ref.instance}`,
-        `pinMapFrom: ${source.error}`
-      );
-      continue;
-    }
+    const source = ref ? pinMapSource(part, ref) : null;
+    if (!ref || !source || "error" in source) continue;
     const child = lib.parts.get(source.netlist.instances[ref.instance].part);
     if (!child) continue;
     const chips = classesOf(child.part.axes?.behaviour ?? {}).flatMap((cls) =>
@@ -1176,7 +1165,6 @@ function lintPinMap(lib: Library, part: PartFile, diags: Diagnostic[]): void {
     );
     if (!chips.includes(impl.chip)) {
       fail(
-        `${ref.class}/${ref.variant}/${ref.instance}`,
         `pinMapFrom: ${ref.instance} runs chip ${chips.join(", ") || "none"}, not ${impl.chip}`
       );
     }

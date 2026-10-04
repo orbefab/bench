@@ -42,6 +42,7 @@ import {
   loadWorldV2,
   makeDiag,
   mergeFormParams,
+  pinMapRefused,
   siValue,
   type Wire,
   type WireEnd,
@@ -1107,6 +1108,17 @@ function build(
       // `inst` is the chip that holds the image. `host` is the board it runs
       // as: the parent composite when this chip is a child of one, else itself.
       const host = boardHostOf(inst, byPath, ROOT_PATH);
+      // A board whose pin map the lint refused does not run as a bare chip.
+      // The loader idles such a part below the root, its row on the
+      // instance path; this is the root, the same row on the root path.
+      const refused =
+        host === inst
+          ? pinMapRefused(loaded.diagnostics, inst.part)
+          : undefined;
+      if (refused) {
+        diags.push(degrade({ ...refused, path: host.path }));
+        continue;
+      }
       const exposure = chipExposure(inst, host);
       // One board per host: a second chip exposed by the same parent does not
       // run, and the first one does.
