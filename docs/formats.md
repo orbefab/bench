@@ -630,6 +630,26 @@ A capture from the world socket picks the recipe the same way: the part's own `c
 
 A `hinge@1` capture runs the gear train and the collapsed hinge on the same fixture. The deep side is one MuJoCo hinge per shaft and one joint equality per mesh, with the load inertia on the output, at the 1 ms master step. The snapshot side is one hinge from `collapse()`, with the same load. The error rows compare `shaft.angle`: worst-case free-run max-abs and rms, and the worst `step-rise` across the step cases.
 
+### Assembly check
+
+```ts
+type AssemblyCheck = {
+  format: "sfab.assembly-check@1";
+  document: string;                                  // project-relative assembly part
+  fixture: { ms: number; hash: string; lock: string };
+  detailed: { default: LevelSpec; paths?: Record<string, LevelSpec> };
+  snapshot: { default: LevelSpec; paths?: Record<string, LevelSpec> };
+  children: { path: string; axis: string; ref: string; fromHash: string }[];
+  quantities: string[];                              // "instance.path.port.field"
+  error: { metric: "free-run-max-abs" | "free-run-rms"; quantity: string; value: number;
+           heldOut: "fixture"; baseline: "detailed" }[];
+};
+```
+
+An assembly check lives under `<project>/checks/` and records one assembly run twice on its own fixture: the document as it is (its firmware, supplies and play), with `detailed` as its play levels and then with `snapshot`. `fixture.hash` and `fixture.lock` are the content hashes of the document and its lockfile. `children` are the snapshots the snapshot side runs, each with its capture-source signature, so a child that goes stale makes the record stale. Each quantity is `Sim.portReading` at an instance's port, sampled every 10 ms frame; the rows are the gap between the two runs, max-abs and rms. `examples/arm/checks/sfab/arm-bench@1.0.0.json` is the arm bench with the servo group and the Uno power input as snapshots.
+
+`assembly.selfcheck.ts` finds every record and fails when the document, the lock or a child's source changed, when the detailed side runs a snapshot, when the snapshot side runs a different set than `children`, or when a remeasured gap is more than 1e-4 relative from its row. Pass means the remeasure matches the stored gap. A child's stated errors are measured on its own fixture and do not add up at a shared port: on the arm bench the servo's current error crosses the USB port's resistance into `uno.VBUS.voltage`. No acceptance bound per quantity is stated yet, and any other world, supply, firmware, seed or step is unchecked. `--write` remeasures and rewrites the hashes, `children` and the rows.
+
 ## 7. Fixture
 
 ```ts
