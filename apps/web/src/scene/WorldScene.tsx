@@ -319,6 +319,11 @@ function GhostRobots({
         transparent: true,
         opacity: 0.35,
         depthWrite: false,
+        // Pulled toward the camera, so where it lies on the run it tints
+        // the run instead of flickering through it.
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -4,
         side: THREE.DoubleSide,
       }),
     []
