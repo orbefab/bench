@@ -52,6 +52,7 @@
       "through": "IN",
       "iSense": 1,
       "fitV": 0.002,
+      "fit": "diode@1",
       "baseline": { "level": "2", "value": 0 },
       "heldOut": "fixture",
       "staticError": true,

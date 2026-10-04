@@ -12,9 +12,9 @@
   "axes": {
     "behaviour": {
       "1": {
-        "default": "table",
+        "default": "diode",
         "variants": {
-          "table": {
+          "diode": {
             "kind": "snapshot",
             "ref": "sfab/led-module-red@1.0.0",
             "omits": ["temperature", "colour", "capacitance"]

@@ -1,5 +1,6 @@
 /**
- * A red LED and a 220 Ω resistor, as a circuit or as one plain-branch table.
+ * A red LED and a 220 Ω resistor, as a circuit or as one `diode@1` fitted
+ * to the plain-branch sweep, bound to the module's `IN` and `GND`.
  * The example holds D9 high. No sketch in the tree PWMs that pin.
  */
 
@@ -21,6 +22,7 @@ import {
   type SnapshotFile,
   type WorldState,
 } from "@sfab-bench/contract";
+import { branchDc } from "@sfab-bench/sim";
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { assemblyStampOf } from "./world/circuit-stamp";
@@ -117,7 +119,12 @@ function pinHigh(state: WorldState, bit: number): boolean {
       const row = planned.plan.boards
         .flatMap((board) => board.stamp?.parts ?? [])
         .find((part) => part.path === "module");
-      expect(row?.form === "table@1", `module form ${row?.form}`);
+      expect(
+        row?.form === "diode@1" &&
+          row.nodes.A !== undefined &&
+          row.nodes.K !== undefined,
+        `module form ${row?.form} nodes ${JSON.stringify(row?.nodes)}`
+      );
     }
     const report = low.boards.nano ? "ran" : "missing";
     expect(report === "ran", "no board");
@@ -220,7 +227,7 @@ function pinHigh(state: WorldState, bit: number): boolean {
 }
 
 {
-  const dir = mkdtempSync(join(tmpdir(), "sfab-led-across-"));
+  const dir = mkdtempSync(join(tmpdir(), "sfab-led-bind-"));
   try {
     cpSync(nanoExample, dir, { recursive: true });
     rmSync(join(dir, "parts/sfab/nano-led-module@1.0.0.lock.json"));
@@ -242,18 +249,54 @@ function pinHigh(state: WorldState, bit: number): boolean {
         "utf8"
       )
     ) as SnapshotFile;
-    const params = snap.params as { across?: string[] };
-    params.across = ["NOPE", "GND"];
+    snap.bind = { A: "NOPE", K: "GND" };
     writeFileSync(snapPath, `${JSON.stringify(snap)}\n`);
     const planned = planWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
-    expect(planned.ok, "bad across port did not run");
+    expect(planned.ok, "bad bind port did not run");
     if (!planned.ok) throw new Error("unreachable");
-    const hit = (planned.plan.degraded ?? []).find((item) =>
-      item.message.includes("across port NOPE")
+    const said = [
+      ...(planned.plan.degraded ?? []),
+      ...(planned.plan.report?.errors ?? []),
+    ];
+    const hit = said.find((item) =>
+      item.message.includes("NOPE is not on led-module")
     );
-    expect(hit, "no across-port diagnostic");
+    expect(
+      hit &&
+        !planned.plan.boards.some((board) =>
+          board.stamp?.parts.some((part) => part.path === "module")
+        ),
+      `no bind-port diagnostic: ${said.map((item) => item.message).join(" | ")}`
+    );
+    if (!hit) throw new Error("unreachable");
     console.log(`degraded ${hit.path}: ${hit.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// The guard: a converged point whose current is the solver's gmin leak is
+// not the part's drop. Backwards, the LED blocks, and 1 µA can only flow
+// through gmin (about −1 MV). Forward, the class-2 knee and 2 mA still read.
+{
+  const stamp = assemblyStampOf("sfab/led-module-red@1.0.0", "netlist", {
+    boardId: "module",
+    across: ["IN", "GND"],
+  });
+  let refused = "";
+  try {
+    branchDc(stamp, "IN", "GND", -1e-6);
+  } catch (err) {
+    refused = messageOf(err);
+  }
+  expect(refused.includes("gmin leak"), `reverse 1 µA: ${refused || "read"}`);
+  const knee = branchDc(stamp, "IN", "GND", 3.7e-6);
+  const twoMa = branchDc(stamp, "IN", "GND", 2e-3);
+  expect(
+    Math.abs(knee - 1.317328) < 1e-6 && Math.abs(twoMa - 2.142192) < 1e-6,
+    `forward ${knee} V, ${twoMa} V`
+  );
+  console.log(
+    `branchDc guard: reverse 1 µA refused (${refused}); knee ${knee.toFixed(6)} V, 2 mA ${twoMa.toFixed(6)} V`
+  );
 }

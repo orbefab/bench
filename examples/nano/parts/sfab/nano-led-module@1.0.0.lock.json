@@ -39,7 +39,7 @@
     {
       "id": "sfab/led-module-red@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/led-module-red@1.0.0.json",
-      "sha256": "d5cef333d1dce11bdab36d1df66f89613925f9a499df86221a133141a3cdcb8b",
+      "sha256": "3d541d36a07f8cfcb71fb2508cfb34a156f1b8277432d9afed4564ac18ef90b5",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -97,7 +97,7 @@
     {
       "id": "sfab/led-module-red@1.0.0",
       "path": "../../apps/server/catalog/snapshots/sfab/led-module-red@1.0.0.json",
-      "sha256": "39b2f2871abd610eb4af370e2d66785ed630b4f3d36b77e0639f566723565149",
+      "sha256": "9a8687d06ad14e03c81016a0573d7fc61b804f3620664ea159428802fa45a2ba",
       "source": "catalog"
     }
   ],

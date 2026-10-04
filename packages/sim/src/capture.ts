@@ -14,7 +14,14 @@ import {
   type TableLaw,
   type WorldState,
 } from "@sfab-bench/contract";
-import { tableVoltage } from "@sfab-bench/engine-circuit";
+import {
+  Diode,
+  type DiodeParams,
+  Engine,
+  ISource,
+  tableVoltage,
+  thermalVoltage,
+} from "@sfab-bench/engine-circuit";
 import {
   contentHash,
   lintSnapshot,
@@ -95,6 +102,8 @@ export type CaptureEntry = {
     current?: number[];
   };
   envelope: { marginA?: number };
+  /** Write this two-port law, fitted to the sweep, instead of a table. */
+  fit?: "diode@1";
   /** Level id that takes the new variant. Absent: the level that holds a snapshot. */
   into?: string;
   freeRun?: FreeRunSpec;
@@ -341,6 +350,9 @@ async function captureEntry(
     );
   }
   const atTyp = sweep.current.map((amps) => dc(amps));
+  monotone(config.part, sweep.current, atTyp);
+  const fitted =
+    config.fit === "diode@1" ? fitDiode(sweep.current, atTyp) : null;
   const lineMaxAbsMv = lineError(sweep.current, atTyp) * 1000;
   const knots = fitKnots(sweep.current, atTyp, config.fitV);
   const law: TableLaw = {
@@ -350,7 +362,9 @@ async function captureEntry(
     vAxis: knots.map((amps) => round9(dc(amps))),
   };
   const staticMax = maxBetween(sweep.current, (amps) =>
-    Math.abs(dc(amps) - tableVoltage(law, amps))
+    Math.abs(
+      dc(amps) - (fitted ? diodeDc(fitted, amps) : tableVoltage(law, amps))
+    )
   );
 
   const partType = partTypeOf(config.part, catalog, env, opts.libraryDir);
@@ -377,6 +391,7 @@ async function captureEntry(
     hash,
     bench,
     envelopeMaxA,
+    ...(fitted ? { fitted } : {}),
   };
   if (!runFree) {
     const quantity = `${across[0]}.voltage`;
@@ -534,6 +549,8 @@ function snapshotOf(input: {
   envelopeMaxA: number;
   error: SnapshotFile["error"];
   quality: SnapshotFile["quality"];
+  /** A `diode@1` fitted to the sweep, written in place of the table. */
+  fitted?: FittedDiode;
 }): SnapshotFile {
   const port = input.law.across[0];
   const inputs = [`${port}.current`];
@@ -548,14 +565,23 @@ function snapshotOf(input: {
     partType: input.partType,
     part: input.config.part,
     axis: "behaviour",
-    form: "table@1",
     ports: { inputs, outputs: [`${port}.voltage`] },
-    params: {
-      across: [...input.law.across],
-      iSense: input.law.iSense,
-      iAxis: [...input.law.iAxis],
-      vAxis: [...input.law.vAxis],
-    },
+    ...(input.fitted
+      ? {
+          form: "diode@1" as const,
+          // `across` is the swept pair; the stale check stamps it again.
+          params: { ...input.fitted, across: [...input.law.across] },
+          bind: { A: input.law.across[0], K: input.law.across[1] },
+        }
+      : {
+          form: "table@1" as const,
+          params: {
+            across: [...input.law.across],
+            iSense: input.law.iSense,
+            iAxis: [...input.law.iAxis],
+            vAxis: [...input.law.vAxis],
+          },
+        }),
     envelope: { bounds },
     error: input.error,
     quality: input.quality,
@@ -667,6 +693,108 @@ function lineError(current: number[], volts: number[]): number {
   return max;
 }
 
+type FittedDiode = Pick<DiodeParams, "Is" | "N" | "Rs">;
+
+/** A two-port DC sweep moves one way: a passive branch never folds back. */
+function monotone(part: string, current: number[], volts: number[]): void {
+  let up = false;
+  let down = false;
+  for (let k = 1; k < volts.length; k++) {
+    const step = (volts[k] ?? 0) - (volts[k - 1] ?? 0);
+    if (step > 0) up = true;
+    if (step < 0) down = true;
+    if (up && down) {
+      throw new Error(
+        `${part}: the drop turns back between ${current[k - 1]} A and ${current[k]} A`
+      );
+    }
+  }
+}
+
+/**
+ * `diode@1` from a forward sweep: `V = N·Vt·ln(I/Is) + Rs·I` is linear in
+ * `N·Vt`, `−N·Vt·ln Is` and `Rs`, so least squares over the points above
+ * 0 A. The `+1` inside the log is below 1e-10 of `I/Is` there.
+ */
+function fitDiode(current: number[], volts: number[]): FittedDiode {
+  const rows = current
+    .map((amps, k) => [amps, volts[k] ?? Number.NaN] as const)
+    .filter(([amps]) => amps > 0);
+  if (rows.length < 3) {
+    throw new Error("a diode fit needs three sweep points above 0 A");
+  }
+  const scale = Math.max(...rows.map(([amps]) => amps));
+  const ata = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  const atb = [0, 0, 0];
+  for (const [amps, v] of rows) {
+    const f = [Math.log(amps), 1, amps / scale];
+    for (let i = 0; i < 3; i++) {
+      atb[i] = (atb[i] ?? 0) + (f[i] ?? 0) * v;
+      for (let j = 0; j < 3; j++) {
+        const row = ata[i] as number[];
+        row[j] = (row[j] ?? 0) + (f[i] ?? 0) * (f[j] ?? 0);
+      }
+    }
+  }
+  const [a, b, rScaled] = solve3(ata, atb);
+  const Rs = rScaled / scale;
+  if (!(a > 0) || !(Rs >= 0)) {
+    throw new Error(`the sweep is not a forward diode (N·Vt ${a}, Rs ${Rs})`);
+  }
+  const fit = {
+    Is: round12(Math.exp(-b / a)),
+    N: round12(a / thermalVoltage(25)),
+    Rs: round12(Rs),
+  };
+  return fit;
+}
+
+function solve3(m: number[][], v: number[]): [number, number, number] {
+  const a = m.map((row, i) => [...row, v[i] ?? 0]);
+  for (let c = 0; c < 3; c++) {
+    let pivot = c;
+    for (let r = c + 1; r < 3; r++) {
+      if (Math.abs(a[r]?.[c] ?? 0) > Math.abs(a[pivot]?.[c] ?? 0)) pivot = r;
+    }
+    [a[c], a[pivot]] = [a[pivot] as number[], a[c] as number[]];
+    const top = a[c] as number[];
+    for (let r = c + 1; r < 3; r++) {
+      const row = a[r] as number[];
+      const k = (row[c] ?? 0) / (top[c] ?? 1);
+      for (let j = c; j < 4; j++) row[j] = (row[j] ?? 0) - k * (top[j] ?? 0);
+    }
+  }
+  const x = [0, 0, 0];
+  for (let r = 2; r >= 0; r--) {
+    const row = a[r] as number[];
+    let sum = row[3] ?? 0;
+    for (let j = r + 1; j < 3; j++) sum -= (row[j] ?? 0) * (x[j] ?? 0);
+    x[r] = sum / (row[r] ?? 1);
+  }
+  return [x[0] ?? 0, x[1] ?? 0, x[2] ?? 0];
+}
+
+/** The fitted law's drop, solved by the same engine the run uses. */
+function diodeDc(fit: FittedDiode, amps: number): number {
+  const engine = new Engine(
+    [
+      new Diode("d", "a", "0", { ...fit, tempC: 25 }),
+      new ISource("is", "0", "a", { kind: "dc", value: amps }),
+    ],
+    { method: "be", h: 1e-3, atol: 1e-14, rtol: 1e-12 }
+  );
+  engine.operatingPoint();
+  return engine.voltage("a");
+}
+
+function round12(n: number): number {
+  return Number(n.toPrecision(12));
+}
+
 /**
  * The largest `err` over the sweep: what a `static-max-abs` row states. The
  * knots are sweep points, so the error that matters is between them. Each
@@ -686,6 +814,9 @@ function maxBetween(
     const points = new Set([lo, hi]);
     for (let j = 1; j < 32; j++) points.add(lo + ((hi - lo) * j) / 32);
     if (lo === 0) for (let j = 1; j <= 12; j++) points.add(hi / 2 ** j);
+    // From 0 A the search stays above the ladder's last point: below a few
+    // nA the class-2 solve has no answer to compare (C1).
+    const floor = lo === 0 ? hi / 2 ** 12 : lo;
     const sorted = [...points].sort((a, b) => a - b);
     const errs = sorted.map(err);
     for (let i = 0; i < errs.length; i++) {
@@ -694,7 +825,7 @@ function maxBetween(
       if (here < (errs[i - 1] ?? 0) || here < (errs[i + 1] ?? 0)) continue;
       const around = goldenMax(
         err,
-        sorted[Math.max(i - 1, 0)] ?? lo,
+        Math.max(sorted[Math.max(i - 1, 0)] ?? lo, floor),
         sorted[Math.min(i + 1, sorted.length - 1)] ?? hi
       );
       worst = Math.max(worst, around);
