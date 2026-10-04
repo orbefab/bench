@@ -18,7 +18,7 @@
     },
     {
       "title": "Rigid-gear collapse of that train",
-      "ref": "Rotor cup is an estimate: copper 8960 kg/m³, diameter 6 mm, length 8 mm, wall 0.6 mm, plus the 9-tooth pinion. Gears are POM disks at 1410 kg/m³, face width 1.5 mm, tooth-zone fill 1/2. Modules 0.20, 0.25, 0.30 and 0.40 mm, so each large gear is about 10 mm across. Bores 0.5 mm on the pinion, 0.75 mm on the idlers, 2.4 mm on the output. Damping is 70% on the rotor and 30% on the output. Friction is split 50/50. Idlers carry neither. Gear data stays on this servo until the class-2 children run; the gears child takes this body over then."
+      "ref": "Rotor cup is an estimate: copper 8960 kg/m³, diameter 6 mm, length 8 mm, wall 0.6 mm, plus the 9-tooth pinion. Gears are POM disks at 1410 kg/m³, face width 1.5 mm, tooth-zone fill 1/2. Modules 0.20, 0.25, 0.30 and 0.40 mm, so each large gear is about 10 mm across. Bores 0.5 mm on the pinion, 0.75 mm on the idlers, 2.4 mm on the output. Damping is 70% on the rotor and 30% on the output. Friction is split 50/50. Idlers carry neither. The gears child carries the same train as its body, so the class-2 children and this body class run the same collapse."
     }
   ],
   "ratings": {

@@ -480,8 +480,9 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       motor,
       `no servo.motor diagnostic: ${rows.map((item) => item.message).join("; ")}`
     );
+    // The children run, but this servo's shaft is on no joint.
     expect(
-      motor.message.includes("no runtime for a declared-only part"),
+      motor.message === "dc-motor@1: its shaft reaches no joint",
       motor.message
     );
     expect(

@@ -4,16 +4,16 @@
  *
  * - S: the whole-servo law (`position-servo@1`) on its lumped body.
  * - C: that law on the gear-train body's rigid collapse.
- * - G: the group. A `dc-motor@1` winding behind the train, a
- *   `potentiometer@1` on the output, and a `servo-control@1` bridge
- *   that reads the wiper.
+ * - G: the catalog SG90 at behaviour class 2, its four children. A
+ *   `dc-motor@1` winding behind the `gears` train, a `potentiometer@1`
+ *   on the output, and a `servo-control@1` bridge that reads the wiper.
  *
  * C and G share the joint terms and the motor law, so they agree within
  * the control's one-step sense lag. G against S is the gap a group
  * snapshot has to close (step 4). It is printed, not asserted.
  */
 
-import { ok as expect } from "node:assert/strict";
+import { deepStrictEqual, ok as expect } from "node:assert/strict";
 import {
   cpSync,
   mkdtempSync,
@@ -27,6 +27,7 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, RunReport } from "@sfab-bench/contract";
+import { collapse } from "@sfab-bench/engine-body";
 import {
   BridgeDriver,
   BridgeMotor,
@@ -129,30 +130,6 @@ function worst(a: number[], b: number[]): { delta: number; atMs: number } {
   return { delta, atMs };
 }
 
-function part(
-  name: string,
-  type: string,
-  axes: Record<string, unknown>
-): string {
-  return JSON.stringify({
-    format: "sfab.part@1",
-    id: `sfab/${name}@1.0.0`,
-    type,
-    foreign: false,
-    axes,
-  });
-}
-
-const none = (why: string) => ({
-  "0": { default: "none", variants: { none: { kind: "none", omits: [why] } } },
-});
-const law = (form: string, params: Record<string, number>) => ({
-  "1": {
-    default: "law",
-    variants: { law: { kind: "form", form, params, omits: ["fixture"] } },
-  },
-});
-
 // The stamps. A bridge into a bare winding (`K/N` at `N·ω`) draws what
 // the whole-servo bridge motor draws (`K` at `ω`): motoring, braking
 // (back-EMF above the drive, the supply side opens), and reversed.
@@ -200,120 +177,47 @@ const law = (form: string, params: Record<string, number>) => ({
   }
 }
 
-const sg90 = JSON.parse(readFileSync(join(catalog, "sg90@1.0.0.json"), "utf8"));
-const trainBody = sg90.axes.body["2"];
-const servoLaw = sg90.axes.behaviour["1"].variants.datasheet.params as Record<
-  string,
-  number
->;
+// The gears child carries the servo's class-2 train: one collapse.
+{
+  const read = (name: string) =>
+    JSON.parse(readFileSync(join(catalog, `${name}@1.0.0.json`), "utf8"));
+  const onServo = collapse(read("sg90").axes.body["2"].variants["gear-train"]);
+  const onGears = collapse(
+    read("sg90-gears").axes.body["1"].variants["gear-train"]
+  );
+  deepStrictEqual(onGears, onServo);
+  console.log(
+    `collapse: gears child = servo class 2, ratio ${onServo.ratio.toFixed(4)}, armature ${onServo.armature.toExponential(4)} kg·m²`
+  );
+}
 
 const dir = mkdtempSync(join(tmpdir(), "sfab-servo-group-"));
 try {
   cpSync(armDir, dir, { recursive: true });
   const parts = join(dir, "parts/sfab");
-  const put = (name: string, text: string) =>
-    writeFileSync(join(parts, `${name}@1.0.0.json`), text);
-
-  put(
-    "grp-motor",
-    part("grp-motor", "dc-motor-terminals", {
-      behaviour: law("dc-motor@1", {
-        K: (servoLaw.K ?? 0) / RATIO,
-        R: servoLaw.R ?? 0,
-        efficiency: servoLaw.efficiency ?? 0,
-      }),
-      body: none("rotor is in the gear train"),
-      visual: none("fixture"),
-    })
-  );
-  put(
-    "grp-control",
-    part("grp-control", "servo-control-ic", {
-      behaviour: law("servo-control@1", {
-        eSat: servoLaw.eSat ?? 0,
-        // The law's quiescent less the pot's 1 mA.
-        quiescent: (servoLaw.quiescent ?? 0) - 0.001,
-        travel: Math.PI,
-      }),
-      body: none("fixture"),
-      visual: none("fixture"),
-    })
-  );
-  put(
-    "grp-pot",
-    part("grp-pot", "potentiometer", {
-      behaviour: law("potentiometer@1", { R: 5000, travel: Math.PI }),
-      body: none("fixture"),
-      visual: none("fixture"),
-    })
-  );
-  put(
-    "grp-gears",
-    part("grp-gears", "gear-train", {
-      body: { "2": trainBody },
-      visual: none("fixture"),
-    })
-  );
-  const group = structuredClone(sg90);
-  group.id = "sfab/grp-servo@1.0.0";
-  const instances =
-    group.axes.behaviour["2"].variants.netlist.netlist.instances;
-  for (const [key, child] of Object.entries(instances) as [
-    string,
-    { part: string },
-  ][]) {
-    child.part = `sfab/grp-${key === "gears" ? "gears" : key}@1.0.0`;
-  }
-  put("grp-servo", JSON.stringify(group));
-
-  const scene = JSON.parse(
-    readFileSync(join(parts, "arm-scene@1.0.0.json"), "utf8")
-  );
-  scene.id = "sfab/grp-scene@1.0.0";
-  scene.axes.behaviour["2"].variants.netlist.netlist.instances.servo.part =
-    "sfab/grp-servo@1.0.0";
-  put("grp-scene", JSON.stringify(scene));
-
   const bench = JSON.parse(
     readFileSync(join(parts, "arm-bench@1.0.0.json"), "utf8")
   );
-  const world = (
-    name: string,
-    sceneId: string,
-    levels: unknown,
-    timestep: number
-  ) => {
+  const world = (name: string, levels: unknown, timestep: number) => {
     const copy = structuredClone(bench);
     copy.id = `sfab/${name}@1.0.0`;
     copy.play.levels = levels;
     copy.play.timestep = timestep;
-    copy.axes.behaviour["2"].variants.netlist.netlist.instances.scene.part =
-      sceneId;
-    put(name, JSON.stringify(copy));
+    writeFileSync(join(parts, `${name}@1.0.0.json`), JSON.stringify(copy));
     return `parts/sfab/${name}@1.0.0.json`;
   };
   const worlds = (timestep: number) => {
     const us = Math.round(timestep * 1e6);
     return {
-      s: world(
-        `grp-s-${us}us`,
-        "sfab/arm-scene@1.0.0",
-        { default: 1 },
-        timestep
-      ),
+      s: world(`grp-s-${us}us`, { default: 1 }, timestep),
       c: world(
         `grp-c-${us}us`,
-        "sfab/arm-scene@1.0.0",
         { default: 1, paths: { servo: { body: 2 } } },
         timestep
       ),
       g: world(
         `grp-g-${us}us`,
-        "sfab/grp-scene@1.0.0",
-        {
-          default: 1,
-          paths: { servo: { behaviour: 2 }, "servo.gears": { body: 2 } },
-        },
+        { default: 1, paths: { servo: { behaviour: 2 } } },
         timestep
       ),
     };
@@ -350,8 +254,8 @@ try {
     "servo behaviour 2/netlist composite",
     "servo.motor behaviour 1/law form dc-motor@1",
     "servo.pot behaviour 1/law form potentiometer@1",
-    "servo.control behaviour 1/law form servo-control@1",
-    "servo.gears body 2/gear-train gear-train",
+    "servo.control behaviour 1/model form servo-control@1",
+    "servo.gears body 1/gear-train gear-train",
   ]) {
     expect(
       g.levels.some((line) => line.startsWith(row)),

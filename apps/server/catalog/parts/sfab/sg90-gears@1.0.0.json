@@ -3,11 +3,104 @@
   "id": "sfab/sg90-gears@1.0.0",
   "type": "gear-train",
   "foreign": false,
-  "declaredOnly": true,
   "sources": [
     {
       "title": "SG90 gear train",
-      "ref": "declared-only; ratio is not in the Bench catalog"
+      "ref": "Child of sfab/sg90@1.0.0. The same train as the servo's body class 2; the sources there give the teeth and the shaft estimates."
     }
-  ]
+  ],
+  "axes": {
+    "body": {
+      "1": {
+        "default": "gear-train",
+        "variants": {
+          "gear-train": {
+            "kind": "gear-train",
+            "input": "rotor",
+            "output": "output",
+            "shafts": [
+              {
+                "name": "rotor",
+                "mass": 0.0007333759612329867,
+                "inertia": 5.387068780247043e-9,
+                "damping": 2.5726492761638665e-8,
+                "frictionloss": 3.834169141632991e-6
+              },
+              {
+                "name": "g1",
+                "mass": 0.0001484753196829288,
+                "inertia": 1.616580003354382e-9,
+                "damping": 0,
+                "frictionloss": 0
+              },
+              {
+                "name": "g2",
+                "mass": 0.0001507365153565197,
+                "inertia": 1.689375384633888e-9,
+                "damping": 0,
+                "frictionloss": 0
+              },
+              {
+                "name": "g3",
+                "mass": 0.0001574427566115979,
+                "inertia": 1.7770781240122473e-9,
+                "damping": 0,
+                "frictionloss": 0
+              },
+              {
+                "name": "output",
+                "mass": 0.00010063047486217586,
+                "inertia": 1.397366434978325e-9,
+                "damping": 0.00075,
+                "frictionloss": 0.001
+              }
+            ],
+            "meshes": [
+              {
+                "driver": "rotor",
+                "driven": "g1",
+                "teethDriver": 9,
+                "teethDriven": 47
+              },
+              {
+                "driver": "g1",
+                "driven": "g2",
+                "teethDriver": 10,
+                "teethDriven": 38
+              },
+              {
+                "driver": "g2",
+                "driven": "g3",
+                "teethDriver": 8,
+                "teethDriven": 32
+              },
+              {
+                "driver": "g3",
+                "driven": "output",
+                "teethDriver": 7,
+                "teethDriven": 23
+              }
+            ],
+            "omits": [
+              "tooth compliance",
+              "backlash",
+              "per-mesh friction and efficiency (not published)",
+              "live gear bodies: the run uses the exact rigid collapse"
+            ]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["inside the servo case"]
+          }
+        }
+      }
+    }
+  }
 }

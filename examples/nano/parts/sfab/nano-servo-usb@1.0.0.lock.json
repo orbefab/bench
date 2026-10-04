@@ -88,35 +88,35 @@
     {
       "id": "sfab/sg90-control@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90-control@1.0.0.json",
-      "sha256": "854a15e984507289c9c11ce661075f22a4d6f439e356c381195233f4a619b332",
+      "sha256": "bd87d317a3f795d707a60e0c513a929c057d43ed418d45675fc3f5acf42e3796",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/sg90-gears@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90-gears@1.0.0.json",
-      "sha256": "6f52a68ecf7dfbfd1126883ded2e554ce99d9303e481ee5b4dd67e23d1dbd9ee",
+      "sha256": "01a96c75894ca0eeeb7049a85e7bf36d972930854ab985b28c6d5422b2cf53be",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/sg90-motor@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90-motor@1.0.0.json",
-      "sha256": "a8932c36ba1e6b817bf82b1ef89c64ae5a9915203fc40c36907798e7b401cae5",
+      "sha256": "d28543852f5612620444a51c0821f22233c84eaf91b918557fd6eb057f0215dd",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/sg90-pot@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90-pot@1.0.0.json",
-      "sha256": "b69c7da321d2c89e3eac63b307e5225eca40618b7ddf58b343f16c530382ffe0",
+      "sha256": "74a4252d50199b04f3c95a62380242072f8b4e94ca0d1630708d3f0579ae7d8e",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/sg90@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90@1.0.0.json",
-      "sha256": "72688807aee4a6bfcd9fa003ea602ee74869ef9b90d32707407f7a319273b50a",
+      "sha256": "87e69dc34d6efb8ad1e72c715e9c4bfe4a65cc2f593ec432ae499e225084dee3",
       "source": "catalog",
       "version": "1.0.0"
     },

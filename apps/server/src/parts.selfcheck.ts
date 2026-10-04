@@ -246,7 +246,7 @@ const rootBeh = fleet?.levels.find(
   (level) => level.path === "$root" && level.axis === "behaviour"
 );
 line(
-  reasons.default === 10 &&
+  reasons.default === 11 &&
     reasons.type === 2 &&
     reasons.path === 2 &&
     // Each rig's Uno power group stays class 2, and its leaves fall back.
@@ -254,8 +254,10 @@ line(
     reasons.parent === 2 &&
     // Each Uno now holds a chip child (`mcu`): two more fallback rows and one
     // more row with no level per rig, all from the board's new structure.
-    reasons.fallback === 108 &&
-    reasons.none === 14 &&
+    // rig2's class-2 SG90 children have levels: their 12 rows are one
+    // default and ten fallbacks, and the gears child has no behaviour.
+    reasons.fallback === 118 &&
+    reasons.none === 3 &&
     rig1?.class === 0 &&
     rig1.reason === "type rule hobby-servo-3wire" &&
     rig2?.class === 2 &&
