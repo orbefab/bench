@@ -58,6 +58,7 @@ export const CIRCUIT_FORMS = [
   "resistor@1",
   "capacitor@1",
   "diode@1",
+  "led@1",
   "ptc-fuse@1",
   "pmos-switch@1",
   "ldo-regulator@1",
@@ -133,7 +134,7 @@ export type BoardStamp = {
   /** The regulator input's node. Null when the board has none on a net. */
   regulatorNode: string | null;
   resetNode: string | null;
-  /** `onboardLedPath(boardId)` when that part is an LED. The rail copies it onto `ledCurrent`. */
+  /** `onboardLedPath(boardId)` when that part runs `led@1`. The rail copies it onto `ledCurrent`. */
   ledAlias: string | null;
   /**
    * The pin that drives `ledAlias`: on the LED's net, or one resistor
@@ -410,7 +411,7 @@ export function stampBoard(input: {
   }
   const led = assigned.find(
     (part) =>
-      part.path === onboardLedPath(input.boardId) && part.typeId === "led"
+      part.path === onboardLedPath(input.boardId) && part.form === "led@1"
   );
   const ledAlias = led?.path ?? null;
   return {

@@ -46,7 +46,7 @@
     {
       "id": "sfab/led-red@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/led-red@1.0.0.json",
-      "sha256": "978afceecf704a2c1ddc169d1f88948f2a325961a9bfbed2be7024104063160e",
+      "sha256": "758d74b9a4750d4557d3727a359cbb8c605e565b5f47a3b13c03c0002e5deac6",
       "source": "catalog",
       "version": "1.0.0"
     },

@@ -378,6 +378,7 @@ export type FormId =
   | "resistor@1"
   | "capacitor@1"
   | "diode@1"
+  | "led@1"
   | "ptc-fuse@1"
   | "pmos-switch@1"
   | "logic-in@1"
@@ -463,6 +464,11 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
     optional: ["esr"],
   },
   "diode@1": {
+    params: { Is: "Current", N: "Dimensionless", Rs: "Resistance" },
+    optional: ["Rs"],
+  },
+  /** A diode that emits light: the `diode@1` law, its current recorded as the LED's. */
+  "led@1": {
     params: { Is: "Current", N: "Dimensionless", Rs: "Resistance" },
     optional: ["Rs"],
   },

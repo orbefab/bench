@@ -21,6 +21,11 @@ export type ProbeIndex = {
   /** Board id to exposed GPIO names, in pin-state order. */
   pins: Record<string, readonly string[]>;
   /**
+   * Board id to its power pin (`voltagePin`), supply id to its positive
+   * pin. That port reads the recorded voltage. Absent ids read nothing.
+   */
+  powerPins?: Record<string, string>;
+  /**
    * Ranger id to the ports its recorded row answers: the power ports
    * (voltage and current) and the echo port (echo width). Absent ids read
    * nothing.
@@ -133,10 +138,10 @@ function channelsOf(
     return [];
   }
   if (kind === "supply") {
-    return port === "5V" || port === "+" ? supplyChannels(instance) : [];
+    return port === index.powerPins?.[instance] ? supplyChannels(instance) : [];
   }
   if (kind === "board") {
-    if (port === "5V") {
+    if (port === index.powerPins?.[instance]) {
       return [
         {
           unit: "V",

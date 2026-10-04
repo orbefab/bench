@@ -16,7 +16,7 @@
         "variants": {
           "shockley": {
             "kind": "form",
-            "form": "diode@1",
+            "form": "led@1",
             "params": {
               "Is": 3.5191328433049383e-16,
               "N": 2.2204522451395414,

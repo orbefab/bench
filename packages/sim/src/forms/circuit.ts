@@ -257,19 +257,28 @@ function stampPotentiometer(part: AssignedPart): StampedElements {
   };
 }
 
-/** The trailing branch of the old chain. Any form it does not know is a diode. */
-export function stampDiode(part: AssignedPart): StampedElements {
+function diodeOf(part: AssignedPart): Diode {
   const params: DiodeParams = {
     Is: needNum(part, "Is"),
     N: needNum(part, "N"),
     Rs: part.params.Rs ?? 0,
     tempC: 25,
   };
-  const diode = new Diode(part.path, need(part, "A"), need(part, "K"), params);
+  return new Diode(part.path, need(part, "A"), need(part, "K"), params);
+}
+
+/** The trailing branch of the old chain. Any form it does not know is a diode. */
+export function stampDiode(part: AssignedPart): StampedElements {
+  return { elements: [diodeOf(part)], capacitive: false };
+}
+
+/** The same diode, its forward current recorded under the LED's path. */
+function stampLed(part: AssignedPart): StampedElements {
+  const diode = diodeOf(part);
   return {
     elements: [diode],
     capacitive: false,
-    ...(part.typeId === "led" ? { led: { path: part.path, diode } } : {}),
+    led: { path: part.path, diode },
   };
 }
 
@@ -292,6 +301,7 @@ export const circuitAdapters: FormAdapter[] = [
   circuit("resistor@1", stampResistor),
   circuit("capacitor@1", stampCapacitor),
   circuit("diode@1", stampDiode, ["A", "K"]),
+  circuit("led@1", stampLed, ["A", "K"]),
   circuit("ptc-fuse@1", stampPtc),
   circuit("pmos-switch@1", stampPmos),
   // Unpowered, the regulator's output is open: its reverse path is in the

@@ -97,7 +97,7 @@ export function powerBoardOf(
           onBoard &&
           (end.port === board.voltagePin ||
             end.port === board.regulatorPin ||
-            end.port === "VBUS")
+            end.port === board.usbPin)
         ) {
           found.add(board.id);
         }
@@ -282,7 +282,7 @@ function bindRails(s: SessionState) {
         a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
       const reachedBy = (supplyId: string) =>
         boardsSorted.filter((board) =>
-          [board.voltagePin, board.regulatorPin, "VBUS"].some(
+          [board.voltagePin, board.regulatorPin, board.usbPin].some(
             (port) =>
               port !== null &&
               suppliesOnPort(plan, board.id, port).includes(supplyId)
@@ -330,9 +330,9 @@ function bindRails(s: SessionState) {
         const onVin =
           board.regulatorPin !== null &&
           suppliesOnPort(plan, board.id, board.regulatorPin).includes(supplyId);
-        const onVbus = suppliesOnPort(plan, board.id, "VBUS").includes(
-          supplyId
-        );
+        const onVbus =
+          board.usbPin !== null &&
+          suppliesOnPort(plan, board.id, board.usbPin).includes(supplyId);
         const onRail = suppliesOnPort(
           plan,
           board.id,

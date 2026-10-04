@@ -411,8 +411,8 @@ function noteAdc(s: SessionState, boardId: string, sample: AdcConversion) {
 /**
  * AVCC is the latched board node. AREF is 0: the shipped boards have no
  * AREF port, and the pin circuit is omitted. A planned board names each
- * channel from its expose. A hand-built plan keeps `A` plus the index,
- * and only channels 0–5 have a GPIO (`PC0`–`PC5`).
+ * channel from its expose. A hand-built plan keeps `A` plus the index.
+ * Either way the channel's chip pin is the chip's ADC table entry.
  */
 function attachAnalog(s: SessionState, board: AvrBoard) {
   const spec = s.runPlan?.boards.find((item) => item.id === board.id);
@@ -430,11 +430,7 @@ function attachAnalog(s: SessionState, board: AvrBoard) {
       if (labels && port === undefined) {
         return { voltage: 0, rSource: 0, mux: `adc${channel}` };
       }
-      const chipPin = labels
-        ? board.chip?.adcPins[channel]
-        : channel < 6
-          ? `PC${channel}`
-          : undefined;
+      const chipPin = board.chip?.adcPins[channel];
       const bit = chipPin ? spec.wire.indexOf(chipPin) : -1;
       const mode = bit < 0 ? "analog" : board.driveMode(bit);
       const read = analogRead({

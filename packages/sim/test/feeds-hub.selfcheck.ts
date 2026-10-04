@@ -25,6 +25,7 @@ function planOf(wires: [string, string][]): RunPlan {
         powerInputs: ["5V"],
         vinFeed: true,
         regulatorPin: "VIN",
+        usbPin: "VBUS",
       },
     ],
     parts: [

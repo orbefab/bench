@@ -187,7 +187,7 @@ export class RangerRuntime {
   readonly directions: Vec3[];
   board: AvrBoard | null = null;
   supplyId: string | null = null;
-  /** The board whose power pin VCC reaches, when exactly one does. */
+  /** The board whose power pin the ranger's power port reaches, when exactly one does. */
   powerBoard: string | null = null;
   distanceM: number | null = null;
   echoS: number | null = null;
@@ -205,7 +205,7 @@ export class RangerRuntime {
     this.directions = rangerDirections(spec.law.beamHalf);
   }
 
-  /** Volts on the node that feeds VCC, from the latch. */
+  /** Volts on the node that feeds the power port, from the latch. */
   volts: () => number = () => 0;
   physics: () => RangerPhysics | null = () => null;
 

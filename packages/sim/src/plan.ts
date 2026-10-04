@@ -157,6 +157,11 @@ export type RunBoard = {
    * from `regulatorInputPort`. Null when the board has none.
    */
   regulatorPin: string | null;
+  /**
+   * The USB connector's power port (`VBUS` on the Nano and Uno), the port
+   * the type marks `connector: "usb"`. Null when the board has none.
+   */
+  usbPin: string | null;
   groundPin: string;
   /** Amperes drawn by the board, independent of voltage. */
   current: number;
@@ -1047,8 +1052,8 @@ function build(
   const trainParts: LiveInstance[] = [];
 
   // An if-chain on the selected behaviour. A composite is a shell and
-  // is skipped. What runs: firmware; form resistor@1, capacitor@1 and
-  // diode@1; form multibody@1 with a urdf body; form thevenin-limit@1;
+  // is skipped. What runs: firmware; form resistor@1, capacitor@1,
+  // diode@1 and led@1; form multibody@1 with a urdf body; form thevenin-limit@1;
   // form position-servo@1 on a type with one logic input, with a lumped
   // joint, a hinge@1 snapshot, or the collapse of a gear train; forms
   // dc-motor@1, servo-control@1 and potentiometer@1, coupled to a joint
@@ -1183,6 +1188,7 @@ function build(
         vinFeed: false,
         voltagePin: powerName,
         regulatorPin: regulatorInputPort(host.type.ports, [powerName]),
+        usbPin: connectorPort(host.type.ports, "usb"),
         groundPin: groundName,
         current: quiescent ?? 0,
         hasNetlist: host.path !== inst.path,

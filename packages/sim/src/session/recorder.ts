@@ -584,8 +584,14 @@ export function record(s: SessionState, query: RecordQuery): RecordBody {
       if (load.drive) shafts[load.partId] = load.drive.jointName;
     }
     const pins: Record<string, readonly string[]> = {};
-    for (const board of s.runPlan?.boards ?? [])
+    const powerPins: Record<string, string> = {};
+    for (const board of s.runPlan?.boards ?? []) {
       pins[board.id] = board.pinOrder;
+      powerPins[board.id] = board.voltagePin;
+    }
+    for (const supply of s.runPlan?.supplies ?? []) {
+      powerPins[supply.id] = supply.positivePin;
+    }
     const rangers: NonNullable<ProbeIndex["rangers"]> = {};
     for (const ranger of s.runPlan?.rangers ?? []) {
       rangers[ranger.id] = {
@@ -595,7 +601,12 @@ export function record(s: SessionState, query: RecordQuery): RecordBody {
         echo: ranger.ports.echo,
       };
     }
-    const probed = probeTracks(read, query.tracks, { shafts, pins, rangers });
+    const probed = probeTracks(read, query.tracks, {
+      shafts,
+      pins,
+      powerPins,
+      rangers,
+    });
     return {
       op: "timeline",
       id: info.id,

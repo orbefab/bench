@@ -67,6 +67,7 @@ function gpioPlan(
       vinFeed: false,
       voltagePin: "5V",
       regulatorPin: "VIN",
+      usbPin: "VBUS",
       groundPin: "GND",
       current: 0.05,
       hasNetlist: false,
