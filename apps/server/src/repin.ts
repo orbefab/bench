@@ -42,6 +42,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -121,6 +122,11 @@ export async function repin(opts: RepinOptions): Promise<RepinResult> {
   if (existsSync(opts.journal)) return resume(opts);
   const changes: RepinChange[] = [];
   const refusals: string[] = [];
+  for (const root of opts.roots) {
+    if (!existsSync(root) || !statSync(root).isDirectory()) {
+      refusals.push(`${root}: not a folder`);
+    }
+  }
   const snapshots: Plan = new Map();
   const signatures = new Map<string, string>();
   for (const file of filesUnder(
@@ -180,32 +186,23 @@ export async function repin(opts: RepinOptions): Promise<RepinResult> {
   writeFileSync(`${opts.journal}.tmp`, `${JSON.stringify(journal)}\n`);
   renameSync(`${opts.journal}.tmp`, opts.journal);
   opts.step?.("journal");
-  apply(journal, opts);
-  return { changes, refusals, wrote: true };
+  const drift = apply(journal, opts);
+  return { changes, refusals: drift, wrote: drift.length === 0 };
 }
 
 /** Finish a journal an earlier run left, or refuse and keep it. */
 function resume(opts: RepinOptions): RepinResult {
-  const journal = JSON.parse(readFileSync(opts.journal, "utf8")) as Journal;
-  const refusals: string[] = [];
-  if (journal.format !== JOURNAL_FORMAT) {
-    refusals.push(`${opts.journal}: not a ${JOURNAL_FORMAT} journal`);
+  const journal = readJournal(opts.journal);
+  if (typeof journal === "string") {
+    return { changes: [], refusals: [journal], wrote: false };
   }
-  for (const entry of journal.files ?? []) {
-    if (sha256(entry.text) !== entry.next) {
-      refusals.push(`${entry.file}: the journal's new bytes do not match`);
-      continue;
-    }
-    const now = existsSync(entry.file)
-      ? sha256(readFileSync(entry.file, "utf8"))
-      : "missing";
-    if (now !== entry.old && now !== entry.next) {
-      refusals.push(
-        `${entry.file}: changed since re-pin ${journal.id} was planned`
-      );
-    }
-  }
-  const changes: RepinChange[] = (journal.files ?? []).map((entry) => ({
+  const refusals = journal.files.flatMap((entry) =>
+    sha256(entry.text) === entry.next
+      ? []
+      : [`${entry.file}: the journal's new bytes do not match their digest`]
+  );
+  refusals.push(...drifted(journal));
+  const changes: RepinChange[] = journal.files.map((entry) => ({
     file: entry.file,
     field: "file",
     id: `resume ${journal.id}`,
@@ -226,12 +223,53 @@ function resume(opts: RepinOptions): RepinResult {
       wrote: false,
     };
   }
-  apply(journal, opts);
-  return { changes, refusals, wrote: true };
+  const drift = apply(journal, opts);
+  return { changes, refusals: drift, wrote: drift.length === 0 };
 }
 
-/** Stage every file, rename in plan order, verify, drop the journal. */
-function apply(journal: Journal, opts: RepinOptions): void {
+/** The journal, or why it cannot be used; either way it stays on disk. */
+function readJournal(file: string): Journal | string {
+  const unusable = `${file}: not a usable ${JOURNAL_FORMAT} journal; restore the files it names or delete it`;
+  try {
+    const journal = JSON.parse(readFileSync(file, "utf8")) as Partial<Journal>;
+    const ok =
+      journal.format === JOURNAL_FORMAT &&
+      typeof journal.id === "string" &&
+      Array.isArray(journal.files) &&
+      journal.files.every(
+        (entry) =>
+          typeof entry?.file === "string" &&
+          typeof entry.old === "string" &&
+          typeof entry.next === "string" &&
+          typeof entry.text === "string"
+      );
+    return ok ? (journal as Journal) : unusable;
+  } catch {
+    return unusable;
+  }
+}
+
+/** Files that hold neither their planned old bytes nor their new ones. */
+function drifted(journal: Journal): string[] {
+  return journal.files.flatMap((entry) => {
+    if (!existsSync(entry.file)) {
+      return [`${entry.file}: missing since re-pin ${journal.id} was planned`];
+    }
+    const now = sha256(readFileSync(entry.file, "utf8"));
+    return now === entry.old || now === entry.next
+      ? []
+      : [`${entry.file}: changed since re-pin ${journal.id} was planned`];
+  });
+}
+
+/**
+ * Stage every file, rename in plan order, verify, drop the journal. A file
+ * that drifted is refused before anything is staged, and the journal
+ * stays.
+ */
+function apply(journal: Journal, opts: RepinOptions): string[] {
+  const drift = drifted(journal);
+  if (drift.length > 0) return drift;
   const pending = journal.files.filter(
     (entry) => sha256(readFileSync(entry.file, "utf8")) !== entry.next
   );
@@ -252,6 +290,7 @@ function apply(journal: Journal, opts: RepinOptions): void {
     );
   }
   rmSync(opts.journal);
+  return [];
 }
 
 /**
@@ -447,12 +486,18 @@ function planRecord(
       refusals.push(`${file}: ${child.ref} has no snapshot file`);
       return null;
     }
-    const now = contentHash(
-      JSON.parse(
-        plans.snapshots.get(snapshot)?.text ?? readFileSync(snapshot, "utf8")
-      )
-    );
+    const planned = plans.snapshots.get(snapshot);
+    const onDisk = readFileSync(snapshot, "utf8");
+    const now = contentHash(JSON.parse(planned?.text ?? onDisk));
     if (now !== child.hash) {
+      // Only a signature this run re-stamps may move the pin: the snapshot
+      // as it is on disk must still be the bytes the record measured.
+      if (!planned || contentHash(JSON.parse(onDisk)) !== child.hash) {
+        refusals.push(
+          `${file}: ${child.path} ${child.ref} changed since the record was measured (${snapshot}); remeasure it (assembly.selfcheck --write)`
+        );
+        return null;
+      }
       swaps.push({
         file,
         field: "children[].hash",
@@ -462,9 +507,8 @@ function planRecord(
       });
     }
     const signed = plans.signatures.get(child.ref);
-    const was = plans.snapshots.get(snapshot)
-      ? (JSON.parse(readFileSync(snapshot, "utf8")) as SnapshotFile).provenance
-          .from?.hash
+    const was = planned
+      ? (JSON.parse(onDisk) as SnapshotFile).provenance.from?.hash
       : undefined;
     if (signed !== undefined && child.fromHash === was) {
       swaps.push({
@@ -485,8 +529,9 @@ function planRecord(
 
 /**
  * Replace each old hash with its new one, as text, so the diff is hash
- * lines only. Refuses when an old hash also stands for something else in
- * the file, or maps to two new hashes.
+ * lines only. Refuses when an old hash maps to two new hashes, and unless
+ * the parsed result differs from the parsed original in exactly the
+ * swapped string values (an escaped copy of a hash is a string too).
  */
 function swapHex(
   text: string,
@@ -514,7 +559,43 @@ function swapHex(
     }
     out = out.split(from).join(to);
   }
+  if (!swappedOnly(JSON.parse(text), JSON.parse(out), byOld)) {
+    refusals.push(`${file}: a hash swap would change another value`);
+    return null;
+  }
   return out;
+}
+
+/** `after` is `before` with each old hash string swapped, `count` times. */
+function swappedOnly(
+  before: unknown,
+  after: unknown,
+  byOld: Map<string, { to: string; count: number }>
+): boolean {
+  const seen = new Map<string, number>();
+  const walk = (a: unknown, b: unknown): boolean => {
+    if (typeof a === "string" && typeof b === "string") {
+      if (a === b) return !byOld.has(a);
+      if (byOld.get(a)?.to !== b) return false;
+      seen.set(a, (seen.get(a) ?? 0) + 1);
+      return true;
+    }
+    if (Array.isArray(a) && Array.isArray(b)) {
+      return a.length === b.length && a.every((v, at) => walk(v, b[at]));
+    }
+    if (a && b && typeof a === "object" && typeof b === "object") {
+      const left = a as Record<string, unknown>;
+      const right = b as Record<string, unknown>;
+      const keys = Object.keys(left);
+      const same = keys.join("\0") === Object.keys(right).join("\0");
+      return same && keys.every((key) => walk(left[key], right[key]));
+    }
+    return a === b;
+  };
+  return (
+    walk(before, after) &&
+    [...byOld].every(([from, { count }]) => seen.get(from) === count)
+  );
 }
 
 /** Node file access that reads planned bytes first. */

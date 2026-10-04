@@ -398,6 +398,135 @@ try {
       "repin: a file edited after the interruption is refused by name"
     );
   }
+  // Review round 1: a snapshot whose numbers moved is not a file pin.
+  {
+    const { root, opts } = copy();
+    const file = join(root, "catalog/snapshots/sfab/sg90-servo@1.0.0.json");
+    const text = readFileSync(file, "utf8");
+    const edited = text.replace("0.00539279", "0.00939279");
+    expect(edited !== text, "the servo snapshot states that error row");
+    writeFileSync(file, edited);
+    const before = bytesUnder(root);
+    const result = await repin(opts);
+    expect(
+      result.refusals.some((why) =>
+        why.includes(
+          "servo sfab/sg90-servo@1.0.0 changed since the record was measured"
+        )
+      ),
+      `an edited snapshot error row is a remeasure: ${result.refusals.join("; ")}`
+    );
+    expect(moved(before, bytesUnder(root)).size === 0, "nothing written");
+    console.log(
+      "repin: a snapshot whose stated numbers moved is refused for the record that measured it"
+    );
+  }
+
+  // An escaped copy of an old hash elsewhere in a file is refused.
+  {
+    const { root, opts } = copy();
+    citeSg90(root);
+    const record = join(root, RECORD);
+    const json = JSON.parse(readFileSync(record, "utf8")) as {
+      fixture: { lock: string };
+    };
+    const escaped = [...json.fixture.lock]
+      .map((ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`)
+      .join("");
+    writeFileSync(
+      record,
+      readFileSync(record, "utf8").replace(
+        '"format"',
+        `"note": "${escaped}",\n  "format"`
+      )
+    );
+    const before = bytesUnder(root);
+    const result = await repin(opts);
+    expect(
+      result.refusals.some((why) => why.includes("would change another value")),
+      `an escaped copy is refused: ${result.refusals.join("; ")}`
+    );
+    expect(moved(before, bytesUnder(root)).size === 0, "nothing written");
+    console.log("repin: an escaped copy of an old hash is refused");
+  }
+
+  // A journal that does not parse, or whose bytes do not match their digest.
+  for (const [label, spoil] of [
+    ["a corrupt journal", () => "{"],
+    [
+      "a journal whose bytes do not match their digest",
+      (text: string) => {
+        const journal = JSON.parse(text) as { files: { text: string }[] };
+        const first = journal.files[0];
+        if (first) first.text = `${first.text} `;
+        return JSON.stringify(journal);
+      },
+    ],
+  ] as const) {
+    const { root, opts } = copy();
+    citeSg90(root);
+    try {
+      await repin({
+        ...opts,
+        step: (now) => {
+          if (now === "journal") throw new Error("crash");
+        },
+      });
+    } catch {}
+    writeFileSync(opts.journal, spoil(readFileSync(opts.journal, "utf8")));
+    const before = bytesUnder(root);
+    const result = await repin(opts);
+    expect(
+      !result.wrote && result.refusals.length > 0,
+      `${label}: refused (${result.refusals.join("; ")})`
+    );
+    expect(
+      existsSync(opts.journal) && moved(before, bytesUnder(root)).size === 0,
+      `${label}: kept, and nothing written`
+    );
+  }
+  console.log(
+    "repin: a corrupt journal and one whose bytes fail their digest are refused and kept"
+  );
+
+  // A file that drifts after the journal is written, in the same run.
+  {
+    const { root, opts } = copy();
+    citeSg90(root);
+    const arm = join(root, "examples", ARM.replace(/\.json$/, ".lock.json"));
+    const result = await repin({
+      ...opts,
+      step: (now) => {
+        if (now === "journal") {
+          writeFileSync(arm, `${readFileSync(arm, "utf8")} `);
+        }
+      },
+    });
+    expect(
+      !result.wrote && result.refusals.some((why) => why.startsWith(arm)),
+      `a file edited mid-run is refused by name: ${result.refusals.join("; ")}`
+    );
+    expect(existsSync(opts.journal), "the journal stays");
+    expect(
+      ![...bytesUnder(root).keys()].some((f) => f.endsWith(".repin-tmp")),
+      "nothing was staged"
+    );
+    console.log("repin: a file edited during a run is refused before staging");
+  }
+
+  // A folder the user names must exist.
+  {
+    const { root, opts } = copy();
+    const result = await repin({
+      ...opts,
+      roots: [join(root, "no-such-folder")],
+    });
+    expect(
+      result.refusals.some((why) => why.includes("not a folder")),
+      "a missing folder is refused, not reported current"
+    );
+    console.log("repin: a named folder that does not exist is refused");
+  }
 } finally {
   for (const dir of temps) rmSync(dir, { recursive: true, force: true });
 }

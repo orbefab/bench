@@ -24,3 +24,4 @@ apps/server/fixtures/external/
 
 # re-pin journal while a re-pin is writing (apps/server/src/repin.ts)
 /.sfab/
+*.repin-tmp

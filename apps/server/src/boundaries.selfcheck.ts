@@ -392,6 +392,8 @@ for (const file of scanned) {
   for (const name of forbiddenCalls) {
     if (text.includes(name)) hits.push(`${rel} ${name}`);
   }
+  // ADR 0012's maintenance exception: re-pin rewrites hash fields only.
+  if (rel.endsWith(path.join("src", "repin.ts"))) continue;
   for (const match of text.matchAll(writeCall)) {
     const at = match.index;
     if (at === undefined) continue;
@@ -403,7 +405,7 @@ if (hits.length > 0) {
   throw new Error(`document write outside world/edit.ts: ${hits.join("; ")}`);
 }
 process.stdout.write(
-  `boundary: scanned ${scanned.length} server and web files; document writes stay in world/edit.ts\n`
+  `boundary: scanned ${scanned.length} server and web files; document writes stay in world/edit.ts (and repin.ts, ADR 0012's hash-only exception)\n`
 );
 
 function walkTs(dir: string, out: string[] = []): string[] {
