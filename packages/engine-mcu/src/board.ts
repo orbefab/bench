@@ -456,8 +456,10 @@ export class AvrBoard {
   }
 
   /**
-   * DDR and PORT, not the pin level. High is DDR and PORT set, low is
-   * DDR set and PORT clear, pull-up is PORT set alone, input is neither.
+   * DDR, then what drives the pin. An output is high or low at its output
+   * level: PORT, or a timer's compare output while one holds the pin (PWM
+   * never writes PORT). An input is the pull-up when PORT is set, else an
+   * input; the pin level is not used, since it mixes in what is outside.
    * An unmapped bit or a stopped CPU is an input.
    */
   driveMode(bit: number): PinMode {
@@ -467,7 +469,7 @@ export class AvrBoard {
     const ddr = cpu.data[found.port.portConfig.DDR] ?? 0;
     const written = cpu.data[found.port.portConfig.PORT] ?? 0;
     const mask = 1 << found.index;
-    if ((ddr & mask) !== 0) return (written & mask) !== 0 ? "high" : "low";
+    if ((ddr & mask) !== 0) return this.outputLevel(bit) ? "high" : "low";
     return (written & mask) !== 0 ? "pullup" : "input";
   }
 

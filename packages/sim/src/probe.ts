@@ -41,7 +41,7 @@ function kindOf(read: RecordingRead, instance: string): Kind | null {
 
 type Pick = (frame: RecordedFrame) => number | null;
 
-type Channel = { unit: TimelineUnit; pick: Pick; lo?: Pick };
+type Channel = { unit: TimelineUnit; pick: Pick; lo?: Pick; hi?: Pick };
 
 function partChannel(
   instance: string,
@@ -68,7 +68,8 @@ function channelsOf(
   kind: Kind,
   instance: string,
   port: string,
-  index: ProbeIndex
+  index: ProbeIndex,
+  read: RecordingRead
 ): Channel[] {
   if (kind === "servo") {
     if (port === "signal") {
@@ -139,6 +140,19 @@ function channelsOf(
     }
     const names = index.pins[instance];
     if (!names || pinIndex(names, port) === undefined) return [];
+    // A pin with a circuit on its net reads its solved node; one without
+    // reads its output level times the board node.
+    const solved = (f: RecordedFrame) => f.boards[instance]?.pinVolts?.[port];
+    if (read.frames.some((f) => solved(f) !== undefined)) {
+      return [
+        {
+          unit: "V",
+          pick: (f) => solved(f)?.v ?? null,
+          lo: (f) => solved(f)?.lo ?? 0,
+          hi: (f) => solved(f)?.hi ?? 0,
+        },
+      ];
+    }
     return [
       {
         unit: "V",
@@ -179,7 +193,7 @@ export function probeTracks(
     const kind = parsed ? kindOf(read, parsed.instance) : null;
     const channels =
       parsed && kind
-        ? channelsOf(kind, parsed.instance, parsed.port, index)
+        ? channelsOf(kind, parsed.instance, parsed.port, index, read)
         : [];
     const built: TimelineTrack[] = [];
     for (const channel of channels) {
@@ -191,6 +205,7 @@ export function probeTracks(
         t,
         v,
         ...(channel.lo ? { lo: read.frames.map(channel.lo) as number[] } : {}),
+        ...(channel.hi ? { hi: read.frames.map(channel.hi) as number[] } : {}),
       });
     }
     if (built.length === 0) unrecorded.push(probe);

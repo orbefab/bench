@@ -325,7 +325,13 @@ function ProbeRowView({
   return (
     <>
       {row.tracks.map((track) => {
-        const range = seriesRange([track.v], minSpan(track.unit));
+        // A solved pin draws its frame's lowest and highest step around
+        // the mean: a PWM node's ripple band.
+        const band = track.lo !== undefined && track.hi !== undefined;
+        const range = seriesRange(
+          band ? [track.v, track.lo ?? [], track.hi ?? []] : [track.v],
+          minSpan(track.unit)
+        );
         return (
           <div key={track.id} className="flex items-center gap-2 text-[11px]">
             <span className="w-44 shrink-0 truncate">
@@ -339,6 +345,26 @@ function ProbeRowView({
               aria-label={probeTrackLabel(track, rootName)}
               {...scrubHandlers(from, to)}
             >
+              {range && band ? (
+                <>
+                  <Spark
+                    track={track}
+                    from={from}
+                    to={to}
+                    field="lo"
+                    range={range}
+                    className="stroke-sky-500/40"
+                  />
+                  <Spark
+                    track={track}
+                    from={from}
+                    to={to}
+                    field="hi"
+                    range={range}
+                    className="stroke-sky-500/40"
+                  />
+                </>
+              ) : null}
               {range ? (
                 <Spark
                   track={track}
@@ -373,7 +399,7 @@ function Spark({
   track: TimelineTrack;
   from: number;
   to: number;
-  field: "v" | "lo";
+  field: "v" | "lo" | "hi";
   range: { min: number; max: number };
   className: string;
 }) {

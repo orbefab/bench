@@ -473,7 +473,6 @@ function createSession(host: SimHost) {
       if (!board.reboot(ended === "pin" ? EXTERNAL_RESET : BROWNOUT_RESET))
         continue;
       applyInputNets(s);
-      samplePins(s);
       const regs = board.peekRegs();
       const pins = boardPinState(
         board.peekPins(),
@@ -494,6 +493,9 @@ function createSession(host: SimHost) {
       rearmRangers(s, board.id, board);
     }
     latchSupplyNodes(s);
+    // A board that rebooted cleared its input levels. Read them again
+    // from the solve that just ended, at the node latched from it.
+    samplePins(s);
     for (const board of s.boards) {
       if (already.has(board.id)) continue;
       const power = s.boardPower.get(board.id);

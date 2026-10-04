@@ -17,6 +17,7 @@
  * ω = 0 and add B(s) on the joint.
  */
 
+import type { PinVolts } from "@sfab-bench/contract";
 import {
   AVR_PIN,
   type AvrPinParams,
@@ -250,6 +251,10 @@ export class RailCircuit {
   private ledSpan = 0;
   /** Time-weighted mean of each LED since the last `takeLedFrame`. */
   private ledMean: Record<string, number> = {};
+  /** Seconds folded into `pinFrame` since the last `takePinFrame`. */
+  private pinSpan = 0;
+  /** Each stamped pin node since the last take: mean, lowest, highest. */
+  private pinFrame = new Map<string, PinVolts>();
   /**
    * Last completed frame. The card shows this so a pulse that ended
    * before the sample is not reported as 0 A.
@@ -525,10 +530,13 @@ export class RailCircuit {
   }
 
   /** Solved voltage of each stamped pin of board `id`, after the last solve. */
-  pinVolts(id: string): { bit: number; port: string; volts: number }[] {
+  pinVolts(
+    id: string
+  ): { bit: number; port: string; node: string; volts: number }[] {
     return this.pinsOf(id).map((row) => ({
       bit: row.bit,
       port: row.port,
+      node: row.pin.pinNode,
       volts: this.engine.voltage(row.pin.pinNode),
     }));
   }
@@ -685,12 +693,58 @@ export class RailCircuit {
    */
   private noteBoard(dt: number): void {
     this.foldLeds(dt);
+    this.foldPins(dt);
     if (!this.resetNode) return;
     const board = this.engine.voltage(this.boardNode);
     const reset = this.engine.voltage(this.resetNode);
     if (this.resetFraction === null) return;
     const margin = reset - this.resetFraction * board;
     if (margin < this.resetMarginMin) this.resetMarginMin = margin;
+  }
+
+  /**
+   * One step's stamped pin nodes, folded into the frame by `dt`. Edges end
+   * a piece, so the step ends include each edge: a square wave's extremes.
+   */
+  private foldPins(dt: number): void {
+    if (!(dt > 0) || this.drives.length === 0) return;
+    const span = this.pinSpan;
+    const next = span + dt;
+    for (const row of this.drives) {
+      const node = row.pin.pinNode;
+      const v = this.engine.voltage(node);
+      const seen = span === 0 ? undefined : this.pinFrame.get(node);
+      if (!seen) {
+        this.pinFrame.set(node, { v, lo: v, hi: v });
+        continue;
+      }
+      seen.v += (v - seen.v) * (dt / next);
+      if (v < seen.lo) seen.lo = v;
+      if (v > seen.hi) seen.hi = v;
+    }
+    this.pinSpan = next;
+  }
+
+  /**
+   * The rail's stamped pin nodes over the frame since the previous take,
+   * keyed by node. With no timed step yet, each is the node now. Call once
+   * per frame for the whole rail: it starts the next frame.
+   */
+  takePinFrame(): Map<string, PinVolts> {
+    const out = new Map<string, PinVolts>();
+    for (const row of this.drives) {
+      const node = row.pin.pinNode;
+      const seen = this.pinSpan > 0 ? this.pinFrame.get(node) : undefined;
+      if (seen) {
+        out.set(node, { ...seen });
+        continue;
+      }
+      const v = this.engine.voltage(node);
+      out.set(node, { v, lo: v, hi: v });
+    }
+    this.pinSpan = 0;
+    this.pinFrame = new Map();
+    return out;
   }
 
   /** One step's LED currents, folded into the frame mean by `dt`. */
@@ -879,6 +933,7 @@ export class RailCircuit {
 
   private noteShared(dt: number): void {
     this.foldLeds(dt);
+    this.foldPins(dt);
     for (const [id, reset] of this.boardResets) {
       const boardNode = this.boardNodes.get(id);
       if (!boardNode || reset.fraction === null) continue;

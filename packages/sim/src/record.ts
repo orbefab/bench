@@ -3,7 +3,8 @@
  * simulated millisecond. A frame is written every 10 ms and covers (t−10 ms, t]:
  * the value at t, plus the minimum terminal and board-node voltage, the
  * maximum current, the worst part state, any reset, any out-of-SOA
- * supply, and the furthest a joint passed its limit in that window.
+ * supply, the furthest a joint passed its limit, and each stamped pin
+ * node's mean, lowest and highest volts in that window.
  * A 1 ms dip therefore lands on the frame that closes the window.
  *
  * Storage is typed-array chunks. Queries copy out plain objects. Downsampling
@@ -90,6 +91,8 @@ export type RecordSpec = {
   boardLed?: boolean[];
   /** LED paths on each board. Each frame stores that LED's mean current. */
   leds?: { board: string; path: string }[];
+  /** Stamped pins by header port. Each frame stores the solved node's mean, low and high. */
+  pins?: { board: string; port: string }[];
 };
 
 type Chunk = {
@@ -122,6 +125,10 @@ type Chunk = {
   boardLed: Float32Array | null;
   /** Null when this run stamps no LED. One sample per `ledPaths` entry. */
   leds: Float32Array | null;
+  /** Null when this run stamps no pin. One sample per `pinPaths` entry. */
+  pinV: Float32Array | null;
+  pinLo: Float32Array | null;
+  pinHi: Float32Array | null;
   /** Null when no part on this run is a ranger. Metres; NaN is no echo. */
   rangerDistance: Float32Array | null;
   /** 1 when the last trigger hit. Null when no part is a ranger. */
@@ -198,6 +205,12 @@ export class RunRecorder {
   readonly ledPaths: readonly { board: string; path: string }[];
   /** Forward current of each `ledPaths` entry, amperes. */
   readonly ledAmps: Float64Array;
+  /** Stamped pins, in record order. */
+  readonly pinPaths: readonly { board: string; port: string }[];
+  /** Each `pinPaths` node over the frame: mean, lowest and highest volts. */
+  readonly pinV: Float64Array;
+  readonly pinLo: Float64Array;
+  readonly pinHi: Float64Array;
   readonly ddr: Uint32Array;
   readonly level: Uint32Array;
   readonly toggled: Uint32Array;
@@ -300,6 +313,10 @@ export class RunRecorder {
     this.ledOn = spec.boardLed ?? this.boards.map(() => false);
     this.ledPaths = spec.leds ?? [];
     this.ledAmps = new Float64Array(this.ledPaths.length);
+    this.pinPaths = spec.pins ?? [];
+    this.pinV = new Float64Array(this.pinPaths.length);
+    this.pinLo = new Float64Array(this.pinPaths.length);
+    this.pinHi = new Float64Array(this.pinPaths.length);
     const nPins = nD * this.pinStride;
     this.ddr = new Uint32Array(nPins);
     this.level = new Uint32Array(nPins);
@@ -557,6 +574,13 @@ export class RunRecorder {
         chunk.leds[channel(i, slot)] = this.ledAmps[i] ?? 0;
       }
     }
+    if (chunk.pinV && chunk.pinLo && chunk.pinHi) {
+      for (let i = 0; i < this.pinPaths.length; i++) {
+        chunk.pinV[channel(i, slot)] = this.pinV[i] ?? 0;
+        chunk.pinLo[channel(i, slot)] = this.pinLo[i] ?? 0;
+        chunk.pinHi[channel(i, slot)] = this.pinHi[i] ?? 0;
+      }
+    }
     chunk.count += 1;
   }
 
@@ -597,6 +621,7 @@ export class RunRecorder {
       pinStride: this.pinStride,
       boardLed: this.ledOn.some(Boolean),
       leds: this.ledPaths.length,
+      pins: this.pinPaths.length,
       ranger: this.hasRanger,
     };
   }
@@ -753,6 +778,12 @@ export class RunRecorder {
     const past = this.joints.map(
       (_item, i) => chosen.chunk.limitDeg[channel(i, chosen.slot)] ?? 0
     );
+    const pinLo = this.pinPaths.map(
+      (_item, k) => chosen.chunk.pinLo?.[channel(k, chosen.slot)] ?? 0
+    );
+    const pinHi = this.pinPaths.map(
+      (_item, k) => chosen.chunk.pinHi?.[channel(k, chosen.slot)] ?? 0
+    );
     for (let index = start; index <= end; index++) {
       if (index === pick) continue;
       const slot = this.locate(index);
@@ -785,6 +816,12 @@ export class RunRecorder {
         const deg = slot.chunk.limitDeg[channel(i, slot.slot)] ?? 0;
         if (deg > (past[i] ?? 0)) past[i] = deg;
       }
+      for (let k = 0; k < this.pinPaths.length; k++) {
+        const lo = slot.chunk.pinLo?.[channel(k, slot.slot)];
+        const hi = slot.chunk.pinHi?.[channel(k, slot.slot)];
+        if (lo !== undefined && lo < (pinLo[k] ?? 0)) pinLo[k] = lo;
+        if (hi !== undefined && hi > (pinHi[k] ?? 0)) pinHi[k] = hi;
+      }
     }
     for (let i = 0; i < this.supplies.length; i++) {
       const supply = this.supplies[i];
@@ -808,6 +845,13 @@ export class RunRecorder {
       row.belowSoa = soa[i] ?? row.belowSoa;
       row.minVoltage = minBoard[i] ?? row.minVoltage;
       row.regulatorMax = maxPass[i] ?? row.regulatorMax;
+    }
+    for (let k = 0; k < this.pinPaths.length; k++) {
+      const path = this.pinPaths[k];
+      const row = path ? frame.boards[path.board]?.pinVolts?.[path.port] : null;
+      if (!row) continue;
+      row.lo = pinLo[k] ?? row.lo;
+      row.hi = pinHi[k] ?? row.hi;
     }
     for (let i = 0; i < this.joints.length; i++) {
       const spec = this.joints[i];
@@ -945,6 +989,7 @@ export class RunRecorder {
       };
     }
     this.attachLeds(boards, slot);
+    this.attachPins(boards, slot);
     return {
       t: slot.timeMs / 1000,
       joints,
@@ -965,6 +1010,25 @@ export class RunRecorder {
       if (!board) continue;
       const amps = slot.chunk.leds[channel(k, slot.slot)] ?? 0;
       board.leds = { ...(board.leds ?? {}), [row.path]: amps };
+    }
+  }
+
+  private attachPins(boards: RecordedFrame["boards"], slot: Slot): void {
+    if (!slot.chunk.pinV || !slot.chunk.pinLo || !slot.chunk.pinHi) return;
+    for (let k = 0; k < this.pinPaths.length; k++) {
+      const row = this.pinPaths[k];
+      if (!row) continue;
+      const board = boards[row.board];
+      if (!board) continue;
+      const at = channel(k, slot.slot);
+      board.pinVolts = {
+        ...(board.pinVolts ?? {}),
+        [row.port]: {
+          v: slot.chunk.pinV[at] ?? 0,
+          lo: slot.chunk.pinLo[at] ?? 0,
+          hi: slot.chunk.pinHi[at] ?? 0,
+        },
+      };
     }
   }
 
@@ -1072,6 +1136,7 @@ type ChunkCounts = {
   pinStride?: number;
   boardLed?: boolean;
   leds?: number;
+  pins?: number;
   ranger?: boolean;
 };
 
@@ -1102,6 +1167,9 @@ function createChunk(counts: ChunkCounts): Chunk {
     regulatorMax: new Float32Array(counts.boards * CHUNK),
     boardLed: counts.boardLed ? new Float32Array(counts.boards * CHUNK) : null,
     leds: counts.leds ? new Float32Array(counts.leds * CHUNK) : null,
+    pinV: counts.pins ? new Float32Array(counts.pins * CHUNK) : null,
+    pinLo: counts.pins ? new Float32Array(counts.pins * CHUNK) : null,
+    pinHi: counts.pins ? new Float32Array(counts.pins * CHUNK) : null,
     rangerDistance: counts.ranger
       ? new Float32Array(counts.parts * CHUNK)
       : null,

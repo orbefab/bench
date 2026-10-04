@@ -325,10 +325,9 @@ function solveOneRail(
     const avr = drivenBoard(s, supplyId);
     pieces = avr ? pinPiecesUnion(s, [avr], circuit) : null;
     if (avr && !pieces) {
-      // DDR set and PORT set is high, DDR set and PORT clear is low,
-      // PORT set alone is the pull-up, and neither is an input.
-      // High is the board node. peekPins mixes PIN into the level, so
-      // the mode is read from DDR and PORT.
+      // An output is high or low at its output level (PORT, or a timer's
+      // compare output), PORT set alone is the pull-up, and neither is an
+      // input. High is the board node. See `AvrBoard.driveMode`.
       for (const bit of circuit.driveBits) {
         circuit.setDrive(bit, avr.driveMode(bit));
       }

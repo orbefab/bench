@@ -786,9 +786,19 @@ export type RecordedFrame = {
        * @deprecated Read `leds`. Kept for the D13 card and the gauge.
        */
       ledCurrent?: number;
+      /**
+       * Solved node of each stamped pin (a circuit on its net), keyed by
+       * header port, over this frame's circuit steps: `v` the time-weighted
+       * mean, `lo` / `hi` the lowest and highest step. A pin with no circuit
+       * has no entry.
+       */
+      pinVolts?: Record<string, PinVolts>;
     }
   >;
 };
+
+/** Volts on one stamped pin over a frame. */
+export type PinVolts = { v: number; lo: number; hi: number };
 
 export type RecordingEvent =
   | {
@@ -846,8 +856,10 @@ export type TimelineTrack = {
   t: number[];
   /** Picked frame: joint degrees, volts at that port, or the command in degrees. */
   v: (number | null)[];
-  /** Window minimum, when the series has one (a supply terminal or a board node). */
+  /** Window minimum, when the series has one (a supply terminal, a board node, a solved pin). */
   lo?: number[];
+  /** Window maximum, when the series has one (a solved pin). */
+  hi?: number[];
 };
 
 /** Resets, reloads, faults, and serial lines. Times are seconds. */

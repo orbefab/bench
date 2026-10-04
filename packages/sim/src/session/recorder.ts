@@ -315,6 +315,33 @@ function fillRecorder(s: SessionState, full: boolean) {
     rec.inReset[i] = board?.inReset ? 1 : 0;
     rec.belowSoa[i] = board && boardInSoa(s, board) ? 1 : 0;
   }
+  const pinFrames = new Map<string, ReturnType<RailCircuit["takePinFrame"]>>();
+  const pinFrameOf = (supplyId: string) => {
+    const cached = pinFrames.get(supplyId);
+    if (cached) return cached;
+    const circuit = s.rails.get(supplyId)?.circuit;
+    if (!circuit) return undefined;
+    const frame = full ? circuit.takePinFrame() : undefined;
+    if (frame) pinFrames.set(supplyId, frame);
+    return frame;
+  };
+  for (let k = 0; k < rec.pinPaths.length; k++) {
+    const row = rec.pinPaths[k];
+    if (!row) continue;
+    const supplyId = s.boardPower.get(row.board)?.supplyId;
+    const pin = supplyId
+      ? s.rails
+          .get(supplyId)
+          ?.circuit.pinVolts(row.board)
+          .find((item) => item.port === row.port)
+      : undefined;
+    const frame = supplyId ? pinFrameOf(supplyId) : undefined;
+    const now = pin ? frame?.get(pin.node) : undefined;
+    const v = now?.v ?? pin?.volts ?? 0;
+    rec.pinV[k] = v;
+    rec.pinLo[k] = now?.lo ?? v;
+    rec.pinHi[k] = now?.hi ?? v;
+  }
   for (let k = 0; k < rec.ledPaths.length; k++) {
     const row = rec.ledPaths[k];
     if (!row) continue;
@@ -402,6 +429,14 @@ export function openRecorder(s: SessionState) {
       const supplyId = s.boardPower.get(id)?.supplyId;
       const group = supplyId ? s.rails.get(supplyId) : undefined;
       return group?.circuit.ledPaths.includes(onboardLedPath(id)) ?? false;
+    }),
+    pins: boardIds.flatMap((id) => {
+      const supplyId = s.boardPower.get(id)?.supplyId;
+      const group = supplyId ? s.rails.get(supplyId) : undefined;
+      return (group?.circuit.pinVolts(id) ?? []).map(({ port }) => ({
+        board: id,
+        port,
+      }));
     }),
     leds: boardIds.flatMap((id) => {
       const supplyId = s.boardPower.get(id)?.supplyId;

@@ -192,9 +192,11 @@ export function minSpan(unit: TimelineTrack["unit"]): number {
 
 export function seriesValues(
   track: TimelineTrack,
-  field: "v" | "lo"
+  field: "v" | "lo" | "hi"
 ): (number | null)[] {
-  return field === "lo" ? (track.lo ?? track.v) : track.v;
+  if (field === "lo") return track.lo ?? track.v;
+  if (field === "hi") return track.hi ?? track.v;
+  return track.v;
 }
 
 /** Pad a flat series out to `span` around its midpoint. */
@@ -244,7 +246,7 @@ export function sparkline(
   track: TimelineTrack,
   from: number,
   to: number,
-  field: "v" | "lo",
+  field: "v" | "lo" | "hi",
   range: { min: number; max: number }
 ): string {
   const values = seriesValues(track, field);
