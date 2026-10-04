@@ -70,6 +70,7 @@ import {
   overlayLayout,
   toolbarLayout,
   toolbarRightReserve,
+  WORLD_PANELS_WIDTH,
 } from "@/lib/layout";
 import {
   displayLoadError,
@@ -472,8 +473,10 @@ function ViewerShell({ host }: { host: boolean }) {
   const compactChatOpen = usePrefs((s) => s.compactChatOpen);
   const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
   const windowWidth = useWindowWidth();
-  const compactChat = isCompactChat(windowWidth, treeOpen);
-  const layoutWidth = chatLayoutWidth(chatWidth, windowWidth, treeOpen);
+  const editor = Boolean(worldPath) && !session;
+  const panels = editor ? WORLD_PANELS_WIDTH : 0;
+  const compactChat = isCompactChat(windowWidth, treeOpen, panels);
+  const layoutWidth = chatLayoutWidth(chatWidth, windowWidth, treeOpen, panels);
   const catalog = useCatalog(hasProject);
   const canvasRef = useRef<HTMLDivElement>(null);
   const chatToggleRef = useRef<HTMLButtonElement>(null);
@@ -483,7 +486,6 @@ function ViewerShell({ host }: { host: boolean }) {
     if (!compactChat) setCompactChatOpen(false);
   }, [compactChat, setCompactChatOpen]);
 
-  const editor = Boolean(worldPath) && !session;
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
@@ -598,6 +600,7 @@ function ViewerShell({ host }: { host: boolean }) {
             compact={compactChat}
             open={compactChat ? compactChatOpen : chatOpen}
             toggleRef={chatToggleRef}
+            panels={panels}
             width={layoutWidth}
             onClose={() =>
               compactChat ? setCompactChatOpen(false) : setChatOpen(false)

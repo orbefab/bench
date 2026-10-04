@@ -48,12 +48,15 @@ export function ChatPanel({
   open = true,
   compact = false,
   toggleRef,
+  panels = 0,
 }: {
   width: number;
   onClose: () => void;
   open?: boolean;
   compact?: boolean;
   toggleRef?: RefObject<HTMLButtonElement | null>;
+  /** Fixed panels beside the canvas, such as the world editor's tree and inspector. */
+  panels?: number;
 }) {
   const treeOpen = usePrefs((s) => s.treeOpen);
   const setWidth = usePrefs((s) => s.setChatWidth);
@@ -126,9 +129,9 @@ export function ChatPanel({
 
   const persistWidth = useCallback(
     (next: number) => {
-      setWidth(clampChatDrag(next, window.innerWidth, treeOpen));
+      setWidth(clampChatDrag(next, window.innerWidth, treeOpen, panels));
     },
-    [setWidth, treeOpen]
+    [setWidth, treeOpen, panels]
   );
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
 
@@ -220,7 +223,8 @@ export function ChatPanel({
       ev.shiftKey,
       width,
       window.innerWidth,
-      treeOpen
+      treeOpen,
+      panels
     );
     if (next == null) return;
     ev.preventDefault();
@@ -230,7 +234,8 @@ export function ChatPanel({
   const resizeMax = clampChatDrag(
     CHAT_MAX_WIDTH,
     typeof window === "undefined" ? width : window.innerWidth,
-    treeOpen
+    treeOpen,
+    panels
   );
 
   const onResizeDown = (ev: ReactMouseEvent) => {

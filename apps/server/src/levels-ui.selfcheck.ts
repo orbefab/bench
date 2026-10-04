@@ -22,7 +22,11 @@ import {
 } from "@sfab-bench/contract";
 import { contentHash, replaceLevels } from "@sfab-bench/parts";
 import { viewOf } from "@sfab-bench/sim/view";
-import { levelCard, reasonWords } from "../../web/src/lib/level-card";
+import {
+  levelCard,
+  rangeLine,
+  reasonWords,
+} from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
 import {
@@ -115,6 +119,25 @@ expect(
   class1Power?.provenance ===
     "captured, from sfab/nano-power-input@1.0.0 class 2, fixture sfab/nano-power-input, tool sfab-bench-capture 1",
   `provenance ${class1Power?.provenance}`
+);
+expect(
+  class1Power?.range.join(" | ") === "VBUS current 0 to 900 mA" &&
+    class1Power.stale === false &&
+    class1Power.warnings.length === 0,
+  `run card range ${class1Power?.range.join(" | ")} stale ${class1Power?.stale}`
+);
+expect(
+  rangeLine("shaft.speed", [-10.472, 10.472]) ===
+    "shaft speed -10.5 to 10.5 rad/s" &&
+    rangeLine("V+.current", [-0.003122868, 0.658181563]) ===
+      "V+ current -3.12 to 658 mA",
+  "run card range lines"
+);
+expect(
+  rangeLine("VBUS.current", [0, 0.1]) === "VBUS current 0 to 100 mA" &&
+    rangeLine("shaft.torque", [-0.176, 0.176]) ===
+      "shaft torque -0.176 to 0.176 N·m",
+  "whole numbers keep their zeros"
 );
 expect(
   class1Nano?.omits.some((line) =>

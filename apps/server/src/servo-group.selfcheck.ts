@@ -42,6 +42,7 @@ import {
 import { sha256Bytes } from "@sfab-bench/parts";
 import { planWorld } from "@sfab-bench/sim";
 import { Sim } from "@sfab-bench/sim/sim";
+import { levelCard } from "../../web/src/lib/level-card";
 import { captureFromConfig } from "./capture";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { packageVersion } from "./world/package-version";
@@ -432,6 +433,15 @@ try {
       ?.stale === true &&
       stale.warnings.some((item) => item.code === "stale-capture"),
     "a pot edit leaves the group capture fresh"
+  );
+  const staleRow = stale?.snapshots.find(
+    (item) => item.ref === "sfab/sg90-servo@1.0.0"
+  );
+  const staleCard = staleRow ? levelCard(stale, staleRow.path) : null;
+  expect(
+    staleCard?.snapshot?.stale === true &&
+      staleCard.snapshot.range.join(" | ") === "V+ current -3.12 to 658 mA",
+    `the run card shows the stale capture and its range: ${JSON.stringify(staleCard?.snapshot)}`
   );
   rmSync(potFile);
   const servoFile = join(parts, "sg90@1.0.0.json");

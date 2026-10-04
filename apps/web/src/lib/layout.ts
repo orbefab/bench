@@ -3,8 +3,9 @@
  *
  * Compact chat rule (one place, so the self-check and the UI cannot drift):
  * sheet the chat when `window.innerWidth <= 980`
- * *or* when an open files rail + min chat (280) + canvas floor (480) cannot
- * fit. No phone layout — the rail stays a rail; the user can still ⌘B it.
+ * *or* when an open files rail + the panels beside the canvas + min chat (280)
+ * + canvas floor (480) cannot fit. No phone layout — the rail stays a rail;
+ * the user can still ⌘B it.
  */
 
 export const CANVAS_MIN_WIDTH = 480;
@@ -13,6 +14,8 @@ export const CHAT_MAX_WIDTH = 720;
 export const CHAT_DEFAULT_WIDTH = 384;
 /** `--sidebar-width: 19rem` on `SidebarProvider`. */
 export const FILES_RAIL_WIDTH = 19 * 16;
+/** The world editor's part tree (`w-64`) and inspector (`w-80`). */
+export const WORLD_PANELS_WIDTH = 64 * 4 + 80 * 4;
 /** Compact chat when the window is at most this wide. */
 export const COMPACT_CHAT_BREAKPOINT = 980;
 
@@ -72,35 +75,49 @@ export function clampStoredChatWidth(n: number): number {
   return preferredChatWidth(n);
 }
 
-export function isCompactChat(windowWidth: number, railOpen: boolean): boolean {
+export function isCompactChat(
+  windowWidth: number,
+  railOpen: boolean,
+  panels = 0
+): boolean {
   if (windowWidth <= COMPACT_CHAT_BREAKPOINT) return true;
   const rail = railOpen ? FILES_RAIL_WIDTH : 0;
-  return rail + CHAT_MIN_WIDTH + CANVAS_MIN_WIDTH > windowWidth;
+  return rail + panels + CHAT_MIN_WIDTH + CANVAS_MIN_WIDTH > windowWidth;
 }
 
 export function chatMaxForWindow(
   windowWidth: number,
-  railOpen: boolean
+  railOpen: boolean,
+  panels = 0
 ): number {
   const rail = railOpen ? FILES_RAIL_WIDTH : 0;
-  return Math.max(CHAT_MIN_WIDTH, windowWidth - rail - CANVAS_MIN_WIDTH);
+  return Math.max(
+    CHAT_MIN_WIDTH,
+    windowWidth - rail - panels - CANVAS_MIN_WIDTH
+  );
 }
 
 /**
  * Width used for layout. An over-wide stored preference is clamped here and
  * not written back until the user drags (or double-clicks) the handle.
+ * `panels` is the width of fixed panels beside the canvas (the world editor's
+ * tree and inspector), so a docked chat never squeezes the canvas below 480.
  */
 export function chatLayoutWidth(
   stored: number,
   windowWidth: number,
-  railOpen: boolean
+  railOpen: boolean,
+  panels = 0
 ): number {
   const preferred = preferredChatWidth(stored);
-  if (isCompactChat(windowWidth, railOpen)) {
+  if (isCompactChat(windowWidth, railOpen, panels)) {
     const max = Math.min(CHAT_MAX_WIDTH, Math.floor(windowWidth * 0.9));
     return Math.max(CHAT_MIN_WIDTH, Math.min(max, preferred));
   }
-  const max = Math.min(CHAT_MAX_WIDTH, chatMaxForWindow(windowWidth, railOpen));
+  const max = Math.min(
+    CHAT_MAX_WIDTH,
+    chatMaxForWindow(windowWidth, railOpen, panels)
+  );
   return Math.max(CHAT_MIN_WIDTH, Math.min(max, preferred));
 }
 
@@ -108,9 +125,10 @@ export function chatLayoutWidth(
 export function clampChatDrag(
   width: number,
   windowWidth: number,
-  railOpen: boolean
+  railOpen: boolean,
+  panels = 0
 ): number {
-  return chatLayoutWidth(width, windowWidth, railOpen);
+  return chatLayoutWidth(width, windowWidth, railOpen, panels);
 }
 
 export const CHAT_RESIZE_STEP = 16;
@@ -125,17 +143,16 @@ export function chatWidthAfterKey(
   shiftKey: boolean,
   current: number,
   windowWidth: number,
-  railOpen: boolean
+  railOpen: boolean,
+  panels = 0
 ): number | null {
-  if (key === "Home")
-    return clampChatDrag(CHAT_MIN_WIDTH, windowWidth, railOpen);
-  if (key === "End")
-    return clampChatDrag(CHAT_MAX_WIDTH, windowWidth, railOpen);
+  const clamp = (width: number) =>
+    clampChatDrag(width, windowWidth, railOpen, panels);
+  if (key === "Home") return clamp(CHAT_MIN_WIDTH);
+  if (key === "End") return clamp(CHAT_MAX_WIDTH);
   const step = shiftKey ? CHAT_RESIZE_STEP_LARGE : CHAT_RESIZE_STEP;
-  if (key === "ArrowLeft")
-    return clampChatDrag(current + step, windowWidth, railOpen);
-  if (key === "ArrowRight")
-    return clampChatDrag(current - step, windowWidth, railOpen);
+  if (key === "ArrowLeft") return clamp(current + step);
+  if (key === "ArrowRight") return clamp(current - step);
   return null;
 }
 

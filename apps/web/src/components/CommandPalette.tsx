@@ -26,7 +26,6 @@ import {
   visiblePalette,
   wrapActiveIndex,
 } from "@/lib/command-palette";
-import { isCompactChat } from "@/lib/layout";
 import { requestCloseFolder } from "@/lib/motion";
 import { folderName, shortPath } from "@/lib/project";
 import { isMacPlatform, matchesShortcut } from "@/lib/shortcuts";
@@ -132,7 +131,6 @@ export function CommandPalette({
   const execute = useCallback(
     (cmd: PaletteCommand) => {
       const s = prefsStore.getState();
-      const compact = isCompactChat(window.innerWidth, s.treeOpen);
       if (cmd.id === "action:open-folder") {
         void folder.requestOpen();
         return;
@@ -142,7 +140,7 @@ export function CommandPalette({
         return;
       }
       if (cmd.id === "action:toggle-chat") {
-        if (compact) s.setCompactChatOpen(!s.compactChatOpen);
+        if (compactChat) s.setCompactChatOpen(!s.compactChatOpen);
         else s.setChatOpen(!s.chatOpen);
         return;
       }
@@ -166,7 +164,7 @@ export function CommandPalette({
         setTheme(cmd.payload);
       }
     },
-    [folder, setDoc, setTheme]
+    [compactChat, folder, setDoc, setTheme]
   );
 
   const run = useCallback(

@@ -1,4 +1,9 @@
-import type { AxisName, RunReport, SnapshotFile } from "@sfab-bench/contract";
+import type {
+  AxisName,
+  Range,
+  RunReport,
+  SnapshotFile,
+} from "@sfab-bench/contract";
 
 const AXES: readonly AxisName[] = ["behaviour", "body", "visual"];
 
@@ -19,7 +24,12 @@ export type LevelSnapshot = {
   errors: string[];
   /** `captured, from sfab/nano-ch340@1.0.0 class 2, fixture …, tool …` */
   provenance: string | null;
+  /** The valid range the run checks: `IN current 0 to 20 mA`. */
+  range: string[];
+  /** Envelope warnings: the run went outside the valid range. */
   warnings: string[];
+  /** The part changed since this snapshot was captured. */
+  stale: boolean;
 };
 
 /** What one inspector card shows for an instance. Null when the report has no row. */
@@ -93,13 +103,19 @@ function snapshotOf(path: string, rows: RunReport["snapshots"]): LevelSnapshot {
       quality: "",
       errors: [],
       provenance: null,
+      range: [],
       warnings: [],
+      stale: false,
     };
   }
   const errors: string[] = [];
+  const range: string[] = [];
   const warnings: string[] = [];
   for (const row of rows) {
     if (row.error !== undefined) errors.push(...errorLines(row.error));
+    for (const [key, bounds] of Object.entries(row.bounds ?? {})) {
+      range.push(rangeLine(key, bounds));
+    }
     for (const warning of row.envelope ?? []) warnings.push(warning);
   }
   return {
@@ -108,8 +124,27 @@ function snapshotOf(path: string, rows: RunReport["snapshots"]): LevelSnapshot {
     quality: rows.map((row) => row.quality).join(", "),
     errors,
     provenance: provenanceLine(first.provenance),
+    range,
     warnings,
+    stale: rows.some((row) => row.stale === true),
   };
+}
+
+/** `IN current 0 to 20 mA`: both ends in the same unit. */
+export function rangeLine(key: string, bounds: Range): string {
+  const dot = key.lastIndexOf(".");
+  const port = dot > 0 ? key.slice(0, dot) : key;
+  const field = dot > 0 ? key.slice(dot + 1) : "";
+  const [lo, hi] = bounds.map((end) => (typeof end === "number" ? end : end.v));
+  const unit = FIELD_UNIT[field] ?? "";
+  const name = field ? `${port} ${field}` : port;
+  if (lo === undefined || hi === undefined) return name;
+  const milli =
+    (unit === "V" || unit === "A") && Math.max(Math.abs(lo), Math.abs(hi)) < 1;
+  const scale = milli ? 1000 : 1;
+  const shown = milli ? `m${unit}` : unit;
+  const span = `${sig(lo * scale)} to ${sig(hi * scale)}`;
+  return shown ? `${name} ${span} ${shown}` : `${name} ${span}`;
 }
 
 function snapshotRef(row: { axis: AxisName; ref: string }): string {
@@ -190,6 +225,7 @@ const FIELD_UNIT: Record<string, string> = {
   resistance: "Ω",
   angle: "rad",
   angularVelocity: "rad/s",
+  speed: "rad/s",
   torque: "N·m",
   position: "m",
   temperature: "K",
@@ -218,8 +254,9 @@ function humanValue(value: number, unit: string): string {
 function sig(value: number): string {
   const abs = Math.abs(value);
   if (abs === 0) return "0";
-  const digits = Math.max(0, 2 - Math.floor(Math.log10(abs)));
-  return value.toFixed(Math.min(6, digits)).replace(/\.?0+$/, "");
+  const digits = Math.min(6, Math.max(0, 2 - Math.floor(Math.log10(abs))));
+  const fixed = value.toFixed(digits);
+  return digits > 0 ? fixed.replace(/\.?0+$/, "") : fixed;
 }
 
 export function axisLine(

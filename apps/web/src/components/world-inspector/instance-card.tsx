@@ -20,6 +20,7 @@ import { LiveBody } from "./live-card";
 import { commitOnEnter, commitParam, NumberField } from "./params";
 import { Section, WarningList } from "./parts";
 import { PoseSection } from "./pose-section";
+import { RunCard } from "./run-card";
 
 function ForwardedParam({
   name,
@@ -169,6 +170,7 @@ export function InstanceBody({
   const stays = useWorldEdit((s) => s.stays);
   return (
     <>
+      <RunCard path={node.id} />
       <Section title="Ports">
         {card.ports.length === 0 ? (
           <p className="text-[12px] text-muted-foreground">None</p>

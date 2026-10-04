@@ -6,6 +6,7 @@ import {
   CHAT_MIN_WIDTH,
   chatLayoutWidth,
   chatMaxForWindow,
+  chatWidthAfterKey,
   clampChatDrag,
   clampStoredChatWidth,
   detailPanelWidth,
@@ -28,6 +29,7 @@ import {
   TOOLBAR_TOP,
   toolbarLayout,
   toolbarRightReserve,
+  WORLD_PANELS_WIDTH,
 } from "./layout";
 
 expect(preferredChatWidth(100) === CHAT_MIN_WIDTH, "stored below min");
@@ -47,6 +49,24 @@ expect(
 expect(isCompactChat(1280, true) === false, "1280 + rail is docked");
 expect(isCompactChat(900, true), "900 is compact");
 expect(isCompactChat(800, false), "800 tab is compact even with rail closed");
+expect(
+  isCompactChat(1600, true, WORLD_PANELS_WIDTH),
+  "world editor at 1600: rail + tree + inspector + chat would leave the canvas under 480, so the chat sheets"
+);
+expect(
+  isCompactChat(1600, false, WORLD_PANELS_WIDTH) === false,
+  "world editor at 1600 with the rail closed docks the chat"
+);
+expect(
+  chatLayoutWidth(720, 1920, true, WORLD_PANELS_WIDTH) ===
+    1920 - FILES_RAIL_WIDTH - WORLD_PANELS_WIDTH - CANVAS_MIN_WIDTH,
+  "a docked chat beside the world panels keeps the canvas at 480"
+);
+expect(
+  chatWidthAfterKey("End", false, 384, 1920, true, WORLD_PANELS_WIDTH) ===
+    1920 - FILES_RAIL_WIDTH - WORLD_PANELS_WIDTH - CANVAS_MIN_WIDTH,
+  "keyboard resize clamps beside the world panels too"
+);
 
 expect(
   chatMaxForWindow(1440, true) === 1440 - 304 - 480,

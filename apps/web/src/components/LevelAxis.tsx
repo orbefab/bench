@@ -81,7 +81,6 @@ export function LevelAxis({
   useEffect(() => settleWorldCapture(), [node.id]);
   const card = useMemo(() => levelCard(report, node.id), [report, node.id]);
   const line = card?.axes.find((row) => row.axis === axis.axis);
-  const snapshot = axis.axis === "behaviour" ? card?.snapshot : null;
   const current = axis.options.find((option) => option.chosen);
   const captureAxis = axis.capture;
   const reason = captureAxis ? captureDisabledReason(capture, axis) : null;
@@ -181,17 +180,6 @@ export function LevelAxis({
       ) : null}
       {failure ? (
         <p className="mt-1.5 break-words text-[12px] text-error">{failure}</p>
-      ) : null}
-      {snapshot ? (
-        <details className="mt-1.5 text-[11px] text-muted-foreground">
-          <summary className="cursor-pointer">
-            Snapshot {snapshot.ref} · {snapshot.quality}
-          </summary>
-          {snapshot.provenance ? <p>{snapshot.provenance}</p> : null}
-          {snapshot.errors.map((error) => (
-            <p key={error}>{error}</p>
-          ))}
-        </details>
       ) : null}
     </>
   );

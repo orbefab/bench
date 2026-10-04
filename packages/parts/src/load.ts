@@ -386,6 +386,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     quality: string;
     error: LoadedSnapshot["file"]["error"];
     provenance: RunReport["snapshots"][number]["provenance"];
+    bounds: LoadedSnapshot["file"]["envelope"]["bounds"];
   }[] = [];
   for (const inst of resolved.instances) {
     for (const ask of snapshotAsks(inst)) {
@@ -476,6 +477,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
         quality: inst.foreign ? "Q1" : found.loaded.quality,
         error: found.loaded.file.error,
         provenance: provenanceOf(found.loaded.file),
+        bounds: found.loaded.file.envelope.bounds,
       });
     }
   }

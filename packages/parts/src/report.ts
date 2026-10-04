@@ -32,6 +32,7 @@ export function buildReport(input: {
     quality: string;
     error?: SnapshotFile["error"];
     provenance?: RunReport["snapshots"][number]["provenance"];
+    bounds?: SnapshotFile["envelope"]["bounds"];
   }[];
 }): { report: RunReport; json: string } {
   const levels = [];
@@ -113,6 +114,9 @@ export function buildReport(input: {
       quality: row.quality,
       ...(row.error !== undefined ? { error: row.error } : {}),
       ...(row.provenance ? { provenance: row.provenance } : {}),
+      ...(row.bounds && Object.keys(row.bounds).length > 0
+        ? { bounds: row.bounds }
+        : {}),
       envelope: [],
     });
   }

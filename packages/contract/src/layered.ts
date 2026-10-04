@@ -1001,6 +1001,11 @@ export type RunReport = {
       fixture?: string;
       tool?: { name: string; version: string };
     };
+    /**
+     * The snapshot's valid range: its envelope bounds, by `PORT.field`.
+     * Absent when the row was not loaded from a snapshot file or states none.
+     */
+    bounds?: Record<string, Range>;
     /** Envelope warnings for this instance. Absent when the row has none. */
     envelope?: string[];
     /**
