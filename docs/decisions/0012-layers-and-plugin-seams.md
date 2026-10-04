@@ -45,6 +45,16 @@ Tools, the agent, and scripts change a document only through L1's typed edit
 operations (add, remove, wire, set param, set level, rename, …). There is one
 undo history per open document. Nothing above L1 writes a part file directly.
 
+**Maintenance exception (run 7, 2026-10-04).** `sfab-bench repin`
+(`apps/server/src/repin.ts`) rewrites hash fields outside the edit path:
+lock rows, and an assembly check's `fixture.lock` and `children[].hash`.
+It writes the hash the loader already computes for each file as it is now,
+replacing hex in place, so the diff is hash lines only. It changes no
+document's meaning, no measurement, and no capture signature. A change that
+is more than a pin (an id set, a document an assembly check measured) is
+refused. Writes are staged through a journal and are recoverable, not
+atomic as a set. Nothing else above L1 may use this exception.
+
 ### Plugin seams
 
 Four compile-time registries of in-repo packages, each with a written

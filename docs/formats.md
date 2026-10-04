@@ -490,7 +490,7 @@ type LockFile = {
 
 The lock sits beside the document. A root part `parts/sfab/arm-bench@1.0.0.json` has `parts/sfab/arm-bench@1.0.0.lock.json`, and `world` is the stem `arm-bench@1.0.0`. A legacy import `arm.world.json` still uses `arm.world.lock.json`, and `world` is `arm.world`.
 
-A part file whose hash no longer matches the lock is an error that names the part. A snapshot file is pinned the same way, and only when the resolved variant actually runs it. The key is omitted when the run uses none.
+A part file whose hash no longer matches the lock is an error that names the part. After a deliberate part or type edit, `sfab-bench repin` re-stamps every stale lock row (and the `fixture.lock` and `children[].hash` of an assembly check). It writes nothing and exits 1 when an id set changed, a world does not load, or a measured document changed; `--dry` lists the moves. A path with a `broken` segment is never read. A snapshot file is pinned the same way, and only when the resolved variant actually runs it. The key is omitted when the run uses none.
 
 Snapshot files are looked up like parts, in `snapshots/<publisher>/<name>@<version>.json` under the world, the personal library, then the catalog (`apps/server/catalog/snapshots/`).
 

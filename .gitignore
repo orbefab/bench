@@ -21,3 +21,6 @@ apps/desktop/release/
 
 # Real-world CAD fetched by scripts/fetch_external.mjs. Licensed to use, not to redistribute.
 apps/server/fixtures/external/
+
+# re-pin journal while a re-pin is writing (apps/server/src/repin.ts)
+/.sfab/
