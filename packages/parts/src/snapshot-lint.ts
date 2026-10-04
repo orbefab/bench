@@ -240,21 +240,6 @@ function tablePorts(
   if (!law || !ctx.ports) return [];
   const diags: Diagnostic[] = [];
   const path = snap.part || "snapshot";
-  for (const name of law.across) {
-    if (ctx.ports[name]) continue;
-    diags.push(
-      makeDiag({
-        severity: "error",
-        code: "snapshot",
-        path,
-        port: name,
-        quantity: "Snapshot",
-        left: name,
-        right: snap.partType,
-        detail: `across port ${name} is not on ${snap.partType}`,
-      })
-    );
-  }
   const through = `${law.across[0]}.current`;
   const voltage = `${law.across[0]}.voltage`;
   if (!snap.ports.inputs.includes(through)) {
@@ -282,6 +267,35 @@ function tablePorts(
         left: snap.ports.outputs.join(","),
         right: voltage,
         detail: `table output is missing ${voltage}`,
+      })
+    );
+  }
+  return diags;
+}
+
+/**
+ * A capture across a port pair, in any form: both ports are the part's.
+ * The stale check stamps that pair again.
+ */
+function acrossPorts(
+  snap: SnapshotFile,
+  ctx: SnapshotLintContext
+): Diagnostic[] {
+  const across = snap.params.across;
+  if (!Array.isArray(across) || !ctx.ports) return [];
+  const diags: Diagnostic[] = [];
+  for (const name of across) {
+    if (typeof name === "string" && ctx.ports[name]) continue;
+    diags.push(
+      makeDiag({
+        severity: "error",
+        code: "snapshot",
+        path: snap.part || "snapshot",
+        port: String(name),
+        quantity: "Snapshot",
+        left: String(name),
+        right: snap.partType,
+        detail: `across port ${name} is not on ${snap.partType}`,
       })
     );
   }
@@ -531,6 +545,7 @@ export function lintSnapshot(
     );
   }
   diagnostics.push(...fixtureSupplyDiags(snap, ctx));
+  diagnostics.push(...acrossPorts(snap, ctx));
   diagnostics.push(...tablePorts(snap, ctx));
   diagnostics.push(...bindErrors(snap, ctx));
   diagnostics.push(...hingeErrors(snap, ctx));

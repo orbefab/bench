@@ -742,7 +742,9 @@ function fitDiode(current: number[], volts: number[]): FittedDiode {
   }
   const [a, b, rScaled] = solve3(ata, atb);
   const Rs = rScaled / scale;
-  if (!(a > 0) || !(Rs >= 0)) {
+  // A junction's N is about 1 or more. Far below that the sweep has no
+  // knee (a resistor fits with N near 0), and the law would claim blocking.
+  if (!(a / thermalVoltage(25) >= 0.5) || !(Rs >= 0)) {
     throw new Error(`the sweep is not a forward diode (N·Vt ${a}, Rs ${Rs})`);
   }
   const fit = {

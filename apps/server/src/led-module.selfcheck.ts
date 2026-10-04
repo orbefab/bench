@@ -249,6 +249,22 @@ function pinHigh(state: WorldState, bit: number): boolean {
         "utf8"
       )
     ) as SnapshotFile;
+    const across = structuredClone(snap);
+    across.params.across = ["NOPE", "GND"];
+    writeFileSync(snapPath, `${JSON.stringify(across)}\n`);
+    const acrossPlan = planWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
+    const acrossSaid = acrossPlan.ok
+      ? [
+          ...(acrossPlan.plan.degraded ?? []),
+          ...(acrossPlan.plan.report?.errors ?? []),
+        ]
+      : acrossPlan.errors;
+    expect(
+      acrossSaid.some((item) =>
+        item.message.includes("across port NOPE is not on led-module")
+      ),
+      `no across-port diagnostic: ${acrossSaid.map((item) => item.message).join(" | ")}`
+    );
     snap.bind = { A: "NOPE", K: "GND" };
     writeFileSync(snapPath, `${JSON.stringify(snap)}\n`);
     const planned = planWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
@@ -299,4 +315,81 @@ function pinHigh(state: WorldState, bit: number): boolean {
   console.log(
     `branchDc guard: reverse 1 µA refused (${refused}); knee ${knee.toFixed(6)} V, 2 mA ${twoMa.toFixed(6)} V`
   );
+}
+
+// The run checks a snapshot that runs as a circuit form at the part's own
+// ports. A copy of the module's snapshot bounded at 5 mA, with D9 high
+// (about 11 mA), warns once at `IN` and lists it on the report row.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-led-envelope-"));
+  const world = "parts/sfab/nano-led-module@1.0.0.json";
+  try {
+    cpSync(nanoExample, dir, { recursive: true });
+    rmSync(join(dir, "parts/sfab/nano-led-module@1.0.0.lock.json"));
+    mkdirSync(join(dir, "snapshots", "sfab"), { recursive: true });
+    const snap = JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL(
+            "../catalog/snapshots/sfab/led-module-red@1.0.0.json",
+            import.meta.url
+          )
+        ),
+        "utf8"
+      )
+    ) as SnapshotFile;
+    snap.envelope.bounds = { "IN.current": [0, 0.005] };
+    writeFileSync(
+      join(dir, "snapshots", "sfab", "led-module-red@1.0.0.json"),
+      `${JSON.stringify(snap)}\n`
+    );
+    const seen: {
+      report: {
+        snapshots: { path: string; ref: string; envelope?: string[] }[];
+        warnings: { code: string; path: string; message: string }[];
+      } | null;
+      failed: string | null;
+    } = { report: null, failed: null };
+    const attached = await attachWorld(dir, world, {
+      sender: { kind: "loopback", label: "Mac" },
+      onEvent(event) {
+        if (event.type === "error") {
+          seen.failed =
+            event.message ??
+            event.errors.map((item) => item.message).join("; ");
+        }
+        if (event.type === "state" && event.report) seen.report = event.report;
+      },
+    });
+    if ("error" in attached) throw new Error(attached.error);
+    try {
+      attached.step(400);
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline && !seen.failed) {
+        const hit = seen.report?.warnings.some(
+          (item) => item.code === "envelope" && item.path === "module"
+        );
+        if (hit) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      if (seen.failed) throw new Error(seen.failed);
+      const warned = (seen.report?.warnings ?? []).filter(
+        (item) => item.code === "envelope" && item.path === "module"
+      );
+      const row = seen.report?.snapshots.find((item) => item.path === "module");
+      expect(
+        warned.length === 1 &&
+          warned[0]?.message.includes("module port IN quantity Current") &&
+          row?.envelope?.length === 1,
+        `module envelope: ${JSON.stringify(warned)} row ${JSON.stringify(row?.envelope)}`
+      );
+      console.log(`led-module envelope: ${warned[0]?.message}`);
+    } finally {
+      attached.detach();
+      await stopWorld(dir, world);
+      closeRootWatches();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

@@ -3,6 +3,7 @@
 import type { WorldSupplyState } from "@sfab-bench/contract";
 import type { PinMode } from "@sfab-bench/engine-circuit";
 import { boundOutside } from "@sfab-bench/parts";
+import type { AssignedPart, StampedWatch } from "../circuit-stamp";
 import type { MotorTrip, RailCircuit } from "../rail-circuit";
 import { sampleLoad } from "./actuators";
 import { stepS } from "./common";
@@ -20,6 +21,7 @@ function noteSnapshotEnvelope(s: SessionState, supplyId: string): void {
     ...(supply?.stamp?.parts ?? []),
   ];
   for (const part of parts) {
+    if (part.watch) noteWatch(s, group.circuit, part, part.watch);
     if (!part.table) continue;
     const reading = group.circuit.tableReading(part.path);
     if (!reading) continue;
@@ -29,6 +31,34 @@ function noteSnapshotEnvelope(s: SessionState, supplyId: string): void {
       [`${port}.voltage`]: reading.volts,
     });
   }
+}
+
+/**
+ * A snapshot running as a circuit form, at the part's own ports: the
+ * current its elements draw from each port's node, and that node against
+ * ground. A port on ground has no current to read here.
+ */
+function noteWatch(
+  s: SessionState,
+  circuit: RailCircuit,
+  part: AssignedPart,
+  watch: StampedWatch
+): void {
+  const elements = circuit.elementsUnder(part.path);
+  const observed: Record<string, number> = {};
+  for (const [formPort, port] of Object.entries(watch.ports)) {
+    const node = part.nodes[formPort];
+    if (!node || node === "0") continue;
+    observed[`${port}.current`] = circuit.currentLeaving(elements, node);
+    observed[`${port}.voltage`] = circuit.nodeVoltage(node);
+  }
+  warnEnvelope(
+    s,
+    part.path,
+    watch.ref,
+    { bounds: watch.bounds, current: [0, 0] },
+    observed
+  );
 }
 
 /** One warning when a battery first reads empty. The run keeps going. */

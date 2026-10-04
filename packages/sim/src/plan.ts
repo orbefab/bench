@@ -894,6 +894,20 @@ function numberParam(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** A circuit part that runs a snapshot keeps its bounds, by its own ports. */
+function withWatch(
+  circuit: CircuitInst,
+  ran: Pick<RunPart, "behaviourSnapshot">
+): CircuitInst {
+  const snap = ran.behaviourSnapshot;
+  if (!snap) return circuit;
+  const ports: Record<string, string> = {};
+  for (const [name, full] of Object.entries(circuit.ports)) {
+    ports[name] = full.slice(circuit.path.length + 1);
+  }
+  return { ...circuit, watch: { ref: snap.ref, bounds: snap.bounds, ports } };
+}
+
 /** The behaviour snapshot an instance runs as its form, with its bounds. */
 function behaviourSnapshotOf(
   inst: LiveInstance,
@@ -1089,7 +1103,7 @@ function build(
     if (behaviour?.kind === "composite") continue;
     const circuit = circuitInstOf(inst);
     if (circuit) {
-      circuits.push(circuit);
+      circuits.push(withWatch(circuit, behaviourSnapshotOf(inst, loaded)));
       if (!inst.path.includes(".")) {
         leaves.push({ id: inst.path, model: shortName(inst.part.id) });
       }

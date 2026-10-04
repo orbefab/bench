@@ -82,6 +82,17 @@ export type StampedTable = {
 
 export type StampedForm = CircuitForm | "table@1";
 
+/**
+ * A behaviour snapshot that runs as a circuit form: its ref, its envelope,
+ * and the form's port → the part's port, so the run can read the part at
+ * its own ports.
+ */
+export type StampedWatch = {
+  ref: string;
+  bounds: Record<string, [number, number]>;
+  ports: Record<string, string>;
+};
+
 export type CircuitInst = {
   path: string;
   form: StampedForm;
@@ -90,6 +101,7 @@ export type CircuitInst = {
   /** Port name → `path.port`. */
   ports: Record<string, string>;
   table?: StampedTable;
+  watch?: StampedWatch;
   /** `ldo-regulator@1` law. The dropout table is not in `params`. */
   ldo?: LdoParams;
 };
@@ -102,6 +114,7 @@ export type AssignedPart = {
   /** Port name → node. Ground is `"0"`. */
   nodes: Record<string, string>;
   table?: StampedTable;
+  watch?: StampedWatch;
   ldo?: LdoParams;
 };
 
@@ -338,6 +351,7 @@ export function stampBoard(input: {
       ])
     ),
     ...(part.table ? { table: part.table } : {}),
+    ...(part.watch ? { watch: part.watch } : {}),
     ...(part.ldo ? { ldo: part.ldo } : {}),
   }));
   assigned.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -567,6 +581,7 @@ export function assignNodes(
     params: part.params,
     nodes,
     ...(part.table ? { table: part.table } : {}),
+    ...(part.watch ? { watch: part.watch } : {}),
     ...(part.ldo ? { ldo: part.ldo } : {}),
   };
 }
