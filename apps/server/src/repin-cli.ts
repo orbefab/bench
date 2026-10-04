@@ -14,8 +14,11 @@ const DEFAULT_ROOTS = [
   join(repo, "apps/server/fixtures"),
 ];
 
-export function repinCli(action: { write: boolean; roots: string[] }): number {
-  const result = repin({
+export async function repinCli(action: {
+  write: boolean;
+  roots: string[];
+}): Promise<number> {
+  const result = await repin({
     roots: action.roots.length > 0 ? action.roots : DEFAULT_ROOTS,
     catalogDir: catalogRoot(),
     journal: join(repo, ".sfab", "repin-plan.json"),

@@ -45,7 +45,7 @@ async function main() {
   }
   if (action.kind === "repin") {
     const { repinCli } = await import("./repin-cli");
-    process.exit(repinCli(action));
+    process.exit(await repinCli(action));
   }
   if (action.kind === "run") {
     const project = resolveRunProject(action.project);

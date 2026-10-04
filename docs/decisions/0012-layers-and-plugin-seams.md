@@ -47,12 +47,14 @@ undo history per open document. Nothing above L1 writes a part file directly.
 
 **Maintenance exception (run 7, 2026-10-04).** `sfab-bench repin`
 (`apps/server/src/repin.ts`) rewrites hash fields outside the edit path:
-lock rows, and an assembly check's `fixture.lock` and `children[].hash`.
-It writes the hash the loader already computes for each file as it is now,
-replacing hex in place, so the diff is hash lines only. It changes no
-document's meaning, no measurement, and no capture signature. A change that
-is more than a pin (an id set, a document an assembly check measured) is
-refused. Writes are staged through a journal and are recoverable, not
+lock rows; an assembly check's `fixture.lock`, `children[].hash` and
+`children[].fromHash`; and a catalog snapshot's `provenance.from.hash`.
+It writes the hash the loader already computes, replacing hex in place, so
+the diff is hash lines only. It changes no document's meaning and no
+measurement. It accepts a new capture signature only when a dry capture into
+a temp catalog reproduces every other byte of the snapshot. A change that is
+more than a pin (an id set, a document an assembly check measured, a
+snapshot whose numbers would move) is refused. Writes are staged through a journal and are recoverable, not
 atomic as a set. Nothing else above L1 may use this exception.
 
 ### Plugin seams

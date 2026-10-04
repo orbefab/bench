@@ -1,10 +1,13 @@
 /**
  * `sfab-bench repin` on temp copies of the examples, fixtures and catalog
- * (run 7 unit 2a). A citation edit and a type edit leave stale lock rows;
- * the command re-stamps those rows and the assembly check's `fixture.lock`,
- * changing hash lines only. It refuses, writing nothing, on an id-set
- * change and on a changed document. It never reads a `broken` fixture,
- * never touches a snapshot, and finishes or refuses an interrupted run.
+ * (run 7 unit 2). A citation edit leaves stale lock rows; the command
+ * re-stamps them and the assembly check's `fixture.lock`, hash lines only.
+ * A type edit that moves a capture signature is accepted only when a dry
+ * capture reproduces every other byte of the snapshot; an edit that moves
+ * a fitted number, or that the capture cannot reach, is refused and
+ * nothing is written. It refuses an id-set change and a changed document,
+ * never reads a `broken` fixture, and finishes or refuses an interrupted
+ * run.
  */
 
 import { ok as expect } from "node:assert/strict";
@@ -22,10 +25,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { SnapshotFile } from "@sfab-bench/contract";
 import { loadWorldV2 } from "@sfab-bench/parts";
+import { provenanceHash } from "@sfab-bench/sim/freshness";
 
 import { type RepinOptions, type RepinResult, repin } from "./repin";
 import { nodeStore } from "./world/node-store";
+import { nodeStampEnv } from "./world/plan-host";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
 const temps: string[] = [];
@@ -108,6 +114,37 @@ function lockErrors(root: string, world: string): string[] {
     .map((diag) => diag.message);
 }
 
+/** Catalog snapshots whose recorded signature is not their source's today. */
+function staleSnapshots(root: string): string[] {
+  const catalogDir = join(root, "catalog");
+  return [...bytesUnder(join(catalogDir, "snapshots")).entries()].flatMap(
+    ([file, text]) => {
+      const snap = JSON.parse(text) as SnapshotFile;
+      const fresh = provenanceHash(
+        snap,
+        { catalogDir, worldDir: catalogDir },
+        nodeStampEnv
+      );
+      return fresh.checked && fresh.hash !== snap.provenance.from?.hash
+        ? [file]
+        : [];
+    }
+  );
+}
+
+/** Each changed line is a 64-hex hash field. */
+function hashLinesOnly(files: Map<string, string[]>, skip: string): void {
+  for (const [file, lines] of files) {
+    if (file.endsWith(skip)) continue;
+    expect(
+      lines.every((line) =>
+        /"(sha256|lock|hash|fromHash)": "[0-9a-f]{64}"/.test(line)
+      ),
+      `${file}: only hash lines move (${lines.join(" | ")})`
+    );
+  }
+}
+
 const ARM = "arm/parts/sfab/arm-bench@1.0.0.json";
 const RECORD = "examples/arm/checks/sfab/arm-bench@1.0.0.json";
 const BROKEN = "fixtures/layered/broken/lock-mismatch/world.lock.json";
@@ -122,7 +159,7 @@ try {
   // A clean tree has nothing to move.
   {
     const { opts } = copy();
-    const result = repin({ ...opts, write: false });
+    const result = await repin({ ...opts, write: false });
     expect(
       result.changes.length === 0 && result.refusals.length === 0,
       `a clean copy moves nothing: ${JSON.stringify(result)}`
@@ -137,9 +174,9 @@ try {
     expect(lockErrors(root, ARM).length === 1, "the citation stales the lock");
     const snapshots = bytesUnder(join(root, "catalog/snapshots"));
     const before = bytesUnder(root);
-    const dry = repin({ ...opts, write: false });
+    const dry = await repin({ ...opts, write: false });
     expect(moved(before, bytesUnder(root)).size === 0, "--dry writes nothing");
-    const result = repin(opts);
+    const result = await repin(opts);
     expect(result.refusals.length === 0, result.refusals.join("; "));
     expect(
       JSON.stringify(dry.changes) === JSON.stringify(result.changes),
@@ -148,13 +185,7 @@ try {
     const files = moved(before, bytesUnder(root));
     const locks = [...files.keys()].filter((f) => f.endsWith(".lock.json"));
     expect(locks.length === 7, `7 locks resolve sfab/sg90 (${locks.length})`);
-    for (const [file, lines] of files) {
-      if (file.endsWith("sg90@1.0.0.json")) continue;
-      expect(
-        lines.every((line) => /"(sha256|lock)": "[0-9a-f]{64}"/.test(line)),
-        `${file}: only hash lines move (${lines.join(" | ")})`
-      );
-    }
+    hashLinesOnly(files, "sg90@1.0.0.json");
     expect(
       files.get(join(root, RECORD))?.length === 1,
       "the arm record moves its fixture.lock line only"
@@ -165,35 +196,86 @@ try {
       "no snapshot file moves"
     );
     expect(!existsSync(opts.journal), "the journal is gone after a write");
-    const again = repin({ ...opts, write: false });
+    const again = await repin({ ...opts, write: false });
     expect(again.changes.length === 0, "a second run moves nothing");
     console.log(
       `repin: a citation re-stamps 7 locks and the arm record's fixture.lock (${result.changes.length} pins), hash lines only`
     );
   }
 
-  // A type edit: type rows move; the capture signature it stales stays.
+  // A type edit that stales a signature: a dry capture reproduces every
+  // other byte, so the signature and the pins that follow it move.
   {
     const { root, opts } = copy();
     edit(join(root, "catalog/types/hobby-servo-3wire.json"), (type) => {
       (type.plausible as Record<string, number[]>).Voltage = [-1, 13];
     });
-    const snapshots = bytesUnder(join(root, "catalog/snapshots"));
-    const result = repin(opts);
+    expect(
+      staleSnapshots(root).length === 1,
+      "the plausible edit stales the servo group signature"
+    );
+    const before = bytesUnder(root);
+    const result = await repin(opts);
     expect(result.refusals.length === 0, result.refusals.join("; "));
-    const types = result.changes.filter((c) => c.field === "types[].sha256");
+    const fields = (name: string) =>
+      result.changes.filter((c) => c.field === name);
     expect(
-      types.length === 8 && types.every((c) => c.id === "hobby-servo-3wire"),
-      `8 locks pin hobby-servo-3wire (${types.length})`
+      fields("types[].sha256").length === 8 &&
+        fields("provenance.from.hash").length === 1 &&
+        fields("provenance.from.hash")[0]?.id === "sfab/sg90-servo@1.0.0" &&
+        fields("children[].fromHash").length === 1,
+      `type rows, the servo signature and the record's fromHash move: ${result.changes.map((c) => c.field).join(", ")}`
     );
+    const files = moved(before, bytesUnder(root));
+    hashLinesOnly(files, "hobby-servo-3wire.json");
     expect(
-      moved(snapshots, bytesUnder(join(root, "catalog/snapshots"))).size === 0,
-      "provenance.from.hash is not a file pin; it stays"
+      files.get(join(root, "catalog/snapshots/sfab/sg90-servo@1.0.0.json"))
+        ?.length === 1,
+      "the servo snapshot moves its from.hash line only"
     );
+    expect(staleSnapshots(root).length === 0, "every snapshot is fresh");
+    expect(lockErrors(root, ARM).length === 0, "the arm lock loads clean");
+    const again = await repin({ ...opts, write: false });
+    expect(again.changes.length === 0, "a second run moves nothing");
     console.log(
-      "repin: a type edit re-stamps 8 type rows and leaves every capture signature"
+      "repin: a type edit the dry capture reproduces moves the servo signature, its lock rows and the record's pins, hash lines only"
     );
   }
+
+  // Edits whose numbers move: refused, and nothing is written.
+  for (const [label, file, change, needle] of [
+    [
+      "a fitted LED resistance",
+      "catalog/parts/sfab/led-red@1.0.0.json",
+      (text: string) => text.replace('"Rs": 13.37110059679469', '"Rs": 15'),
+      "led-module-red@1.0.0.json: a dry capture moves params",
+    ],
+    [
+      "a shaft torque rating past the fixture's sweep",
+      "catalog/parts/sfab/sg90@1.0.0.json",
+      (text: string) => text.replaceAll("0.176", "0.177"),
+      "sg90-hinge@1.0.0.json: the dry capture failed",
+    ],
+  ] as const) {
+    const { root, opts } = copy();
+    const at = join(root, file);
+    const text = readFileSync(at, "utf8");
+    expect(change(text) !== text, `${label}: the edit applies`);
+    writeFileSync(at, change(text));
+    const before = bytesUnder(root);
+    const result = await repin(opts);
+    expect(
+      result.refusals.some((why) => why.includes(needle)),
+      `${label}: refused (${result.refusals.join("; ")})`
+    );
+    expect(
+      !result.wrote && moved(before, bytesUnder(root)).size === 0,
+      `${label}: nothing written, the old signature and numbers stay`
+    );
+  }
+  console.log(
+    "repin: a moved fitted number and an unreachable rating are refused; nothing is written"
+  );
 
   // Refusals write nothing.
   {
@@ -206,7 +288,7 @@ try {
       }
     );
     const before = bytesUnder(root);
-    const result = repin(opts);
+    const result = await repin(opts);
     expect(
       result.refusals.some((why) => why.includes("types ids changed")),
       `an id-set change is refused: ${result.refusals.join("; ")}`
@@ -223,7 +305,7 @@ try {
       (part.play as { seed: number }).seed += 1;
     });
     const before = bytesUnder(root);
-    const result = repin(opts);
+    const result = await repin(opts);
     expect(
       result.refusals.some((why) => why.includes("remeasure")),
       `a changed document is a remeasure: ${result.refusals.join("; ")}`
@@ -237,7 +319,7 @@ try {
     const { root, opts } = copy();
     const broken = readFileSync(join(root, BROKEN), "utf8");
     citeSg90(root);
-    repin(opts);
+    await repin(opts);
     expect(
       readFileSync(join(root, BROKEN), "utf8") === broken,
       "the zeroed lock under broken/ stays zeroed"
@@ -249,9 +331,9 @@ try {
   for (const at of ["stage 0", "rename 0"]) {
     const { root, opts } = copy();
     citeSg90(root);
-    const crashed = (() => {
+    const crashed = await (async () => {
       try {
-        repin({
+        await repin({
           ...opts,
           step: (now) => {
             if (now === at) throw new Error(`crash at ${now}`);
@@ -263,16 +345,16 @@ try {
       }
     })();
     expect(crashed && existsSync(opts.journal), `${at}: the journal stays`);
-    const pending = repin({ ...opts, write: false });
+    const pending = await repin({ ...opts, write: false });
     expect(
       pending.refusals.some((why) => why.includes("interrupted")),
       `${at}: a dry run names the pending journal`
     );
-    const done: RepinResult = repin(opts);
+    const done: RepinResult = await repin(opts);
     expect(done.wrote && done.refusals.length === 0, `${at}: resumed`);
     expect(!existsSync(opts.journal), `${at}: the journal is gone`);
     expect(lockErrors(root, ARM).length === 0, `${at}: the arm lock is clean`);
-    const again = repin({ ...opts, write: false });
+    const again = await repin({ ...opts, write: false });
     expect(
       again.changes.length === 0 && again.refusals.length === 0,
       `${at}: nothing left to move`
@@ -289,7 +371,7 @@ try {
     const { root, opts } = copy();
     citeSg90(root);
     try {
-      repin({
+      await repin({
         ...opts,
         step: (now) => {
           if (now === "rename 0") throw new Error("crash");
@@ -303,7 +385,7 @@ try {
     expect(last !== undefined, "the journal lists files");
     writeFileSync(last, `${readFileSync(last, "utf8")} `);
     const before = bytesUnder(root);
-    const result = repin(opts);
+    const result = await repin(opts);
     expect(
       result.refusals.some((why) => why.startsWith(last)),
       `a file edited mid-re-pin is refused by name: ${result.refusals.join("; ")}`

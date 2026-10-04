@@ -1,8 +1,10 @@
 /**
- * `sfab-bench repin`: re-stamp the file pins a part or type edit leaves
- * behind (run 7 unit 2a). A pin is a hash that says which bytes a file
- * had: a lock row, and in an assembly check the lock it was measured with
- * (`fixture.lock`) and each child snapshot file (`children[].hash`).
+ * `sfab-bench repin`: re-stamp the pins a part or type edit leaves behind
+ * (run 7 unit 2). A file pin is a hash that says which bytes a file had: a
+ * lock row, and in an assembly check the lock it was measured with
+ * (`fixture.lock`) and each child snapshot file (`children[].hash`). A
+ * capture signature (`provenance.from.hash`, and an assembly child's
+ * `fromHash`) says which source a snapshot's numbers came from.
  *
  * The command only replaces a pin with the hash the loader already
  * computes for the file as it is now. It never touches a measurement, and
@@ -13,11 +15,13 @@
  * - an assembly check whose document changed (`fixture.hash`): that is a
  *   remeasure (`assembly.selfcheck --write`);
  * - an assembly check whose `fixture.lock` is neither the current lock nor
- *   the re-pinned one.
+ *   the re-pinned one;
+ * - a catalog snapshot whose signature moved, unless a dry capture into a
+ *   temp catalog reproduces every other byte of it. A new signature over
+ *   old numbers would claim the numbers came from the new source.
  *
  * A path with a `broken` segment is never read: those fixtures are wrong
- * on purpose. A capture signature (`provenance.from.hash`) is not a file
- * pin and is left alone here.
+ * on purpose.
  *
  * Writes are staged and recoverable, not atomic as a set. The plan, with
  * each file's old and new bytes, goes to a journal before the first
@@ -30,23 +34,37 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 
-import { contentHash, loadWorldV2, parsePartRef } from "@sfab-bench/parts";
+import type { SnapshotFile } from "@sfab-bench/contract";
+import {
+  contentHash,
+  loadWorldV2,
+  parsePartRef,
+  type Store,
+} from "@sfab-bench/parts";
+import type { CaptureRun } from "@sfab-bench/sim/capture";
+import { provenanceHash } from "@sfab-bench/sim/freshness";
 
+import { captureFromConfig } from "./capture";
 import { nodeStore } from "./world/node-store";
+import { nodeStampEnv } from "./world/plan-host";
 
 const ASSEMBLY_FORMAT = "sfab.assembly-check@1";
 const JOURNAL_FORMAT = "sfab.repin-plan@1";
 const LOCK_SECTIONS = ["parts", "types", "snapshots", "overlays"] as const;
+const CAPTURE_CONFIG = join("fixtures", "capture.config.json");
 
 export type RepinChange = {
   file: string;
@@ -91,25 +109,58 @@ type AssemblyJson = {
   format?: string;
   document: string;
   fixture: { hash: string; lock: string };
-  children: { path: string; ref: string; hash: string }[];
+  children: { path: string; ref: string; hash: string; fromHash: string }[];
 };
 
-export function repin(opts: RepinOptions): RepinResult {
+type CaptureConfig = { entries: { id: string }[] };
+
+/** Planned bytes by absolute path; read before the disk. */
+type Plan = Map<string, Planned>;
+
+export async function repin(opts: RepinOptions): Promise<RepinResult> {
   if (existsSync(opts.journal)) return resume(opts);
   const changes: RepinChange[] = [];
   const refusals: string[] = [];
-  const locks = new Map<string, Planned>();
+  const snapshots: Plan = new Map();
+  const signatures = new Map<string, string>();
+  for (const file of filesUnder(
+    [join(opts.catalogDir, "snapshots")],
+    ".json"
+  )) {
+    const planned = await planSignature(
+      file,
+      opts,
+      signatures,
+      changes,
+      refusals
+    );
+    if (planned) snapshots.set(file, planned);
+  }
+  const locks: Plan = new Map();
   for (const file of filesUnder(opts.roots, ".lock.json")) {
-    const planned = planLock(file, opts.catalogDir, changes, refusals);
+    const planned = planLock(
+      file,
+      opts.catalogDir,
+      snapshots,
+      changes,
+      refusals
+    );
     if (planned) locks.set(file, planned);
   }
   const records: Planned[] = [];
   for (const file of filesUnder(opts.roots, ".json")) {
     if (!file.split(sep).includes("checks")) continue;
-    const planned = planRecord(file, opts, locks, changes, refusals);
+    const planned = planRecord(
+      file,
+      opts,
+      { snapshots, locks, signatures },
+      changes,
+      refusals
+    );
     if (planned) records.push(planned);
   }
-  const writes = [...locks.values(), ...records].filter(
+  // Snapshot provenance first, then locks, then the checks that pin both.
+  const writes = [...snapshots.values(), ...locks.values(), ...records].filter(
     (row) => readFileSync(row.file, "utf8") !== row.text
   );
   if (!opts.write || refusals.length > 0 || writes.length === 0) {
@@ -203,9 +254,82 @@ function apply(journal: Journal, opts: RepinOptions): void {
   rmSync(opts.journal);
 }
 
+/**
+ * A catalog snapshot whose recorded signature is not its source's today.
+ * Accepted only when a dry capture of it into a temp catalog differs from
+ * the committed file in `provenance.from.hash` alone.
+ */
+async function planSignature(
+  file: string,
+  opts: RepinOptions,
+  signatures: Map<string, string>,
+  changes: RepinChange[],
+  refusals: string[]
+): Promise<Planned | null> {
+  const text = readFileSync(file, "utf8");
+  const snap = JSON.parse(text) as SnapshotFile;
+  const fresh = provenanceHash(
+    snap,
+    { catalogDir: opts.catalogDir, worldDir: opts.catalogDir },
+    nodeStampEnv
+  );
+  const old = snap.provenance.from?.hash;
+  if (!fresh.checked || old === undefined || fresh.hash === old) return null;
+  const id = snapshotId(opts.catalogDir, file);
+  const config = JSON.parse(
+    readFileSync(join(opts.catalogDir, CAPTURE_CONFIG), "utf8")
+  ) as CaptureConfig;
+  const entry = config.entries.find((row) => row.id === id);
+  if (!entry) {
+    refusals.push(`${file}: stale signature and no capture recipe for ${id}`);
+    return null;
+  }
+  const temp = mkdtempSync(join(tmpdir(), "sfab-repin-capture-"));
+  try {
+    cpSync(opts.catalogDir, temp, { recursive: true });
+    await captureFromConfig({
+      catalogDir: temp,
+      config: { ...config, entries: [entry] } as CaptureRun["config"],
+    });
+    const again = JSON.parse(
+      readFileSync(join(temp, file.slice(opts.catalogDir.length)), "utf8")
+    ) as SnapshotFile;
+    const moved = differences(withoutSource(snap), withoutSource(again));
+    if (moved.length > 0) {
+      refusals.push(
+        `${file}: a dry capture moves ${moved.join(", ")}; re-capture it (pnpm capture) and review the numbers`
+      );
+      return null;
+    }
+    if (again.provenance.from?.hash !== fresh.hash) {
+      refusals.push(`${file}: the dry capture signs another source`);
+      return null;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    refusals.push(`${file}: the dry capture failed (${message})`);
+    return null;
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+  const swap = {
+    file,
+    field: "provenance.from.hash",
+    id,
+    from: old,
+    to: fresh.hash,
+  };
+  const next = swapHex(text, [swap], file, refusals);
+  if (next === null) return null;
+  changes.push(swap);
+  signatures.set(id, fresh.hash);
+  return { file, text: next };
+}
+
 function planLock(
   file: string,
   catalogDir: string,
+  snapshots: Plan,
   changes: RepinChange[],
   refusals: string[]
 ): Planned | null {
@@ -215,7 +339,7 @@ function planLock(
     return null;
   }
   const loaded = loadWorldV2(world, {
-    store: nodeStore,
+    store: planStore(snapshots),
     catalogDir,
     assetRoot: projectOf(world, "parts"),
   });
@@ -274,7 +398,7 @@ function planLock(
 function planRecord(
   file: string,
   opts: RepinOptions,
-  locks: Map<string, Planned>,
+  plans: { snapshots: Plan; locks: Plan; signatures: Map<string, string> },
   changes: RepinChange[],
   refusals: string[]
 ): Planned | null {
@@ -299,7 +423,7 @@ function planRecord(
     return null;
   }
   const lockNow = contentHash(readJson(lockFile));
-  const planned = locks.get(lockFile);
+  const planned = plans.locks.get(lockFile);
   const lockNext = planned ? contentHash(JSON.parse(planned.text)) : lockNow;
   if (record.fixture.lock !== lockNow && record.fixture.lock !== lockNext) {
     refusals.push(
@@ -323,7 +447,11 @@ function planRecord(
       refusals.push(`${file}: ${child.ref} has no snapshot file`);
       return null;
     }
-    const now = contentHash(readJson(snapshot));
+    const now = contentHash(
+      JSON.parse(
+        plans.snapshots.get(snapshot)?.text ?? readFileSync(snapshot, "utf8")
+      )
+    );
     if (now !== child.hash) {
       swaps.push({
         file,
@@ -331,6 +459,20 @@ function planRecord(
         id: `${child.path} ${child.ref}`,
         from: child.hash,
         to: now,
+      });
+    }
+    const signed = plans.signatures.get(child.ref);
+    const was = plans.snapshots.get(snapshot)
+      ? (JSON.parse(readFileSync(snapshot, "utf8")) as SnapshotFile).provenance
+          .from?.hash
+      : undefined;
+    if (signed !== undefined && child.fromHash === was) {
+      swaps.push({
+        file,
+        field: "children[].fromHash",
+        id: `${child.path} ${child.ref}`,
+        from: child.fromHash,
+        to: signed,
       });
     }
   }
@@ -373,6 +515,46 @@ function swapHex(
     out = out.split(from).join(to);
   }
   return out;
+}
+
+/** Node file access that reads planned bytes first. */
+function planStore(plan: Plan): Store {
+  return {
+    ...nodeStore,
+    readText: (file) => plan.get(file)?.text ?? nodeStore.readText(file),
+  };
+}
+
+/** `snapshots/<publisher>/<name>@<version>.json` → its id. */
+function snapshotId(catalogDir: string, file: string): string {
+  const rel = file.slice(join(catalogDir, "snapshots").length + 1);
+  return rel
+    .split(sep)
+    .join("/")
+    .replace(/\.json$/, "");
+}
+
+/** The snapshot with its source signature blanked. */
+function withoutSource(snap: SnapshotFile): unknown {
+  const copy = JSON.parse(JSON.stringify(snap)) as SnapshotFile;
+  if (copy.provenance.from) copy.provenance.from.hash = "";
+  return copy;
+}
+
+/** Paths (to depth 3) whose canonical value differs. */
+function differences(a: unknown, b: unknown, at = "", depth = 0): string[] {
+  if (contentHash(a) === contentHash(b)) return [];
+  const object = (v: unknown) =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  if (depth >= 3 || !object(a) || !object(b)) return [at || "(root)"];
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = [
+    ...new Set([...Object.keys(left), ...Object.keys(right)]),
+  ].sort();
+  return keys.flatMap((key) =>
+    differences(left[key], right[key], at ? `${at}.${key}` : key, depth + 1)
+  );
 }
 
 /** The folder above the last `segment` in a path, else the file's folder. */
