@@ -137,7 +137,6 @@ function bootBoard(s: SessionState, spec: BoardSpec): AvrBoard {
     return board;
   }
   board.load(parsed.bytes);
-  s.mountStep.set(spec.id, stepCount(s));
   // Named once, after a successful load. A missing image or a dead supply
   // returns above and does not announce a gap the run never reached.
   if (board.running) {
@@ -416,7 +415,7 @@ function noteConversion(
   board: AvrBoard,
   sample: AdcConversion
 ) {
-  const mountStep = s.mountStep.get(board.id) ?? 0;
+  const startStep = s.startStep.get(board.id) ?? 0;
   const event: ConversionEvent = {
     board: board.id,
     mux: sample.mux,
@@ -424,9 +423,9 @@ function noteConversion(
     vRef: sample.vRef,
     voltage: sample.voltage,
     count: sample.count,
-    mountStep,
+    startStep,
     cycle: sample.cycle,
-    ms: mountStep / s.perMs + (sample.cycle * 1000) / board.hz,
+    ms: startStep / s.perMs + (sample.cycle * 1000) / board.hz,
   };
   for (const observer of s.observers) observer.conversion?.(event);
 }
@@ -526,6 +525,8 @@ export function resetPinLowOf(s: SessionState, boardId: string): boolean {
 
 export function stepBoard(s: SessionState, board: AvrBoard) {
   if (!board.running || board.fault) return;
+  // A CPU at cycle 0 has not run: this step is where its cycles count from.
+  if (board.cycles() === 0) s.startStep.set(board.id, stepCount(s));
   try {
     board.stepPart(s.perMs);
   } catch (err: unknown) {

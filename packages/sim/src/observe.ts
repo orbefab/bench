@@ -25,9 +25,9 @@
  *
  * Observation keys pair two sides. A frame or step key is the master step
  * count, so both sides must run the same timestep. A conversion key is the
- * step count at which that board's CPU was mounted and the CPU cycle the
- * conversion started on: two conversions match only at the same instant,
- * never by their order and never rounded to a step.
+ * master step in which that board's CPU ran its first cycle and the CPU
+ * cycle the conversion started on: two conversions match only at the same
+ * instant, never by their order and never rounded to a step.
  */
 
 import { RECORD_FRAME_MS, type RunReport } from "@sfab-bench/contract";
@@ -78,15 +78,38 @@ export type ObservedRun = {
 };
 
 /**
- * The files that take and reduce an observation, relative to this one. A
- * host with file access hashes them into the comparison identity, so a
- * change to how a value is read or reduced is never the same comparison.
+ * The code that takes and reduces an observation, by file relative to this
+ * one, and by function where only part of a file does it. A host with file
+ * access hashes it into the comparison identity, so a change to how a
+ * value is read, stamped or reduced is never the same comparison:
+ *
+ * - this file, the pairing and metrics, and `portReading`;
+ * - `advanceOne`, whose order of rail solve, body step and listener call
+ *   is what a phase means;
+ * - the conversion's stamp: the session's `noteConversion`, `stepBoard`
+ *   (the CPU's first step) and `attachAnalog`, and the ADC hook that
+ *   chooses the held sample, the latched reference and the cycle.
+ *
+ * The engines that compute a value are not listed: a change there moves
+ * the numbers, and the remeasure catches that.
  */
-export const OBSERVER_SOURCES = [
-  "observe.ts",
-  "compare.ts",
-  "session/ports.ts",
-] as const;
+export const OBSERVER_SOURCES: readonly {
+  file: string;
+  functions?: readonly string[];
+}[] = [
+  { file: "observe.ts" },
+  { file: "compare.ts" },
+  { file: "session/ports.ts" },
+  { file: "sim.ts", functions: ["advanceOne"] },
+  {
+    file: "session/boards.ts",
+    functions: ["noteConversion", "stepBoard", "attachAnalog"],
+  },
+  {
+    file: "../../engine-mcu/src/board-adc.ts",
+    functions: ["attachBoardAdc", "sourceOf", "referenceOf"],
+  },
+];
 
 export function splitQuantity(quantity: string): {
   path: string;
@@ -190,7 +213,7 @@ export async function observeRun(
       for (const { path, port, out } of events) {
         if (event.board !== path || event.mux !== port) continue;
         out.push({
-          key: `conversion ${event.mountStep}:${event.cycle}`,
+          key: `conversion ${event.startStep}:${event.cycle}`,
           ms: event.ms,
           value: event.voltage,
           reference: { mode: event.ref, volts: event.vRef },

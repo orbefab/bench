@@ -199,10 +199,12 @@ export type SessionState = {
   /** Listeners from `Sim.observe`. They outlive a reload. */
   readonly observers: Set<SimObserver>;
   /**
-   * The master step count at which each board's current CPU was mounted.
-   * With the CPU's own cycle count it names a conversion's exact instant.
+   * The master step in which each board's current CPU ran its first
+   * cycle. A board runs at most once per master step, so no two of its
+   * CPUs start in the same step; with the CPU's own cycle count this names
+   * a conversion's exact instant.
    */
-  mountStep: Map<string, number>;
+  startStep: Map<string, number>;
   /** Test only. Absent on load, stamps and samples are not allocated. */
   adcTrace: boolean;
   /** Test only. A tripped fuse starts hot, before the first solve. */
@@ -285,7 +287,7 @@ export function createState(host: SimHost): SessionState {
     adcNodes: [],
     adcSamples: [],
     observers: new Set<SimObserver>(),
-    mountStep: new Map<string, number>(),
+    startStep: new Map<string, number>(),
     adcTrace: false,
     fuseStart: "cold",
     rails: new Map<string, RailGroup>(),

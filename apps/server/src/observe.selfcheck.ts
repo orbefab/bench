@@ -9,8 +9,9 @@
  *   (one extra conversion first, which pairing by order would shift);
  * - a descriptor is refused when it states a phase the run does not read
  *   at, or a reference this unit does not take;
- * - the identity moves with a descriptor, a metric definition, or a byte of
- *   the observer's code, and reads no package version;
+ * - the identity moves with a descriptor, a metric definition, or a token
+ *   of the observer's code, and reads no package version; a format pass, a
+ *   comment and a function the observer does not use do not move it;
  * - a validity item that appears or vanishes is named;
  * - a live run converts several channels inside one master step, each with
  *   its own instant and latched reference, and the same run twice pairs
@@ -18,12 +19,15 @@
  */
 
 import { ok as expect } from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
   cpSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -264,29 +268,88 @@ try {
     "the definition is restored"
   );
 
-  // A byte of observer code, with every package version as it is.
-  const copy = mkdtempSync(join(tmpdir(), "sfab-observer-"));
-  temps.push(copy);
+  // The observer's code as a tree: a reflow and a comment are not a
+  // change; a changed token in a listed function is, in any listed file,
+  // with every package version as it is; an unlisted function is not.
   const from = observerDir();
-  for (const rel of OBSERVER_SOURCES) {
-    mkdirSync(dirname(join(copy, rel)), { recursive: true });
-    cpSync(join(from, rel), join(copy, rel));
-  }
+  const copyOf = () => {
+    const root = mkdtempSync(join(tmpdir(), "sfab-observer-"));
+    temps.push(root);
+    const dir = join(root, "packages", "sim", "src");
+    for (const { file } of OBSERVER_SOURCES) {
+      mkdirSync(dirname(join(dir, file)), { recursive: true });
+      cpSync(join(from, file), join(dir, file));
+    }
+    return dir;
+  };
+  const copy = copyOf();
   expect(observerBuild(copy) === build, "a copy has the same fingerprint");
-  for (const rel of OBSERVER_SOURCES) {
-    const edited = mkdtempSync(join(tmpdir(), "sfab-observer-"));
-    temps.push(edited);
-    cpSync(copy, edited, { recursive: true });
-    appendFileSync(join(edited, rel), "\n");
-    const moved = observerBuild(edited);
-    expect(moved !== build, `an edit to ${rel} moves the fingerprint`);
+  execFileSync(
+    "npx",
+    [
+      "biome",
+      "format",
+      "--write",
+      "--line-width=40",
+      "--indent-style=tab",
+      "--javascript-formatter-quote-style=single",
+      "--semicolons=as-needed",
+      "--trailing-commas=none",
+      ...OBSERVER_SOURCES.map(({ file }) => join(copy, file)),
+    ],
+    { stdio: "pipe" }
+  );
+  for (const { file } of OBSERVER_SOURCES) {
+    appendFileSync(join(copy, file), "\n// a comment\n");
+  }
+  expect(
+    observerBuild(copy) === build,
+    "a reflow and a comment keep the fingerprint"
+  );
+  const edits: [string, string, string, boolean][] = [
+    ["compare.ts", "pair.gap > worst.gap", "pair.gap >= worst.gap", true],
+    ["observe.ts", "`step ${n}`", "`step ${n + 1}`", true],
+    [
+      "session/ports.ts",
+      "return { voltage: 0,",
+      "return { voltage: 1e-9,",
+      true,
+    ],
+    [
+      "sim.ts",
+      "for (const observer of s.observers) observer.step?.(n, s.perMs);",
+      "",
+      true,
+    ],
+    [
+      "session/boards.ts",
+      "if (board.cycles() === 0)",
+      "if (board.cycles() === 1)",
+      true,
+    ],
+    ["session/boards.ts", "startStep / s.perMs", "startStep", true],
+    [
+      "../../engine-mcu/src/board-adc.ts",
+      "cycle: cpu.cycles,",
+      "cycle: 0,",
+      true,
+    ],
+    ["session/boards.ts", "ms: stepEndMs(s),", "ms: stepEndMs(s) + 1,", false],
+  ];
+  for (const [file, was, now, moves] of edits) {
+    const dir = copyOf();
+    const text = readFileSync(join(dir, file), "utf8");
+    expect(text.includes(was), `${file} has ${was}`);
+    writeFileSync(join(dir, file), text.replace(was, now));
+    const moved = observerBuild(dir);
     expect(
-      comparisonIdentity(rows, moved) !== base,
-      `an edit to ${rel} moves the identity`
+      (moved !== build) === moves &&
+        (comparisonIdentity(rows, moved) !== base) === moves,
+      `${file}: ${was} → ${now} ${moves ? "keeps" : "moves"} the identity`
     );
   }
   console.log(
-    `observe: the identity moves with a descriptor, a metric definition, and a byte of ${OBSERVER_SOURCES.join(", ")}`
+    `observe: the identity moves with a descriptor, a metric definition and a token of the observer's code in ${OBSERVER_SOURCES.map(({ file }) => file).join(", ")}; a reflow, a comment and an unlisted function do not`
   );
 } finally {
   for (const dir of temps) rmSync(dir, { recursive: true, force: true });
@@ -363,6 +426,17 @@ try {
   const a1 = first.series.get("nano.A1.voltage events") ?? [];
   const modes = a1.map((row) => row.reference?.mode).join(",");
   expect(modes === "avcc,bandgap", `A1 references ${modes}`);
+  // A1 is wired to the board's own 5 V: on AVCC the held sample is the
+  // latched reference itself; on the internal reference that is 1.1 V.
+  const [onAvcc, onBandgap] = a1;
+  expect(
+    onAvcc !== undefined &&
+      onAvcc.value > 4 &&
+      onAvcc.value === onAvcc.reference?.volts &&
+      onBandgap?.reference?.volts === 1.1 &&
+      onBandgap.value === onAvcc.value,
+    `A1 samples ${JSON.stringify(a1)}`
+  );
   for (const row of rows) {
     const id = descriptorId(row);
     const paired = pairByKey(
@@ -378,6 +452,62 @@ try {
   }
   console.log(
     `observe: ${all.length} live conversions, ${busiest} in one master step, A1 on ${modes}; the same run twice pairs them all with no gap`
+  );
+
+  // A reload restarts the CPU's cycles at 0. Its conversions count from
+  // the step the new CPU first runs in, so the same cycle is a new instant.
+  // Two reloads at one boundary: only the second CPU ever runs.
+  const reloaded = async (reloads: number) => {
+    const sim = newSim();
+    try {
+      const loaded = await sim.load({
+        project: adcDir,
+        world: "channels.world.json",
+        generation: 1,
+      });
+      expect(loaded.ok, "the ADC fixture loads");
+      const before = await observeRun(sim, rows, 11);
+      for (let i = 0; i < reloads; i++) {
+        await sim.accept({ type: "reloadBoard", board: "nano", generation: 1 });
+      }
+      const after = await observeRun(sim, rows, 489);
+      return rows.map((row) => [
+        ...(before.series.get(descriptorId(row)) ?? []),
+        ...(after.series.get(descriptorId(row)) ?? []),
+      ]);
+    } finally {
+      sim.dispose();
+    }
+  };
+  for (const reloads of [1, 2]) {
+    const [a0 = []] = await reloaded(reloads);
+    const [boot, reload] = a0;
+    expect(
+      a0.length === 2 &&
+        boot !== undefined &&
+        reload !== undefined &&
+        boot.key !== reload.key &&
+        boot.key.endsWith(reload.key.slice(reload.key.indexOf(":"))) &&
+        Math.abs(reload.ms - boot.ms - 11) < 1e-9,
+      `${reloads} reload(s): A0 ${JSON.stringify(a0)}`
+    );
+    expect(
+      pairByKey(a0, a0).pairs.length === 2,
+      "the reloaded run pairs with itself"
+    );
+  }
+  const once = await reloaded(1);
+  const twice = await reloaded(2);
+  for (const [i, row] of rows.entries()) {
+    const paired = pairByKey(once[i] ?? [], twice[i] ?? []);
+    expect(
+      paired.unmatched.length === 0 &&
+        reduce("event-max", paired.pairs)?.value === 0,
+      `${descriptorId(row)} one reload vs two: ${JSON.stringify(paired.unmatched)}`
+    );
+  }
+  console.log(
+    "observe: a reload converts the same cycle again at a new instant, 11 ms later; one reload and two at the same boundary pair with no gap"
   );
 }
 

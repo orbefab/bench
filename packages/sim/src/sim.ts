@@ -248,10 +248,10 @@ export type AdcTrace = {
 
 /**
  * A conversion seen through `Sim.observe`, at the instant it started: the
- * reader's held sample and its latched reference. `mountStep` (the master
- * step count when the board's CPU was mounted) and `cycle` (that CPU's own
- * count) name the instant exactly; `ms` is the same instant in simulated
- * milliseconds, for display and ordering.
+ * reader's held sample and its latched reference. `startStep` (the master
+ * step in which the board's current CPU ran its first cycle) and `cycle`
+ * (that CPU's own count) name the instant exactly; `ms` is the same
+ * instant in simulated milliseconds, for display and ordering.
  */
 export type ConversionEvent = {
   board: string;
@@ -260,7 +260,7 @@ export type ConversionEvent = {
   vRef: number;
   voltage: number;
   count: number;
-  mountStep: number;
+  startStep: number;
   cycle: number;
   ms: number;
 };
@@ -500,11 +500,8 @@ function createSession(host: SimHost) {
         continue;
       }
       if (!stepped.reboot) continue;
-      const mounted = board.reboot(
-        ended === "pin" ? EXTERNAL_RESET : BROWNOUT_RESET
-      );
-      s.mountStep.set(board.id, stepCount(s));
-      if (!mounted) continue;
+      if (!board.reboot(ended === "pin" ? EXTERNAL_RESET : BROWNOUT_RESET))
+        continue;
       applyInputNets(s);
       const regs = board.peekRegs();
       const pins = boardPinState(
@@ -696,7 +693,7 @@ function createSession(host: SimHost) {
     s.latchedRail = new Map();
     s.adcNodes = [];
     s.adcSamples = [];
-    s.mountStep = new Map();
+    s.startStep = new Map();
     s.rails = new Map();
     s.driveAtStart.clear();
     s.stepPulses.clear();

@@ -30,8 +30,8 @@
  *   different set than `children`;
  * - the observations, the metric definitions or the code that takes and
  *   reduces them are not the ones the record names (`identity`);
- * - a recomputed metric sits more than `DRIFT` from its row, or a pair
- *   count moved;
+ * - a recomputed metric sits more than `DRIFT` from its row, a pair count
+ *   moved, or a max is set at another time or between other values;
  * - either side's validity differs from the record's `domain`.
  *
  * Pass is "the remeasure matches the stored gap". An acceptance bound per
@@ -237,6 +237,11 @@ async function runSide(
   }
 }
 
+/** How far `got` is from `stored`, relative (unit 4's rule). */
+function driftOf(got: number, stored: number): number {
+  return (got - stored) / Math.max(Math.abs(stored), 1e-12);
+}
+
 /** The snapshot file `ref`: the project's own, then the catalog's. */
 function snapshotOf(project: string, ref: string): SnapshotFile {
   const parsed = parsePartRef(ref);
@@ -389,11 +394,23 @@ try {
         );
         expect(stored, `${at}: no ${row.metric} row for ${row.quantity}`);
         if (!stored) continue;
-        const drift =
-          (got.value - stored.value) / Math.max(Math.abs(stored.value), 1e-12);
+        const drift = driftOf(got.value, stored.value);
         expect(
           Math.abs(drift) <= DRIFT,
           `${at}: ${row.quantity} ${row.metric} ${got.value} vs the stated ${stored.value} (${drift.toExponential(2)})`
+        );
+        // The pair that set a max is part of the number: the same gap at
+        // another time, or between other values, is not the same row.
+        const was = stored.at;
+        const now = row.at && got.at;
+        expect(
+          was === undefined
+            ? now === undefined
+            : now !== undefined &&
+                was.ms === now.ms &&
+                Math.abs(driftOf(now.a, was.detailed)) <= DRIFT &&
+                Math.abs(driftOf(now.b, was.snapshot)) <= DRIFT,
+          `${at}: ${row.quantity} ${row.metric} is set at ${JSON.stringify(row.at)}, the record says ${JSON.stringify(was)}`
         );
         expect(
           stored.pairs === row.pairs && stored.unmatched === row.unmatched,
