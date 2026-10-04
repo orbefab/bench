@@ -297,7 +297,7 @@ export function ledReading(
 export function snapshotDriveModes(s: SessionState): void {
   s.driveAtStart.clear();
   for (const board of s.boards) {
-    board.pinChanges = [];
+    board.modeChanges = [];
     const supplyId = s.boardPower.get(board.id)?.supplyId;
     const circuit = supplyId ? s.rails.get(supplyId)?.circuit : undefined;
     if (!circuit || circuit.driveBits.length === 0) continue;

@@ -11,7 +11,7 @@
     {
       "id": "sfab/atmega32u4@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/atmega32u4@1.0.0.json",
-      "sha256": "d2cc6945ae0870d8bc220e2629e250ca20785959a63b0fba7e4c293e01e2de37",
+      "sha256": "a0648ba359532e881135915c4623bddc45155d8bcc3cdb07193046f91da8948b",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -67,7 +67,7 @@
     {
       "id": "sfab/pro-micro@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/pro-micro@1.0.0.json",
-      "sha256": "e9720238fb327bdb7b38b319cef6bc846056365e6cccac6b1231cde350aa052e",
+      "sha256": "721f2226ca319392b2f46304e84d51af935080de4db58748d72b2a26cca536af",
       "source": "catalog",
       "version": "1.0.0"
     },

@@ -216,18 +216,18 @@ Brownout reads the board node: the lowest board-node voltage over that master st
 
 A firmware board carries `avr-pin@1` as numbers on the variant's `params`, not as a `form`. The names are `roh`, `rol`, `rpu` and `rLeak`, in ohms. High is the board's 5V node. Low is 0 V. `rLeak` belongs to the pin element. The rail stamps one pin for every exposed GPIO pin whose net contains a circuit part. Each of those pins follows `driveMode` at the master step. The ADC uses the same numbers.
 
-Live GPIO on a board's state tick is three little-endian lists of 32-bit words, `ddr`, `level`, and `toggled`. Bit `i` in word `i >> 5` (bit `i & 31` of that word) is pin `i` of that board's `WorldViewBoard.pins`. `ddr` is 1 when the pin is an output. `level` is PORT when the pin is an output and PIN when it is an input. `toggled` is 1 when that pin changed since the previous state tick. A recording made before this format has one word per board and reads as a one-word list. `pinBitSet` also accepts a bare number as one word. The words carry only the pins in `pins`: a board whose CPU also drives internal pins (the Pro Micro's `RXLED` and `TXLED`) has those bits cleared, live and recorded (`boardPinState`). Their current still shows through the board's LEDs.
+Live GPIO on a board's state tick is three little-endian lists of 32-bit words, `ddr`, `level`, and `toggled`. Bit `i` in word `i >> 5` (bit `i & 31` of that word) is pin `i` of that board's `WorldViewBoard.pins`. `ddr` is 1 when the pin is an output. `level` is the logic level the CPU reads: an output's own level (PORT, or a timer's compare output while it holds the pin) and PIN for an input. `ddr` and `level` come from the same pin model as the mode below. `toggled` is 1 when that pin's output word changed since the previous state tick (a level edge; a DDR write alone is not one). A recording made before this format has one word per board and reads as a one-word list. `pinBitSet` also accepts a bare number as one word. The words carry only the pins in `pins`: a board whose CPU also drives internal pins (the Pro Micro's `RXLED` and `TXLED`) has those bits cleared, live and recorded (`boardPinState`). Their current still shows through the board's LEDs.
 
-DDR and the output level choose the mode, read when the rail solves and when a conversion starts. An output's level is PORT, or a timer's compare output while it holds the pin: `analogWrite` never writes PORT.
+DDR and the port's output word choose the mode, read when the rail solves and when a conversion starts. The output word is PORT with a timer's compare output in place of the bits it holds: `analogWrite` never writes PORT. On an input bit it is PORT.
 
-| DDR | Output level / PORT | Mode |
+| DDR | Output word bit | Mode |
 | --- | --- | --- |
 | 1 | 1 | `high` |
 | 1 | 0 | `low` |
 | 0 | PORT 1 | `pullup` |
 | 0 | PORT 0 | `input` |
 
-Each level change inside a master step, from PORT or a timer, ends a piece of that step's solve, so a PWM pin drives its circuit for its duty.
+Each mode change inside a master step ends a piece of that step's solve: a PORT or timer edge, and a DDR write too (an output released to its pull-up or input, an input driven), each stamped with its CPU cycle. So a PWM pin drives its circuit for its duty, and a released pin stops driving where the CPU released it.
 
 An input with nothing else on the net is 0 V through `rLeak`. A pull-up with nothing else on it is the board node through `rpu`. A pin that is its own output reads that level unloaded: `high` through `roh`, `low` through `rol`.
 

@@ -11,7 +11,7 @@
     {
       "id": "sfab/atmega328p@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/atmega328p@1.0.0.json",
-      "sha256": "30f66bc05c824634d2d827dcef394913876aeb46d688c14312c062e270d826f1",
+      "sha256": "fee850fa2b568312ecd9fcb32df39d898d1bb999e2a1e67bc054014543e07125",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -81,7 +81,7 @@
     {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "6436cb8d3dc960bb663431ff7ddec0f4beaa7cdd0ecb579e652c3241d2c1281f",
+      "sha256": "120a16f5e00ce8f59835c029dbc28039f444124af500c77f9b86b1038369c013",
       "source": "catalog",
       "version": "1.0.0"
     },

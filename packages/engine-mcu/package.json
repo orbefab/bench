@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p test",
-    "test": "node ../../scripts/checks.mjs test/board.selfcheck.ts test/chips.selfcheck.ts"
+    "test": "node ../../scripts/checks.mjs test/board.selfcheck.ts test/chips.selfcheck.ts test/pin-mode.selfcheck.ts"
   },
   "dependencies": {
     "@sfab-bench/contract": "workspace:*",

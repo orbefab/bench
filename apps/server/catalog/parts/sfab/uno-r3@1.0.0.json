@@ -101,7 +101,7 @@
             },
             "omits": [
               "temperature",
-              "I/O pin impedance",
+              "I/O pin curves beyond linear roh/rol/rpu/rLeak, pin capacitance and clamp diodes",
               "ADC INL and DNL",
               "ADC noise",
               "ADC noise canceller",
@@ -171,7 +171,7 @@
             },
             "omits": [
               "temperature",
-              "I/O pin impedance",
+              "I/O pin curves beyond linear roh/rol/rpu/rLeak, pin capacitance and clamp diodes",
               "ADC INL and DNL",
               "ADC noise",
               "ADC noise canceller",

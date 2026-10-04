@@ -142,11 +142,12 @@ function boundName(key: string): { port: string; quantity: string } {
 }
 
 /**
- * Intervals between edges of every stamped pin on one rail, inside this
- * master step, merged onto one timeline. A single level change charges the
- * rail for the part of the step after the edge. A pulse has both
- * edges, and those intervals are the duty. A board that does not toggle
- * contributes its held mode to each piece.
+ * Intervals between drive-mode changes of every stamped pin on one rail,
+ * inside this master step, merged onto one timeline. A change charges the
+ * rail in its new mode for the part of the step after it: high to low, an
+ * output released to an input or its pull-up, an input driven. A pulse
+ * has two changes, and those intervals are the duty. A board that does not
+ * change contributes its held mode to each piece.
  */
 function pinPiecesUnion(
   s: SessionState,
@@ -155,7 +156,7 @@ function pinPiecesUnion(
 ):
   | { dt: number; drive: { bit: number; mode: PinMode; boardId: string }[] }[]
   | null {
-  type Edge = { boardId: string; bit: number; when: number; high: boolean };
+  type Edge = { boardId: string; bit: number; when: number; mode: PinMode };
   const step = stepS(s);
   const edges: Edge[] = [];
   const modes = new Map<string, Map<number, PinMode>>();
@@ -170,13 +171,13 @@ function pinPiecesUnion(
     const wanted = new Set(bits);
     const span = avr.cycles() - avr.stepOrigin;
     if (!(span > 0)) continue;
-    for (const edge of avr.pinChanges) {
+    for (const edge of avr.modeChanges) {
       if (!wanted.has(edge.bit) || edge.cycle < avr.stepOrigin) continue;
       edges.push({
         boardId: spec.id,
         bit: edge.bit,
         when: ((edge.cycle - avr.stepOrigin) / span) * step,
-        high: edge.high,
+        mode: edge.mode,
       });
     }
   }
@@ -218,13 +219,9 @@ function pinPiecesUnion(
     const dt = edge.when - t;
     if (dt > 1e-12) pieces.push({ dt, drive: driveOf() });
     const mode = modes.get(edge.boardId);
-    const prev = mode?.get(edge.bit);
-    if (mode && (prev === "high" || prev === "low")) {
-      const next: PinMode = edge.high ? "high" : "low";
-      if (next !== prev) {
-        mode.set(edge.bit, next);
-        changed = true;
-      }
+    if (mode && mode.get(edge.bit) !== edge.mode) {
+      mode.set(edge.bit, edge.mode);
+      changed = true;
     }
     if (edge.when > t) t = edge.when;
   }
@@ -325,9 +322,8 @@ function solveOneRail(
     const avr = drivenBoard(s, supplyId);
     pieces = avr ? pinPiecesUnion(s, [avr], circuit) : null;
     if (avr && !pieces) {
-      // An output is high or low at its output level (PORT, or a timer's
-      // compare output), PORT set alone is the pull-up, and neither is an
-      // input. High is the board node. See `AvrBoard.driveMode`.
+      // No mode changed this step: the held mode is the start mode. High is
+      // the board node. See `AvrBoard.driveMode`.
       for (const bit of circuit.driveBits) {
         circuit.setDrive(bit, avr.driveMode(bit));
       }

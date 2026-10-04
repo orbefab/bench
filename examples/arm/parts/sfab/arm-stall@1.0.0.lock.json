@@ -25,7 +25,7 @@
     {
       "id": "sfab/atmega328p@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/atmega328p@1.0.0.json",
-      "sha256": "30f66bc05c824634d2d827dcef394913876aeb46d688c14312c062e270d826f1",
+      "sha256": "fee850fa2b568312ecd9fcb32df39d898d1bb999e2a1e67bc054014543e07125",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -137,7 +137,7 @@
     {
       "id": "sfab/uno-r3@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/uno-r3@1.0.0.json",
-      "sha256": "5f57e3e2604cf902166e425c0b200186142d0e151610267e53471ece1d1841e8",
+      "sha256": "bd9e7aea99af8026ce486f465d8d4908218cb3b015d3727e74bbecaa3213573a",
       "source": "catalog",
       "version": "1.0.0"
     }
