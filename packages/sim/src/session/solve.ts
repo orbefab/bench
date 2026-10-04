@@ -62,7 +62,8 @@ function noteWatch(
 ): void {
   const observed: Record<string, number> = {};
   for (const [formPort, port] of Object.entries(watch.ports)) {
-    const node = part.nodes[formPort];
+    // The circuit's own node: a shared rail renames tied feed nodes.
+    const node = circuit.stampedNode(`${part.path}.${formPort}`);
     if (!node || node === "0") continue;
     observed[`${port}.current`] = circuit.currentInto(part.path, node);
     observed[`${port}.voltage`] = circuit.nodeVoltage(node);

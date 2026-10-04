@@ -63,7 +63,7 @@ export function portReading(
       if (node !== null) break;
     }
     const owned = circuit.owns(path);
-    if (node === null && owned) node = watchedNode(s, path, port);
+    if (node === null && owned) node = watchedNode(s, circuit, path, port);
     if (node === null) continue;
     if (node === "0") return { voltage: 0, current: null, angle: null };
     return {
@@ -85,6 +85,7 @@ export function portReading(
 /** The node a form-run snapshot stamped behind its part's own `port`. */
 function watchedNode(
   s: SessionState,
+  circuit: RailCircuit,
   path: string,
   port: string
 ): string | null {
@@ -101,7 +102,10 @@ function watchedNode(
   const form = Object.entries(part.watch.ports).find(
     ([, own]) => own === port
   )?.[0];
-  return form === undefined ? null : (part.nodes[form] ?? null);
+  // The circuit's name for it: a shared rail renames tied feed nodes.
+  return form === undefined
+    ? null
+    : circuit.stampedNode(`${part.path}.${form}`);
 }
 
 /** A lumped part's own draw, read on the port its type calls power. */

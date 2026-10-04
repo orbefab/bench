@@ -71,9 +71,13 @@ function stampOf(id: string, max: number): BoardStamp {
 }
 
 // a's bleed (5 mA) is inside its watch, b's is not; the span from a's 5 V
-// to b's pin is outside its own. Both warnings must come once per run.
+// to b's pin and the one from b's 5 V to ground are outside theirs. Each
+// warning must come once per run.
 const stamps = { a: stampOf("a", 0.01), b: stampOf("b", 0.001) };
-const span = watched("wire", "a.vcc", "b.p", 1e-4);
+const spans = [
+  watched("wire", "a.vcc", "b.p", 1e-4),
+  watched("tie", "b.vcc", "0", 1e-3),
+];
 
 // Drive PB0 high and hold it.
 const assembled = assemble("sbi 0x04, 0\nsbi 0x05, 0\ndone: rjmp done\n");
@@ -90,7 +94,12 @@ type Run = {
   bleedB: number;
 };
 
+/**
+ * Both supplies in `order`, an island of two; or `s1` alone, one shared
+ * rail, which ties the boards' 5 V into one node and renames b's.
+ */
 function run(order: readonly ("s1" | "s2")[]): Run {
+  const island = order.length > 1;
   const circuit = createRailCircuit({
     vNom: 5,
     rSeries: 0.05,
@@ -100,10 +109,16 @@ function run(order: readonly ("s1" | "s2")[]): Run {
       { id: "a", stamp: stamps.a, feed: "header" },
       { id: "b", stamp: stamps.b, feed: "header" },
     ],
-    primaryId: "s1",
-    primaryNode: "a.vcc",
-    also: [{ id: "s2", vNom: 5, rSeries: 0.05, iLimit: 10, node: "b.vcc" }],
-    spans: [span],
+    ...(island
+      ? {
+          primaryId: "s1",
+          primaryNode: "a.vcc",
+          also: [
+            { id: "s2", vNom: 5, rSeries: 0.05, iLimit: 10, node: "b.vcc" },
+          ],
+        }
+      : {}),
+    spans,
   });
   const s = createState({ post() {} } as unknown as SimHost);
   const avr = new AvrBoard("a", chip, ["PB0"]);
@@ -114,8 +129,8 @@ function run(order: readonly ("s1" | "s2")[]): Run {
       { id: "a", stamp: stamps.a },
       { id: "b", stamp: stamps.b },
     ],
-    supplies: [{ id: "s1" }, { id: "s2" }],
-    spans: [{ part: span, boards: ["a", "b"] }],
+    supplies: order.map((id) => ({ id })),
+    spans: spans.map((part) => ({ part, boards: ["a", "b"] })),
     parts: [],
     // A board port reads through the stamped part ports on its net.
     wires: [
@@ -135,7 +150,7 @@ function run(order: readonly ("s1" | "s2")[]): Run {
     reset: { phase: "run" },
   } as unknown as BoardPower);
   s.boardPower.set("b", {
-    supplyId: "s2",
+    supplyId: island ? "s2" : "s1",
     draw: DRAW.b,
     reset: { phase: "run" },
   } as unknown as BoardPower);
@@ -171,7 +186,7 @@ const second = run(["s2", "s1"]);
 console.log(`circuit-owners: ${JSON.stringify(first)}`);
 
 // Every snapshot on the island, once, in both orders.
-const want = ["b.bleed", "wire"];
+const want = ["b.bleed", "tie", "wire"];
 for (const got of [first, second]) {
   expect(
     JSON.stringify(got.warnings) === JSON.stringify(want),
@@ -193,12 +208,13 @@ expect(
   `a.P ${first.pin} A is not minus a-load ${first.load} A`
 );
 
-// a's 5 V carries its own draw, its bleed, and its pin's current; the span
-// to b's pin adds a little. Not b's 30 mA.
+// a's 5 V carries its own draw, its bleed, and its pin's current. Not the
+// spans' (2.5 mA, 5 mA) and not b's 30 mA. The 10 µA is the rail sitting
+// under 5 V and the pin's leak.
 const bleedA = 5 / R;
 const wantA = DRAW.a + bleedA + first.load;
 expect(
-  first.supplyA > wantA - 1e-4 && first.supplyA < wantA + 1e-3,
+  Math.abs(first.supplyA - wantA) < 1e-5,
   `a.5V ${first.supplyA} A, want about ${wantA} A`
 );
 const wantB = DRAW.b + first.bleedB;
@@ -206,7 +222,18 @@ expect(
   Math.abs(first.supplyB - wantB) < 5e-4,
   `b.5V ${first.supplyB} A, want about ${wantB} A`
 );
+// One supply: the boards' 5 V are one node under a's name. The watches on
+// b's renamed node (its bleed, the tie) still read and warn once.
+const shared = run(["s1"]);
+expect(
+  JSON.stringify(shared.warnings) === JSON.stringify(want),
+  `shared rail warnings ${JSON.stringify(shared.warnings)}`
+);
+expect(
+  Math.abs(shared.bleedB - 5 / R) < 1e-5,
+  `shared rail b.bleed ${shared.bleedB} A`
+);
 console.log(
-  `circuit-owners: warnings ${want.join(", ")} once in both supply orders; a.P ${(first.pin * 1e3).toFixed(4)} mA, a.5V ${(first.supplyA * 1e3).toFixed(3)} mA, b.5V ${(first.supplyB * 1e3).toFixed(3)} mA`
+  `circuit-owners: warnings ${want.join(", ")} once in both supply orders and on one shared rail; a.P ${(first.pin * 1e3).toFixed(4)} mA, a.5V ${(first.supplyA * 1e3).toFixed(3)} mA, b.5V ${(first.supplyB * 1e3).toFixed(3)} mA`
 );
 console.log("circuit-owners.selfcheck ok");
