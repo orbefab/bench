@@ -25,6 +25,8 @@ import {
   type TimelineMarker,
   type TimelineTrack,
   type WorldError,
+  type WorldGhostSpec,
+  type WorldGhostState,
   type WorldPartMotion,
   type WorldPartState,
   type WorldPinState,
@@ -107,6 +109,15 @@ import {
   stepEndMs,
   thrownMessage,
 } from "./session/common";
+import {
+  type GhostReading,
+  ghostPairs,
+  ghostPlanEnv,
+  ghostRunsSnapshot,
+  ghostState,
+  ghostWorldText,
+  measurePairs,
+} from "./session/ghost";
 import { bindPower, latchSupplyNodes, stampNodes } from "./session/rails";
 import {
   answerRecord,
@@ -115,6 +126,7 @@ import {
   record,
   recordStep,
   sample,
+  samplePoses,
 } from "./session/recorder";
 import { solveSupplies } from "./session/solve";
 import { createState, type HeldFailure } from "./session/state";
@@ -247,8 +259,11 @@ export type ToWorker =
        * Test only. Absent, the worker records no ADC trace.
        */
       adcTrace?: boolean;
+      /** The snapshot ghost to run beside the world. Absent is none. */
+      ghost?: WorldGhostSpec | null;
     }
-  | { type: "reload"; generation: number }
+  /** `ghost` absent keeps the ghost the run has; null turns it off. */
+  | { type: "reload"; generation: number; ghost?: WorldGhostSpec | null }
   | { type: "play"; generation: number; by?: WorldSender }
   | { type: "pause"; generation: number; by?: WorldSender }
   | {
@@ -337,6 +352,7 @@ export type LoadInput = {
   generation?: number;
   fuseStart?: "cold" | "tripped";
   adcTrace?: boolean;
+  ghost?: WorldGhostSpec | null;
 };
 
 export type LoadResult =
@@ -354,8 +370,28 @@ function failureText(held: HeldFailure): string {
   return text || "world failed";
 }
 
+type Ghost = {
+  reading: GhostReading;
+  run: ReturnType<typeof createSession> | null;
+};
+
 function createSession(host: SimHost) {
-  const s = createState(host);
+  let ghostSpec: WorldGhostSpec | null = null;
+  let ghost: Ghost | null = null;
+  // Each state this run posts carries the ghost's poses and the joint gap.
+  const s = createState({
+    ...host,
+    post(message) {
+      if (message.type !== "state" || !ghost) {
+        host.post(message);
+        return;
+      }
+      host.post({
+        ...message,
+        state: { ...message.state, ghost: ghostState(ghost.reading) },
+      });
+    },
+  });
 
   function countsOf(compiled: CompiledWorld): WorldModelCounts {
     return {
@@ -482,9 +518,118 @@ function createSession(host: SimHost) {
   /** One simulated millisecond: `perMs` master steps. */
   function advanceMs() {
     for (let k = 0; k < s.perMs; k++) advanceOne();
+    stepGhost();
+  }
+
+  /** The ghost's same millisecond, then the gap at its end. */
+  function stepGhost() {
+    const run = ghost?.run;
+    if (!ghost || !run || !s.sim) return;
+    const inner = run.inner.s;
+    try {
+      run.inner.advanceMs();
+    } catch (err: unknown) {
+      dropGhost(`the ghost run stopped: ${thrownMessage(err)}`);
+      return;
+    }
+    if (!inner.sim) return;
+    measurePairs(
+      ghost.reading.pairs,
+      s.sim.data.qpos as Float64Array,
+      inner.sim.data.qpos as Float64Array
+    );
+  }
+
+  function dropGhost(error: string) {
+    if (!ghost) return;
+    ghost.reading.error = error;
+    ghost.run?.dispose();
+    ghost.run = null;
+  }
+
+  function closeGhost() {
+    ghost?.run?.dispose();
+    ghost = null;
+  }
+
+  /**
+   * Build the ghost beside a run that just built. It reads the world file
+   * with the spec's level written in, and runs only if that path's
+   * behaviour then comes from a snapshot. A ghost that fails leaves the
+   * run alone and says why.
+   */
+  async function buildGhost(root: string) {
+    closeGhost();
+    const spec = ghostSpec;
+    if (!spec || !s.layout) return;
+    const reading: GhostReading = { spec, poses: () => null, pairs: [] };
+    const held: Ghost = { reading, run: null };
+    ghost = held;
+    const env = s.host.plan;
+    const rel = s.worldRel.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+    const worldAbs = env.resolve(root, rel);
+    let text: string;
+    try {
+      text = env.readText(worldAbs);
+    } catch {
+      reading.error = "the ghost cannot read the world file";
+      return;
+    }
+    const edited = ghostWorldText(text, spec);
+    if ("error" in edited) {
+      reading.error = `the ghost's level: ${edited.error}`;
+      return;
+    }
+    const run = createSession({
+      ...host,
+      keepSerial: false,
+      plan: ghostPlanEnv(env, worldAbs, edited.text),
+      // The ghost's events are not the run's. Its failure is the result.
+      post: () => {},
+    });
+    const loaded = await run.load({
+      project: s.project,
+      world: s.worldRel,
+      generation: 0,
+      fuseStart: s.fuseStart,
+    });
+    // A newer build replaced this ghost while it loaded.
+    if (ghost !== held) {
+      run.dispose();
+      return;
+    }
+    if (!loaded.ok) {
+      run.dispose();
+      reading.error = `the ghost did not build: ${failureText(loaded)}`;
+      return;
+    }
+    const runs = ghostRunsSnapshot(run.report(), spec.path);
+    const layout = run.inner.s.layout;
+    if ("error" in runs || !layout) {
+      run.dispose();
+      reading.error = "error" in runs ? runs.error : "the ghost has no joints";
+      return;
+    }
+    reading.ref = runs.ref;
+    reading.impl = runs.impl;
+    reading.pairs = ghostPairs(s.layout.joints, layout.joints);
+    reading.poses = () => samplePoses(run.inner.s);
+    held.run = run;
+  }
+
+  /** Inputs the run takes from outside reach the ghost too. */
+  function toGhost(fn: (inner: typeof s) => void) {
+    const run = ghost?.run;
+    if (!run) return;
+    try {
+      fn(run.inner.s);
+    } catch (err: unknown) {
+      dropGhost(`the ghost run stopped: ${thrownMessage(err)}`);
+    }
   }
 
   function dispose() {
+    closeGhost();
     s.serialChunks.length = 0;
     s.seams.reset();
     s.playing = false;
@@ -616,6 +761,7 @@ function createSession(host: SimHost) {
     openRecorder(s);
     s.pendingNotes.push(...holds);
     latchSupplyNodes(s);
+    await buildGhost(root);
     post(s, {
       type: "ready",
       generation: s.generation,
@@ -735,6 +881,7 @@ function createSession(host: SimHost) {
     s.worldRel = input.world;
     s.fuseStart = input.fuseStart === "tripped" ? "tripped" : "cold";
     s.adcTrace = input.adcTrace === true;
+    ghostSpec = input.ghost ?? null;
     if (await build()) return { ok: true };
     return heldResult();
   }
@@ -784,11 +931,13 @@ function createSession(host: SimHost) {
         generation: message.generation,
         fuseStart: message.fuseStart,
         adcTrace: message.adcTrace,
+        ghost: message.ghost,
       });
       return;
     }
     s.generation = message.generation;
     if (message.type === "reload") {
+      if (message.ghost !== undefined) ghostSpec = message.ghost;
       await reload();
       return;
     }
@@ -796,13 +945,18 @@ function createSession(host: SimHost) {
     else if (message.type === "pause") pause(message.by);
     else if (message.type === "step")
       step(message.n, message.pauseBy, message.request);
-    else if (message.type === "setTarget")
+    else if (message.type === "setTarget") {
       setTarget(s, message.partId, message.radians);
-    else if (message.type === "moveTarget")
+      toGhost((inner) => setTarget(inner, message.partId, message.radians));
+    } else if (message.type === "moveTarget") {
       moveTarget(s, message.id, message.position);
-    else if (message.type === "reloadBoard") reloadBoard(s, message.board);
-    else if (message.type === "serialIn") {
+      toGhost((inner) => moveTarget(inner, message.id, message.position));
+    } else if (message.type === "reloadBoard") {
+      reloadBoard(s, message.board);
+      toGhost((inner) => reloadBoard(inner, message.board));
+    } else if (message.type === "serialIn") {
       serialIn(s, message.board, message.text, message.by);
+      toGhost((inner) => serialIn(inner, message.board, message.text));
     } else if (message.type === "fault") s.throwOnStep = true;
   }
 
@@ -862,18 +1016,26 @@ function createSession(host: SimHost) {
     reload,
     step: runSteps,
     state: () => sample(s),
-    serialIn: (id: string, text: string, by?: WorldSender) =>
-      serialIn(s, id, text, by),
+    serialIn: (id: string, text: string, by?: WorldSender) => {
+      serialIn(s, id, text, by);
+      toGhost((inner) => serialIn(inner, id, text));
+    },
     drainSerial,
     seams: seamRows,
     report: () => s.runReport,
     record: (query: RecordQuery) => record(s, query),
-    setTarget: (partId: string, radians: number) =>
-      setTarget(s, partId, radians),
+    setTarget: (partId: string, radians: number) => {
+      setTarget(s, partId, radians);
+      toGhost((inner) => setTarget(inner, partId, radians));
+    },
     play,
     pause,
     dispose: close,
     branchReading,
+    /** The ghost's last frame, or null when there is no ghost. */
+    ghost: () => (ghost ? ghostState(ghost.reading) : null),
+    /** For a ghost run inside this module only. */
+    inner: { s, advanceMs },
   };
 }
 
@@ -928,6 +1090,10 @@ export class Sim {
   }
   dispose(): void {
     this.session.dispose();
+  }
+  /** The snapshot ghost's frame. Null when the run has none. */
+  ghost(): WorldGhostState | null {
+    return this.session.ghost();
   }
   /**
    * Branch current and node voltages for a part stamped on a rail.

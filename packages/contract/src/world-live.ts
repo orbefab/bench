@@ -341,7 +341,47 @@ export type WorldState = {
    * timelines. `from` > 0 means the front of the recording was dropped.
    */
   recording?: RecordingSummary;
+  /**
+   * The snapshot ghost, when a client asked for one. Absent when off, and
+   * on a client from before the ghost.
+   */
+  ghost?: WorldGhostState;
 };
+
+/**
+ * Run the same world a second time with the behaviour at instance `path`
+ * set to `class`/`variant`, its snapshot. Every other level is the world's.
+ */
+export type WorldGhostSpec = {
+  path: string;
+  class: LevelClass;
+  variant: string;
+};
+
+/** One joint's gap between the run and its ghost, in radians. */
+export type WorldGhostJoint = {
+  robot: string;
+  joint: string;
+  /** |run − ghost| at this step. */
+  now: number;
+  /** The largest `now` since both runs started. */
+  max: number;
+};
+
+/**
+ * The ghost run, stepped with the same inputs as the run. `poses` is its
+ * bodies, like `WorldState.poses`. `joints` is sorted by `max`, largest
+ * first. `error` replaces both when the ghost could not run.
+ */
+export type WorldGhostState =
+  | {
+      path: string;
+      ref?: string;
+      impl: string;
+      poses: Record<string, Record<string, WorldLinkPose>>;
+      joints: WorldGhostJoint[];
+    }
+  | { path: string; error: string };
 
 /**
  * Who sent play or pause. A principal is its kind plus the device label
@@ -398,7 +438,12 @@ export type WorldClientMessage =
    * `capture-progress`, then `captured` or `capture-failed`. One job per world.
    */
   | { type: "capture"; nonce: string; path: string; axis: CaptureAxisName }
-  | { type: "capture-abort"; nonce: string };
+  | { type: "capture-abort"; nonce: string }
+  /**
+   * Turn the snapshot ghost on or off for this document. Both runs restart
+   * from zero so they share every input.
+   */
+  | { type: "ghost"; ghost: WorldGhostSpec | null };
 
 /** The axes a capture recipe can fill. */
 export type CaptureAxisName = "behaviour" | "body";

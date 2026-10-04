@@ -44,7 +44,8 @@ export function scalar(value: Float64Array): number {
   return value[0] ?? 0;
 }
 
-export function sample(s: SessionState): WorldState | null {
+/** robot id → link → world pose, after a forward pass. */
+export function samplePoses(s: SessionState): WorldState["poses"] | null {
   if (!s.sim) return null;
   const { mj, model, data, index } = s.sim;
   mj.mj_forward(model, data);
@@ -60,6 +61,13 @@ export function sample(s: SessionState): WorldState | null {
     }
     poses[robotId] = robot;
   }
+  return poses;
+}
+
+export function sample(s: SessionState): WorldState | null {
+  const poses = samplePoses(s);
+  if (!s.sim || !poses) return null;
+  const { data, index } = s.sim;
   const joints: WorldState["joints"] = {};
   for (const [robotId, names] of Object.entries(index.jointNamesByRobot)) {
     const robot: WorldState["joints"][string] = {};

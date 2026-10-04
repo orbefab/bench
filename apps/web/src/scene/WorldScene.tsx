@@ -28,6 +28,7 @@ import {
   releaseMeshes,
 } from "@/lib/world-assets";
 import { isClick, objectFromPose, poseDelta } from "@/lib/world-drag";
+import { ghostRobots } from "@/lib/world-ghost";
 import { moveTarget } from "@/lib/world-move";
 import { type PortBody, ROBOT_HALF } from "@/lib/world-ports";
 import {
@@ -295,6 +296,108 @@ function VisualOrigin({
 
 function linkKey(robotId: string, link: string) {
   return `${robotId}/${link}`;
+}
+
+const noRaycast = () => {};
+
+/**
+ * The snapshot ghost's robots: the same links, translucent, posed from
+ * the ghost run. A robot shows only once it has moved apart from its
+ * ghost. Never picked, never highlighted, hidden while scrubbing.
+ */
+function GhostRobots({
+  robots,
+}: {
+  robots: [string, Map<string, LoadedVisual[]>][];
+}) {
+  const frames = useRef(new Map<string, THREE.Group>());
+  const links = useRef(new Map<string, THREE.Group>());
+  const material = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x7cc4f0,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    []
+  );
+  useEffect(() => () => material.dispose(), [material]);
+  useFrame(() => {
+    const ghost = worldViewPoses() ? undefined : worldLiveState()?.ghost;
+    const shown = ghostRobots(ghost);
+    for (const [robotId, frame] of frames.current) {
+      frame.visible = shown.has(robotId);
+    }
+    if (!ghost || "error" in ghost) return;
+    for (const robotId of shown) {
+      for (const [name, pose] of Object.entries(ghost.poses[robotId] ?? {})) {
+        const group = links.current.get(linkKey(robotId, name));
+        if (!group) continue;
+        group.position.set(pose.p[0], pose.p[1], pose.p[2]);
+        group.quaternion.set(pose.q[1], pose.q[2], pose.q[3], pose.q[0]);
+      }
+    }
+  });
+  return (
+    <group name="ghost">
+      {robots.map(([robotId, robotLinks]) => (
+        <group
+          key={robotId}
+          visible={false}
+          ref={(node) => {
+            if (node) {
+              node.traverse((child) => {
+                child.raycast = noRaycast;
+              });
+              frames.current.set(robotId, node);
+            } else frames.current.delete(robotId);
+          }}
+        >
+          {[...robotLinks.entries()].map(([name, visuals]) => (
+            <group
+              key={name}
+              renderOrder={1}
+              ref={(node) => {
+                const key = linkKey(robotId, name);
+                if (node) links.current.set(key, node);
+                else links.current.delete(key);
+              }}
+            >
+              {visuals.map((visual, visualIndex) => (
+                <VisualOrigin
+                  key={`${visual.link}:${visualIndex}`}
+                  xyz={visual.xyz}
+                  rpy={visual.rpy}
+                >
+                  {visual.mesh?.kind === "stl" ? (
+                    <mesh
+                      geometry={visual.mesh.geometry}
+                      material={material}
+                      scale={visual.scale}
+                      raycast={noRaycast}
+                    />
+                  ) : visual.mesh?.kind === "obj" ? (
+                    <ObjVisual
+                      object={visual.mesh.object}
+                      material={material}
+                      scale={visual.scale}
+                    />
+                  ) : visual.primitive ? (
+                    <PrimitiveMesh
+                      primitive={visual.primitive}
+                      material={material}
+                    />
+                  ) : null}
+                </VisualOrigin>
+              ))}
+            </group>
+          ))}
+        </group>
+      ))}
+    </group>
+  );
 }
 
 function selectionKey(selection: NonNullable<WorldSelection>): string {
@@ -753,6 +856,7 @@ export function WorldScene({
             })}
           </RobotFrame>
         ))}
+        <GhostRobots robots={robots} />
         {primitives.map((primitive) =>
           primitive.pose ? (
             <Body key={primitive.id} pose={primitive.pose}>

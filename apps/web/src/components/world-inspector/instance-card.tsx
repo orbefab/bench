@@ -170,7 +170,7 @@ export function InstanceBody({
   const stays = useWorldEdit((s) => s.stays);
   return (
     <>
-      <RunCard path={node.id} />
+      <RunCard path={node.id} node={node} />
       <Section title="Ports">
         {card.ports.length === 0 ? (
           <p className="text-[12px] text-muted-foreground">None</p>

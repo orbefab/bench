@@ -1,8 +1,12 @@
 /** The run card: what this part runs as, and how far to trust it. */
-import { useMemo } from "react";
+import type { WorldViewNode } from "@sfab-bench/contract";
+import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { sendWorldGhost } from "@/hooks/useWorldRun";
 import { type LevelSnapshot, levelCard } from "@/lib/level-card";
-import { useWorld } from "@/state/world";
+import { type GhostReadout, ghostOffer, ghostReadout } from "@/lib/world-ghost";
+import { useWorld, worldLiveState } from "@/state/world";
 
 function Tag({ text, tone }: { text: string; tone?: "warn" }) {
   return (
@@ -80,7 +84,75 @@ function SnapshotBlock({
   );
 }
 
-export function RunCard({ path }: { path: string }) {
+/** The live state is not React state: read the ghost a few times a second. */
+function useGhostReadout(path: string): GhostReadout | null {
+  const [readout, setReadout] = useState<GhostReadout | null>(null);
+  useEffect(() => {
+    let last = "";
+    const read = () => {
+      const next = ghostReadout(worldLiveState()?.ghost, path);
+      const key = JSON.stringify(next);
+      if (key === last) return;
+      last = key;
+      setReadout(next);
+    };
+    read();
+    const timer = window.setInterval(read, 250);
+    return () => window.clearInterval(timer);
+  }, [path]);
+  return readout;
+}
+
+function GhostBlock({ node }: { node: WorldViewNode }) {
+  const offer = useMemo(() => ghostOffer(node), [node]);
+  const readout = useGhostReadout(node.id);
+  if (!offer && !readout) return null;
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
+          {readout
+            ? "Ghost: the same world with this part on its snapshot"
+            : `Run ${offer?.ref ?? "the snapshot"} beside it, drawn as a ghost`}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-xs"
+          onClick={() => {
+            if (readout) sendWorldGhost(null);
+            else if (offer) {
+              sendWorldGhost({
+                path: offer.path,
+                class: offer.class,
+                variant: offer.variant,
+              });
+            }
+          }}
+        >
+          {readout ? "Hide ghost" : "Show ghost"}
+        </Button>
+      </div>
+      {readout?.kind === "error" ? (
+        <div className="break-words text-[12px] text-amber-800 dark:text-amber-400">
+          {readout.text}
+        </div>
+      ) : null}
+      {readout?.kind === "gap" ? (
+        <Lines label={`Gap to ${readout.ref}`} lines={readout.lines} />
+      ) : null}
+    </div>
+  );
+}
+
+export function RunCard({
+  path,
+  node,
+}: {
+  path: string;
+  node?: WorldViewNode;
+}) {
   const report = useWorld((s) => s.report);
   const card = useMemo(() => levelCard(report, path), [report, path]);
   if (!card) return null;
@@ -109,6 +181,7 @@ export function RunCard({ path }: { path: string }) {
         {card.nested.map((row) => (
           <SnapshotBlock key={row.path} snapshot={row} nested />
         ))}
+        {node ? <GhostBlock node={node} /> : null}
       </CardContent>
     </Card>
   );
