@@ -284,7 +284,7 @@ function circuit(
 export const circuitAdapters: FormAdapter[] = [
   circuit("resistor@1", stampResistor),
   circuit("capacitor@1", stampCapacitor),
-  circuit("diode@1", stampDiode),
+  circuit("diode@1", stampDiode, ["A", "K"]),
   circuit("ptc-fuse@1", stampPtc),
   circuit("pmos-switch@1", stampPmos),
   circuit("ldo-regulator@1", stampLdo),

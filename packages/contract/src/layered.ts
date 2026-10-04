@@ -513,7 +513,16 @@ export const SUPPLY_FORMS = [
 ] as const;
 
 export type BehaviourImpl = { omits: string[] } & (
-  | { kind: "form"; form: FormId; params: Record<string, FormParam> }
+  | {
+      kind: "form";
+      form: FormId;
+      params: Record<string, FormParam>;
+      /**
+       * The form's port → this part's port, when the names differ (a
+       * snapshot in another form). Absent: the form's ports are the part's.
+       */
+      bind?: Record<string, string>;
+    }
   | { kind: "snapshot"; ref: string }
   | { kind: "composite"; netlist: Netlist }
   | {
@@ -693,6 +702,11 @@ export type CaptureRecipe =
         current?: number[];
       };
       envelope: { marginA?: number };
+      /**
+       * Write this two-port law, fitted to the sweep, instead of a table.
+       * Its ports bind to `across` in order.
+       */
+      fit?: "diode@1";
       /** Level id that takes the new variant. Absent: the level that already holds a snapshot. */
       into?: string;
     }
@@ -1021,6 +1035,11 @@ export type SnapshotFile = {
   axis: "behaviour" | "body";
   form: FormId;
   ports: { inputs: string[]; outputs: string[] };
+  /**
+   * The form's port → the part's port, for a form whose port names are not
+   * the part's (a `diode@1` law on a module's `IN` and `GND`).
+   */
+  bind?: Record<string, string>;
   /**
    * Numbers, port names, and short lists. `across` is two port names.
    * `iSense` is 1 (current into the first port) or -1 (current out of it).

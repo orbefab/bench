@@ -737,8 +737,15 @@ function digitalPeer(
 }
 
 /** Ports a form stamps that this instance's type does not have. */
+/** The form's ports the part lacks, after the form's `bind`. */
 function formPortGap(inst: LiveInstance, ports: readonly string[]): string[] {
-  return ports.filter((name) => !inst.type.ports[name]);
+  const bind = formBind(inst);
+  return ports.filter((name) => !inst.type.ports[bind?.[name] ?? name]);
+}
+
+function formBind(inst: LiveInstance): Record<string, string> | undefined {
+  const behaviour = selectedBehaviour(inst);
+  return behaviour?.kind === "form" ? behaviour.bind : undefined;
 }
 
 function circuitInstOf(inst: LiveInstance): CircuitInst | null {
@@ -754,11 +761,19 @@ function circuitInstOf(inst: LiveInstance): CircuitInst | null {
   if (!params) return null;
   const stamped = formAdapter(behaviour.form)?.ports;
   if (stamped && formPortGap(inst, stamped).length > 0) return null;
+  // Keyed by the form's port; the value is the part's own port, where the
+  // wires land.
   const ports: Record<string, string> = {};
-  for (const [name, decl] of Object.entries(inst.type.ports)) {
-    if (decl.internal) continue;
-    if (stamped && !stamped.includes(name)) continue;
-    ports[name] = `${inst.path}.${name}`;
+  if (behaviour.bind && stamped) {
+    for (const name of stamped) {
+      ports[name] = `${inst.path}.${behaviour.bind[name] ?? name}`;
+    }
+  } else {
+    for (const [name, decl] of Object.entries(inst.type.ports)) {
+      if (decl.internal) continue;
+      if (stamped && !stamped.includes(name)) continue;
+      ports[name] = `${inst.path}.${name}`;
+    }
   }
   const ldo = ldoLaw(behaviour, inst.params);
   if (ldo === null) return null;

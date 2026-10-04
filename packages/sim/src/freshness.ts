@@ -36,15 +36,17 @@ export function provenanceHash(
       const hash = hingeHash(from.part, from.level, opts, env);
       return hash ? { checked: true, hash } : { checked: false };
     }
-    if (file.axis === "behaviour" && file.form !== "table@1") {
+    // A capture across a port pair (a table, or a law fitted to that
+    // sweep) hashes the stamp it swept. Any other behaviour snapshot was
+    // captured from the group running.
+    const across = pair(file.params.across);
+    if (file.axis === "behaviour" && !across) {
       const hash = groupHash(from.part, from.level, (id) => {
         const found = loadPartById(opts.worldDir, libOpts(opts, env.store), id);
         return "part" in found ? found.part : null;
       });
       return hash ? { checked: true, hash } : { checked: false };
     }
-    if (file.form !== "table@1") return { checked: false };
-    const across = pair(file.params.across);
     if (!across) return { checked: false };
     const captured =
       file.provenance.variant && file.provenance.instance

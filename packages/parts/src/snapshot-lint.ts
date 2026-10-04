@@ -288,6 +288,38 @@ function tablePorts(
   return diags;
 }
 
+/** Each bound form port lands on a distinct port the part declares. */
+function bindErrors(
+  snap: SnapshotFile,
+  ctx: SnapshotLintContext
+): Diagnostic[] {
+  if (!snap.bind || !ctx.ports) return [];
+  const diags: Diagnostic[] = [];
+  const seen = new Set<string>();
+  for (const [form, part] of Object.entries(snap.bind)) {
+    const reason = !ctx.ports[part]
+      ? `bind ${form} → ${part}: ${part} is not on ${snap.partType}`
+      : seen.has(part)
+        ? `bind ${form} → ${part}: ${part} is bound twice`
+        : null;
+    seen.add(part);
+    if (!reason) continue;
+    diags.push(
+      makeDiag({
+        severity: "error",
+        code: "snapshot",
+        path: snap.part || "snapshot",
+        port: part,
+        quantity: "Snapshot",
+        left: form,
+        right: snap.partType,
+        detail: reason,
+      })
+    );
+  }
+  return diags;
+}
+
 const ROTATIONAL_FIELD: Record<string, Quantity> = {
   angle: "Angle",
   speed: "AngularVelocity",
@@ -500,6 +532,7 @@ export function lintSnapshot(
   }
   diagnostics.push(...fixtureSupplyDiags(snap, ctx));
   diagnostics.push(...tablePorts(snap, ctx));
+  diagnostics.push(...bindErrors(snap, ctx));
   diagnostics.push(...hingeErrors(snap, ctx));
   diagnostics.push(...plausibleErrors(snap, ctx));
   const quality = earned(snap, diagnostics.length > 0);

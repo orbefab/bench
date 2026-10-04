@@ -569,7 +569,13 @@ function formOfSnapshot(
       params[key] = value as unknown as SiNumber;
     }
   }
-  return { kind: "form", form: file.form, params, omits: variant.omits };
+  return {
+    kind: "form",
+    form: file.form,
+    params,
+    ...(file.bind ? { bind: { ...file.bind } } : {}),
+    omits: variant.omits,
+  };
 }
 
 function remember(rows: LoadedSnapshot[], loaded: LoadedSnapshot): void {
