@@ -412,8 +412,9 @@ try {
       )}; runs as datasheet bit for bit; states shaft.angle ${stated("free-run-max-abs", "shaft.angle")} rad, V+.current ${stated("free-run-max-abs", "V+.current")} A; second capture byte-identical`
   );
 
-  // A child edit makes the capture stale. A snapshot on the wrong axis,
-  // or of another part type, does not run as the law.
+  // A child edit, or an edit of the servo's own body (the snapshot side
+  // runs it), makes the capture stale. A snapshot on the wrong axis, or of
+  // another part type, does not run as the law.
   const sWorld = coarse.s;
   const report = () => {
     const planned = planWorld(dir, sWorld, nodePlanEnv);
@@ -433,6 +434,19 @@ try {
     "a pot edit leaves the group capture fresh"
   );
   rmSync(potFile);
+  const servoFile = join(parts, "sg90@1.0.0.json");
+  const servo = JSON.parse(
+    readFileSync(join(catalog, "sg90@1.0.0.json"), "utf8")
+  );
+  servo.axes.body["2"].variants["gear-train"].shafts[0].inertia *= 2;
+  writeFileSync(servoFile, JSON.stringify(servo));
+  expect(
+    report().report?.snapshots.find(
+      (item) => item.ref === "sfab/sg90-servo@1.0.0"
+    )?.stale === true,
+    "a body edit leaves the group capture fresh"
+  );
+  rmSync(servoFile);
   mkdirSync(join(dir, "snapshots/sfab"), { recursive: true });
   const local = join(dir, "snapshots/sfab/sg90-servo@1.0.0.json");
   const text = readFileSync(snapFile, "utf8");
@@ -467,9 +481,44 @@ try {
       `wrong ${label}: ${said.join(" | ")}`
     );
   }
+
+  // A tagged SI param is a param. The run checks the part's own current
+  // against the envelope: the arm sweep on the lumped body stays inside
+  // it, a tighter bound warns once and the run goes on.
+  writeFileSync(
+    local,
+    text.replace(
+      '"quiescent": 0.01',
+      '"quiescent": { "v": 0.01, "q": "Current", "d": { "A": 1 } }'
+    )
+  );
+  const tagged = report().parts.find((item) => item.id === "servo");
+  expect(
+    tagged?.motor?.quiescent === 0.01,
+    `tagged quiescent ran as ${tagged?.motor?.quiescent}`
+  );
+  expect(!s.warnings.includes("envelope"), "the arm sweep left the envelope");
+  writeFileSync(
+    local,
+    text.replace(
+      /"V\+\.current": \[\s*(-?[0-9.e-]+),\s*[0-9.e-]+\s*\]/,
+      '"V+.current": [$1, 0.3]'
+    )
+  );
+  const tight = await runWorld(dir, sWorld);
+  const envelope = tight.report?.warnings.filter(
+    (item) => item.code === "envelope"
+  );
+  expect(
+    envelope?.length === 1 &&
+      envelope[0]?.port === "V+" &&
+      envelope[0]?.quantity === "Current" &&
+      tight.joint.length === s.joint.length,
+    `tight envelope: ${JSON.stringify(envelope)}`
+  );
   rmSync(local);
   console.log(
-    "group snapshot: stale on a child edit; wrong axis and part type refused"
+    `group snapshot: stale on a child or body edit; wrong axis and part type refused; tagged param runs; ${envelope?.[0]?.message}`
   );
 } finally {
   rmSync(dir, { recursive: true, force: true });

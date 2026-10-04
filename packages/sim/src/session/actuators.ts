@@ -8,7 +8,13 @@ import { RangerRuntime } from "../ranger";
 import { blankTrack, trackServo } from "../servo";
 import { targetPosition } from "../targets";
 import { fail, simMs } from "./common";
-import { latchedBoardNode, latchedSupplyNode, powerBoardOf } from "./rails";
+import {
+  latchedBoardNode,
+  latchedSupplyNode,
+  loadBoard,
+  partVolts,
+  powerBoardOf,
+} from "./rails";
 import { scalar } from "./recorder";
 import {
   applyShaftTorque,
@@ -196,6 +202,7 @@ export function classifyLoads(s: SessionState) {
       stallForMs: load.stallMs,
     });
     noteBodyEnvelope(s, load.partId, omega);
+    noteBehaviourEnvelope(s, load);
   }
   classifyShafts(s);
 }
@@ -220,6 +227,27 @@ function noteBodyEnvelope(
   warnEnvelope(
     s,
     partId,
+    snap.ref,
+    { bounds: snap.bounds, current: [0, 0] },
+    observed
+  );
+}
+
+/** The part's own current and voltage against its behaviour snapshot's bounds. */
+function noteBehaviourEnvelope(s: SessionState, load: Load): void {
+  const snap = s.runPlan?.parts.find(
+    (part) => part.id === load.partId
+  )?.behaviourSnapshot;
+  if (!snap || !load.supplyId) return;
+  const volts = partVolts(s, load.supplyId, loadBoard(load));
+  const observed: Record<string, number> = {};
+  for (const key of Object.keys(snap.bounds)) {
+    if (key.endsWith(".current")) observed[key] = load.current;
+    else if (key.endsWith(".voltage")) observed[key] = volts;
+  }
+  warnEnvelope(
+    s,
+    load.partId,
     snap.ref,
     { bounds: snap.bounds, current: [0, 0] },
     observed

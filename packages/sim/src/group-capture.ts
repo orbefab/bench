@@ -214,7 +214,7 @@ export async function writeGroupSnapshot(
     const a = (await env.runWorld(root, deep, entry.scene.ms)).read;
     const b = (await env.runWorld(root, snapWorld, entry.scene.ms)).read;
     const angleOf = (frame: RecordedFrame) => frame.joints[robot]?.[joint];
-    const partOf = (key: "current" | "voltage") => (frame: RecordedFrame) =>
+    const partOf = (key: "current" | "maxCurrent") => (frame: RecordedFrame) =>
       frame.parts[instance]?.[key];
     const angle = compare(channel(a, angleOf), channel(b, angleOf));
     const current = compare(
@@ -240,8 +240,24 @@ export async function writeGroupSnapshot(
         row("free-run-rms", `${power}.current`, current.rms),
       ],
       {
-        [`${power}.voltage`]: range(channel(a, partOf("voltage"))),
-        [`${power}.current`]: range(channel(a, partOf("current"))),
+        // Both sides, so the snapshot's own run of the scene is inside. A
+        // frame's `maxCurrent` is the worst step in its window. The bound
+        // is widened by the stated error: a run nearer than that is inside
+        // what the snapshot already claims. The voltage is sampled only at
+        // the frame, so it is not bounded.
+        [`${power}.current`]: widen(
+          [
+            range([
+              ...channel(a, partOf("current")),
+              ...channel(b, partOf("current")),
+            ])[0],
+            range([
+              ...channel(a, partOf("maxCurrent")),
+              ...channel(b, partOf("maxCurrent")),
+            ])[1],
+          ],
+          current.maxAbs
+        ),
       }
     );
     const lint = lintOf(done, type);
@@ -362,6 +378,10 @@ function range(values: number[]): [number, number] {
     if (value > hi) hi = value;
   }
   return [round9(lo), round9(hi)];
+}
+
+function widen([lo, hi]: [number, number], by: number): [number, number] {
+  return [round9(lo - by), round9(hi + by)];
 }
 
 function round9(n: number): number {

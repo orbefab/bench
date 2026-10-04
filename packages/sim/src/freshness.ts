@@ -78,8 +78,9 @@ export function provenanceHash(
 }
 
 /**
- * The default composite at `level` of the part's behaviour, and every part
- * file its netlist reaches, through the composites of those parts too.
+ * The default composite at `level` of the part's behaviour, the part's own
+ * body axis (the snapshot side may run any of its levels), and every part
+ * file the netlist reaches, through the composites of those parts too.
  * Null when that variant is not a composite or a part is missing.
  */
 export function groupHash(
@@ -106,7 +107,7 @@ export function groupHash(
       }
     }
   }
-  return contentHash({ impl, parts });
+  return contentHash({ impl, body: root?.axes?.body ?? null, parts });
 }
 
 function childrenOf(impl: BehaviourImpl): string[] {

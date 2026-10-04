@@ -257,6 +257,14 @@ export type RunPart = {
     ref: string;
     bounds: Record<string, [number, number]>;
   };
+  /**
+   * Set when the behaviour is a snapshot run as its form. The run checks
+   * the part's own current and voltage against these bounds.
+   */
+  behaviourSnapshot?: {
+    ref: string;
+    bounds: Record<string, [number, number]>;
+  };
 };
 
 export type { RunControl, RunRanger, RunShaft };
@@ -871,6 +879,26 @@ function numberParam(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** The behaviour snapshot an instance runs as its form, with its bounds. */
+function behaviourSnapshotOf(
+  inst: LiveInstance,
+  loaded: LoadResult
+): Pick<RunPart, "behaviourSnapshot"> {
+  const ran = loaded.snapshotRuns.find(
+    (row) => row.path === inst.path && row.axis === "behaviour"
+  );
+  const found = ran
+    ? loaded.snapshots.find((row) => row.id === ran.ref)
+    : undefined;
+  if (!ran || !found) return {};
+  return {
+    behaviourSnapshot: {
+      ref: ran.ref,
+      bounds: boundPairs(found.file.envelope.bounds),
+    },
+  };
+}
+
 function boundPairs(
   bounds: Record<string, unknown>
 ): Record<string, [number, number]> {
@@ -1262,6 +1290,7 @@ function build(
           damping: hinge.damping,
         },
         ...(hinge.bodySnapshot ? { bodySnapshot: hinge.bodySnapshot } : {}),
+        ...behaviourSnapshotOf(inst, loaded),
         ...(drives ? { drives } : {}),
       });
       pushBox(boxes, inst, "part");

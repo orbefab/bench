@@ -13,6 +13,7 @@ import {
   type PartFile,
   ROOT_PATH,
   type RunReport,
+  type SiNumber,
   type SnapshotFile,
   SUPPLY_FORMS,
   stepsPerMs,
@@ -556,9 +557,17 @@ function formOfSnapshot(
   file: LoadedSnapshot["file"],
   variant: BehaviourImpl
 ): BehaviourImpl {
-  const params: Record<string, number> = {};
+  // A number or a tagged SI number, as the linter accepts; the form reads
+  // either. Strings and arrays are table data, not form params.
+  const params: Record<string, SiNumber> = {};
   for (const [key, value] of Object.entries(file.params)) {
-    if (typeof value === "number") params[key] = value;
+    const tagged = value as unknown as { v?: unknown } | null;
+    if (
+      typeof value === "number" ||
+      (tagged && typeof tagged === "object" && typeof tagged.v === "number")
+    ) {
+      params[key] = value as unknown as SiNumber;
+    }
   }
   return { kind: "form", form: file.form, params, omits: variant.omits };
 }
