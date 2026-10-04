@@ -1,14 +1,12 @@
 /** Which instance a firmware chip runs as, and what a composite board exposes from it. */
 
-import type { BehaviourImpl } from "@sfab-bench/contract";
+import type {
+  BehaviourImpl,
+  Netlist,
+  PartFile,
+  PinMapRef,
+} from "@sfab-bench/contract";
 import { behaviourNetlist, type LiveInstance } from "./levels";
-
-/** `publisher/name@version` → `name`. */
-function partStem(id: string): string {
-  const slash = id.lastIndexOf("/");
-  const at = id.lastIndexOf("@");
-  return id.slice(slash + 1, at > slash ? at : undefined);
-}
 
 /**
  * The instance a firmware part runs as.
@@ -42,58 +40,71 @@ export function boardHostOf(
  * Header port to chip pin.
  *
  * A composite board uses the expose table of the level that is running.
- * A firmware level that is its own board has no chip child. The pin map
- * is a fact of the board, not of that level, so the lowest composite
- * class on the same part (then the variant name) supplies the table.
- * Empty when the part authors no such expose: a bare chip.
+ * A firmware level that is its own board has no chip child: its
+ * `pinMapFrom` names the composite level of the same part whose expose is
+ * the pin map, and the chip child in it. Empty for a bare chip, which names
+ * none. The library lint refuses a part with a composite level whose
+ * firmware level names none, or one that does not resolve, so such a
+ * board never runs as a bare chip.
  */
 export function chipExposure(
   chip: LiveInstance,
   host: LiveInstance
 ): Map<string, string> {
   if (host !== chip) return selectedExpose(chip, host);
-  return authoredPinMap(host);
+  const behaviour = host.axes.behaviour.impl as BehaviourImpl | null;
+  if (behaviour?.kind !== "firmware" || !behaviour.pinMapFrom) {
+    return new Map();
+  }
+  const source = pinMapSource(host.part, behaviour.pinMapFrom);
+  return "error" in source
+    ? new Map()
+    : exposeOnto(source.netlist, source.instance);
+}
+
+/**
+ * The composite netlist a `pinMapFrom` names on `part`, or why it does not
+ * resolve: the level is missing or not a composite, the instance is not in
+ * its netlist, or no expose reaches that instance.
+ */
+export function pinMapSource(
+  part: PartFile,
+  ref: PinMapRef
+): { netlist: Netlist; instance: string } | { error: string } {
+  const at = `class ${ref.class} variant ${ref.variant}`;
+  const impl =
+    part.axes?.behaviour?.[String(ref.class) as "0"]?.variants[ref.variant];
+  if (!impl) return { error: `${at} does not exist` };
+  if (impl.kind !== "composite")
+    return { error: `${at} is ${impl.kind}, not composite` };
+  if (!impl.netlist.instances[ref.instance]) {
+    return { error: `${at} has no instance ${ref.instance}` };
+  }
+  if (exposeOnto(impl.netlist, ref.instance).size === 0) {
+    return { error: `${at} exposes no port of ${ref.instance}` };
+  }
+  return { netlist: impl.netlist, instance: ref.instance };
 }
 
 function selectedExpose(
   chip: LiveInstance,
   host: LiveInstance
 ): Map<string, string> {
-  const out = new Map<string, string>();
   const netlist = behaviourNetlist(
     host.part,
     host.axes.behaviour.impl as BehaviourImpl | null
   );
   const child = chip.path.slice(chip.path.lastIndexOf(".") + 1);
-  for (const [port, target] of Object.entries(netlist?.expose ?? {})) {
+  return netlist ? exposeOnto(netlist, child) : new Map();
+}
+
+/** The netlist's expose onto `child`'s ports, in expose order. */
+function exposeOnto(netlist: Netlist, child: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [port, target] of Object.entries(netlist.expose)) {
     if (target.startsWith(`${child}.`)) {
       out.set(port, target.slice(child.length + 1));
     }
   }
   return out;
-}
-
-function authoredPinMap(host: LiveInstance): Map<string, string> {
-  const behaviour = host.axes.behaviour.impl as BehaviourImpl | null;
-  const chipName = behaviour?.kind === "firmware" ? behaviour.chip : null;
-  const axes = host.part.axes?.behaviour;
-  if (!chipName || !axes) return new Map();
-  for (const key of ["0", "1", "2", "3"] as const) {
-    const variants = axes[key]?.variants;
-    if (!variants) continue;
-    for (const name of Object.keys(variants).sort()) {
-      const impl = variants[name];
-      if (!impl || impl.kind !== "composite") continue;
-      const map = new Map<string, string>();
-      for (const [port, target] of Object.entries(impl.netlist.expose)) {
-        const dot = target.lastIndexOf(".");
-        if (dot < 0) continue;
-        const child = impl.netlist.instances[target.slice(0, dot)];
-        if (!child || partStem(child.part) !== chipName) continue;
-        map.set(port, target.slice(dot + 1));
-      }
-      if (map.size > 0) return map;
-    }
-  }
-  return new Map();
 }

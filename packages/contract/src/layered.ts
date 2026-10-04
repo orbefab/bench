@@ -532,6 +532,13 @@ export const SUPPLY_FORMS = [
   "battery@1",
 ] as const;
 
+/** A composite behaviour level of the same part, and its chip child. */
+export type PinMapRef = {
+  class: LevelClass;
+  variant: string;
+  instance: string;
+};
+
 export type BehaviourImpl = { omits: string[] } & (
   | {
       kind: "form";
@@ -553,6 +560,13 @@ export type BehaviourImpl = { omits: string[] } & (
       fuses?: Record<string, string>;
       /** Logic port the chip uses as reset. Absent, the rail has no reset node. */
       resetPort?: string;
+      /**
+       * The board's pin map, for a firmware level of a part that also has a
+       * composite level: that composite's `expose` onto its chip child
+       * `instance` names the header. A part with a composite level must set
+       * it. Absent on a bare chip, whose ports are its pins.
+       */
+      pinMapFrom?: PinMapRef;
       /**
        * The chip's electrical facts, as data on the chip part. The run reads
        * them from the firmware variant it resolved. The variant's `params`

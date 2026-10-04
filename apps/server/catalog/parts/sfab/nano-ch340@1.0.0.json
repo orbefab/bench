@@ -145,6 +145,11 @@
             "kind": "firmware",
             "chip": "atmega328p",
             "resetPort": "RESET",
+            "pinMapFrom": {
+              "class": 1,
+              "variant": "avr8js",
+              "instance": "mcu"
+            },
             "imageParam": "firmware",
             "railVoltage": 5,
             "resetFraction": 0.9,

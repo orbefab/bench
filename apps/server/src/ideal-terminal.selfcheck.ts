@@ -3,6 +3,12 @@
  * so the part is its own board. The header is still D0–D13, A0–A5: blink
  * drives D13, and a scene wire on D9 still stamps a pin.
  *
+ * The header comes from the level's `pinMapFrom` (layered-sim M3c), not from
+ * the chip part's id: a copy of the 328P under another id keeps the same
+ * header, chip pins, ADC labels and reset port. A board whose firmware level
+ * names no pin map, or one that does not resolve, sits idle with a named
+ * row; it never runs as a bare chip.
+ *
  * Copies `examples/nano`. Nothing under the catalog or the examples is written.
  */
 
@@ -18,7 +24,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { pinBitSet, pinIndex } from "@sfab-bench/contract";
+import { type PartFile, pinBitSet, pinIndex } from "@sfab-bench/contract";
 
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
@@ -27,6 +33,7 @@ import { planWorld } from "./world/plan";
 const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
+const catalog = fileURLToPath(new URL("../catalog/", import.meta.url));
 
 const HEADER = [
   "D0",
@@ -176,3 +183,186 @@ try {
   closeRootWatches();
   rmSync(root, { recursive: true, force: true });
 }
+
+// The pin map is the reference, not the chip part's id.
+const NANO = "sfab/nano-ch340@1.0.0";
+const CHIP = "sfab/atmega328p@1.0.0";
+type Shadow = Record<string, (part: PartFile) => PartFile>;
+type RunBoard = Extract<
+  ReturnType<typeof planWorld>,
+  { ok: true }
+>["plan"]["boards"][number];
+const catalogPart = (id: string): PartFile =>
+  JSON.parse(readFileSync(join(catalog, "parts", `${id}.json`), "utf8"));
+const firmwareLevel = (part: PartFile) => {
+  const impl = part.axes?.behaviour?.["1"]?.variants["ideal-terminal"];
+  if (impl?.kind !== "firmware") throw new Error("no ideal-terminal level");
+  return impl;
+};
+
+/** The nano-led world on `ideal-terminal`, with project shadows of parts. */
+function terminalPlan(shadows: Shadow): {
+  board: RunBoard | undefined;
+  rows: string[];
+} {
+  const dir = mkdtempSync(join(tmpdir(), "sfab-pin-map-"));
+  try {
+    cpSync(nanoDir, dir, { recursive: true });
+    const worldRel = "parts/sfab/nano-led@1.0.0.json";
+    const world = JSON.parse(readFileSync(join(dir, worldRel), "utf8")) as Doc;
+    if (!world.play?.levels) throw new Error("nano-led has no play.levels");
+    world.play.levels.paths = {
+      nano: { behaviour: { class: 1, variant: "ideal-terminal" } },
+    };
+    writeFileSync(join(dir, worldRel), JSON.stringify(world));
+    rmSync(join(dir, "parts/sfab/nano-led@1.0.0.lock.json"), { force: true });
+    for (const [id, edit] of Object.entries(shadows)) {
+      const part = edit(catalogPart(id));
+      writeFileSync(
+        join(dir, "parts", `${part.id}.json`),
+        JSON.stringify(part)
+      );
+    }
+    const planned = planWorld(dir, worldRel);
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((item) => item.message).join("; "));
+    }
+    return {
+      board: planned.plan.boards.find((item) => item.id === "nano"),
+      rows: (planned.plan.degraded ?? [])
+        .filter((row) => row.path === "nano")
+        .map((row) => row.message),
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const pinFacts = (board: RunBoard | undefined) =>
+  JSON.stringify({
+    pinOrder: board?.pinOrder,
+    wire: board?.wire,
+    adcLabels: board?.adcLabels,
+    resetPort: board?.resetPort,
+  });
+
+try {
+  const stock = terminalPlan({});
+  expect(stock.board, "the stock ideal-terminal plans no nano board");
+  expect(
+    stock.board.pinOrder.join(",") === HEADER.join(",") &&
+      stock.board.adcLabels?.[7] === "A7",
+    `stock pin facts ${pinFacts(stock.board)}`
+  );
+
+  const COPY = "sfab/controller-copy@1.0.0";
+  const copied = terminalPlan({
+    [CHIP]: (part) => ({ ...part, id: COPY }),
+    [NANO]: (part) => {
+      for (const slot of Object.values(part.axes?.behaviour ?? {})) {
+        for (const impl of Object.values(slot?.variants ?? {})) {
+          if (impl.kind === "composite" && impl.netlist.instances.mcu) {
+            impl.netlist.instances.mcu.part = COPY;
+          }
+        }
+      }
+      return part;
+    },
+  });
+  expect(
+    pinFacts(copied.board) === pinFacts(stock.board),
+    `the chip under ${COPY}: ${pinFacts(copied.board)}`
+  );
+
+  const refused: [string, (part: PartFile) => void, string][] = [
+    [
+      "no pinMapFrom",
+      (part) => {
+        firmwareLevel(part).pinMapFrom = undefined;
+      },
+      "names no pin map",
+    ],
+    [
+      "a missing variant",
+      (part) => {
+        const level = firmwareLevel(part);
+        if (level.pinMapFrom) level.pinMapFrom.variant = "nope";
+      },
+      "class 1 variant nope does not exist",
+    ],
+    [
+      "a firmware level",
+      (part) => {
+        const level = firmwareLevel(part);
+        if (level.pinMapFrom) level.pinMapFrom.variant = "ideal-terminal";
+      },
+      "is firmware, not composite",
+    ],
+    [
+      "a missing instance",
+      (part) => {
+        const level = firmwareLevel(part);
+        if (level.pinMapFrom) level.pinMapFrom.instance = "chip";
+      },
+      "has no instance chip",
+    ],
+    [
+      "an instance with no exposed port",
+      (part) => {
+        const level = firmwareLevel(part);
+        if (level.pinMapFrom) {
+          level.pinMapFrom = {
+            class: 2,
+            variant: "circuits",
+            instance: "cvcc",
+          };
+        }
+      },
+      "exposes no port of cvcc",
+    ],
+    [
+      "an instance that runs no chip",
+      (part) => {
+        const level = firmwareLevel(part);
+        if (level.pinMapFrom) level.pinMapFrom.instance = "power";
+      },
+      "power runs chip none, not atmega328p",
+    ],
+  ];
+  const otherChip: Shadow = {
+    [NANO]: (part) => {
+      const impl = part.axes?.behaviour?.["1"]?.variants.avr8js;
+      if (impl?.kind !== "composite") throw new Error("no avr8js netlist");
+      impl.netlist.instances.mcu.part = "sfab/atmega32u4@1.0.0";
+      return part;
+    },
+  };
+  const cases: [string, Shadow, string][] = [
+    ...refused.map(([label, edit, want]): [string, Shadow, string] => [
+      label,
+      {
+        [NANO]: (part) => {
+          edit(part);
+          return part;
+        },
+      },
+      want,
+    ]),
+    ["another chip", otherChip, "mcu runs chip atmega32u4, not atmega328p"],
+  ];
+  for (const [label, shadows, want] of cases) {
+    const got = terminalPlan(shadows);
+    expect(
+      !got.board && got.rows.some((row) => row.includes(want)),
+      `${label}: board ${got.board ? "runs" : "idle"}, rows ${JSON.stringify(got.rows)}`
+    );
+    console.log(`ideal-terminal: ${label} → idle (${want})`);
+  }
+  console.log(
+    "ideal-terminal: the 328P under another id keeps D0–A5, PD0–PC5, ADC A0–A7 and RESET"
+  );
+} finally {
+  closeRootWatches();
+}
+
+console.log("ideal-terminal.selfcheck ok");

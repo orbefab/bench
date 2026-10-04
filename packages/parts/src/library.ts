@@ -20,6 +20,7 @@ import {
 } from "@sfab-bench/contract";
 
 import { batteryFrom } from "./battery";
+import { pinMapSource } from "./board-host";
 import { comparatorFrom } from "./comparator";
 import {
   assetDir,
@@ -712,7 +713,10 @@ export function lintLibrary(lib: Library): Diagnostic[] {
     }
     lintAxes(part, diags);
   }
-  for (const loaded of lib.parts.values()) lintNetlist(lib, loaded.part, diags);
+  for (const loaded of lib.parts.values()) {
+    lintNetlist(lib, loaded.part, diags);
+    lintPinMap(lib, loaded.part, diags);
+  }
   return diags;
 }
 
@@ -1109,6 +1113,71 @@ function lintParamRefs(
           right: "declared param",
           detail: `param ${key} forwards $param ${value.$param}, which ${part.id} does not declare (${child.part} needs to declare ${key})`,
         })
+      );
+    }
+  }
+}
+
+/**
+ * A firmware level of a part that also has a composite level runs as its
+ * own board, so it names the composite whose expose is its pin map
+ * (`pinMapFrom`). The reference must resolve, and its instance must run the
+ * same chip. A part with no composite level is a bare chip and names none.
+ */
+function lintPinMap(lib: Library, part: PartFile, diags: Diagnostic[]): void {
+  const behaviour = part.axes?.behaviour;
+  if (!behaviour) return;
+  const slots = classesOf(behaviour).flatMap((cls) => {
+    const slot = behaviour[String(cls) as "0"];
+    return slot ? Object.entries(slot.variants) : [];
+  });
+  const board = slots.some(([, impl]) => impl.kind === "composite");
+  for (const [name, impl] of slots) {
+    if (impl.kind !== "firmware") continue;
+    const fail = (left: string, detail: string) =>
+      diags.push(
+        makeDiag({
+          severity: "error",
+          code: "schema",
+          path: part.id,
+          port: name,
+          quantity: "Level",
+          left,
+          right: "pinMapFrom",
+          detail,
+        })
+      );
+    const ref = impl.pinMapFrom;
+    if (!ref) {
+      if (board) {
+        fail(
+          "missing",
+          `firmware level ${name} of a board names no pin map: set pinMapFrom to the composite level whose expose is the header`
+        );
+      }
+      continue;
+    }
+    const source = pinMapSource(part, ref);
+    if ("error" in source) {
+      fail(
+        `${ref.class}/${ref.variant}/${ref.instance}`,
+        `pinMapFrom: ${source.error}`
+      );
+      continue;
+    }
+    const child = lib.parts.get(source.netlist.instances[ref.instance].part);
+    if (!child) continue;
+    const chips = classesOf(child.part.axes?.behaviour ?? {}).flatMap((cls) =>
+      Object.values(
+        child.part.axes?.behaviour?.[String(cls) as "0"]?.variants ?? {}
+      ).flatMap((variant) =>
+        variant.kind === "firmware" ? [variant.chip] : []
+      )
+    );
+    if (!chips.includes(impl.chip)) {
+      fail(
+        `${ref.class}/${ref.variant}/${ref.instance}`,
+        `pinMapFrom: ${ref.instance} runs chip ${chips.join(", ") || "none"}, not ${impl.chip}`
       );
     }
   }
