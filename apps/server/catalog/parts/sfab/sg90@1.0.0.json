@@ -143,9 +143,9 @@
             "kind": "lumped",
             "mass": 0.009,
             "com": [0, 0, 0],
-            "inertia": [7.4238e-7, 0.0000010275, 5.0838e-7, 0, 0, 0],
+            "inertia": [7.4238e-7, 1.0275e-6, 5.0838e-7, 0, 0, 0],
             "joint": {
-              "armature": 0.00005,
+              "armature": 5e-5,
               "frictionloss": 0.002,
               "damping": 0.0025
             },
@@ -177,7 +177,7 @@
                 "mass": 0.0007333759612329867,
                 "inertia": 5.387068780247043e-9,
                 "damping": 2.5726492761638665e-8,
-                "frictionloss": 0.000003834169141632991
+                "frictionloss": 3.834169141632991e-6
               },
               {
                 "name": "g1",
@@ -256,13 +256,74 @@
         }
       },
       "1": {
-        "default": "mesh",
+        "default": "form",
         "variants": {
           "mesh": {
             "kind": "mesh",
             "placeholder": true,
             "omits": ["horn", "cable"],
             "files": ["placeholder:sg90.glb"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "case@1",
+            "size": [0.023, 0.0122, 0.029],
+            "params": {
+              "color": "#2f6db5",
+              "opacity": 0.35,
+              "flange": 0.0047,
+              "boss": 0.0059,
+              "bossX": -0.0055
+            },
+            "inner": [
+              {
+                "form": "can@1",
+                "size": [0.0085, 0.0085, 0.012],
+                "at": [0.0055, 0, -0.0075],
+                "params": {
+                  "axis": "z"
+                }
+              },
+              {
+                "form": "gear@1",
+                "size": [0.011, 0.011, 0.0015],
+                "at": [-0.0055, 0, 0.0065],
+                "params": {
+                  "teeth": 30
+                }
+              },
+              {
+                "form": "gear@1",
+                "size": [0.008, 0.008, 0.0015],
+                "at": [0.0035, 0, 0.0045],
+                "params": {
+                  "teeth": 24
+                }
+              },
+              {
+                "form": "gear@1",
+                "size": [0.006, 0.006, 0.0015],
+                "at": [-0.0055, 0, 0.0025],
+                "params": {
+                  "teeth": 18
+                }
+              },
+              {
+                "form": "disc@1",
+                "size": [0.007, 0.007, 0.003],
+                "at": [-0.0055, 0, -0.004],
+                "params": {}
+              },
+              {
+                "form": "die@1",
+                "size": [0.009, 0.005, 0.0012],
+                "at": [0, 0, -0.0128],
+                "params": {
+                  "pins": 4
+                }
+              }
+            ],
+            "omits": ["horn", "cable", "gear mesh"]
           }
         }
       }

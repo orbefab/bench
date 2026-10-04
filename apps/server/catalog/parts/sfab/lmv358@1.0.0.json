@@ -44,12 +44,21 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.005, 0.004, 0.002],
             "omits": ["marking", "leads"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "die@1",
+            "size": [0.005, 0.004, 0.002],
+            "params": {
+              "pins": 4
+            },
+            "omits": ["marking", "exact pin count"]
           }
         }
       }

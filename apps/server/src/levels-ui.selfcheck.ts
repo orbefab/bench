@@ -439,8 +439,10 @@ expect(
   vccServo?.size[0] === 0.023 &&
     vccServo.size[1] === 0.0122 &&
     vccServo.size[2] === 0.029 &&
-    vccServoVisual?.reason === "placeholder mesh; drawn as the class-0 box",
-  "an sg90 placeholder mesh is drawn as the class-0 box"
+    vccServo.form?.form === "case@1" &&
+    vccServo.form.inner?.length === 6 &&
+    vccServoVisual?.line === "visual 1 · form",
+  `an sg90 is drawn as its case form, in the same box: ${JSON.stringify(vccServoVisual)}`
 );
 const robotIds = new Set(vccView.robots.map((robot) => robot.id));
 expect(

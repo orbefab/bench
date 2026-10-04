@@ -11,7 +11,7 @@
     {
       "id": "sfab/atmega328p@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/atmega328p@1.0.0.json",
-      "sha256": "6f4c69363ab62bd12f251f25da4826ba9d7c19bd58475ac8bf6b2509f278820b",
+      "sha256": "30f66bc05c824634d2d827dcef394913876aeb46d688c14312c062e270d826f1",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -46,14 +46,14 @@
     {
       "id": "sfab/led-red@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/led-red@1.0.0.json",
-      "sha256": "009dffe0e8b10c328b94459ec7eb1396ddb330fef5c95f92d7f74cf50981d9c2",
+      "sha256": "978afceecf704a2c1ddc169d1f88948f2a325961a9bfbed2be7024104063160e",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "86d47e19a73218b9ba97e2e2851c7d039d5f94f1a9473213867370b7c79ee4d3",
+      "sha256": "6436cb8d3dc960bb663431ff7ddec0f4beaa7cdd0ecb579e652c3241d2c1281f",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -81,7 +81,7 @@
     {
       "id": "sfab/resistor@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/resistor@1.0.0.json",
-      "sha256": "4b38e5fa1fd847a3e8d52bfa23d65699a13bc9a9d2c62b20cf901ee222d6361a",
+      "sha256": "024bdac8454537a929890377b64bf8da0e42a392822b93d70cbf2077d3c007db",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -116,7 +116,7 @@
     {
       "id": "sfab/sg90@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90@1.0.0.json",
-      "sha256": "ce1b5df5ad0737491310d66c33a4bf9c28d0516965391a340d62905564a9bbc2",
+      "sha256": "9da70501185f5a99ba57bad9f64c01d4f393c80ab269b9da7bfbdbd98f7d79ed",
       "source": "catalog",
       "version": "1.0.0"
     },

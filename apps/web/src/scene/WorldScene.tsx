@@ -59,6 +59,7 @@ import { resetTimeline, worldViewPoses } from "@/state/world-timeline";
 import { worldToolStore } from "@/state/world-tool";
 import { tapEmpty } from "@/state/world-tool-tap";
 import { useXrTheme } from "@/xr/ui/theme";
+import { FormVisual } from "./FormVisual";
 
 const ROBOT_COLORS = [0xc4b8a5, 0x8fa3b0, 0xb7a0c4, 0xa3b59a, 0xc4a090];
 const GROUND = 4;
@@ -801,9 +802,11 @@ export function WorldScene({
                   else pickRoots.current.delete(key);
                 }}
               >
-                <mesh material={material}>
-                  <boxGeometry args={board.size as WorldVec3} />
-                </mesh>
+                <FormVisual
+                  size={board.size}
+                  form={board.form}
+                  material={material}
+                />
                 <BoardLabel
                   text={board.id}
                   color={theme.text}
@@ -828,9 +831,11 @@ export function WorldScene({
                   else pickRoots.current.delete(key);
                 }}
               >
-                <mesh material={material}>
-                  <boxGeometry args={box.size} />
-                </mesh>
+                <FormVisual
+                  size={box.size}
+                  form={box.form}
+                  material={material}
+                />
                 <BoardLabel
                   text={box.id}
                   color={theme.text}

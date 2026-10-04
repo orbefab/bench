@@ -7,6 +7,7 @@ import {
   DEFAULT_TIMESTEP_S,
   type DiagCode,
   type Diagnostic,
+  isParamRef,
   type PortDecl,
   type Pose,
   pinIndex,
@@ -15,12 +16,14 @@ import {
   SUPPLY_FORMS,
   stepsPerMs,
   type VisualImpl,
+  type VisualParam,
   WORLD_ERROR_CODES,
   type WorldError,
   type WorldErrorCode,
   type WorldPrimitive,
   type WorldStepProp,
   type WorldTarget,
+  type WorldViewForm,
   type WorldViewNode,
   type WorldViewTree,
 } from "@sfab-bench/contract";
@@ -130,6 +133,8 @@ export type RunBoard = {
   source?: string;
   pose: Pose;
   size: [number, number, number];
+  /** A `form` visual, drawn inside the box. Absent: a plain box. */
+  form?: WorldViewForm;
   pins: Record<string, RunPin>;
   /** Pins a supply may power. On the Uno that is `5V`, not `VIN`. */
   powerInputs: readonly string[];
@@ -234,6 +239,8 @@ export type RunBox = {
   id: string;
   pose: Pose;
   size: [number, number, number];
+  /** A `form` visual, drawn inside the box. Absent: a plain box. */
+  form?: WorldViewForm;
   pick: "part" | "supply";
 };
 
@@ -485,11 +492,60 @@ function pushBox(boxes: RunBox[], inst: LiveInstance, pick: RunBox["pick"]) {
     id: inst.path,
     pose: poseOf(inst),
     size: drawn.size,
+    ...(drawn.form ? { form: drawn.form } : {}),
     pick,
   });
   if (drawn.fallbackClass !== null) {
     inst.axes.visual.reason = `placeholder mesh; drawn as the class-${drawn.fallbackClass} box`;
   }
+}
+
+/**
+ * The box a `box` or `form` visual fills, and the form with its params
+ * resolved: a `$param` reads the instance's param, then the selected
+ * behaviour form's (a resistor's `R`). Null for any other visual.
+ */
+function visualBox(
+  inst: LiveInstance,
+  visual: VisualImpl | null
+): { size: [number, number, number]; form?: WorldViewForm } | null {
+  if (visual?.kind !== "box" && visual?.kind !== "form") return null;
+  if (!finiteSize(visual.size)) return null;
+  const size: [number, number, number] = [
+    visual.size[0],
+    visual.size[1],
+    visual.size[2],
+  ];
+  if (visual.kind === "box") return { size };
+  const numbers = formNumbers(inst);
+  const resolveParams = (
+    raw: Record<string, VisualParam> | undefined
+  ): WorldViewForm["params"] => {
+    const params: WorldViewForm["params"] = {};
+    for (const [name, value] of Object.entries(raw ?? {})) {
+      const read = isParamRef(value)
+        ? (inst.params[value.$param] ?? numbers?.[value.$param])
+        : value;
+      if (read !== undefined) params[name] = read;
+    }
+    return params;
+  };
+  const inner = (visual.inner ?? [])
+    .filter((row) => finiteSize(row.size) && finiteSize(row.at))
+    .map((row) => ({
+      form: row.form,
+      size: [row.size[0], row.size[1], row.size[2]] as [number, number, number],
+      at: [row.at[0], row.at[1], row.at[2]] as [number, number, number],
+      params: resolveParams(row.params),
+    }));
+  return {
+    size,
+    form: {
+      form: visual.form,
+      params: resolveParams(visual.params),
+      ...(inner.length > 0 ? { inner } : {}),
+    },
+  };
 }
 
 function finiteSize(size: readonly number[]): boolean {
@@ -506,18 +562,14 @@ function finiteSize(size: readonly number[]): boolean {
  */
 function drawnBox(inst: LiveInstance): {
   size: [number, number, number];
+  form?: WorldViewForm;
   fallbackClass: number | null;
 } | null {
   const body = inst.axes.body.impl as BodyImpl | null;
   if (body?.kind === "urdf") return null;
   const visual = inst.axes.visual.impl as VisualImpl | null;
-  if (visual?.kind === "box") {
-    if (!finiteSize(visual.size)) return null;
-    return {
-      size: [visual.size[0], visual.size[1], visual.size[2]],
-      fallbackClass: null,
-    };
-  }
+  const own = visualBox(inst, visual);
+  if (own) return { ...own, fallbackClass: null };
   if (visual?.kind !== "mesh" || visual.placeholder !== true) return null;
   const resolved = inst.axes.visual.class;
   if (resolved === null) return null;
@@ -1168,11 +1220,8 @@ function build(
         );
         continue;
       }
-      const visual = host.axes.visual.impl as VisualImpl | null;
-      const size =
-        visual?.kind === "box"
-          ? ([...visual.size] as [number, number, number])
-          : ([0, 0, 0] as [number, number, number]);
+      const drawn = visualBox(host, host.axes.visual.impl as VisualImpl | null);
+      const size = drawn?.size ?? ([0, 0, 0] as [number, number, number]);
       const powerName = chosenPowerPort(host, loaded, facts.railVoltage);
       if (!powerName) {
         diags.push(cannot(host, "the board has no power input"));
@@ -1212,6 +1261,7 @@ function build(
           : {}),
         pose: poseOf(host),
         size,
+        ...(drawn?.form ? { form: drawn.form } : {}),
         pins: pinsOf(host.type.ports),
         powerInputs: [powerName],
         vinFeed: false,

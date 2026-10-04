@@ -38,12 +38,23 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.006, 0.002, 0.002],
             "omits": ["colour bands", "leads"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "axial@1",
+            "size": [0.006, 0.002, 0.002],
+            "params": {
+              "ohms": {
+                "$param": "R"
+              }
+            },
+            "omits": ["lead bends", "tolerance band is always gold"]
           }
         }
       }

@@ -195,12 +195,22 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.0686, 0.0534, 0.012],
             "omits": ["headers", "silk", "USB connector shape"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "pcb@1",
+            "size": [0.0686, 0.0534, 0.012],
+            "params": {
+              "color": "#1d6fa5",
+              "usb": "-x"
+            },
+            "omits": ["silk", "barrel jack", "exact header positions"]
           }
         }
       }

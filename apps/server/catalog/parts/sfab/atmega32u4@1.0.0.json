@@ -80,18 +80,30 @@
       "0": {
         "default": "none",
         "variants": {
-          "none": { "kind": "none", "omits": ["package body"] }
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
         }
       }
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.007, 0.007, 0.001],
             "omits": ["leads", "marking"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "die@1",
+            "size": [0.007, 0.007, 0.001],
+            "params": {
+              "pins": 11
+            },
+            "omits": ["marking", "exact pin count"]
           }
         }
       }

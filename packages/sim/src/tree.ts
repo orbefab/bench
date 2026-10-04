@@ -629,6 +629,7 @@ function visualRunnable(impl: VisualImpl): {
   if (
     impl.kind === "mesh" ||
     impl.kind === "box" ||
+    impl.kind === "form" ||
     impl.kind === "children" ||
     impl.kind === "none"
   ) {

@@ -11,7 +11,7 @@
     {
       "id": "sfab/atmega32u4@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/atmega32u4@1.0.0.json",
-      "sha256": "4338a8b113e2274eb6d6efb6a603b2ba09d5858e1e44cfdd8061cd837804ac8d",
+      "sha256": "d2cc6945ae0870d8bc220e2629e250ca20785959a63b0fba7e4c293e01e2de37",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -46,7 +46,7 @@
     {
       "id": "sfab/led-red@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/led-red@1.0.0.json",
-      "sha256": "009dffe0e8b10c328b94459ec7eb1396ddb330fef5c95f92d7f74cf50981d9c2",
+      "sha256": "978afceecf704a2c1ddc169d1f88948f2a325961a9bfbed2be7024104063160e",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -67,14 +67,14 @@
     {
       "id": "sfab/pro-micro@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/pro-micro@1.0.0.json",
-      "sha256": "84d9c0dca28eb629720cae17134c7ee1e8eb376cd0a56ccee5e4ee080dd26ccb",
+      "sha256": "e9720238fb327bdb7b38b319cef6bc846056365e6cccac6b1231cde350aa052e",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/resistor@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/resistor@1.0.0.json",
-      "sha256": "4b38e5fa1fd847a3e8d52bfa23d65699a13bc9a9d2c62b20cf901ee222d6361a",
+      "sha256": "024bdac8454537a929890377b64bf8da0e42a392822b93d70cbf2077d3c007db",
       "source": "catalog",
       "version": "1.0.0"
     }

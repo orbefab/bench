@@ -107,7 +107,7 @@
             "com": [0, 0, 0],
             "inertia": [1.0732e-6, 1.4875e-6, 7.4669e-7, 0, 0, 0],
             "joint": {
-              "armature": 0.00005,
+              "armature": 5e-5,
               "frictionloss": 0.002,
               "damping": 0.0025
             },
@@ -118,12 +118,24 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.0228, 0.0122, 0.0285],
             "omits": ["case shape", "horn", "tabs"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "case@1",
+            "size": [0.0228, 0.0122, 0.0285],
+            "params": {
+              "color": "#1b1b1b",
+              "flange": 0.0047,
+              "boss": 0.0059,
+              "bossX": -0.0055
+            },
+            "omits": ["horn", "cable", "gears inside"]
           }
         }
       }

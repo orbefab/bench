@@ -40,12 +40,21 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.005, 0.005, 0.008],
             "omits": ["lens", "leads"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "lens@1",
+            "size": [0.005, 0.005, 0.008],
+            "params": {
+              "color": "red"
+            },
+            "omits": ["leads", "glow with current"]
           }
         }
       }

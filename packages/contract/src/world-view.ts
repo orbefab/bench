@@ -28,6 +28,8 @@ export type WorldViewBoard = {
   source?: string;
   pose: Pose;
   size: [number, number, number];
+  /** Drawn by this form's builder. Absent: a plain box. */
+  form?: WorldViewForm;
   /** Volts. The card's brownout line uses this, not a client-side catalog. */
   brownoutVoltage: number;
   /**
@@ -57,11 +59,29 @@ export type WorldViewSupply = {
   rSeries: number;
 };
 
+/**
+ * A procedural visual the client draws inside the box. Params are resolved:
+ * a `$param` already reads the instance's value.
+ */
+export type WorldViewForm = {
+  form: string;
+  params: Record<string, number | string | boolean>;
+  /** Forms drawn inside this one, centred at `at` in its box frame. */
+  inner?: {
+    form: string;
+    size: [number, number, number];
+    at: [number, number, number];
+    params: Record<string, number | string | boolean>;
+  }[];
+};
+
 /** A part or supply whose resolved visual is a box. A URDF body is not one. */
 export type WorldViewBox = {
   id: string;
   pose: Pose;
   size: [number, number, number];
+  /** Drawn by this form's builder. Absent: a plain box. */
+  form?: WorldViewForm;
   /** A click selects this part or supply. */
   pick: "part" | "supply";
 };

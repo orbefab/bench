@@ -314,7 +314,7 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
@@ -323,6 +323,20 @@
               "headers",
               "silk",
               "USB connector shape",
+              "board height is assumed"
+            ]
+          },
+          "form": {
+            "kind": "form",
+            "form": "pcb@1",
+            "size": [0.045, 0.018, 0.008],
+            "params": {
+              "color": "#1d6fa5",
+              "usb": "-x"
+            },
+            "omits": [
+              "silk",
+              "exact header positions",
               "board height is assumed"
             ]
           }

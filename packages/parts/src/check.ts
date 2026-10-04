@@ -5,6 +5,7 @@ import {
   type BodyImpl,
   type Diagnostic,
   FORM_PARAMS,
+  isParamRef,
   QUANTITY_DIM,
   type Quantity,
   RATING_FIELD_QUANTITY,
@@ -518,6 +519,36 @@ function fileDiags(
             })
           );
         }
+      }
+    }
+    if (visual?.kind === "form") {
+      const own = inst.axes.behaviour.impl as BehaviourImpl | null;
+      const formParams =
+        own?.kind === "form" ? mergeFormParams(own.params, inst.params) : {};
+      const rows = [
+        visual.params ?? {},
+        ...(visual.inner ?? []).map((row) => row.params ?? {}),
+      ].flatMap((params) => Object.entries(params));
+      for (const [name, value] of rows) {
+        if (
+          !isParamRef(value) ||
+          inst.params[value.$param] !== undefined ||
+          formParams[value.$param] !== undefined
+        ) {
+          continue;
+        }
+        diags.push(
+          makeDiag({
+            severity: "warning",
+            code: "bad-params",
+            path: inst.path,
+            port: "visual",
+            quantity: "Position",
+            left: name,
+            right: value.$param,
+            detail: `visual ${visual.form} param ${name} reads ${value.$param}, which the part does not set; the form draws its default`,
+          })
+        );
       }
     }
     const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;

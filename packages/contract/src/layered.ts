@@ -597,9 +597,35 @@ export type BodyImpl = { omits: string[] } & (
   | { kind: "none" }
 );
 
+/** A visual form param: a scalar, or one of the part's own params by name. */
+export type VisualParam = number | string | boolean | ParamRef;
+
+/** A form a composite draws inside its own box, centred at `at`. */
+export type VisualInner = {
+  form: string;
+  size: Vec3;
+  at: Vec3;
+  params?: Record<string, VisualParam>;
+};
+
 export type VisualImpl = { omits: string[] } & (
   | { kind: "mesh"; files: string[]; placeholder?: boolean }
   | { kind: "box"; size: Vec3 }
+  /**
+   * A procedural visual: the client's builder for `form` draws it in the
+   * box `size` (small features such as tabs and leads may stand out of
+   * it), from `params`. A client with no builder for the form draws the
+   * box. The run places and picks it as a box. `inner` is what a
+   * composite draws inside itself, whatever level its children run at:
+   * each sits at `at` in this box's frame.
+   */
+  | {
+      kind: "form";
+      form: string;
+      size: Vec3;
+      params?: Record<string, VisualParam>;
+      inner?: VisualInner[];
+    }
   | { kind: "children" }
   | { kind: "none" }
 );
