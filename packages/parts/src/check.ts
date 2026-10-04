@@ -118,6 +118,7 @@ function checkTag(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: instancePath,
         port,
         quantity: expected,
@@ -132,6 +133,7 @@ function checkTag(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: instancePath,
         port,
         quantity: expected,
@@ -146,6 +148,7 @@ function checkTag(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: instancePath,
         port,
         quantity: expected,
@@ -180,6 +183,7 @@ function plausibilityDiags(inst: LiveInstance): Diagnostic[] {
     diags.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: inst.path,
         port,
         quantity,
@@ -266,6 +270,7 @@ function wireDiags(instances: LiveInstance[], wires: Wire[]): Diagnostic[] {
       diags.push(
         makeDiag({
           severity: "error",
+          code: "wiring",
           path: pa.path,
           port: pa.port,
           quantity: pa.across,
@@ -285,6 +290,7 @@ function missingPort(
 ): Diagnostic {
   return makeDiag({
     severity: "error",
+    code: "broken-port",
     path: end.path,
     port: end.port,
     quantity: other?.across ?? "Port",
@@ -337,6 +343,7 @@ function logicDiags(net: LiveNet): Diagnostic[] {
         diags.push(
           makeDiag({
             severity: "error",
+            code: "rating",
             path: receiver.path,
             port: receiver.port,
             quantity: "Voltage",
@@ -351,6 +358,7 @@ function logicDiags(net: LiveNet): Diagnostic[] {
         diags.push(
           makeDiag({
             severity: "error",
+            code: "rating",
             path: receiver.path,
             port: receiver.port,
             quantity: "Voltage",
@@ -365,6 +373,7 @@ function logicDiags(net: LiveNet): Diagnostic[] {
         diags.push(
           makeDiag({
             severity: "error",
+            code: "rating",
             path: receiver.path,
             port: receiver.port,
             quantity: "Voltage",
@@ -430,6 +439,7 @@ function supplyDiags(
       diags.push(
         makeDiag({
           severity: beyond ? "error" : "warning",
+          code: "rating",
           path: port.path,
           port: port.port,
           quantity: "Voltage",
@@ -463,6 +473,7 @@ function fileDiags(
         diags.push(
           makeDiag({
             severity: "error",
+            code: "missing-file",
             path: inst.path,
             port: "body",
             quantity: "Position",
@@ -480,6 +491,7 @@ function fileDiags(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "schema",
           path: inst.path,
           port: "body",
           quantity: "Mass",
@@ -496,6 +508,7 @@ function fileDiags(
           diags.push(
             makeDiag({
               severity: "error",
+              code: "missing-file",
               path: inst.path,
               port: "visual",
               quantity: "Position",
@@ -519,6 +532,7 @@ function fileDiags(
         diags.push(
           makeDiag({
             severity: "error",
+            code: "missing-file",
             path: boardHostOf(inst, byPath, ROOT_PATH).path,
             port: behaviour.imageParam,
             quantity: "Time",

@@ -181,6 +181,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "schema",
         path: lib.worldName,
         port: "levels",
         quantity: "Level",
@@ -252,6 +253,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "schema",
         path: lib.worldName,
         port: "load",
         quantity: "Part",
@@ -303,6 +305,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "missing-file",
         path: miss.path,
         port: "part",
         quantity: "Part",
@@ -321,6 +324,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: row.path,
         port: row.param,
         quantity: "Param",
@@ -339,6 +343,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
       diagnostics.push(
         makeDiag({
           severity: "error",
+          code: "bad-params",
           path: inst.path,
           port: axis,
           quantity: "Level",
@@ -354,6 +359,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
       diagnostics.push(
         makeDiag({
           severity: "error",
+          code: "schema",
           path: rulePath,
           port: "*",
           quantity: "Level",
@@ -397,6 +403,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
           diagnostics.push(
             makeDiag({
               severity: "error",
+              code: "snapshot",
               path: inst.path,
               port: "body",
               quantity: "Form",
@@ -411,6 +418,7 @@ export function loadWorldV2(worldFile: string, opts: LoadOptions): LoadResult {
           diagnostics.push(
             makeDiag({
               severity: "error",
+              code: "snapshot",
               path: inst.path,
               port: "body",
               quantity: "PartType",

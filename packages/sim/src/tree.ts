@@ -40,7 +40,7 @@ import {
   captureLevelFor,
   captureRecipeFor,
 } from "./capture-recipe";
-import { chipFactsOf } from "./chip-host";
+import { chipFactsOf, missingChipFacts } from "./chip-host";
 import { formAdapter } from "./forms";
 
 const IDENTITY: Pose = {
@@ -583,7 +583,8 @@ function behaviourRunnable(
   if (impl.kind === "snapshot") return { runnable: true };
   if (impl.kind === "firmware") {
     if (!chipFactsOf(impl)) {
-      return { runnable: false, reason: `unknown chip ${impl.chip}` };
+      const missing = missingChipFacts(impl).join(", ");
+      return { runnable: false, reason: `chip ${impl.chip} lacks ${missing}` };
     }
     return { runnable: true };
   }

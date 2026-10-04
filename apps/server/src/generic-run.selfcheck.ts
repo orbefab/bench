@@ -689,10 +689,16 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     const planned = planWorld(dir, "chip.world.json");
     expect(planned.ok, "unknown chip did not run");
     if (!planned.ok) throw new Error("unreachable");
-    const chip = (planned.plan.degraded ?? []).find((item) =>
-      item.message.includes('unknown chip "no-such"')
+    const chip = (planned.plan.degraded ?? []).find(
+      (item) => item.path === "board" && item.code === "unsupported"
     );
     expect(chip, "no unknown-chip diagnostic");
+    expect(
+      chip.message.startsWith(
+        'chip "no-such" lacks railVoltage, resetFraction'
+      ),
+      chip.message
+    );
     console.log(`degraded ${chip.path}: ${chip.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });

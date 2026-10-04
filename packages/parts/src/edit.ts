@@ -29,7 +29,7 @@ import {
 
 import { environmentKind } from "./document";
 import { applyLevelEdit } from "./level-edit";
-import { makeDiag, parsePartRef, splitPortRef } from "./si";
+import { diagMessage, parsePartRef, splitPortRef } from "./si";
 
 /** A refused edit: the diagnostic, and the detail its sentence was built from. */
 export type EditFailure = Omit<Diagnostic, "code"> & {
@@ -1274,15 +1274,13 @@ function fail(
 ): { error: EditFailure } {
   return {
     error: {
-      ...makeDiag({
-        severity: "error",
-        path,
-        port,
-        quantity,
-        left,
-        right,
-        detail,
-      }),
+      severity: "error",
+      path,
+      port,
+      quantity,
+      left,
+      right,
+      message: diagMessage({ path, port, quantity, left, right, detail }),
       detail,
       code,
     },

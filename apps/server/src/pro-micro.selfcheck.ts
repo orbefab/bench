@@ -203,7 +203,7 @@ try {
     const shown = warnings.filter((row) => row.message === gap.message);
     expect(named.length === 1, `${gap.code} diagnostic ${named.length}`);
     expect(
-      shown.length === 1 && shown[0]?.code === "degraded",
+      shown.length === 1 && shown[0]?.code === gap.code,
       `${gap.code} warning ${shown.length}`
     );
   }

@@ -52,6 +52,7 @@ export function loadSnapshot(
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "schema",
         path: id,
         port: "file",
         quantity: "Snapshot",
@@ -76,6 +77,7 @@ export function loadSnapshot(
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "missing-file",
         path: id,
         port: "file",
         quantity: "Snapshot",
@@ -91,6 +93,7 @@ export function loadSnapshot(
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "schema",
         path: id,
         port: "file",
         quantity: "format",

@@ -1,3 +1,4 @@
+import type { DiagCode } from "@sfab-bench/contract";
 import {
   type ADCConfig,
   type AVRPortConfig,
@@ -24,7 +25,7 @@ export type ChipPin = {
 
 /** A limit the emulator names once when this chip runs. It does not emulate it. */
 export type ChipGap = {
-  code: string;
+  code: DiagCode;
   /** Sentence a user can read. */
   message: string;
 };

@@ -40,6 +40,7 @@ function noteBattery(s: SessionState, supplyId: string): void {
   if (!s.runReport) return;
   s.runReport.warnings.push({
     severity: "warning",
+    code: "battery",
     path: supplyId,
     port: "+",
     quantity: "Voltage",
@@ -73,6 +74,7 @@ export function warnEnvelope(
   if (!s.runReport) return;
   s.runReport.warnings.push({
     severity: "warning",
+    code: "envelope",
     path,
     port: named.port,
     quantity: named.quantity,

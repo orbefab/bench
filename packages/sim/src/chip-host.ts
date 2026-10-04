@@ -1,6 +1,7 @@
 /** A firmware chip, the board it runs as, and the electrical facts it carries. */
 
 import type { BehaviourImpl, ChipClock } from "@sfab-bench/contract";
+import type { AvrPinParams } from "@sfab-bench/engine-circuit";
 import { chipSpec } from "@sfab-bench/engine-mcu";
 import { chipExposure, type LiveInstance } from "@sfab-bench/parts";
 
@@ -19,25 +20,62 @@ export type FirmwareBehaviour = Extract<BehaviourImpl, { kind: "firmware" }>;
  * What the run knows about a chip, read from the resolved chip part's firmware
  * variant. `railVoltage` picks the board's power input, `resetFraction` is
  * V_RST / VCC, and `minOperatingVoltage` opens the SOA band above the
- * brownout level. A variant that carries no rail or reset fraction is an
- * unknown chip.
+ * brownout level. The brownout levels, the reset hold and the pin drive
+ * (`avr-pin@1`) are the variant's params. A variant that lacks any of them
+ * does not run: the run names what is missing, it does not guess.
  */
 export type ChipFacts = {
   railVoltage: number;
   resetFraction: number;
   minOperatingVoltage: number | null;
+  brownoutVoltage: number;
+  brownoutAssertVoltage: number;
+  brownoutReleaseVoltage: number;
+  resetHoldS: number;
+  pin: AvrPinParams;
 };
+
+const CHIP_PARAMS = [
+  "brownoutVoltage",
+  "brownoutAssertVoltage",
+  "brownoutReleaseVoltage",
+  "resetHoldS",
+  "roh",
+  "rol",
+  "rpu",
+  "rLeak",
+] as const;
+
+/** The facts the variant lacks, by the name it would carry them under. */
+export function missingChipFacts(behaviour: FirmwareBehaviour): string[] {
+  const params = behaviour.params ?? {};
+  return [
+    ...(["railVoltage", "resetFraction"] as const).filter(
+      (key) => typeof behaviour[key] !== "number"
+    ),
+    ...CHIP_PARAMS.filter((key) => typeof params[key] !== "number"),
+  ];
+}
 
 export function chipFactsOf(behaviour: FirmwareBehaviour): ChipFacts | null {
   const { railVoltage, resetFraction, minOperatingVoltage } = behaviour;
   if (typeof railVoltage !== "number" || typeof resetFraction !== "number") {
     return null;
   }
+  if (missingChipFacts(behaviour).length > 0) return null;
+  // Every key is a number: `missingChipFacts` found none absent.
+  const at = (key: (typeof CHIP_PARAMS)[number]) =>
+    behaviour.params?.[key] as number;
   return {
     railVoltage,
     resetFraction,
     minOperatingVoltage:
       typeof minOperatingVoltage === "number" ? minOperatingVoltage : null,
+    brownoutVoltage: at("brownoutVoltage"),
+    brownoutAssertVoltage: at("brownoutAssertVoltage"),
+    brownoutReleaseVoltage: at("brownoutReleaseVoltage"),
+    resetHoldS: at("resetHoldS"),
+    pin: { roh: at("roh"), rol: at("rol"), rpu: at("rpu"), rLeak: at("rLeak") },
   };
 }
 

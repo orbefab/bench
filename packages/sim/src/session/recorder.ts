@@ -106,10 +106,7 @@ export function sample(s: SessionState): WorldState | null {
         );
         const warnings = [
           ...(soa ? [soa] : []),
-          ...extra.map((row) => ({
-            code: "degraded" as const,
-            message: row.message,
-          })),
+          ...extra.map((row) => ({ code: row.code, message: row.message })),
         ];
         return warnings.length > 0 ? { warnings } : {};
       })(),
@@ -153,7 +150,7 @@ export function sample(s: SessionState): WorldState | null {
       ? {
           diagnostics: s.degradedLive.map((row) => ({
             severity: "degraded" as const,
-            code: row.code ?? "idle",
+            code: row.code,
             path: row.path,
             message: row.message,
           })),

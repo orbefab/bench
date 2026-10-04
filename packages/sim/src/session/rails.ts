@@ -1,6 +1,7 @@
 /** Rails: the supply-to-board lookups, binding the rail circuits, the degraded notes, and the node latches the CPUs read. */
 
 import {
+  type DiagCode,
   type Diagnostic,
   onboardLedPath,
   pinIndex,
@@ -110,7 +111,7 @@ export function powerBoardOf(
 export function noteDegraded(
   s: SessionState,
   path: string,
-  code: string,
+  code: DiagCode,
   message: string
 ): void {
   if (s.degradedLive.some((row) => row.path === path && row.code === code)) {

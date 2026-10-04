@@ -8,7 +8,7 @@
  */
 
 import type { EditOp } from "./edit";
-import type { EditRefusal, LevelClass, RunReport } from "./layered";
+import type { DiagCode, EditRefusal, LevelClass, RunReport } from "./layered";
 import type { WorldError, WorldQuat, WorldVec3 } from "./world";
 
 export type WorldLinkPose = {
@@ -207,7 +207,8 @@ export type WorldBoardState = {
 };
 
 export type WorldBoardWarning = {
-  code: "below-16mhz-soa" | "degraded";
+  /** `below-16mhz-soa`, or the code of a degraded row that names the board. */
+  code: DiagCode;
   message: string;
 };
 
@@ -331,7 +332,7 @@ export type WorldState = {
    */
   diagnostics?: {
     severity: "degraded";
-    code: string;
+    code: DiagCode;
     path: string;
     message: string;
   }[];

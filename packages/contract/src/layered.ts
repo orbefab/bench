@@ -510,8 +510,12 @@ export type BehaviourImpl = { omits: string[] } & (
       resetPort?: string;
       /**
        * The chip's electrical facts, as data on the chip part. The run reads
-       * them from the firmware variant it resolved. A firmware variant with
-       * no `railVoltage` or `resetFraction` is an unknown chip.
+       * them from the firmware variant it resolved. The variant's `params`
+       * carry the brownout levels (`brownoutVoltage`,
+       * `brownoutAssertVoltage`, `brownoutReleaseVoltage`), `resetHoldS`,
+       * and the pin drive (`roh`, `rol`, `rpu`, `rLeak`). A variant that
+       * lacks any of these, or `railVoltage` or `resetFraction`, does not
+       * run: the board sits idle with an `unsupported` row naming them.
        * `railVoltage`: volts, picks the board's power input.
        * `resetFraction`: V_RST / VCC.
        * `minOperatingVoltage`: volts. A running chip above its brownout level
@@ -803,13 +807,47 @@ export type LevelOverlayFile = {
   };
 };
 
+/**
+ * Every code a diagnostic carries. The list is closed: a new kind of
+ * failure adds its code here, and readers key on the code, never on the
+ * message text. docs/formats.md § Diagnostic codes says what each means.
+ */
+export const DIAG_CODES = [
+  // A file or its contents.
+  "schema",
+  "missing-file",
+  "mesh-format",
+  "bad-params",
+  "lock",
+  "snapshot",
+  "stale-capture",
+  "shadowed-part",
+  "level-ports",
+  // Wiring and ratings.
+  "broken-port",
+  "wiring",
+  "rating",
+  // A part that runs at a lower level, or not at all.
+  "idle",
+  "unpowered",
+  "unsupported",
+  "no-runtime",
+  // The run.
+  "timestep-unsupported",
+  "battery",
+  "envelope",
+  "seam-residual-growing",
+  "below-16mhz-soa",
+  // A chip feature the emulator names and does not emulate.
+  "timer4",
+  "usb-cdc",
+] as const;
+export type DiagCode = (typeof DIAG_CODES)[number];
+
 export type Diagnostic = {
   severity: "warning" | "error" | "degraded";
-  /**
-   * Set on a degraded part, and on a seam residual that is growing.
-   * The run continues.
-   */
-  code?: string;
+  /** What went wrong. Readers key on this, never on `message`. */
+  code: DiagCode;
   path: string;
   port: string;
   quantity: string;

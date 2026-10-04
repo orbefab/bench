@@ -5,6 +5,7 @@ import {
   type BodyImpl,
   type ChipClock,
   DEFAULT_TIMESTEP_S,
+  type DiagCode,
   type Diagnostic,
   type PortDecl,
   type Pose,
@@ -14,7 +15,9 @@ import {
   SUPPLY_FORMS,
   stepsPerMs,
   type VisualImpl,
+  WORLD_ERROR_CODES,
   type WorldError,
+  type WorldErrorCode,
   type WorldPrimitive,
   type WorldStepProp,
   type WorldTarget,
@@ -22,7 +25,7 @@ import {
   type WorldViewTree,
 } from "@sfab-bench/contract";
 import { collapse } from "@sfab-bench/engine-body";
-import { type AvrPinParams, avrPinParams } from "@sfab-bench/engine-circuit";
+import type { AvrPinParams } from "@sfab-bench/engine-circuit";
 import {
   assetDir,
   type BatteryParams,
@@ -47,6 +50,7 @@ import {
   chipClock,
   chipExposure,
   chipFactsOf,
+  missingChipFacts,
 } from "./chip-host";
 import {
   type AssignedPart,
@@ -328,12 +332,10 @@ function schema(message: string, filePath = ""): WorldError {
 }
 
 function fromDiag(diag: Diagnostic): WorldError {
-  const missing = diag.message.includes("does not exist");
-  return {
-    code: missing ? "missing-file" : "schema",
-    path: diag.path,
-    message: diag.message,
-  };
+  const code = (WORLD_ERROR_CODES as readonly string[]).includes(diag.code)
+    ? (diag.code as WorldErrorCode)
+    : "schema";
+  return { code, path: diag.path, message: diag.message };
 }
 
 function opened(
@@ -583,7 +585,11 @@ function nestedPoses(plan: RunPlan, resolved: LiveInstance[]): WorldError[] {
   return errors;
 }
 
-function cannot(inst: LiveInstance, detail: string, code = "idle"): Diagnostic {
+function cannot(
+  inst: LiveInstance,
+  detail: string,
+  code: DiagCode = "idle"
+): Diagnostic {
   const named =
     inst.path === ROOT_PATH
       ? `${shortName(inst.part.id)} sits idle: ${detail}`
@@ -600,8 +606,8 @@ function cannot(inst: LiveInstance, detail: string, code = "idle"): Diagnostic {
   };
 }
 
-function degrade(diag: Diagnostic, code: string): Diagnostic {
-  return { ...diag, severity: "degraded", code: diag.code ?? code };
+function degrade(diag: Diagnostic): Diagnostic {
+  return { ...diag, severity: "degraded" };
 }
 
 /** The sentence a person reads. The report's port, quantity, and comparison stay on the fields. */
@@ -614,8 +620,7 @@ function humanText(message: string): string {
 }
 
 function present(diag: Diagnostic): Diagnostic {
-  const next =
-    diag.severity === "degraded" ? diag : degrade(diag, degradeCode(diag));
+  const next = diag.severity === "degraded" ? diag : degrade(diag);
   const message = humanText(next.message);
   return message === next.message ? next : { ...next, message };
 }
@@ -1062,8 +1067,13 @@ function build(
       }
       const facts = chipFactsOf(behaviour);
       if (!facts) {
+        const missing = missingChipFacts(behaviour).join(", ");
         diags.push(
-          cannot(host, `unknown chip "${behaviour.chip}"`, "unsupported")
+          cannot(
+            host,
+            `chip "${behaviour.chip}" lacks ${missing}`,
+            "unsupported"
+          )
         );
         continue;
       }
@@ -1139,18 +1149,13 @@ function build(
         adcLabels: adcHeaderLabels(behaviour.chip, exposure),
         minOperatingVoltage: facts.minOperatingVoltage,
         clock: chipClock(behaviour.chip),
-        brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
-        brownoutAssertVoltage:
-          params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,
-        brownoutReleaseVoltage:
-          params.brownoutReleaseVoltage ?? Number.POSITIVE_INFINITY,
-        resetHoldMs:
-          typeof params.resetHoldS === "number"
-            ? Math.round(params.resetHoldS * 1000)
-            : Number.POSITIVE_INFINITY,
+        brownoutVoltage: facts.brownoutVoltage,
+        brownoutAssertVoltage: facts.brownoutAssertVoltage,
+        brownoutReleaseVoltage: facts.brownoutReleaseVoltage,
+        resetHoldMs: Math.round(facts.resetHoldS * 1000),
         operatingVoltage: rail[0],
         supply: { min: rail[0], max: rail[1] },
-        pin: avrPinParams(params),
+        pin: facts.pin,
       });
       continue;
     }
@@ -1700,24 +1705,6 @@ function stampEnv(env: PlanEnv): StampEnv {
     defaultCatalog: () => env.absolutePath(env.catalogDir()),
     join: (...parts) => env.resolve(...parts),
   };
-}
-
-function degradeCode(diag: Diagnostic): string {
-  const text = diag.message;
-  if (
-    text.includes("does not exist") ||
-    text.includes("not found") ||
-    text.includes("missing")
-  ) {
-    return "missing-file";
-  }
-  if (text.includes("unknown chip")) return "unsupported";
-  if (text.includes("no runtime")) return "no-runtime";
-  if (text.includes("reaches no supply") || text.includes("no supply")) {
-    return "unpowered";
-  }
-  if (text.includes("variant") || text.includes("param")) return "bad-params";
-  return "idle";
 }
 
 /**

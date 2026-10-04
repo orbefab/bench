@@ -143,6 +143,7 @@ function plausibleErrors(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path: snap.part,
         port: field,
         quantity,
@@ -244,6 +245,7 @@ function tablePorts(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path,
         port: name,
         quantity: "Snapshot",
@@ -259,6 +261,7 @@ function tablePorts(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path,
         port: law.across[0],
         quantity: "Current",
@@ -272,6 +275,7 @@ function tablePorts(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path,
         port: law.across[0],
         quantity: "Voltage",
@@ -301,6 +305,7 @@ function hingeErrors(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path,
         port: "axis",
         quantity: "Form",
@@ -314,6 +319,7 @@ function hingeErrors(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path,
         port: "axis",
         quantity: "Form",
@@ -335,6 +341,7 @@ function hingeErrors(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path,
         port: key,
         quantity: key === "armature" ? "Inertia" : "Torque",
@@ -356,6 +363,7 @@ function hingeErrors(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path,
         port: port || item,
         quantity: "Snapshot",
@@ -373,6 +381,7 @@ function hingeErrors(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path,
         port: port || key,
         quantity: "Snapshot",
@@ -404,6 +413,7 @@ function fixtureSupplyDiags(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path: snap.part || "snapshot",
         port: "supply",
         quantity: "Snapshot",
@@ -426,6 +436,7 @@ function fixtureSupplyDiags(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path: snap.part || "snapshot",
         port: port || key,
         quantity: "Snapshot",
@@ -447,6 +458,7 @@ export function lintSnapshot(
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path: snap.part || "snapshot",
         port: "provenance",
         quantity: "Snapshot",
@@ -461,6 +473,7 @@ export function lintSnapshot(
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path: snap.part || "snapshot",
         port: "envelope",
         quantity: "Snapshot",
@@ -475,6 +488,7 @@ export function lintSnapshot(
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path: snap.part || "snapshot",
         port: name,
         quantity: "Snapshot",
@@ -493,6 +507,7 @@ export function lintSnapshot(
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "snapshot",
         path: snap.part || "snapshot",
         port: "quality",
         quantity: "Snapshot",

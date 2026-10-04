@@ -52,7 +52,7 @@
     "uno": "10\r\n90\r\n120\r\n"
   },
   "notes": [
-    "warning - sfab/arm@1.0.0: sfab/arm@1.0.0 port file quantity Part: project part shadows a catalog part (parts/sfab/arm@1.0.0.json vs ../../apps/server/catalog/parts/sfab/arm@1.0.0.json)"
+    "warning shadowed-part sfab/arm@1.0.0: sfab/arm@1.0.0 port file quantity Part: project part shadows a catalog part (parts/sfab/arm@1.0.0.json vs ../../apps/server/catalog/parts/sfab/arm@1.0.0.json)"
   ],
   "samples": {
     "end": {

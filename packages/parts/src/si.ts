@@ -38,11 +38,19 @@ export function sortValue(value: unknown): unknown {
   return value;
 }
 
+/** `<path> port <port> quantity <quantity>: <detail> (<left> vs <right>)`. */
+export function diagMessage(
+  d: Pick<Diagnostic, "path" | "port" | "quantity" | "left" | "right"> & {
+    detail: string;
+  }
+): string {
+  return `${d.path} port ${d.port} quantity ${d.quantity}: ${d.detail} (${d.left} vs ${d.right})`;
+}
+
 export function makeDiag(
   d: Omit<Diagnostic, "message"> & { detail: string }
 ): Diagnostic {
-  const message = `${d.path} port ${d.port} quantity ${d.quantity}: ${d.detail} (${d.left} vs ${d.right})`;
-  return { ...d, message };
+  return { ...d, message: diagMessage(d) };
 }
 
 export function isLevelClass(n: unknown): n is LevelClass {
