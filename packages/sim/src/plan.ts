@@ -4,6 +4,7 @@ import {
   type BehaviourImpl,
   type BodyImpl,
   type ChipClock,
+  composePose,
   DEFAULT_TIMESTEP_S,
   type DiagCode,
   type Diagnostic,
@@ -494,12 +495,17 @@ function formNumbers(inst: LiveInstance): Record<string, number> | null {
  * A placeholder mesh uses the nearest lower class whose visual is a box.
  * A mesh file is left undrawn.
  */
-function pushBox(boxes: RunBox[], inst: LiveInstance, pick: RunBox["pick"]) {
+function pushBox(
+  boxes: RunBox[],
+  inst: LiveInstance,
+  pose: Pose,
+  pick: RunBox["pick"]
+) {
   const drawn = drawnBox(inst);
   if (!drawn) return;
   boxes.push({
     id: inst.path,
-    pose: poseOf(inst),
+    pose,
     size: drawn.size,
     ...(drawn.form ? { form: drawn.form } : {}),
     pick,
@@ -608,55 +614,35 @@ function notePlaceholderBoxes(loaded: LoadResult): void {
   }
 }
 
-function poseOf(inst: LiveInstance): Pose {
-  if (!inst.pose) return IDENTITY;
-  return {
-    position: [...inst.pose.position] as Pose["position"],
-    rotation: [...inst.pose.rotation] as Pose["rotation"],
-  };
-}
-
-/** -q is the same rotation as q, so [-1, 0, 0, 0] is the identity too. */
-const isIdentity = (pose: Pose) => {
-  const [w, x, y, z] = pose.rotation;
-  return (
-    pose.position.every((value) => value === 0) &&
-    Math.abs(w) === 1 &&
-    x === 0 &&
-    y === 0 &&
-    z === 0
-  );
-};
-
 /**
- * The run places an instance by its own pose, in world space: a parent's
- * pose is not composed in. Each placed path under a posed group is one
- * error, so the run does not start with a part in the wrong place. The
- * world root is placed once and the editor may move it, so its pose
- * places nothing and is not an error.
+ * Each instance's pose in the document frame: its own pose taken through
+ * every posed group above it, so an assembly placed with a pose carries
+ * its parts. The world root is placed once and the editor may move it,
+ * so its pose places nothing.
  */
-function nestedPoses(plan: RunPlan, resolved: LiveInstance[]): WorldError[] {
-  const posed = resolved.filter(
-    (inst) => inst.path !== ROOT_PATH && inst.pose && !isIdentity(inst.pose)
-  );
-  const placed = [
-    ...plan.robots,
-    ...plan.boards,
-    ...(plan.rangers ?? []),
-    ...(plan.boxes ?? []),
-  ].map((item) => item.id);
-  const errors: WorldError[] = [];
-  for (const path of new Set(placed)) {
-    const group = posed.find((inst) => path.startsWith(`${inst.path}.`));
-    if (!group) continue;
-    errors.push(
-      schema(
-        `${path} sits under ${group.path}, which has a pose. Nested poses are not composed yet. Hint: pose ${group.path} at the origin, or move ${path} up to the scene.`,
-        path
-      )
-    );
-  }
-  return errors;
+function scenePoses(resolved: LiveInstance[]): Map<string, Pose> {
+  const byPath = new Map(resolved.map((inst) => [inst.path, inst]));
+  const poses = new Map<string, Pose>();
+  const at = (path: string): Pose => {
+    const done = poses.get(path);
+    if (done) return done;
+    const own = byPath.get(path)?.pose ?? IDENTITY;
+    const cut = path.lastIndexOf(".");
+    const local: Pose = {
+      position: [...own.position] as Pose["position"],
+      rotation: [...own.rotation] as Pose["rotation"],
+    };
+    const pose =
+      path === ROOT_PATH
+        ? IDENTITY
+        : cut < 0
+          ? local
+          : composePose(at(path.slice(0, cut)), local);
+    poses.set(path, pose);
+    return pose;
+  };
+  for (const inst of resolved) at(inst.path);
+  return poses;
 }
 
 function cannot(
@@ -1078,6 +1064,8 @@ function build(
   // motor reaches through it; form ranger@1. Anything else is a plan
   // error that names the path.
   const byPath = new Map(loaded.resolved.map((item) => [item.path, item]));
+  const scene = scenePoses(loaded.resolved);
+  const poseOf = (inst: LiveInstance): Pose => scene.get(inst.path) ?? IDENTITY;
   for (const inst of loaded.resolved) {
     // A composite root is a shell. A leaf opened as the root is the
     // instance: its body is planned, or it sits idle with a diagnostic.
@@ -1095,7 +1083,7 @@ function build(
       if (!inst.path.includes(".")) {
         leaves.push({ id: inst.path, model: shortName(inst.part.id) });
       }
-      if (inst.pose) pushBox(boxes, inst, "part");
+      if (inst.pose) pushBox(boxes, inst, poseOf(inst), "part");
       continue;
     }
     const typeId = inst.type.id;
@@ -1244,7 +1232,7 @@ function build(
           supplies.push(supply);
         },
         box: () => {
-          pushBox(boxes, inst, "supply");
+          pushBox(boxes, inst, poseOf(inst), "supply");
         },
       });
       continue;
@@ -1308,7 +1296,7 @@ function build(
         ...behaviourSnapshotOf(inst, loaded),
         ...(drives ? { drives } : {}),
       });
-      pushBox(boxes, inst, "part");
+      pushBox(boxes, inst, poseOf(inst), "part");
       continue;
     }
     if (behaviour?.kind === "form" && behaviour.form === "ranger@1") {
@@ -1328,7 +1316,7 @@ function build(
         trig: digitalPeer(inst, "Trig", loaded, boards),
         echo: digitalPeer(inst, "Echo", loaded, boards),
       });
-      pushBox(boxes, inst, "part");
+      pushBox(boxes, inst, poseOf(inst), "part");
       continue;
     }
     if (behaviour?.kind === "snapshot") {
@@ -1344,7 +1332,7 @@ function build(
       if (!inst.path.includes(".")) {
         leaves.push({ id: inst.path, model: shortName(inst.part.id) });
       }
-      if (inst.pose) pushBox(boxes, inst, "part");
+      if (inst.pose) pushBox(boxes, inst, poseOf(inst), "part");
       continue;
     }
     if (bodyImpl?.kind === "gear-train" && !behaviour) {
@@ -1745,8 +1733,6 @@ export function planWorld(
   if (!built.plan) {
     return { ok: false, errors: [schema("World file did not load.")] };
   }
-  const stacked = nestedPoses(built.plan, loaded.resolved);
-  if (stacked.length > 0) return { ok: false, errors: stacked };
   const fromLoad = loaded.diagnostics
     .filter((diag) => diag.severity === "error")
     .map((diag) => present(diag));

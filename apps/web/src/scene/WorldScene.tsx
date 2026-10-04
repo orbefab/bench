@@ -2,6 +2,9 @@ import { Html } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
+  composePose,
+  type Pose,
+  ROOT_PATH,
   WORLD_TARGET_ROBOT,
   type WorldPose,
   type WorldPrimitive,
@@ -419,17 +422,26 @@ function linkMaterial(color: number): THREE.MeshStandardMaterial {
   });
 }
 
+const ORIGIN: Pose = { position: [0, 0, 0], rotation: [1, 0, 0, 0] };
+
+/**
+ * A callout sits on its node in the document frame: the node's pose taken
+ * through every group above it, as the run places parts. The root's pose
+ * places nothing.
+ */
 function calloutNodes(
   nodes: readonly WorldViewNode[],
   warnings: ReturnType<typeof warningsFromRun>,
-  into: { id: string; pose: WorldViewNode["pose"]; text: string }[] = []
+  into: { id: string; pose: WorldViewNode["pose"]; text: string }[] = [],
+  frame: Pose = ORIGIN
 ) {
   for (const node of nodes) {
+    const pose = node.id === ROOT_PATH ? ORIGIN : composePose(frame, node.pose);
     const rows = warnings.get(node.id);
     if (rows && rows.length > 0) {
-      into.push({ id: node.id, pose: node.pose, text: warningText(rows) });
+      into.push({ id: node.id, pose, text: warningText(rows) });
     }
-    calloutNodes(node.children, warnings, into);
+    calloutNodes(node.children, warnings, into, pose);
   }
   return into;
 }

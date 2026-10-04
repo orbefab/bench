@@ -149,7 +149,12 @@ export function gpioInputNets(plan: RunPlan): GpioInputNet[] {
   return out;
 }
 
-/** Every wire, both ways. With `kind`, only wires whose two ends are that kind. */
+/**
+ * Every wire, both ways. With `kind`, only wires on a net of that kind: a
+ * wire is dropped when either end is a pin of another kind. An end with
+ * no run pin (a composite shell's port, which a net's wires may start
+ * from) passes, so a ground net still joins through it.
+ */
 export function wireGraph(
   plan: PowerWiring,
   kind?: RunPin["kind"]
@@ -163,8 +168,7 @@ export function wireGraph(
   for (const wire of plan.wires) {
     if (
       kind &&
-      (endpointPin(plan, wire[0])?.kind !== kind ||
-        endpointPin(plan, wire[1])?.kind !== kind)
+      (otherKind(plan, wire[0], kind) || otherKind(plan, wire[1], kind))
     ) {
       continue;
     }
@@ -172,6 +176,15 @@ export function wireGraph(
     link(wire[1], wire[0]);
   }
   return map;
+}
+
+function otherKind(
+  plan: PowerWiring,
+  endpoint: string,
+  kind: RunPin["kind"]
+): boolean {
+  const pin = endpointPin(plan, endpoint);
+  return pin !== null && pin.kind !== kind;
 }
 
 function reachedFrom(

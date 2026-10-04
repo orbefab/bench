@@ -1,7 +1,8 @@
 /**
- * Which instance a tool may move. Poses are flat: a stored pose is never
- * composed with its parent's, so only an instance the open part owns
- * directly is drawn where its pose says. Anything else says why not.
+ * Which instance a tool may move: one the open part owns directly, whose
+ * stored pose is in the open part's frame. A part inside another part
+ * file moves with its parent (the run composes the poses) and is moved
+ * in its own file. Anything else says why not.
  */
 
 import {

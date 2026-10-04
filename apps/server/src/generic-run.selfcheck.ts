@@ -1043,8 +1043,8 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
   }
 }
 
-// The run places an instance by its own pose. A parent's pose is not
-// composed in, so a placed part under a posed group is refused.
+// The run places an instance by its pose taken through every posed group
+// above it: a group moved or turned carries its parts.
 {
   const dir = mkdtempSync(join(tmpdir(), "sfab-nested-pose-"));
   try {
@@ -1110,16 +1110,52 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       flat.plan.boards.some((board) => board.id === "rig.nano"),
       "the group at the origin did not run its nano"
     );
+    const near = (got: readonly number[] | undefined, want: number[]) =>
+      got !== undefined &&
+      want.every(
+        (value, i) => Math.abs((got[i] ?? Number.NaN) - value) < 1e-12
+      );
     const moved = planWorld(dir, "rig-1.world.json");
-    expect(!moved.ok, "a nano under a posed group ran");
-    const message = moved.ok
-      ? ""
-      : moved.errors.map((item) => item.message).join("; ");
-    expect(
-      message.includes("rig.nano") && message.includes("under rig"),
-      `nested pose error: ${message}`
+    if (!moved.ok) {
+      throw new Error(moved.errors.map((item) => item.message).join("; "));
+    }
+    const movedNano = moved.plan.boards.find(
+      (board) => board.id === "rig.nano"
     );
-    console.log(`nested pose: refused (${message})`);
+    expect(
+      near(movedNano?.pose.position, [1.08, 0, 0]),
+      `rig at x 1 put rig.nano at ${JSON.stringify(movedNano?.pose)}`
+    );
+    // A quarter turn about z takes the nano's 0.08 m along x onto y.
+    const c = Math.SQRT1_2;
+    writeJson(
+      join(dir, "turned.world.json"),
+      sceneWorld(
+        {
+          rig: {
+            part: "sfab/rig-0@1.0.0",
+            pose: { position: [1, 0, 0], rotation: [c, 0, 0, c] },
+          },
+        },
+        [],
+        { default: 1 }
+      )
+    );
+    const turned = planWorld(dir, "turned.world.json");
+    if (!turned.ok) {
+      throw new Error(turned.errors.map((item) => item.message).join("; "));
+    }
+    const turnedNano = turned.plan.boards.find(
+      (board) => board.id === "rig.nano"
+    );
+    expect(
+      near(turnedNano?.pose.position, [1, 0.08, 0]) &&
+        near(turnedNano?.pose.rotation, [c, 0, 0, c]),
+      `turned rig put rig.nano at ${JSON.stringify(turnedNano?.pose)}`
+    );
+    console.log(
+      "nested pose: rig at x 1 puts rig.nano at x 1.08; a quarter turn about z puts it at y 0.08, turned"
+    );
 
     // -q is the same rotation as q, so the group is still at the origin.
     writeJson(
