@@ -29,7 +29,8 @@ const SBI_PORTB0 = 0x9a28;
 const CBI_PORTB0 = 0x9828;
 const RJMP_SELF = 0xcfff;
 
-// Every transition the four modes need, one 2-cycle instruction each.
+// Every transition the four modes need, one SBI/CBI each (avr8js stamps
+// them one or two cycles apart).
 const walk = new AvrBoard("walk", chip, ["PB0"]);
 walk.load(
   image([

@@ -161,6 +161,12 @@ export type RealizedCircuit = {
   pruned: string[];
   /** `path.port` → node, for the parts kept. */
   ports: Map<string, string>;
+  /**
+   * Element id → the instance path it belongs to: each kept part's
+   * elements to the part, the pins to the board (`owner`). Ownership is
+   * this map, never read back from an element id.
+   */
+  owners: Map<string, string>;
 };
 
 type NetPorts = {
@@ -500,6 +506,8 @@ export function realize(
     keep?: readonly string[];
     /** Pin element id. Absent is `pin.${port}`, one board on the rail. */
     pinId?: (port: string) => string;
+    /** The board's instance path: it owns the pins. Absent leaves them unowned. */
+    owner?: string;
   }
 ): RealizedCircuit {
   const regulatorNode = stamp.regulatorNode ?? undefined;
@@ -519,11 +527,13 @@ export function realize(
   );
   const made: Element[] = [];
   const leds: { path: string; diode: Diode }[] = [];
+  const owners = new Map<string, string>();
   let capacitive = false;
   for (const part of alive) {
     const built = elementOf(part, alive);
     if (built.capacitive) capacitive = true;
     made.push(...built.elements);
+    for (const el of built.elements) owners.set(el.id, part.path);
     if (built.led) leds.push(built.led);
   }
   made.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -543,9 +553,14 @@ export function realize(
       }))
     : [];
   const aliveIds = new Set(alive.map((part) => part.path));
+  const pinElements = pins.flatMap((row) => row.pin.elements());
+  if (opts?.owner) {
+    for (const el of pinElements) owners.set(el.id, opts.owner);
+  }
   return {
     ports: portsOf(alive),
-    elements: [...made, ...pins.flatMap((row) => row.pin.elements())],
+    owners,
+    elements: [...made, ...pinElements],
     pins,
     leds,
     feedNode,
@@ -599,16 +614,20 @@ export function connectParts(
   nodes: Map<string, readonly string[]>;
   /** `path.port` → node, for the parts kept. */
   ports: Map<string, string>;
+  /** Element id → the part path it belongs to. */
+  owners: Map<string, string>;
 } {
   const alive = prune(parts, anchors);
   const kept = new Set(alive.map((part) => part.path));
   const nodes = new Map<string, readonly string[]>();
+  const owners = new Map<string, string>();
   const made: Element[] = [];
   let capacitive = false;
   for (const part of alive) {
     const built = elementOf(part, alive);
     if (built.capacitive) capacitive = true;
     made.push(...built.elements);
+    for (const el of built.elements) owners.set(el.id, part.path);
     nodes.set(part.path, Object.values(part.nodes));
   }
   return {
@@ -619,6 +638,7 @@ export function connectParts(
     capacitive,
     nodes,
     ports: portsOf(alive),
+    owners,
   };
 }
 

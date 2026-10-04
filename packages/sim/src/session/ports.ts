@@ -4,11 +4,13 @@
  * the same way, so a check can hold one against the other port by port.
  *
  * - A port on a rail: the node its net sits on, and the current the
- *   elements under the instance draw out of that node. A snapshot run as
- *   a circuit form finds the node through its watch, which names the
- *   form port behind each of the part's own ports. A form the rail holds
- *   as a lumped slot, not as elements, reads its own draw on its power
- *   port.
+ *   instance draws out of that node: the elements the rail registered as
+ *   its own or a descendant's (stamped parts by path, a board's pins) and
+ *   a board's own draw on its board load (`RailCircuit.currentInto`). A
+ *   pin sourcing current reads negative. A snapshot run as a circuit form
+ *   finds the node through its watch, which names the form port behind
+ *   each of the part's own ports. A form the rail holds as a lumped slot,
+ *   not as elements, reads its own draw on its power port.
  * - A port on a rotational net: the angle of the joint the instance
  *   drives. Any other port, or a name the instance does not have, has no
  *   reading.
@@ -60,16 +62,15 @@ export function portReading(
       node = circuit.stampedNode(member);
       if (node !== null) break;
     }
-    const elements = circuit.elementsUnder(path);
-    if (node === null && elements.length > 0) node = watchedNode(s, path, port);
+    const owned = circuit.owns(path);
+    if (node === null && owned) node = watchedNode(s, path, port);
     if (node === null) continue;
     if (node === "0") return { voltage: 0, current: null, angle: null };
     return {
       voltage: circuit.nodeVoltage(node),
-      current:
-        elements.length > 0
-          ? circuit.currentLeaving(elements, node)
-          : slotDraw(s, path, port),
+      current: owned
+        ? circuit.currentInto(path, node)
+        : slotDraw(s, path, port),
       angle: null,
     };
   }

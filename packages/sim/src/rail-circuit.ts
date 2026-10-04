@@ -110,6 +110,11 @@ export type RailCircuitSpec = {
    */
   primaryId?: string;
   /**
+   * The board instance `stamp` belongs to. It owns the pins and its own
+   * draw on the board load. `boards` entries name theirs by `id`.
+   */
+  owner?: string;
+  /**
    * `ideal-voltage@1`. The rail stamps a voltage source on the feed
    * terminal. A Thevenin limit is the supply when this is absent.
    */
@@ -345,6 +350,10 @@ export class RailCircuit {
     for (const [id, ports] of built.boardPorts) this.boardPorts.set(id, ports);
     for (const [id, node] of built.extraNodes) this.extraNodes.set(id, node);
     this.pruned = built.pruned;
+    for (const [id, owner] of built.owners) this.owners.set(id, owner);
+    for (const [owner, load] of built.ownedLoads) {
+      this.ownedLoads.set(load.id, { owner, load, own: 0 });
+    }
     for (const [id, nodes] of built.partNodes) this.partNodes.set(id, nodes);
     for (const [full, node] of built.stampedPorts)
       this.stampedPorts.set(full, node);
@@ -356,6 +365,21 @@ export class RailCircuit {
 
   /** Scene parts this rail dropped because a node was open. */
   readonly pruned: readonly string[] = [];
+  /**
+   * Element id → the instance path that owns it: a stamped part's
+   * elements, a board's pins. Readings at an instance's ports sum what it
+   * owns; an element id is never parsed for its owner.
+   */
+  private readonly owners = new Map<string, string>();
+  /**
+   * A board load is one aggregate element: the board's own draw plus the
+   * quiescent draw of parts and rangers it carries. Its owner is credited
+   * with `own / amps` of it; the rest is attributed to no instance.
+   */
+  private readonly ownedLoads = new Map<
+    string,
+    { owner: string; load: CurrentLoad; own: number }
+  >();
   private readonly partNodes = new Map<string, readonly string[]>();
   private readonly stampedPorts = new Map<string, string>();
   private readonly drivers: BridgeDriver[] = [];
@@ -405,14 +429,38 @@ export class RailCircuit {
     return this.stampedPorts.get(full) ?? null;
   }
 
-  /** The stamped elements of the instance at `path` and everything under it. */
+  /**
+   * The stamped elements owned by the instance at `path` and everything
+   * under it. A board load is not one of them: see `currentInto`.
+   */
   elementsUnder(path: string): Element[] {
-    return this.engine.elements.filter(
-      (el) =>
-        el.id === path ||
-        el.id.startsWith(`${path}.`) ||
-        el.id.startsWith(`${path}#`)
+    return this.engine.elements.filter((el) =>
+      isUnder(this.owners.get(el.id), path)
     );
+  }
+
+  /** True when this rail holds anything the instance at `path` owns. */
+  owns(path: string): boolean {
+    if (this.elementsUnder(path).length > 0) return true;
+    for (const row of this.ownedLoads.values()) {
+      if (isUnder(row.owner, path)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Amperes the instance at `path` (and everything under it) drew out of
+   * `node` at the end of the last solve: its elements, plus its own share
+   * of a board load on that node.
+   */
+  currentInto(path: string, node: string): number {
+    let amps = this.engine.currentLeaving(this.elementsUnder(path), node);
+    for (const row of this.ownedLoads.values()) {
+      if (!isUnder(row.owner, path) || !(row.load.amps > 0)) continue;
+      const share = Math.min(1, row.own / row.load.amps);
+      amps += this.engine.currentLeaving([row.load], node) * share;
+    }
+    return amps;
   }
 
   /** Amperes `elements` drew out of `node` at the end of the last solve. */
@@ -420,14 +468,29 @@ export class RailCircuit {
     return this.engine.currentLeaving(elements, node);
   }
 
-  setFixed(amps: number): void {
+  /**
+   * The rail's aggregate load. `draws` is each board's own draw, by board
+   * id: the board that owns this load is credited with its entry, and the
+   * rest of `amps` (other parts' quiescent draw) with no instance.
+   */
+  setFixed(amps: number, draws?: ReadonlyMap<string, number>): void {
     if (this.boardOrder.length > 1) {
       const first = this.boardOrder[0];
       const load = first ? this.boardLoads.get(first) : undefined;
-      if (load) load.amps = amps;
+      if (load) this.setLoad(load, amps, draws);
       return;
     }
-    this.load.amps = amps;
+    this.setLoad(this.load, amps, draws);
+  }
+
+  private setLoad(
+    load: CurrentLoad,
+    amps: number,
+    draws?: ReadonlyMap<string, number>
+  ): void {
+    load.amps = amps;
+    const row = this.ownedLoads.get(load.id);
+    if (row) row.own = draws?.get(row.owner) ?? 0;
   }
 
   /** Boards on this rail. Empty when one board keeps the unprefixed names. */
@@ -511,11 +574,18 @@ export class RailCircuit {
     return this.battery?.warnCount ?? 0;
   }
 
-  /** One board's knee load, when several boards share this rail. */
-  setBoardLoad(id: string, amps: number): void {
+  /**
+   * One board's knee load, when several boards share this rail. `draws`
+   * as in `setFixed`.
+   */
+  setBoardLoad(
+    id: string,
+    amps: number,
+    draws?: ReadonlyMap<string, number>
+  ): void {
     const load = this.boardLoads.get(id);
     if (!load) throw new Error(`no board ${id}`);
-    load.amps = amps;
+    this.setLoad(load, amps, draws);
   }
 
   /** One board's pins. A one-board rail answers for any id with its own. */
@@ -1041,7 +1111,18 @@ type Assembled = {
   partNodes: Map<string, readonly string[]>;
   /** A stamped part's `path.port` → node, on a board or a span. */
   stampedPorts: Map<string, string>;
+  /** Element id → owning instance path. */
+  owners: Map<string, string>;
+  /** Board instance path → its board load element. */
+  ownedLoads: Map<string, CurrentLoad>;
 };
+
+/** `owner` is the instance at `path` or one under it. */
+function isUnder(owner: string | undefined, path: string): boolean {
+  return (
+    owner !== undefined && (owner === path || owner.startsWith(`${path}.`))
+  );
+}
 
 function supplyElement(
   id: string,
@@ -1169,12 +1250,16 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   const pruned: string[] = [];
   const partNodes = new Map<string, readonly string[]>();
   const stampedPorts = new Map<string, string>();
+  const owners = new Map<string, string>();
+  const ownedLoads = new Map<string, CurrentLoad>();
   for (const board of prepared) {
+    const owner = board.id || spec.owner || "";
     const realized = realize(
       board.stamp,
       board.feed,
       board.pin ?? spec.pin ?? AVR_PIN,
       {
+        ...(owner ? { owner } : {}),
         ...(many ? { pinId: (port: string) => `pin.${board.id}.${port}` } : {}),
         ...(!many && spec.keep && spec.keep.length > 0
           ? { keep: spec.keep }
@@ -1185,6 +1270,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     if (realized.capacitive) capacitive = true;
     pruned.push(...realized.pruned);
     for (const [full, node] of realized.ports) stampedPorts.set(full, node);
+    for (const [id, path] of realized.owners) owners.set(id, path);
     feedOf.set(board.id, realized.feedNode);
     boardNodes.set(board.id, realized.boardNode);
     const netlist = board.stamp.netlist === true;
@@ -1196,6 +1282,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
       knee
     );
     loads.push(load);
+    if (owner) ownedLoads.set(owner, load);
     if (many) {
       boardLoads.set(board.id, load);
       boardDrives.set(board.id, realized.pins);
@@ -1236,6 +1323,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   if (joined.capacitive) capacitive = true;
   for (const [id, nodes] of joined.nodes) partNodes.set(id, nodes);
   for (const [full, node] of joined.ports) stampedPorts.set(full, node);
+  for (const [id, path] of joined.owners) owners.set(id, path);
   stamped.push(...joined.elements);
   if (many) {
     stamped = [...stamped].sort((a, b) =>
@@ -1352,6 +1440,8 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     pruned,
     partNodes,
     stampedPorts,
+    owners,
+    ownedLoads,
   };
 }
 

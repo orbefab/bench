@@ -7,23 +7,39 @@ import type { AssignedPart, StampedWatch } from "../circuit-stamp";
 import type { MotorTrip, RailCircuit } from "../rail-circuit";
 import { sampleLoad } from "./actuators";
 import { stepS } from "./common";
-import { boardsFed, drivenBoard, loadBoard } from "./rails";
+import { drivenBoard, loadBoard } from "./rails";
 import { driversTripped, prepareShafts, readShafts } from "./shafts";
 import type { Load, SessionState } from "./state";
 
-/** One warning per path and ref when an observed bound is outside. */
-function noteSnapshotEnvelope(s: SessionState, supplyId: string): void {
-  const group = s.rails.get(supplyId);
-  if (!group) return;
-  const supply = s.runPlan?.supplies.find((item) => item.id === supplyId);
+/**
+ * Every snapshot this circuit realizes, once per solve: the parts stamped
+ * with each board and each supply on it, whichever supply feeds them, and
+ * the spans it holds. One warning per path and ref when an observed bound
+ * is outside. Supply order does not change what is checked.
+ */
+function noteSnapshotEnvelope(s: SessionState, circuit: RailCircuit): void {
+  const plan = s.runPlan;
+  if (!plan) return;
+  const onThis = (supplyId: string | null | undefined) =>
+    !!supplyId && s.rails.get(supplyId)?.circuit === circuit;
   const parts = [
-    ...boardsFed(s, supplyId).flatMap((item) => item.stamp?.parts ?? []),
-    ...(supply?.stamp?.parts ?? []),
+    ...plan.boards
+      .filter((board) => onThis(s.boardPower.get(board.id)?.supplyId))
+      .flatMap((board) => board.stamp?.parts ?? []),
+    ...plan.supplies
+      .filter((supply) => onThis(supply.id))
+      .flatMap((supply) => supply.stamp?.parts ?? []),
+    ...(plan.spans ?? [])
+      .map((span) => span.part)
+      .filter((part) => circuit.owns(part.path)),
   ];
+  const seen = new Set<string>();
   for (const part of parts) {
-    if (part.watch) noteWatch(s, group.circuit, part, part.watch);
+    if (seen.has(part.path)) continue;
+    seen.add(part.path);
+    if (part.watch) noteWatch(s, circuit, part, part.watch);
     if (!part.table) continue;
-    const reading = group.circuit.tableReading(part.path);
+    const reading = circuit.tableReading(part.path);
     if (!reading) continue;
     const port = part.table.law.across[0];
     warnEnvelope(s, part.path, part.table.ref, part.table.envelope, {
@@ -44,12 +60,11 @@ function noteWatch(
   part: AssignedPart,
   watch: StampedWatch
 ): void {
-  const elements = circuit.elementsUnder(part.path);
   const observed: Record<string, number> = {};
   for (const [formPort, port] of Object.entries(watch.ports)) {
     const node = part.nodes[formPort];
     if (!node || node === "0") continue;
-    observed[`${port}.current`] = circuit.currentLeaving(elements, node);
+    observed[`${port}.current`] = circuit.currentInto(part.path, node);
     observed[`${port}.voltage`] = circuit.nodeVoltage(node);
   }
   warnEnvelope(
@@ -276,6 +291,13 @@ function solveOneRail(
   const group = s.rails.get(supplyId);
   if (!group) return { voltage: 0, current: 0, board: 0, boardMin: 0 };
   const { circuit, loads: members } = group;
+  // Each board's own draw, credited to that board's share of its load.
+  const draws = new Map<string, number>();
+  for (const [id, power] of s.boardPower) {
+    if (power.supplyId && s.rails.get(power.supplyId)?.circuit === circuit) {
+      draws.set(id, power.draw);
+    }
+  }
   let pieces: ReturnType<typeof pinPiecesUnion> = null;
   if (circuit.boardIds.length > 1) {
     // Every board on the circuit, not only the ones `supplyId` feeds.
@@ -296,7 +318,7 @@ function solveOneRail(
     for (const spec of specs) {
       const amps =
         (s.boardPower.get(spec.id)?.draw ?? 0) + (quiescent.get(spec.id) ?? 0);
-      circuit.setBoardLoad(spec.id, amps);
+      circuit.setBoardLoad(spec.id, amps, draws);
       accounted += amps;
     }
     const rest = fixed - accounted;
@@ -305,7 +327,7 @@ function solveOneRail(
       const base =
         (s.boardPower.get(first.id)?.draw ?? 0) +
         (quiescent.get(first.id) ?? 0);
-      circuit.setBoardLoad(first.id, base + rest);
+      circuit.setBoardLoad(first.id, base + rest, draws);
     }
     pieces = pinPiecesUnion(s, specs, circuit);
     if (!pieces) {
@@ -318,7 +340,7 @@ function solveOneRail(
       }
     }
   } else {
-    circuit.setFixed(fixed);
+    circuit.setFixed(fixed, draws);
     const avr = drivenBoard(s, supplyId);
     pieces = avr ? pinPiecesUnion(s, [avr], circuit) : null;
     if (avr && !pieces) {
@@ -342,7 +364,7 @@ function solveOneRail(
   }
   circuit.armTrips(tripsOf(s, circuit, members));
   circuit.solve(pieces ?? undefined);
-  noteSnapshotEnvelope(s, supplyId);
+  noteSnapshotEnvelope(s, circuit);
   for (const [id, other] of s.rails) {
     if (other.circuit === circuit) noteBattery(s, id);
   }

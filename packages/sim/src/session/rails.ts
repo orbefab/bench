@@ -433,6 +433,7 @@ function bindRails(s: SessionState) {
       pin: only.pin,
       ledAlias: onboardLedPath(only.id),
       stamp: only.stamp,
+      owner: only.id,
       feed: "vin",
       ...(usb && vbus ? { keep: [vbus] } : {}),
       primaryId: primary.id,
@@ -514,6 +515,7 @@ function bindRails(s: SessionState) {
           ...(attached.stamp && (fed?.vinFeed || attached.feed)
             ? {
                 stamp: attached.stamp,
+                ...(fed?.stamp ? { owner: fed.id } : {}),
                 feed: fed?.vinFeed ? "vin" : attached.feed,
               }
             : {}),

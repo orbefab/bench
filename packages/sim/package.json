@@ -30,7 +30,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p test",
-    "test": "node ../../scripts/checks.mjs test/feeds-hub.selfcheck.ts test/pullup.selfcheck.ts test/pin-release.selfcheck.ts test/supply-feed.selfcheck.ts"
+    "test": "node ../../scripts/checks.mjs test/feeds-hub.selfcheck.ts test/pullup.selfcheck.ts test/pin-release.selfcheck.ts test/circuit-owners.selfcheck.ts test/supply-feed.selfcheck.ts"
   },
   "dependencies": {
     "@mujoco/mujoco": "3.14.0",
