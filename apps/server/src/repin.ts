@@ -62,7 +62,7 @@ import { captureFromConfig } from "./capture";
 import { nodeStore } from "./world/node-store";
 import { nodeStampEnv } from "./world/plan-host";
 
-const ASSEMBLY_FORMAT = "sfab.assembly-check@1";
+const ASSEMBLY_FORMAT = "sfab.assembly-check@2";
 const JOURNAL_FORMAT = "sfab.repin-plan@1";
 const LOCK_SECTIONS = ["parts", "types", "snapshots", "overlays"] as const;
 const CAPTURE_CONFIG = join("fixtures", "capture.config.json");

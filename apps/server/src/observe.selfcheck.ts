@@ -220,10 +220,30 @@ function throwsWith(fn: () => unknown, text: string): void {
       checkDescriptor({
         ...describe("nano.A0.voltage", "events"),
         reference: {
-          kind: "ratio-to",
+          kind: "offset-to",
         } as unknown as ObservationDescriptor["reference"],
       }),
     "is not supported"
+  );
+  // A ratio is to another port's same field on the same instance.
+  for (const quantity of [undefined, "nano.A0.voltage", "uno.5V.voltage"]) {
+    throwsWith(
+      () =>
+        checkDescriptor({
+          ...describe("nano.A0.voltage", "events"),
+          reference: {
+            kind: "ratio-to",
+            quantity,
+          } as unknown as ObservationDescriptor["reference"],
+        }),
+      "is not another port's voltage on nano"
+    );
+  }
+  checkDescriptor(
+    describe("nano.A0.voltage", "events", {
+      kind: "ratio-to",
+      quantity: "nano.5V.voltage",
+    })
   );
   throwsWith(() => describe("nano.A0.current", "events"), "observes a voltage");
   throwsWith(() => describe("A0.voltage", "step"), "not instance.port.field");

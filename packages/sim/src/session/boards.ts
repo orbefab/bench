@@ -409,18 +409,24 @@ function noteAdc(s: SessionState, boardId: string, sample: AdcConversion) {
   });
 }
 
-/** A conversion for `Sim.observe`, at the instant it started. */
+/**
+ * A conversion for `Sim.observe`, at the instant it started. The AVCC
+ * reference is the latched board node (`attachAnalog`), which is the
+ * board's power port; no other reference is on a port of the board.
+ */
 function noteConversion(
   s: SessionState,
   board: AvrBoard,
   sample: AdcConversion
 ) {
   const startStep = s.startStep.get(board.id) ?? 0;
+  const spec = s.runPlan?.boards.find((item) => item.id === board.id);
   const event: ConversionEvent = {
     board: board.id,
     mux: sample.mux,
     ref: sample.ref,
     vRef: sample.vRef,
+    referencePort: sample.ref === "avcc" && spec ? spec.voltagePin : null,
     voltage: sample.voltage,
     count: sample.count,
     startStep,

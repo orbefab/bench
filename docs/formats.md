@@ -49,6 +49,7 @@ type PortDecl = {
   connector?: string;                     // cable family; "usb" matches a supply to a board port
   frame?: string;                         // mount / rotational: where on the body
   ratings?: Ratings;
+  resolution?: Resolution[];
 };
 
 type Ratings = {
@@ -68,6 +69,23 @@ type BusDecl = { ports: string[]; protocol: string };   // "uart", "i2c", "spi";
 ```
 
 **Logic thresholds.** A number is volts. A datasheet row stated against the supply is `[k, b]`, meaning `k·vcc + b`: the 328P's GPIO are `[0.3, 0]` / `[0.6, 0]` (VIL max 0.3·VCC, VIH min 0.6·VCC), its RESET `[0.1, 0]` / `[0.9, 0]` (VIL2 / VIH2), the 32U4's GPIO `[0.2, -0.1]` / `[0.2, 0.9]`. The 32U4's RESET cites no pair and has none. A port with a `[k, b]` threshold cites `vcc`, the supply its absolute values were stated at; without it the check is a `rating` error. One resolver, `logicThresholds(logic, vcc)` in `packages/parts`, serves both readers: the static check resolves at the cited `vcc`, a run at the solved board node. In a run, a GPIO whose net has a circuit (the pin is stamped) reads its solved node before the CPU, the ADC's one-step lag: above VIH high, below VIL low, and between them the last level holds, starting low. There is no hysteresis constant; the VIL–VIH band is the datasheet's guaranteed one. A pin with no circuit on its net keeps the wire walk (another output, then ground, then a supply). Runtime reset stays the chip's `resetFraction`.
+
+**Resolution.** The smallest difference a port tells apart in one field, cited (run 7):
+
+```ts
+type Resolution = {
+  field: "voltage" | "current" | "angle";              // one the port's domain carries
+  kind: "precision" | "reader";
+  value: SiNumber;                                      // finite, positive
+  reference: { kind: "absolute" } | { kind: "ratio-to"; quantity: string };  // "PORT.field" on the same part
+  conditions?: ({ kind: "within-ratings" } | { kind: "steady@1"; window: SiNumber })[];
+  source: Citation;                                     // a title and a ref
+};
+```
+
+A `precision` is how close the part holds a field it drives; it is judged on settled samples only, so it carries `steady@1`, whose `window` W is in seconds. A `reader` is the step of a value the part reads; it is judged at its conversions and never carries `steady@1`. With `absolute`, the value is in the field's unit; with `ratio-to`, it is a fraction of another port's field in the same quantity, so the units cancel. `within-ratings` judges only where the operating `voltage` and `current` ratings of the port and of its ratio port hold. A part states its own by port (`PartFile.resolution`); one for a field and kind the type also states replaces the type's. Library lint refuses anything else: another kind, reference or condition, an unknown key, a field the domain does not carry, a value that is not finite and positive or is tagged in another quantity, a ratio to a port the part does not have or in another quantity, a precision without `steady@1`, a reader with it, a missing source, a port the type does not have, and two of one field and kind on one port. A resolution is data about a reading, not about how a part runs: it is not in a capture signature.
+
+The catalog states two. `sfab/sg90@1.0.0` `shaft` angle precision is π·10/1856 rad (0.0169), the 10 µs dead band over Servo.h's 544–2400 µs span for 180°, stricter than the datasheet's band read as π/100; `steady@1` W is 0.06 s, three 20 ms frames. It is on the part, not on `hobby-servo-3wire`, which the MG90S shares. The Uno R3's and Nano's `A{n}` voltage reader is 1/1024 `ratio-to` `5V.voltage` with `within-ratings` (ATmega328P datasheet DS40002061, ADC). A conversion on the internal reference is not a ratio to `5V`.
 
 **Port templates** (D-023.6): a type may declare repeated pins as a template, e.g. `{ "id": "D{n}", "n": [0, 13], "pwm": [3, 5, 6, 9, 10, 11], "role": "logic" }`. The loader expands the template, and the checker, lockfile and reports see only expanded ports.
 
@@ -105,6 +123,7 @@ type PartFile = {
   declaredOnly?: boolean;                       // exists in a netlist, no working behaviour
   sources?: Citation[];
   ratings?: Record<string, Ratings>;            // per port, overrides the type
+  resolution?: Record<string, Resolution[]>;    // per port; replaces the type's by field and kind
   play?: PlayBlock;                             // read only when this part is the root of a run
   capture?: { behaviour?: CaptureRecipe; body?: CaptureRecipe }; // how to capture that axis of this part
   axes: {
@@ -637,7 +656,7 @@ A `hinge@1` capture runs the gear train and the collapsed hinge on the same fixt
 
 ```ts
 type AssemblyCheck = {
-  format: "sfab.assembly-check@1";
+  format: "sfab.assembly-check@2";
   document: string;                                  // project-relative assembly part
   fixture: { ms: number; hash: string; lock: string };
   detailed: { default: LevelSpec; paths?: Record<string, LevelSpec> };
@@ -645,14 +664,29 @@ type AssemblyCheck = {
   children: { path: string; axis: string; ref: string; hash: string; fromHash: string }[];
   quantities: string[];                              // "instance.path.port.field"
   observations: { quantity: string; cadence: "frame" | "step" | "events";
-                  phase: "rail" | "body" | "conversion"; reference: { kind: "absolute" } }[];
+                  phase: "rail" | "body" | "conversion";
+                  reference: { kind: "absolute" } | { kind: "ratio-to"; quantity: string };
+                  with?: string[] }[];
   identity: string;                                  // the observations, metrics and observer code
-  error: { metric: string; quantity: string; value: number;
-           heldOut: "fixture"; baseline: "detailed";
-           pairs?: number; unmatched?: number;
-           at?: { ms: number; detailed: number; snapshot: number } }[];
+  policy: string;                                    // the criteria and the settle predicate
+  rows: {
+    quantity: string;
+    metrics: Metric[];                               // every pair, each cadence
+    criteria: {
+      kind: "precision" | "reader"; from: string; threshold: number;
+      reference: Resolution["reference"]; conditions: Resolution["conditions"]; source: Citation;
+      metrics: Metric[];                             // the qualified pairs
+      coverage: { qualified: number; ms?: number; excluded: Record<string, number> };
+      verdict: "within" | "over" | "none"; by?: number; reason?: string;
+    }[];
+    verdict?: "none"; reason?: "no resolution";      // no criterion covers the quantity
+    inDomain: boolean;
+  }[];
   domain: { detailed: Validity; snapshot: Validity };
+  inDomain: boolean;
 };
+type Metric = { metric: string; value: number; pairs: number; unmatched?: number;
+                at?: { ms: number; detailed: number; snapshot: number } };
 type Validity = {
   envelope: { path: string; ref: string; port: string; quantity: string; range: string }[];
   stale: { path: string; ref: string }[];
@@ -661,20 +695,45 @@ type Validity = {
 };
 ```
 
-An assembly check lives under `<project>/checks/` and records one assembly run twice on its own fixture: the document as it is (its firmware, supplies and play), with `detailed` as its play levels and then with `snapshot`. `fixture.hash` and `fixture.lock` are the content hashes of the document and its lockfile. `children` are the snapshots the snapshot side runs, each with the content hash of its snapshot file and its capture-source signature, so a child that is edited or goes stale makes the record stale. The lockfile is hashed as a file; its pins are not re-resolved. Each quantity is `Sim.portReading` at an instance's port.
+An assembly check lives under `<project>/checks/` and records one assembly run twice on its own fixture: the document as it is (its firmware, supplies and play), with `detailed` as its play levels (side a, the source) and then with `snapshot` (side b). `fixture.hash` and `fixture.lock` are the content hashes of the document and its lockfile. `children` are the snapshots the snapshot side runs, each with the content hash of its snapshot file and its capture-source signature, so a child that is edited or goes stale makes the record stale. The lockfile is hashed as a file; its pins are not re-resolved. Each quantity is `Sim.portReading` at an instance's port.
 
-`observations` names how each quantity is observed (`packages/sim/src/observe.ts`). The cadence is `frame` (t = 0 and the end of every 10 ms frame), `step` (t = 0 and the end of every master step) or `events` (a reader's conversions: the quantity is the reader's own port, `board.port.voltage`, and the value is the held sample with its latched reference at the instant the conversion started). The phase is what that cadence and field read: a voltage or current is the master step's rail solve, an angle its body step, an event its conversion start; a stored phase that differs is refused. The two runs pair at the same instant, never by order: a frame or step by its master step count, a conversion by the master step in which its board's current CPU ran its first cycle and the CPU cycle it started on. A board runs at most once per master step, so two of its CPUs never start in the same step. Each row is a named metric over the pairs (`packages/sim/src/compare.ts`):
+`observations` names how each quantity is observed (`packages/sim/src/observe.ts`). The cadence is `frame` (t = 0 and the end of every 10 ms frame), `step` (t = 0 and the end of every master step) or `events` (a reader's conversions: the quantity is the reader's own port, `board.port.voltage`, and the value is the held sample at the instant the conversion started, with the reference it latched: its mode, volts and the board port it was read on, or none for an internal one). The phase is what that cadence and field read: a voltage or current is the master step's rail solve, an angle its body step, an event its conversion start; a stored phase that differs is refused. A `ratio-to` reference names another port's field of the same instance: a step value is divided by that port's reading, a conversion by the reference it latched, and only when it was latched on that port; otherwise, or when the reference is zero or not finite, the value is kept and excluded with the reason, and never paired. `with` names quantities read at the same instant, for `within-ratings`. The two runs pair at the same instant, never by order: a frame or step by its master step count, a conversion by the master step in which its board's current CPU ran its first cycle and the CPU cycle it started on. A board runs at most once per master step, so two of its CPUs never start in the same step. Each metric is named (`packages/sim/src/compare.ts`):
 
-| Metric | Row name | Definition |
+| Metric | Over | Definition |
 | --- | --- | --- |
-| `frame-max`, `frame-rms` | `free-run-max-abs`, `free-run-rms` | the largest gap and the arithmetic RMS over the frames; the rows keep their first names and numbers |
-| `step-max` | `step-max` | the largest gap over master steps, with its time and both values in `at` |
-| `step-rms` | `step-rms` | the arithmetic RMS over master steps, not time-integrated |
-| `event-max` | `event-max` | the largest gap over conversions present on both sides |
+| `frame-max`, `frame-rms` | every frame pair | the largest gap and the arithmetic RMS; `@1`'s `free-run-max-abs` and `free-run-rms` |
+| `step-max` | every step pair | the largest gap, with its time and both values in `at` |
+| `step-rms` | every step pair | the arithmetic RMS over master steps, not time-integrated |
+| `settled-max`, `settled-rms` | a precision's qualified step pairs | the largest gap with its `at`, and the arithmetic RMS with no integration across the gaps between them |
+| `event-max` (v2) | a reader's qualified conversions | the largest gap |
 
-Two independent bands are never subtracted: a series and its reverse have the same band and a paired gap of the whole range. A row other than a `frame` row states its `pairs` and its `unmatched` count, the observations on one side only; every frame and step pairs, since both runs are one document. `identity` is the content hash of the observations, the definitions of the metrics they reduce to, and a fingerprint of the code that takes, stamps and reduces them (`OBSERVER_SOURCES`: the observe and compare modules, `portReading`, the master step that calls the listener, and the conversion's stamp down to the ADC hook). The fingerprint hashes that code's syntax tree, so a format pass or a comment is the same comparison and any other change is a different one, whether or not a package version moved. The engines that compute a value are not in it: the remeasure catches what they move. `domain` is each run's validity from its report, with no observed numbers in it: envelope excursions by port, quantity and range, stale and unchecked snapshots, degraded parts. `examples/arm/checks/sfab/arm-bench@1.0.0.json` is the arm bench with the servo group and the Uno power input as snapshots.
+Two independent bands are never subtracted: a series and its reverse have the same band and a paired gap of the whole range. A row's `metrics` state their `pairs` and `unmatched` count; every frame and step pairs, since both runs are one document.
 
-`assembly.selfcheck.ts` finds every record and fails when the document, the lock, a child's snapshot file or its source changed, when the detailed side runs a snapshot, when the snapshot side runs a different set than `children`, when the identity differs (remeasure and state why), when a remeasured metric is more than 1e-4 relative from its row, a pair count moved, or a max is set at another master step or between other values, when a row is not one the observations measure, or when either side's validity is not the recorded set: a known excursion stays green, a new or vanished one is red. Pass means the remeasure matches the stored gap. On the arm bench the snapshot side records the Uno power input's `VBUS` current outside its 0..0.5 A envelope. A child's stated errors are measured on its own fixture and do not add up at a shared port: on the arm bench the servo's current error crosses the USB port's resistance into `uno.VBUS.voltage`. No acceptance bound per quantity is stated yet, and any other world, supply, firmware, seed or step is unchecked. Engine code is checked only through the remeasure. `--write` remeasures and rewrites the hashes, `children`, the observations (each quantity at `frame` and `step`), the identity, the rows and `domain`.
+**Criteria.** Each resolution the quantity's instance states for that field at that port (type and part, the part's replacing) is one criterion, read from those fields alone: no part, type or form name decides one. `from` is the part id when the part states it, else the type id, and the port. A pair is excluded for the first reason that applies, and counted under it in `coverage.excluded`:
+
+| Reason | When |
+| --- | --- |
+| `start or end of run` | `steady@1`: [t − W, t + W] is not inside [0, the fixture's ms] |
+| `moving` | `steady@1`: side a's max − min over every master step in [t − W, t + W] is above the resolution's value. A turning point is moving although its speed is zero; a slow drift below the value qualifies. Side b is not consulted, so a slow candidate is judged, not excused |
+| `ratings not observed: …` | `within-ratings`: a rated quantity has no reading at that instant, or the port has an operating rating no observation reads |
+| `out of ratings: PORT.rating` | `within-ratings`: a reading is outside the port's operating range (the instance's effective ratings; abs-max is not read) |
+| `a: …`, `b: …` | the observation on that side is excluded (another reference, or a zero one) |
+| `no counterpart` | the observation is on one side only |
+
+The settle predicate is `steady@1` as written in `STEADY`. A precision is judged by `settled-max` over the qualified pairs, a reader by `event-max`. The verdict is `within` when that is at most `threshold` (equal is within), `over` by how much, or `none`: `no settled samples` (a precision with none qualified), `not read` (a reader with no conversion on either side), `no qualified conversions`. A quantity with no criterion says `none`, `no resolution`, and keeps its metrics. `policy` is the content hash of each criterion's quantity, `from` and resolution as cited, and `STEADY`. `identity` is the content hash of the observations, the definitions of the metrics they reduce to, and a fingerprint of the code that takes, stamps and reduces them (`OBSERVER_SOURCES`: the observe and compare modules, `portReading`, the master step that calls the listener, and the conversion's stamp down to the ADC hook). The fingerprint hashes that code's syntax tree, so a format pass or a comment is the same comparison and any other change is a different one. The engines that compute a value are not in it: the remeasure catches what they move. `domain` is each run's validity from its report, with no observed numbers in it; `inDomain` is true when neither side ran a snapshot outside its envelope, stale or unchecked. A verdict on a run out of domain is still stated, beside it.
+
+`examples/arm/checks/sfab/arm-bench@1.0.0.json` is the arm bench with the servo group and the Uno power input as snapshots. Its `servo.shaft.angle` precision from `sfab/sg90@1.0.0 shaft` is within: `settled-max` 0.00139 rad over 2010 settled master steps of 3001 (120 at the start or end, 871 moving). `servo.V+.current`, `uno.5V.voltage` and `uno.VBUS.voltage` have no resolution. It is out of domain: the snapshot side records the Uno power input's `VBUS` current outside its 0..0.5 A envelope. A child's stated errors are measured on its own fixture and do not add up at a shared port: the servo's current error crosses the USB port's resistance into `uno.VBUS.voltage`.
+
+`assembly.selfcheck.ts` finds every record and is green only when four independent checks pass; a `none` verdict never exempts a row from any of them:
+
+| Check | Red when |
+| --- | --- |
+| Identity | the document, the lock, a child's snapshot file or its source changed; the detailed side runs a snapshot or the snapshot side a different set than `children`; `identity` or `policy` differs (remeasure and state why) |
+| Reproduction | any metric of a row or criterion is more than 1e-4 relative from its re-measure, a pair or unmatched count moved, or a max is set at another master step or between other values |
+| Domain | either side's validity is not the recorded set: a known excursion stays green, a new or vanished one is red; or `inDomain` moved |
+| Applicability and verdict | a criterion's threshold, `from`, coverage or verdict differs: within to over, over to within, either to `none` and back, or `over` by another amount |
+
+Any other world, supply, firmware, seed or step is unchecked. Engine code is checked only through the remeasure. `--write` remeasures and rewrites the hashes, `children`, the observations (each quantity at `frame` and `step`, and each criterion's own), the identity, the policy, the rows, `domain` and `inDomain`, reading an `@1` record's levels and quantities. `budget.selfcheck.ts` bites the lint, the settle predicate, `within-ratings`, the reader's reference binding, the gate on a stored row, and a renamed and wrapped reader and servo, which judge the same as the originals.
 
 ### World
 
@@ -707,7 +766,7 @@ Each run's report contains:
 - the level per instance per axis, with the reason (default / type / instance level / path / parent class / fallback from X / capture suggested);
 - the nets with their level and the reason;
 - the errors, warnings, and degraded parts. A degraded diagnostic is `{ severity: "degraded", code, path, port, quantity, left, right, message }`. `message` is the human sentence: the detail, without the `port … quantity …:` prefix or the trailing `(… vs …)`. `code` is one of the diagnostic codes below; a load error that leaves the part idle keeps its own code (`missing-file`, `bad-params`, `schema`, …). The list is omitted when nothing degraded, so a clean report stays byte-identical. `bench run` prints each one before the serial lines as `degraded <path>: <message>`. The live state carries `severity`, `code`, `path`, and `message`. A board's warning list shows the ones that name that board, each with its own code, after any 16 MHz supply warning;
-- the quality of each snapshot used, and when one ran, its path, axis, and ref, its free-run or static error, envelope warnings (an empty list when the run stayed inside), and provenance for the card: `source`, `from` (`part`, `level`, and `hash`), `fixture` (the ref), and `tool` (`name` and `version`). `snapshots[].stale` is `true` when that hash no longer matches its source, recomputed with the capture runner's own signature (`packages/sim/src/capture-signature.ts`, versioned `sfab.capture-source@3`): the stamp for a plain-branch capture, one whose params name `across`, a table or a law fitted to its sweep; the gear train at `from.level` and `provenance.variant`, and the part's ratings (the capture bounds the envelope by the shaft's), for a `hinge@1`; the group's composite, the root's type, body axis and ratings, and the reached parts with their types and ratings, for any other behaviour snapshot. Ratings are signed because a run reads them: the reduced servo's torque clamp and supply, a motor's net torque. Each signature names its level and variant. The capture still runs and its frames stay. A capture that cannot be checked (a measured snapshot, a provenance with no variant, a source that no longer builds, a group that reaches a child with a snapshot variant, whose file the signature does not cover) is not marked stale: `snapshots[].unchecked` says why, and the run card shows it under the snapshot. A row with a hash and neither field is fresh. The warning is `stale-capture`, naming the part, the level, and the snapshot file. `bench run` prints `broken-port` and `stale-capture` warnings before the serial lines. A pose-only edit, a visual axis or a citation does not change a signature: none is part of how the source runs.
+- the quality of each snapshot used, and when one ran, its path, axis, and ref, its free-run or static error, envelope warnings (an empty list when the run stayed inside), and provenance for the card: `source`, `from` (`part`, `level`, and `hash`), `fixture` (the ref), and `tool` (`name` and `version`). `snapshots[].stale` is `true` when that hash no longer matches its source, recomputed with the capture runner's own signature (`packages/sim/src/capture-signature.ts`, versioned `sfab.capture-source@3`): the stamp for a plain-branch capture, one whose params name `across`, a table or a law fitted to its sweep; the gear train at `from.level` and `provenance.variant`, and the part's ratings (the capture bounds the envelope by the shaft's), for a `hinge@1`; the group's composite, the root's type, body axis and ratings, and the reached parts with their types and ratings, for any other behaviour snapshot. Ratings are signed because a run reads them: the reduced servo's torque clamp and supply, a motor's net torque. Each signature names its level and variant. The capture still runs and its frames stay. A capture that cannot be checked (a measured snapshot, a provenance with no variant, a source that no longer builds, a group that reaches a child with a snapshot variant, whose file the signature does not cover) is not marked stale: `snapshots[].unchecked` says why, and the run card shows it under the snapshot. A row with a hash and neither field is fresh. The warning is `stale-capture`, naming the part, the level, and the snapshot file. `bench run` prints `broken-port` and `stale-capture` warnings before the serial lines. A pose-only edit, a visual axis, a citation or a resolution does not change a signature: none is part of how the source runs.
 - **not simulated**: the `omits` of each chosen level, one row per instance per axis so each keeps its path;
 - the seed and the number of random draws;
 - the cost per engine: not written yet (`engines` is `[]`). `world.selfcheck.ts` measures a world's wall time per simulated second;

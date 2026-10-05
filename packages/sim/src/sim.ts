@@ -258,6 +258,8 @@ export type ConversionEvent = {
   mux: string;
   ref: string;
   vRef: number;
+  /** The board port `vRef` was read on. Null for an internal reference. */
+  referencePort: string | null;
   voltage: number;
   count: number;
   startStep: number;

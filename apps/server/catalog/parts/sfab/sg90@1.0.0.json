@@ -31,7 +31,7 @@
         "conditions": [{ "kind": "steady@1", "window": 0.06 }],
         "source": {
           "title": "TowerPro SG90 datasheet: dead band width 10 us; PWM period 20 ms",
-          "ref": "The dead band in angle is 10 us times the pulse-to-angle gain. This bench maps 544 to 2400 us onto pi rad (Arduino Servo.h MIN_PULSE_WIDTH and MAX_PULSE_WIDTH, packages/sim/src/servo.ts), so 10 us is pi * 10 / 1856 rad. The datasheet's own 1 to 2 ms over 180 degrees would give pi / 100 rad; the stricter value is kept. The settle window W is three pulse periods, 3 * 20 ms."
+          "ref": "The dead band in angle is 10 us times the pulse-to-angle gain. This bench maps 544 to 2400 us onto pi rad (Arduino Servo.h MIN_PULSE_WIDTH and MAX_PULSE_WIDTH, packages/sim/src/servo.ts), so 10 us is pi * 10 / 1856 rad. The datasheet's own 1 to 2 ms over half a turn would give pi / 100 rad; the stricter value is kept. The settle window W is three pulse periods, 3 * 20 ms."
         }
       }
     ]

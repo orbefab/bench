@@ -1,46 +1,54 @@
 /**
- * Every assembly check in the examples, remeasured (layered-sim unit 6).
- * An assembly check (`sfab.assembly-check@1`, `<project>/checks/…`) is one
- * assembly run twice on its own fixture: every child at its detailed level,
- * and every child that has a snapshot as that snapshot. Its rows state the
- * gap at the named port quantities, read through `Sim.portReading`.
+ * Every assembly check in the examples, remeasured and judged (layered-sim
+ * unit 6; run 7 units 3a and 3b). An assembly check
+ * (`sfab.assembly-check@2`, `<project>/checks/…`) is one assembly run twice
+ * on its own fixture: every child at its detailed level (side a, the
+ * source), and every child that has a snapshot as that snapshot (side b).
  *
- * The record names its observations (`@sfab-bench/sim/observe`): each
- * quantity at the `frame` cadence (every 10 ms, the measure unit 4 uses for
- * a group) and at the `step` cadence (every master step). The two sides
- * pair at the same instant and each row is a named metric over the pairs
- * (`@sfab-bench/sim/compare`). The `frame` rows keep their first names,
- * `free-run-max-abs` and `free-run-rms`: they are `frame-max` and
- * `frame-rms`, and their numbers have not moved. `step-max` carries the
- * time and both values of its pair.
+ * Each stated quantity is observed at the `frame` cadence (every 10 ms)
+ * and the `step` cadence (every master step), and the two sides pair at
+ * the same instant (`@sfab-bench/sim/observe`, `@sfab-bench/sim/compare`).
+ * Its row holds the named metrics over every pair: `frame-max` and
+ * `frame-rms` (the numbers `@1` called `free-run-max-abs` and
+ * `free-run-rms`), and `step-max`, with its time and both values, and
+ * `step-rms`.
+ *
+ * Each resolution the quantity's instance states for that field at that
+ * port is one criterion on the row (`criteriaFor`). A precision is judged
+ * by `settled-max` over the pairs its conditions qualify (`steady@1` on
+ * side a); a reader by `event-max` over its conversions. A criterion
+ * stores its threshold and where it came from, its coverage (qualified
+ * pairs, and the rest by reason) and its verdict: `within`, `over` by how
+ * much, or `none` with the reason. A quantity no resolution covers has no
+ * criterion, and its row says `none`, "no resolution".
  *
  * The record also states what each side reported about its own validity
- * (`domain`): envelope excursions, stale and unchecked snapshots, degraded
- * parts. A known excursion stays green; a new or vanished one is red.
+ * (`domain`), and `inDomain`: no snapshot ran outside its envelope, stale
+ * or unchecked. A verdict on a run out of domain is still stated, and
+ * the record says both.
  *
- * Nothing here names a part. The record says which document, which two
- * level specs, which snapshots the snapshot side runs and which ports it
- * states. The check fails when:
+ * Nothing here names a part. The check is green only when all four of the
+ * plan's checks pass (run 7 § 7). They are independent: a `none` verdict
+ * never exempts a row from reproduction.
  *
- * - the document or its lockfile is not the one the record was measured on;
- * - a child snapshot's source no longer hashes to the record's `fromHash`
- *   (the child is stale, so the assembly row is), or the snapshot file
- *   itself no longer hashes to its `hash`;
- * - the detailed side runs any snapshot, or the snapshot side runs a
- *   different set than `children`;
- * - the observations, the metric definitions or the code that takes and
- *   reduces them are not the ones the record names (`identity`);
- * - a recomputed metric sits more than `DRIFT` from its row, a pair count
- *   moved, or a max is set at another time or between other values;
- * - either side's validity differs from the record's `domain`.
+ * - Identity: the document, its lock and each child snapshot are the ones
+ *   measured (`fixture`, `children`); the observations, the metric
+ *   definitions and the observer code are (`identity`); and so are the
+ *   criteria and the settle predicate (`policy`).
+ * - Reproduction: every stored metric of every row and criterion sits
+ *   within `DRIFT` (`assembly-check.ts`) of its re-measure, with the same pair counts, and a max
+ *   is set at the same time between the same values.
+ * - Domain: each side's validity equals `domain`.
+ * - Applicability and verdict: each criterion's threshold, coverage and
+ *   verdict equal the stored ones. Within to over, over to within, either
+ *   to `none` and back are all red.
  *
- * Pass is "the remeasure matches the stored gap". An acceptance bound per
- * quantity is not stated yet. Any other world, supply, firmware, seed or
- * timestep is unchecked; so is engine code, except through the remeasure.
- * The lockfile is hashed as a file, its pins are not re-resolved.
+ * Any other world, supply, firmware, seed or timestep is unchecked; so is
+ * engine code, except through the remeasure. The lockfile is hashed as a
+ * file, its pins are not re-resolved.
  *
- * `--write` remeasures and rewrites each record's hashes, identity, rows
- * and domain.
+ * `--write` remeasures and rewrites each record, reading an `@1` record's
+ * levels and quantities.
  */
 
 import { ok as expect } from "node:assert/strict";
@@ -59,12 +67,23 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import type { LevelSpec, SnapshotFile } from "@sfab-bench/contract";
-import { contentHash, parsePartRef, sha256Bytes } from "@sfab-bench/parts";
 import {
+  contentHash,
+  type LiveInstance,
+  loadWorldV2,
+  parsePartRef,
+  sha256Bytes,
+} from "@sfab-bench/parts";
+import {
+  type Criterion,
   comparisonIdentity,
-  type MetricName,
+  criteriaFor,
+  descriptorFor,
+  judge,
   metricsFor,
+  type Paired,
   pairByKey,
+  policyIdentity,
   reduce,
   validityDiff,
 } from "@sfab-bench/sim/compare";
@@ -80,16 +99,23 @@ import {
   type Validity,
 } from "@sfab-bench/sim/observe";
 import { Sim } from "@sfab-bench/sim/sim";
+import {
+  criterionRow,
+  metricRow,
+  type QuantityRow,
+  rowProblems,
+} from "./assembly-check";
 import { observerBuild } from "./observer-build";
 import { projectReal, readerFor, readInside } from "./world/files";
+import { nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
 import { nodePlanEnv, nodeStampEnv } from "./world/plan-host";
 
 const catalog = fileURLToPath(new URL("../catalog/", import.meta.url));
 const examples = fileURLToPath(new URL("../../../examples/", import.meta.url));
-const FORMAT = "sfab.assembly-check@1";
-/** How far a recomputed gap may sit from its row, relative (unit 4's). */
-const DRIFT = 1e-4;
+const FORMAT = "sfab.assembly-check@2";
+/** The first format: its levels and quantities seed a `--write`. */
+const FIRST_FORMAT = "sfab.assembly-check@1";
 const write = process.argv.includes("--write");
 
 type Levels = { default: LevelSpec; paths?: Record<string, LevelSpec> };
@@ -102,28 +128,8 @@ type Child = {
   fromHash: string;
 };
 
-/** The cadences each quantity is observed at. */
+/** The cadences each stated quantity is observed at. */
 const CADENCES: Cadence[] = ["frame", "step"];
-
-/** The `frame` metrics' first names, kept so their rows do not move. */
-const FIRST_NAMES: Partial<Record<MetricName, string>> = {
-  "frame-max": "free-run-max-abs",
-  "frame-rms": "free-run-rms",
-};
-
-type Row = {
-  metric: string;
-  quantity: string;
-  value: number;
-  heldOut: "fixture";
-  baseline: "detailed";
-  /** Paired observations. Absent on the `frame` rows' first form. */
-  pairs?: number;
-  /** Observations with no counterpart on the other side. */
-  unmatched?: number;
-  /** The pair that set a `-max` metric. */
-  at?: { ms: number; detailed: number; snapshot: number };
-};
 
 type AssemblyCheck = {
   format: string;
@@ -135,8 +141,10 @@ type AssemblyCheck = {
   quantities: string[];
   observations?: ObservationDescriptor[];
   identity?: string;
-  error: Row[];
+  policy?: string;
+  rows?: QuantityRow[];
   domain?: { detailed: Validity; snapshot: Validity };
+  inDomain?: boolean;
 };
 
 type Side = ObservedRun & {
@@ -164,7 +172,10 @@ function records(): { project: string; file: string }[] {
     .sort()
     .flatMap((project) =>
       jsonUnder(join(examples, project, "checks"))
-        .filter((file) => readJson<{ format?: string }>(file).format === FORMAT)
+        .filter((file) => {
+          const format = readJson<{ format?: string }>(file).format;
+          return format === FORMAT || (write && format === FIRST_FORMAT);
+        })
         .map((file) => ({ project, file }))
     );
 }
@@ -237,11 +248,6 @@ async function runSide(
   }
 }
 
-/** How far `got` is from `stored`, relative (unit 4's rule). */
-function driftOf(got: number, stored: number): number {
-  return (got - stored) / Math.max(Math.abs(stored), 1e-12);
-}
-
 /** The snapshot file `ref`: the project's own, then the catalog's. */
 function snapshotOf(project: string, ref: string): SnapshotFile {
   const parsed = parsePartRef(ref);
@@ -274,6 +280,42 @@ function fixtureOf(project: string, document: string) {
   };
 }
 
+/** The instances `world` resolves to, as the loader reads them. */
+function instancesOf(root: string, world: string): LiveInstance[] {
+  return loadWorldV2(join(root, world), {
+    store: nodeStore,
+    catalogDir: catalog,
+    assetRoot: root,
+  }).resolved;
+}
+
+/**
+ * The stated quantities at every cadence, and each criterion's own
+ * observation. One descriptor read twice keeps one copy, with the union of
+ * the quantities read beside it.
+ */
+function descriptorsFor(
+  quantities: readonly string[],
+  criteria: readonly Criterion[]
+): ObservationDescriptor[] {
+  const out = new Map<string, ObservationDescriptor>();
+  const add = (row: ObservationDescriptor) => {
+    const id = descriptorId(row);
+    const was = out.get(id);
+    if (!was) {
+      out.set(id, row);
+      return;
+    }
+    const read = [...(was.with ?? []), ...(row.with ?? [])];
+    out.set(id, describe(row.quantity, row.cadence, row.reference, read));
+  };
+  for (const quantity of quantities) {
+    for (const cadence of CADENCES) add(describe(quantity, cadence));
+  }
+  for (const criterion of criteria) add(descriptorFor(criterion));
+  return [...out.values()];
+}
+
 const found = records();
 expect(found.length > 0, "the examples have an assembly check");
 const observer = observerBuild();
@@ -284,12 +326,6 @@ try {
     const dir = join(examples, project);
     const at = `${project}/${record.document}`;
     const fixture = fixtureOf(dir, record.document);
-    const observations = write
-      ? record.quantities.flatMap((quantity) =>
-          CADENCES.map((cadence) => describe(quantity, cadence))
-        )
-      : (record.observations ?? []);
-    const identity = comparisonIdentity(observations, observer);
     if (!write) {
       expect(
         fixture.hash === record.fixture.hash &&
@@ -308,6 +344,35 @@ try {
           `${at}: ${child.path} ${child.ref} is stale (${now} vs ${child.fromHash})`
         );
       }
+    }
+
+    const root = mkdtempSync(join(tmpdir(), "sfab-assembly-"));
+    temps.push(root);
+    cpSync(dir, root, { recursive: true });
+    const ms = record.fixture.ms;
+    const detailedWorld = writeSide(
+      root,
+      record.document,
+      "assembly-detailed",
+      record.detailed
+    );
+    const snapshotWorld = writeSide(
+      root,
+      record.document,
+      "assembly-snapshot",
+      record.snapshot
+    );
+    // Side a is the source: its instances say what judges each quantity.
+    const instances = instancesOf(root, detailedWorld);
+    const criteria = record.quantities.flatMap((quantity) =>
+      criteriaFor(instances, quantity)
+    );
+    const policy = policyIdentity(criteria);
+    const observations = write
+      ? descriptorsFor(record.quantities, criteria)
+      : (record.observations ?? []);
+    const identity = comparisonIdentity(observations, observer);
+    if (!write) {
       expect(
         observations.length > 0,
         `${at}: the record names no observations; remeasure`
@@ -317,24 +382,14 @@ try {
         identity === record.identity,
         `${at}: the observations, a metric definition or the observer code changed since the record was measured (${identity} vs ${String(record.identity)}); remeasure and state why`
       );
+      expect(
+        policy === record.policy,
+        `${at}: a resolution or the settle predicate changed since the record was measured (${policy} vs ${String(record.policy)}); remeasure and state why`
+      );
     }
 
-    const root = mkdtempSync(join(tmpdir(), "sfab-assembly-"));
-    temps.push(root);
-    cpSync(dir, root, { recursive: true });
-    const ms = record.fixture.ms;
-    const a = await runSide(
-      root,
-      writeSide(root, record.document, "assembly-detailed", record.detailed),
-      observations,
-      ms
-    );
-    const b = await runSide(
-      root,
-      writeSide(root, record.document, "assembly-snapshot", record.snapshot),
-      observations,
-      ms
-    );
+    const a = await runSide(root, detailedWorld, observations, ms);
+    const b = await runSide(root, snapshotWorld, observations, ms);
     expect(
       a.snapshots.length === 0,
       `${at}: the detailed side runs ${JSON.stringify(a.snapshots)}`
@@ -352,115 +407,140 @@ try {
       `assembly: ${at}, ${ms} ms; snapshot side runs ${b.snapshots.map((row) => `${row.path} ${row.ref}`).join(", ")}`
     );
 
-    const rows: Row[] = [];
-    for (const descriptor of observations) {
-      const id = descriptorId(descriptor);
-      const paired = pairByKey(a.series.get(id) ?? [], b.series.get(id) ?? []);
-      // Both sides run one document, so every frame and step pairs.
-      expect(
-        descriptor.cadence === "events" || paired.unmatched.length === 0,
-        `${at}: ${id} has ${paired.unmatched.length} samples on one side only`
+    const domain = { detailed: a.validity, snapshot: b.validity };
+    const inDomain = (["detailed", "snapshot"] as const).every(
+      (side) =>
+        domain[side].envelope.length === 0 &&
+        domain[side].stale.length === 0 &&
+        domain[side].unchecked.length === 0
+    );
+    const paired = new Map<string, Paired>();
+    const pairsOf = (row: ObservationDescriptor): Paired => {
+      const id = descriptorId(row);
+      let found = paired.get(id);
+      if (!found) {
+        found = pairByKey(a.series.get(id) ?? [], b.series.get(id) ?? []);
+        paired.set(id, found);
+      }
+      return found;
+    };
+    const rows: QuantityRow[] = [];
+    for (const quantity of record.quantities) {
+      const metrics: QuantityRow["metrics"] = [];
+      for (const cadence of CADENCES) {
+        const row = describe(quantity, cadence);
+        const pairs = pairsOf(row);
+        // Both sides run one document, so every frame and step pairs.
+        expect(
+          pairs.unmatched.length === 0 && pairs.excluded.length === 0,
+          `${at}: ${descriptorId(row)} has ${pairs.unmatched.length} samples on one side only and ${pairs.excluded.length} excluded`
+        );
+        for (const metric of metricsFor(cadence)) {
+          const got = reduce(metric, pairs.pairs);
+          expect(got, `${at}: ${quantity} has no pairs for ${metric}`);
+          if (got) {
+            metrics.push({
+              ...metricRow(metric, got),
+              unmatched: pairs.unmatched.length,
+            });
+          }
+        }
+      }
+      const judged = criteria
+        .filter((row) => row.quantity === quantity)
+        .map((criterion) => {
+          const row = descriptorFor(criterion);
+          const id = descriptorId(row);
+          const source = a.series.get(id) ?? [];
+          const stepMs = (source[1]?.ms ?? 0) - (source[0]?.ms ?? 0);
+          return criterionRow(
+            criterion,
+            judge(criterion, pairsOf(row), source, ms, stepMs)
+          );
+        });
+      rows.push({
+        quantity,
+        metrics,
+        criteria: judged,
+        ...(judged.length === 0
+          ? { verdict: "none" as const, reason: "no resolution" }
+          : {}),
+        inDomain,
+      });
+      const said = metrics.map(
+        (row) => `${row.metric} ${row.value.toPrecision(6)}`
       );
-      const said: string[] = [];
-      for (const metric of metricsFor(descriptor.cadence)) {
-        const got = reduce(metric, paired.pairs);
-        expect(got || write, `${at}: ${id} has no pairs for ${metric}`);
-        if (!got) continue;
-        said.push(`${metric} ${got.value.toPrecision(6)}`);
-        const first = FIRST_NAMES[metric];
-        const row: Row = {
-          metric: first ?? metric,
-          quantity: descriptor.quantity,
-          value: Number(got.value.toPrecision(10)),
-          heldOut: "fixture",
-          baseline: "detailed",
-          ...(first
-            ? {}
-            : { pairs: got.pairs, unmatched: paired.unmatched.length }),
-          ...(got.at && !first
-            ? {
-                at: {
-                  ms: got.at.ms,
-                  detailed: Number(got.at.a.toPrecision(10)),
-                  snapshot: Number(got.at.b.toPrecision(10)),
-                },
-              }
-            : {}),
-        };
-        rows.push(row);
-        if (write) continue;
-        const stored = record.error.find(
-          (item) => item.metric === row.metric && item.quantity === row.quantity
-        );
-        expect(stored, `${at}: no ${row.metric} row for ${row.quantity}`);
-        if (!stored) continue;
-        const drift = driftOf(got.value, stored.value);
-        expect(
-          Math.abs(drift) <= DRIFT,
-          `${at}: ${row.quantity} ${row.metric} ${got.value} vs the stated ${stored.value} (${drift.toExponential(2)})`
-        );
-        // The pair that set a max is part of the number: the same gap at
-        // another time, or between other values, is not the same row.
-        const was = stored.at;
-        const now = row.at && got.at;
-        expect(
-          was === undefined
-            ? now === undefined
-            : now !== undefined &&
-                was.ms === now.ms &&
-                Math.abs(driftOf(now.a, was.detailed)) <= DRIFT &&
-                Math.abs(driftOf(now.b, was.snapshot)) <= DRIFT,
-          `${at}: ${row.quantity} ${row.metric} is set at ${JSON.stringify(row.at)}, the record says ${JSON.stringify(was)}`
-        );
-        expect(
-          stored.pairs === row.pairs && stored.unmatched === row.unmatched,
-          `${at}: ${row.quantity} ${row.metric} pairs ${row.pairs}/${row.unmatched} unmatched vs the stated ${stored.pairs}/${stored.unmatched}`
+      for (const row of judged) {
+        const verdict =
+          row.verdict === "none"
+            ? `none (${row.reason})`
+            : row.verdict === "over"
+              ? `over by ${row.by.toPrecision(3)}`
+              : "within";
+        said.push(
+          `${row.kind} ${row.threshold.toPrecision(4)} from ${row.from}: ${verdict}, ${row.coverage.qualified} qualified ${JSON.stringify(row.coverage.excluded)}${row.metrics.map((m) => `, ${m.metric} ${m.value.toPrecision(6)}`).join("")}`
         );
       }
-      console.log(`  ${id}: ${said.join(", ")}`);
+      if (judged.length === 0) said.push("none (no resolution)");
+      console.log(`  ${quantity}: ${said.join("; ")}`);
     }
-    if (!write) {
-      const extra = record.error.filter(
-        (item) =>
-          !rows.some(
-            (row) =>
-              row.metric === item.metric && row.quantity === item.quantity
-          )
-      );
-      expect(
-        extra.length === 0,
-        `${at}: rows no observation measures: ${JSON.stringify(extra)}`
-      );
-    }
-    const domain = { detailed: a.validity, snapshot: b.validity };
     for (const side of ["detailed", "snapshot"] as const) {
       for (const row of domain[side].envelope) {
         console.log(
           `  ${side}: ${row.path} ${row.port} ${row.quantity} outside ${row.ref}'s envelope ${row.range}`
         );
       }
-      if (write) continue;
-      const moved = record.domain
-        ? validityDiff(record.domain[side], domain[side])
-        : ["the record states no domain"];
+    }
+
+    if (!write) {
+      const stored = record.rows ?? [];
       expect(
-        moved.length === 0,
-        `${at}: the ${side} side's validity moved: ${moved.join("; ")}`
+        JSON.stringify(stored.map((row) => row.quantity)) ===
+          JSON.stringify(rows.map((row) => row.quantity)),
+        `${at}: the record's rows ${JSON.stringify(stored.map((row) => row.quantity))} are not its quantities`
+      );
+      for (const row of rows) {
+        const was = stored.find((item) => item.quantity === row.quantity);
+        if (!was) continue;
+        const problems = rowProblems(was, row);
+        expect(
+          problems.length === 0,
+          `${at}: ${row.quantity}: ${problems.join("; ")}`
+        );
+      }
+      for (const side of ["detailed", "snapshot"] as const) {
+        const diff = record.domain
+          ? validityDiff(record.domain[side], domain[side])
+          : ["the record states no domain"];
+        expect(
+          diff.length === 0,
+          `${at}: the ${side} side's validity moved: ${diff.join("; ")}`
+        );
+      }
+      expect(
+        record.inDomain === inDomain,
+        `${at}: in domain ${inDomain}, the record says ${record.inDomain}`
       );
     }
     if (write) {
       const next: AssemblyCheck = {
-        ...record,
+        format: FORMAT,
+        document: record.document,
         fixture: { ms, ...fixture },
+        detailed: record.detailed,
+        snapshot: record.snapshot,
         children: b.snapshots.map((row) => ({
           ...row,
           hash: contentHash(snapshotOf(dir, row.ref)),
           fromHash: sourceHash(dir, row.ref),
         })),
+        quantities: record.quantities,
         observations,
         identity,
-        error: rows,
+        policy,
+        rows,
         domain,
+        inDomain,
       };
       writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
       console.log(`  wrote ${file}`);

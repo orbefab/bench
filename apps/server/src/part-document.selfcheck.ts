@@ -787,6 +787,8 @@ for (const example of examples) {
     "packages/parts/src/convert.ts",
     "packages/parts/src/level-edit.ts",
     "packages/sim/src/capture.ts",
+    // `version: 2` there is a metric definition's version, not a world file.
+    "packages/sim/src/compare.ts",
   ]);
   const files: string[] = [];
   const visit = (dir: string) => {
