@@ -25,6 +25,9 @@ function portFromTemplate(template: PortTemplate, n: number): PortDecl {
   if (pwm !== undefined) port.pwm = pwm;
   if (adc !== undefined) port.adc = adc;
   if (template.ratings) port.ratings = structuredClone(template.ratings);
+  if (template.resolution) {
+    port.resolution = structuredClone(template.resolution);
+  }
   return port;
 }
 

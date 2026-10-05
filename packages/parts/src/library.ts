@@ -37,6 +37,7 @@ import { ldoFrom } from "./ldo";
 import { declaredQuantity } from "./params";
 import { basename, join, relative, sep } from "./path";
 import { collectPartPorts, type PortLevel, type PortWorld } from "./ports";
+import { lintResolutions } from "./resolution";
 import {
   classesOf,
   contentHash,
@@ -712,6 +713,7 @@ export function lintLibrary(lib: Library): Diagnostic[] {
         }
       }
     }
+    lintResolutions(part, type, diags);
     lintAxes(part, type, diags);
   }
   for (const loaded of lib.parts.values()) {

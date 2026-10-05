@@ -196,6 +196,59 @@ export const RATING_FIELD_QUANTITY: Record<string, Quantity> = {
 export type PortRole = "power" | "ground" | "logic" | "analog";
 export type PortDirection = "in" | "out" | "inout" | "passive";
 
+/** A port field a run observes, and the quantity it is in. */
+export const RESOLVED_FIELD_QUANTITY = {
+  voltage: "Voltage",
+  current: "Current",
+  angle: "Angle",
+} as const satisfies Record<string, Quantity>;
+
+export type ResolvedField = keyof typeof RESOLVED_FIELD_QUANTITY;
+
+/**
+ * What a resolution's value is measured against.
+ *
+ * - `absolute`: the value is in the field's own SI unit.
+ * - `ratio-to`: the value is dimensionless, and the observed field is
+ *   divided by `quantity` (`PORT.field`, the same quantity) on the same
+ *   part, observed at the same instant.
+ */
+export type ResolutionReference =
+  | { kind: "absolute" }
+  | { kind: "ratio-to"; quantity: string };
+
+/**
+ * When a pair is judged.
+ *
+ * - `within-ratings`: only while the part, on the source side, is inside
+ *   its declared operating ratings (its type merged with the part's own).
+ * - `steady@1`: only while the source side's field moved no more than the
+ *   resolution's value over the whole window `[t − window, t + window]`,
+ *   which lies inside the run. `window` is seconds.
+ */
+export type ResolutionCondition =
+  | { kind: "within-ratings" }
+  | { kind: "steady@1"; window: SiNumber };
+
+/**
+ * Cited data: the smallest difference in `field` this part can tell apart
+ * at this port (run 7, `docs/formats.md`). A comparison judges its gap
+ * against it.
+ *
+ * - `precision`: the part's own stated precision, under its conditions
+ *   (a servo's dead band on its shaft).
+ * - `reader`: the part reads this field at this port, and the datasheet
+ *   gives its step (an ADC's). It is judged at the reader's conversions.
+ */
+export type Resolution = {
+  field: ResolvedField;
+  kind: "precision" | "reader";
+  value: SiNumber;
+  reference: ResolutionReference;
+  conditions?: ResolutionCondition[];
+  source: Citation;
+};
+
 export type PortDecl = {
   domain: Domain;
   role?: PortRole;
@@ -214,6 +267,8 @@ export type PortDecl = {
    * the same connector. Absent, the feed is the header.
    */
   connector?: string;
+  /** Cited resolutions at this port, one per field and kind. */
+  resolution?: Resolution[];
 };
 
 /**
@@ -230,6 +285,7 @@ export type PortTemplate = {
   adc?: boolean | number[];
   frame?: string;
   ratings?: Ratings;
+  resolution?: Resolution[];
 };
 
 export type BusDecl = {
@@ -821,6 +877,11 @@ export type PartFile = {
   declaredOnly?: boolean;
   sources?: Citation[];
   ratings?: Record<string, Ratings>;
+  /**
+   * Cited resolutions by port. One for a field and kind the type also
+   * states replaces the type's.
+   */
+  resolution?: Record<string, Resolution[]>;
   /** Capture recipes for a project part. A catalog entry is the fallback. */
   capture?: { behaviour?: CaptureRecipe; body?: CaptureRecipe };
   /** Present on a root document. Ignored when this part is nested. */

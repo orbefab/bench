@@ -14,9 +14,10 @@
  * - a hinge: the gear train and the part's ratings (the capture bounds
  *   its envelope by the shaft's).
  *
- * Each names the level and variant it read. Visual axes, citations and
- * snapshot bounds are not the source, so editing them leaves a capture
- * fresh. A group's signature does not open a snapshot file a child
+ * Each names the level and variant it read. Visual axes, citations,
+ * snapshot bounds and resolutions are not the source (a run never reads a
+ * resolution; a comparison judges by it), so editing them leaves a
+ * capture fresh. A group's signature does not open a snapshot file a child
  * selects: a group that reaches a child with a snapshot variant lists it
  * in `nested`, and freshness reports that capture unchecked.
  */
@@ -72,7 +73,7 @@ export function groupSource(
     if (types[part.type]) return true;
     const type = readType(part.type);
     if (!type) return false;
-    types[part.type] = type;
+    types[part.type] = withoutResolutions(type);
     return true;
   };
   if (!typeOf(root)) return null;
@@ -99,7 +100,8 @@ export function groupSource(
     kind: "group",
     ...source,
     impl,
-    type: root.type,
+    type:
+      typeof root.type === "string" ? root.type : withoutResolutions(root.type),
     body: root.axes?.body ?? null,
     ratings: root.ratings ?? null,
     parts,
@@ -140,13 +142,30 @@ export function hingeSignature(
  */
 function sourceOf(part: PartFile): unknown {
   return {
-    type: part.type,
+    type:
+      typeof part.type === "string" ? part.type : withoutResolutions(part.type),
     foreign: part.foreign ?? false,
     declaredOnly: part.declaredOnly ?? false,
     behaviour: part.axes?.behaviour ?? null,
     body: part.axes?.body ?? null,
     ratings: part.ratings ?? null,
   };
+}
+
+/** `type` as a run reads it: without the resolutions only a comparison reads. */
+function withoutResolutions(type: PartTypeFile): PartTypeFile {
+  const strip = <T extends { resolution?: unknown }>(row: T): T => {
+    const { resolution: _resolution, ...rest } = row;
+    return rest as T;
+  };
+  const out: PartTypeFile = {
+    ...type,
+    ports: Object.fromEntries(
+      Object.entries(type.ports).map(([name, port]) => [name, strip(port)])
+    ),
+  };
+  if (type.templates) out.templates = type.templates.map(strip);
+  return out;
 }
 
 function childrenOf(impl: BehaviourImpl): string[] {

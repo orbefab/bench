@@ -95,6 +95,7 @@ export { mergeFormParams } from "./merge";
 export {
   buildNets,
   collectPorts,
+  instanceRatings,
   type LiveNet,
   type LivePort,
   netlistOf,
@@ -123,6 +124,11 @@ export {
   type SkippedFile,
 } from "./rename";
 export { buildReport } from "./report";
+export {
+  lintResolutions,
+  portResolutions,
+  splitPortField,
+} from "./resolution";
 export { sha256Bytes, sha256Hex } from "./sha256";
 export {
   type AxisRequest,
