@@ -37,6 +37,7 @@ import { groupSignature } from "./capture-signature";
 import type { CaptureSource } from "./capture-source";
 import type { AssignedPart } from "./circuit-stamp";
 import type { RunPlan } from "./plan";
+import { openContext, planSide, type Selection } from "./run-context";
 
 /** The servo pulse map spans 180°. */
 const PULSE_SPAN = Math.PI;
@@ -195,12 +196,15 @@ export async function writeGroupSnapshot(
     );
     const deep = writeSide(root, entry, "deep", worldText, env);
     const snapWorld = writeSide(root, entry, "snap", worldText, env);
-    const planned = env.plan(root, deep);
-    if (!planned.ok) {
-      throw new Error(planned.errors.map((row) => row.message).join("; "));
-    }
-    const params = reduce(planned.plan, instance, entry.vNominal);
-    const { robot, joint } = shaftOf(planned.plan, instance).drives;
+    // The source side's realization, from a frozen context of the scene.
+    const { plan } = planSide(
+      openContext(env.files, root, entry.scene.world, {
+        document: JSON.parse(worldText) as unknown,
+      }),
+      sideLevels(entry, "deep", worldText)
+    );
+    const params = reduce(plan, instance, entry.vNominal);
+    const { robot, joint } = shaftOf(plan, instance).drives;
     const seed = (JSON.parse(worldText) as { play?: { seed?: unknown } }).play
       ?.seed;
     const snapshot = (
@@ -520,25 +524,33 @@ function writeSide(
 ): string {
   const world = JSON.parse(worldText) as {
     id: string;
-    play: {
-      levels?: { default: LevelSpec; paths?: Record<string, LevelSpec> };
-    };
+    play: { levels?: Selection };
   };
   const slash = world.id.indexOf("/");
   const at = world.id.lastIndexOf("@");
   const name = `${world.id.slice(slash + 1, at)}-capture-${side}`;
   world.id = `${world.id.slice(0, slash + 1)}${name}${world.id.slice(at)}`;
-  const levels = world.play.levels ?? { default: 1 };
-  world.play.levels = {
+  world.play.levels = sideLevels(entry, side, worldText);
+  const rel = `parts/${world.id.slice(0, slash)}/${name}${world.id.slice(at)}.json`;
+  writeJson(env.join(root, rel), world, env);
+  return rel;
+}
+
+/** The scene's levels with the instance at the side's level. */
+function sideLevels(
+  entry: GroupCaptureEntry,
+  side: "deep" | "snap",
+  worldText: string
+): Selection {
+  const levels = (JSON.parse(worldText) as { play?: { levels?: Selection } })
+    .play?.levels ?? { default: 1 };
+  return {
     ...levels,
     paths: {
       ...levels.paths,
       [entry.scene.instance]: side === "deep" ? entry.deep : entry.snap,
     },
   };
-  const rel = `parts/${world.id.slice(0, slash)}/${name}${world.id.slice(at)}.json`;
-  writeJson(env.join(root, rel), world, env);
-  return rel;
 }
 
 /** `<dir>/<publisher>/<name>@<version>.json`. */

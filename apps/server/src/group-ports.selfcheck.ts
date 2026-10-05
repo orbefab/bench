@@ -11,39 +11,34 @@
  *
  * - the world runs twice, the group in detail and the group as its
  *   snapshot, and each run's report says so;
- * - every port quantity the snapshot names is read on both runs through
- *   `Sim.portReading`, every 10 ms frame, and a port name the part does
- *   not have reads nothing;
+ * - every port quantity the snapshot names is observed on both runs at
+ *   the `frame` cadence (t = 0 and every 10 ms), and a port name the part
+ *   does not have reads nothing;
  * - on the fixture the capture recorded, the gap is the stated error
- *   (free-run max-abs and rms) to `DRIFT`;
+ *   (free-run max-abs and rms, which are `frame-max` and `frame-rms`) to
+ *   `DRIFT`;
  * - elsewhere the gap is printed beside the stated error. A world that is
  *   not the snapshot's fixture has no budget yet.
+ *
+ * Both sides of a world run from one frozen context of it
+ * (`@sfab-bench/sim/run-context`), at their own levels.
  */
 
 import { ok as expect } from "node:assert/strict";
-import {
-  cpSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
+import type { AxisLevel, LevelSpec } from "@sfab-bench/contract";
+import { pairByKey, reduce } from "@sfab-bench/sim/compare";
+import { describe, descriptorId } from "@sfab-bench/sim/observe";
 import {
-  type AxisLevel,
-  type LevelSpec,
-  RECORD_FRAME_MS,
-} from "@sfab-bench/contract";
-import { sha256Bytes } from "@sfab-bench/parts";
-import { Sim } from "@sfab-bench/sim/sim";
-import { projectReal, readerFor, readInside } from "./world/files";
-import { packageVersion } from "./world/package-version";
-import { nodePlanEnv } from "./world/plan-host";
+  openContext,
+  type RunContext,
+  runSide,
+  type Selection,
+} from "@sfab-bench/sim/run-context";
+import { nodeRunClock, nodeRunFiles } from "./world/run-host";
 
 const catalog = fileURLToPath(new URL("../catalog/", import.meta.url));
 const examples = fileURLToPath(new URL("../../../examples/", import.meta.url));
@@ -141,27 +136,6 @@ function groupOf(id: string, snapshot: SnapshotFile): Group | string {
   return `no behaviour option of ${snapshot.part} runs it`;
 }
 
-function newSim(): Sim {
-  return new Sim({
-    post() {},
-    now: () => performance.now(),
-    schedule: (fn: () => void, ms: number) => setTimeout(fn, ms),
-    clear(handle: unknown) {
-      clearTimeout(handle as ReturnType<typeof setTimeout>);
-    },
-    sha256: sha256Bytes,
-    versions: {
-      mujoco: packageVersion("@mujoco/mujoco", import.meta.url),
-      avr8js: packageVersion("avr8js", import.meta.url),
-    },
-    projectReal,
-    readInside,
-    readerFor,
-    plan: nodePlanEnv,
-    keepSerial: false,
-  });
-}
-
 /** Example worlds, sorted, as `project/parts/…json`. */
 function exampleWorlds(): { project: string; world: string }[] {
   return readdirSync(examples)
@@ -184,113 +158,82 @@ function exampleWorlds(): { project: string; world: string }[] {
     });
 }
 
-/** Behaviour paths per part id, from each example world's own report. */
-async function whereParts(): Promise<Map<string, Scene[]>> {
+/** Behaviour paths per part id, from each example world as authored. */
+function whereParts(): Map<string, Scene[]> {
   const out = new Map<string, Scene[]>();
   for (const { project, world } of exampleWorlds()) {
-    const sim = newSim();
-    try {
-      const loaded = await sim.load({
-        project: join(examples, project),
-        world,
-        generation: 1,
-      });
-      if (!loaded.ok) continue;
-      for (const row of sim.report()?.levels ?? []) {
-        if (row.axis !== "behaviour") continue;
-        const list = out.get(row.part) ?? [];
-        list.push({ project, world, path: row.path });
-        out.set(row.part, list);
-      }
-    } finally {
-      sim.dispose();
+    const planned = openContext(
+      nodeRunFiles,
+      join(examples, project),
+      world
+    ).authored;
+    if (!planned.ok) continue;
+    for (const row of planned.plan.report?.levels ?? []) {
+      if (row.axis !== "behaviour") continue;
+      const list = out.get(row.part) ?? [];
+      list.push({ project, world, path: row.path });
+      out.set(row.part, list);
     }
   }
   return out;
 }
 
 type Side = {
-  /** Per quantity, the reading at each frame. */
-  series: Map<string, number[]>;
+  /** Per quantity, the observations at each frame. */
+  series: Map<string, { key: string; ms: number; value: number }[]>;
   impl: string;
   snapshot: string | null;
 };
 
-const FIELDS = ["voltage", "current", "angle"] as const;
-type Field = (typeof FIELDS)[number];
-
-function splitQuantity(quantity: string): { port: string; field: Field } {
-  const dot = quantity.lastIndexOf(".");
-  const field = quantity.slice(dot + 1);
-  if (!(FIELDS as readonly string[]).includes(field)) {
-    throw new Error(`${quantity}: no port reading has a ${field}`);
-  }
-  return { port: quantity.slice(0, dot), field: field as Field };
-}
-
-async function runSide(
-  root: string,
-  world: string,
+/** One side of `context`, every frame, at `path`'s own quantities. */
+async function sideOf(
+  context: RunContext,
+  selection: Selection,
   path: string,
   quantities: string[],
   ms: number
 ): Promise<Side> {
-  const sim = newSim();
-  try {
-    const loaded = await sim.load({ project: root, world, generation: 1 });
-    if (!loaded.ok) {
-      throw new Error(loaded.errors.map((row) => row.message).join("; "));
-    }
-    const report = sim.report();
-    const series = new Map(quantities.map((q) => [q, [] as number[]]));
-    const sample = () => {
-      for (const quantity of quantities) {
-        const { port, field } = splitQuantity(quantity);
-        const value = sim.portReading(path, port)?.[field];
-        if (typeof value !== "number" || !Number.isFinite(value)) {
-          throw new Error(`${world}: ${path}.${quantity} has no reading`);
-        }
-        series.get(quantity)?.push(value);
-      }
-    };
-    sample();
-    // A name the part does not have reads nothing, on either side.
-    if (sim.portReading(path, "no-such-port") !== null) {
-      throw new Error(`${world}: ${path}.no-such-port has a reading`);
-    }
-    for (let t = 0; t < ms; t += RECORD_FRAME_MS) {
-      await sim.step(RECORD_FRAME_MS);
-      sample();
-    }
-    return {
-      series,
-      impl:
-        report?.levels.find(
-          (row) => row.path === path && row.axis === "behaviour"
-        )?.impl ?? "",
-      snapshot:
-        report?.snapshots.find(
-          (row) => row.path === path && row.axis === "behaviour"
-        )?.ref ?? null,
-    };
-  } finally {
-    sim.dispose();
-  }
+  const run = await runSide(
+    context,
+    selection,
+    quantities.map((quantity) => describe(`${path}.${quantity}`, "frame")),
+    { ms, host: nodeRunClock }
+  );
+  return {
+    series: new Map(
+      quantities.map((quantity) => [
+        quantity,
+        run.series.get(
+          descriptorId(describe(`${path}.${quantity}`, "frame"))
+        ) ?? [],
+      ])
+    ),
+    impl:
+      run.report.levels.find(
+        (row) => row.path === path && row.axis === "behaviour"
+      )?.impl ?? "",
+    snapshot:
+      run.report.snapshots.find(
+        (row) => row.path === path && row.axis === "behaviour"
+      )?.ref ?? null,
+  };
 }
 
-function gap(a: number[], b: number[]): { maxAbs: number; rms: number } {
-  expect(
-    a.length === b.length && a.length > 0,
-    `frame counts ${a.length} and ${b.length}`
+/** A port name the part does not have reads nothing: its side refuses it. */
+async function readsNothing(
+  context: RunContext,
+  selection: Selection,
+  path: string
+): Promise<boolean> {
+  return runSide(
+    context,
+    selection,
+    [describe(`${path}.no-such-port.voltage`, "frame")],
+    { ms: 0, host: nodeRunClock }
+  ).then(
+    () => false,
+    (err: unknown) => String(err).includes("has no reading")
   );
-  let maxAbs = 0;
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) {
-    const d = Math.abs((a[i] ?? 0) - (b[i] ?? 0));
-    if (d > maxAbs) maxAbs = d;
-    sum += d * d;
-  }
-  return { maxAbs, rms: Math.sqrt(sum / a.length) };
 }
 
 /** The detailed side's range, so a gap has a scale. */
@@ -300,129 +243,119 @@ function span(values: number[]): string {
   return `${lo.toPrecision(4)} to ${hi.toPrecision(4)}`;
 }
 
-/** Writes the world with `path`'s levels set; returns its file. */
-function writeSide(
-  root: string,
-  world: string,
-  name: string,
+/** The world's own levels with `path`'s set to `levels`. */
+function withPath(
+  context: RunContext,
   path: string,
   levels: LevelSpec
-): string {
-  const file = readJson<{
-    id: string;
-    play: { levels?: { default: LevelSpec; paths?: Record<string, unknown> } };
-  }>(join(root, world));
-  const publisher = file.id.slice(0, file.id.indexOf("/"));
-  const version = file.id.slice(file.id.lastIndexOf("@"));
-  file.id = `${publisher}/${name}${version}`;
-  const own = file.play.levels ?? { default: 1 };
-  file.play.levels = { ...own, paths: { ...own.paths, [path]: levels } };
-  const rel = `parts/${publisher}/${name}${version}.json`;
-  writeFileSync(join(root, rel), JSON.stringify(file));
-  return rel;
+): Selection {
+  const own = (context.document as { play?: { levels?: Selection } }).play
+    ?.levels ?? { default: 1 };
+  return { ...own, paths: { ...own.paths, [path]: levels } };
 }
 
 const recipes = readJson<{ entries: Recipe[] }>(
   join(catalog, "fixtures/capture.config.json")
 ).entries;
-const where = await whereParts();
-const temps: string[] = [];
+const where = whereParts();
 let groups = 0;
-try {
-  for (const { id, file } of catalogSnapshots()) {
-    const snapshot = readJson<SnapshotFile>(file);
-    const group = groupOf(id, snapshot);
-    if (typeof group === "string") {
-      console.log(`${id}: not checked, ${group}`);
-      continue;
-    }
-    groups++;
-    const recipe = recipes.find((row) => row.id === id);
-    const scenes = where.get(snapshot.part) ?? [];
-    const fixture = snapshot.provenance.fixture?.ref;
-    const own = scenes.find(
-      (scene) => `${scene.project}/${scene.world}` === fixture
-    );
-    const scene = own ?? scenes[0];
-    expect(scene, `${id}: no example world runs ${snapshot.part}`);
-    if (!scene) continue;
-    // The capture's own sides on its own fixture; else the group's
-    // source option against the option that runs the snapshot.
-    const captured =
-      own &&
-      recipe?.scene?.instance === own.path &&
-      recipe.deep !== undefined &&
-      recipe.snap !== undefined;
-    const deep: LevelSpec =
-      captured && recipe.deep ? recipe.deep : { behaviour: group.deep };
-    const snap: LevelSpec =
-      captured && recipe.snap ? recipe.snap : { behaviour: group.snap };
-    const ms = captured && recipe.scene ? recipe.scene.ms : RUN_MS;
+for (const { id, file } of catalogSnapshots()) {
+  const snapshot = readJson<SnapshotFile>(file);
+  const group = groupOf(id, snapshot);
+  if (typeof group === "string") {
+    console.log(`${id}: not checked, ${group}`);
+    continue;
+  }
+  groups++;
+  const recipe = recipes.find((row) => row.id === id);
+  const scenes = where.get(snapshot.part) ?? [];
+  const fixture = snapshot.provenance.fixture?.ref;
+  const own = scenes.find(
+    (scene) => `${scene.project}/${scene.world}` === fixture
+  );
+  const scene = own ?? scenes[0];
+  expect(scene, `${id}: no example world runs ${snapshot.part}`);
+  if (!scene) continue;
+  // The capture's own sides on its own fixture; else the group's
+  // source option against the option that runs the snapshot.
+  const captured =
+    own &&
+    recipe?.scene?.instance === own.path &&
+    recipe.deep !== undefined &&
+    recipe.snap !== undefined;
+  const deep: LevelSpec =
+    captured && recipe.deep ? recipe.deep : { behaviour: group.deep };
+  const snap: LevelSpec =
+    captured && recipe.snap ? recipe.snap : { behaviour: group.snap };
+  const ms = captured && recipe.scene ? recipe.scene.ms : RUN_MS;
 
-    const root = mkdtempSync(join(tmpdir(), "sfab-group-ports-"));
-    temps.push(root);
-    cpSync(join(examples, scene.project), root, { recursive: true });
-    const quantities = [
-      ...snapshot.ports.inputs,
-      ...snapshot.ports.outputs,
-    ].sort();
-    const a = await runSide(
-      root,
-      writeSide(root, scene.world, "group-ports-deep", scene.path, deep),
-      scene.path,
-      quantities,
-      ms
-    );
-    const b = await runSide(
-      root,
-      writeSide(root, scene.world, "group-ports-snap", scene.path, snap),
-      scene.path,
-      quantities,
-      ms
-    );
-    const at = `${scene.project}/${scene.world} ${scene.path}`;
+  const context = openContext(
+    nodeRunFiles,
+    join(examples, scene.project),
+    scene.world
+  );
+  const sides = [
+    withPath(context, scene.path, deep),
+    withPath(context, scene.path, snap),
+  ] as const;
+  const quantities = [
+    ...snapshot.ports.inputs,
+    ...snapshot.ports.outputs,
+  ].sort();
+  const a = await sideOf(context, sides[0], scene.path, quantities, ms);
+  const b = await sideOf(context, sides[1], scene.path, quantities, ms);
+  for (const selection of sides) {
     expect(
-      a.impl === "composite" && a.snapshot === null,
-      `${id}: the detailed side runs the group: ${at} ${a.impl}`
+      await readsNothing(context, selection, scene.path),
+      `${id}: ${scene.path}.no-such-port has a reading`
     );
+  }
+  const at = `${scene.project}/${scene.world} ${scene.path}`;
+  expect(
+    a.impl === "composite" && a.snapshot === null,
+    `${id}: the detailed side runs the group: ${at} ${a.impl}`
+  );
+  expect(
+    b.snapshot === id,
+    `${id}: the snapshot side runs it: ${at} ${b.impl} ${b.snapshot}`
+  );
+  console.log(
+    `${id}: ${at}, ${ms} ms${captured ? ", the capture's fixture" : ""}`
+  );
+  for (const quantity of quantities) {
+    const detailed = a.series.get(quantity) ?? [];
+    const paired = pairByKey(detailed, b.series.get(quantity) ?? []);
     expect(
-      b.snapshot === id,
-      `${id}: the snapshot side runs it: ${at} ${b.impl} ${b.snapshot}`
+      paired.pairs.length === detailed.length && paired.unmatched.length === 0,
+      `${id}: ${quantity} frames ${detailed.length} and ${b.series.get(quantity)?.length}`
     );
+    const maxAbs = reduce("frame-max", paired.pairs)?.value ?? Number.NaN;
+    const rms = reduce("frame-rms", paired.pairs)?.value ?? Number.NaN;
+    const stated = snapshot.error.filter((row) => row.quantity === quantity);
+    const said = stated.length
+      ? stated.map((row) => `${row.metric} ${row.value}`).join(", ")
+      : "no stated row";
     console.log(
-      `${id}: ${at}, ${ms} ms${captured ? ", the capture's fixture" : ""}`
+      `  ${quantity}: ${span(detailed.map((row) => row.value))}; gap max ${maxAbs.toPrecision(4)}, rms ${rms.toPrecision(4)} (${said})`
     );
-    for (const quantity of quantities) {
-      const detailed = a.series.get(quantity) ?? [];
-      const { maxAbs, rms } = gap(detailed, b.series.get(quantity) ?? []);
-      const stated = snapshot.error.filter((row) => row.quantity === quantity);
-      const said = stated.length
-        ? stated.map((row) => `${row.metric} ${row.value}`).join(", ")
-        : "no stated row";
-      console.log(
-        `  ${quantity}: ${span(detailed)}; gap max ${maxAbs.toPrecision(4)}, rms ${rms.toPrecision(4)} (${said})`
+    if (!captured) continue;
+    for (const row of stated) {
+      const got =
+        row.metric === "free-run-max-abs"
+          ? maxAbs
+          : row.metric === "free-run-rms"
+            ? rms
+            : null;
+      if (got === null) continue;
+      const drift = (got - row.value) / Math.max(Math.abs(row.value), 1e-12);
+      console.log(`    ${row.metric}: ${drift.toExponential(2)} off`);
+      expect(
+        Math.abs(drift) <= DRIFT,
+        `${id}: ${quantity} ${row.metric} on its fixture is the stated ${row.value}: ${got}`
       );
-      if (!captured) continue;
-      for (const row of stated) {
-        const got =
-          row.metric === "free-run-max-abs"
-            ? maxAbs
-            : row.metric === "free-run-rms"
-              ? rms
-              : null;
-        if (got === null) continue;
-        const drift = (got - row.value) / Math.max(Math.abs(row.value), 1e-12);
-        console.log(`    ${row.metric}: ${drift.toExponential(2)} off`);
-        expect(
-          Math.abs(drift) <= DRIFT,
-          `${id}: ${quantity} ${row.metric} on its fixture is the stated ${row.value}: ${got}`
-        );
-      }
     }
   }
-  expect(groups > 0, "the catalog has a group snapshot to check");
-} finally {
-  for (const dir of temps) rmSync(dir, { recursive: true, force: true });
 }
+expect(groups > 0, "the catalog has a group snapshot to check");
 
 console.log(`group-ports.selfcheck ok (${groups} group snapshots)`);

@@ -435,6 +435,35 @@ export function partDocumentProject(path: string): string | null {
   return match[1] ?? "";
 }
 
+/** Join two relative paths. `..` is rejected rather than normalised away. */
+export function joinRel(dir: string, rel: string): string | null {
+  const parts: string[] = [];
+  for (const part of `${dir}/${rel}`.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") return null;
+    parts.push(part);
+  }
+  if (parts.length === 0) return null;
+  return parts.join("/");
+}
+
+export function parentRel(rel: string): string {
+  const clean = rel.replace(/\\/g, "/");
+  const slash = clean.lastIndexOf("/");
+  return slash === -1 ? "" : clean.slice(0, slash);
+}
+
+/**
+ * Project directory for URDF and firmware paths. A root part lives
+ * under `parts/<pub>/`; those paths stay relative to the project.
+ */
+export function documentAssetDir(rel: string): string {
+  const clean = rel.replace(/\\/g, "/").replace(/^\/+/, "");
+  const project = partDocumentProject(clean);
+  if (project !== null) return project;
+  return parentRel(clean);
+}
+
 /** A legacy world import. */
 const WORLD_DOCUMENT_RE = /\.world\.json$/i;
 

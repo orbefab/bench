@@ -43,7 +43,7 @@ import {
 import { assemblyStampOf, type BoardStamp } from "./circuit-stamp";
 import type { StampEnv } from "./env";
 import { type GroupCaptureEntry, writeGroupSnapshot } from "./group-capture";
-import type { PlanResult } from "./plan";
+import { frozenStore, type RunFiles } from "./run-context";
 
 export type FreeCase = {
   firmware: string;
@@ -153,8 +153,11 @@ export type CaptureEnv = {
     ms: number
   ): Promise<{ state: WorldState; read: RecordingRead }>;
   bench(): { version: string; mujoco: string; avr8js: string };
-  /** The run plan of a world, for a group capture's reduction. */
-  plan(project: string, world: string): PlanResult;
+  /**
+   * The files a run reads. A group capture's reducer reads its source
+   * side planned from a frozen context of them (`run-context.ts`).
+   */
+  files: RunFiles;
 };
 
 export type CaptureRun = {
@@ -320,6 +323,7 @@ async function captureEntry(
   }
   const across = acrossFor(config, typeOfPart(config.part, source));
   if (typeof across === "string") throw new Error(across);
+  // The fitters read the source variant's realization from frozen copies.
   const stamp = assemblyStampOf(
     config.part,
     config.variant,
@@ -330,7 +334,7 @@ async function captureEntry(
       boardId: config.instance,
       across,
     },
-    stampEnv
+    { ...stampEnv, store: frozenStore(env.files) }
   );
   for (const name of [across[0], across[1], config.through]) {
     if (!stamp.portNodes[name]) {

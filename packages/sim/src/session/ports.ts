@@ -7,7 +7,8 @@
  *   instance draws out of that node: the elements the rail registered as
  *   its own or a descendant's (stamped parts by path, a board's pins) and
  *   a board's own draw on its board load (`RailCircuit.currentInto`). A
- *   pin sourcing current reads negative. A snapshot run as a circuit form
+ *   pin sourcing current reads negative, and so does a supply on its
+ *   positive port: the current it delivers. A snapshot run as a circuit form
  *   finds the node through its watch, which names the form port behind
  *   each of the part's own ports. A form the rail holds as a lumped slot,
  *   not as elements, reads its own draw on its power port.
@@ -70,7 +71,7 @@ export function portReading(
       voltage: circuit.nodeVoltage(node),
       current: owned
         ? circuit.currentInto(path, node)
-        : slotDraw(s, path, port),
+        : (supplyDraw(s, path, port) ?? slotDraw(s, path, port)),
       angle: null,
     };
   }
@@ -106,6 +107,18 @@ function watchedNode(
   return form === undefined
     ? null
     : circuit.stampedNode(`${part.path}.${form}`);
+}
+
+/** A supply's output on its positive port, negative: it sources it. */
+function supplyDraw(
+  s: SessionState,
+  path: string,
+  port: string
+): number | null {
+  const supply = s.runPlan?.supplies.find((row) => row.id === path);
+  if (supply?.positivePin !== port) return null;
+  const amps = s.supplyLive[path]?.current;
+  return typeof amps === "number" ? -amps : null;
 }
 
 /** A lumped part's own draw, read on the port its type calls power. */

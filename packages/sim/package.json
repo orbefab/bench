@@ -29,6 +29,7 @@
     "./observe": "./src/observe.ts",
     "./compare": "./src/compare.ts",
     "./accuracy": "./src/accuracy.ts",
+    "./run-context": "./src/run-context.ts",
     "./sim": "./src/sim.ts"
   },
   "scripts": {

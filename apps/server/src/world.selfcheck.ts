@@ -18,22 +18,20 @@
  *   only as ratios (the world against its two assemblies alone, and four
  *   detailed copies against one), never as absolute time.
  *
- * The gap each assembly carries against its detailed run is the assembly
- * check's (`checks/sfab/arm-bench@1.0.0.json`); this check states no
- * world-level error budget.
+ * Every document here (the world, each assembly alone, the tied world, the
+ * four copies) is its own frozen run context (`@sfab-bench/sim/run-context`),
+ * edited in memory. A stored verdict belongs to one context: the check
+ * reports each assembly's context and the assembly check stored for it, if
+ * any. The tied world is a context no assembly check measured, so it has
+ * no budget of its own; this check states no world-level error budget.
+ * Each supply's draw is its own positive port's current, which reads
+ * negative because the supply sources it.
  */
 
 import { ok as expect } from "node:assert/strict";
-import {
-  cpSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { cpus, tmpdir } from "node:os";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { cpus } from "node:os";
 import { join } from "node:path";
-import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -41,13 +39,15 @@ import {
   RECORD_FRAME_MS,
   type WorldViewNode,
 } from "@sfab-bench/contract";
-import { sha256Bytes } from "@sfab-bench/parts";
-import { Sim } from "@sfab-bench/sim/sim";
+import { describe, descriptorId } from "@sfab-bench/sim/observe";
+import {
+  openContext,
+  planSide,
+  type RunContext,
+  runSide,
+} from "@sfab-bench/sim/run-context";
 import { powerIslands } from "@sfab-bench/sim/wiring";
-import { projectReal, readerFor, readInside } from "./world/files";
-import { packageVersion } from "./world/package-version";
-import { planWorld } from "./world/plan";
-import { nodePlanEnv } from "./world/plan-host";
+import { nodeRunClock, nodeRunFiles } from "./world/run-host";
 
 const example = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
@@ -88,33 +88,9 @@ type Run = {
   series: Map<string, number[]>;
   supplies: Map<string, number[]>;
   snapshots: string[];
+  context: string;
   wallMs: number;
 };
-
-function readJson<T>(file: string): T {
-  return JSON.parse(readFileSync(file, "utf8")) as T;
-}
-
-function newSim(): Sim {
-  return new Sim({
-    post() {},
-    now: () => performance.now(),
-    schedule: (fn: () => void, ms: number) => setTimeout(fn, ms),
-    clear(handle: unknown) {
-      clearTimeout(handle as ReturnType<typeof setTimeout>);
-    },
-    sha256: sha256Bytes,
-    versions: {
-      mujoco: packageVersion("@mujoco/mujoco", import.meta.url),
-      avr8js: packageVersion("avr8js", import.meta.url),
-    },
-    projectReal,
-    readInside,
-    readerFor,
-    plan: nodePlanEnv,
-    keepSerial: false,
-  });
-}
 
 /** The netlist of a root part's composite behaviour. */
 function netlistOf(part: PartFile) {
@@ -126,20 +102,13 @@ function netlistOf(part: PartFile) {
   throw new Error(`${part.id}: no composite netlist`);
 }
 
-/** Write `part` under a new name in `root`; returns its file. */
-function writeRoot(root: string, part: PartFile, name: string): string {
-  const id = part.id.replace(/\/[^/@]+@/, `/${name}@`);
-  const rel = `parts/sfab/${id.slice(id.indexOf("/") + 1)}.json`;
-  writeFileSync(join(root, rel), JSON.stringify({ ...part, id }));
-  return rel;
-}
+/** `part` as its own context, at the world's path. */
+const contextOf = (part: PartFile): RunContext =>
+  openContext(nodeRunFiles, example, WORLD, { document: part });
 
 /** Instance paths the plan's tree marks as assemblies, below the root. */
-function assembliesOf(root: string, world: string): string[] {
-  const planned = planWorld(root, world);
-  if (!planned.ok) {
-    throw new Error(planned.errors.map((row) => row.message).join("; "));
-  }
+function assembliesOf(context: RunContext): string[] {
+  const { plan } = planSide(context);
   const out: string[] = [];
   const walk = (nodes: readonly WorldViewNode[]) => {
     for (const node of nodes) {
@@ -149,68 +118,49 @@ function assembliesOf(root: string, world: string): string[] {
       walk(node.children);
     }
   };
-  walk(planned.plan.tree?.nodes ?? []);
+  walk(plan.tree?.nodes ?? []);
   return out.filter((id) => id !== "$root").sort();
 }
 
-function islandsOf(root: string, world: string): string[] {
-  const planned = planWorld(root, world);
-  if (!planned.ok) {
-    throw new Error(planned.errors.map((row) => row.message).join("; "));
-  }
-  return powerIslands(planned.plan).map((island) => island.supplyIds.join("+"));
+function islandsOf(context: RunContext): string[] {
+  return powerIslands(planSide(context).plan).map((island) =>
+    island.supplyIds.join("+")
+  );
 }
 
 /**
- * Run `world` for `MS`, reading `quantities` and every supply each frame.
- * The first frame is a warmup; the wall clock covers the rest of the steps.
+ * Run `context` for `MS`, reading `quantities` and every supply each
+ * frame. The first frame is a warmup: t = 0 is not compared.
  */
-async function run(
-  root: string,
-  world: string,
-  quantities: string[]
-): Promise<Run> {
-  const sim = newSim();
-  try {
-    const loaded = await sim.load({ project: root, world, generation: 1 });
-    if (!loaded.ok) {
-      throw new Error(loaded.errors.map((row) => row.message).join("; "));
-    }
-    const series = new Map(quantities.map((q) => [q, [] as number[]]));
-    const supplies = new Map<string, number[]>();
-    const sample = () => {
-      for (const quantity of quantities) {
-        const parts = quantity.split(".");
-        const field = parts.pop() as "voltage" | "current" | "angle";
-        const port = parts.pop() ?? "";
-        const value = sim.portReading(parts.join("."), port)?.[field];
-        if (typeof value !== "number" || !Number.isFinite(value)) {
-          throw new Error(`${world}: ${quantity} has no reading`);
-        }
-        series.get(quantity)?.push(value);
-      }
-      for (const [id, state] of Object.entries(sim.state()?.supplies ?? {})) {
-        const list = supplies.get(id) ?? [];
-        list.push(state.current);
-        supplies.set(id, list);
-      }
-    };
-    await sim.step(RECORD_FRAME_MS);
-    sample();
-    let wallMs = 0;
-    for (let t = RECORD_FRAME_MS; t < MS; t += RECORD_FRAME_MS) {
-      const start = performance.now();
-      await sim.step(RECORD_FRAME_MS);
-      wallMs += performance.now() - start;
-      sample();
-    }
-    const snapshots = (sim.report()?.snapshots ?? [])
-      .map((row) => `${row.path} ${row.axis}`)
-      .sort();
-    return { series, supplies, snapshots, wallMs };
-  } finally {
-    sim.dispose();
-  }
+async function run(context: RunContext, quantities: string[]): Promise<Run> {
+  const supplyOf = new Map(
+    planSide(context).plan.supplies.map((supply) => [
+      describe(`${supply.id}.${supply.positivePin}.current`, "frame"),
+      supply.id,
+    ])
+  );
+  const read = new Map(
+    quantities.map((quantity) => [describe(quantity, "frame"), quantity])
+  );
+  const side = await runSide(
+    context,
+    undefined,
+    [...read.keys(), ...supplyOf.keys()],
+    { ms: MS, host: nodeRunClock }
+  );
+  const after = (row: Parameters<typeof descriptorId>[0]) =>
+    (side.series.get(descriptorId(row)) ?? [])
+      .filter((point) => point.ms >= RECORD_FRAME_MS)
+      .map((point) => point.value);
+  return {
+    series: new Map([...read].map(([row, quantity]) => [quantity, after(row)])),
+    supplies: new Map(
+      [...supplyOf].map(([row, id]) => [id, after(row).map((amps) => -amps)])
+    ),
+    snapshots: side.snapshots.map((row) => `${row.path} ${row.axis}`).sort(),
+    context: side.context,
+    wallMs: side.wallMs,
+  };
 }
 
 function maxGap(a: number[] = [], b: number[] = []): number {
@@ -228,192 +178,239 @@ function maxGap(a: number[] = [], b: number[] = []): number {
 const mean = (values: number[] = []) =>
   values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
 
-/** Wall ms per simulated second, over the timed steps. */
-const perSecond = (r: Run) => (r.wallMs / (MS - RECORD_FRAME_MS)) * 1000;
+/** Wall ms per simulated second. */
+const perSecond = (r: Run) => (r.wallMs / MS) * 1000;
 
-const root = mkdtempSync(join(tmpdir(), "sfab-world-"));
-try {
-  cpSync(example, root, { recursive: true });
-  const part = readJson<PartFile>(join(root, WORLD));
-  const levels = part.play.levels;
-  if (!levels) throw new Error(`${WORLD}: no play levels`);
-  const net = netlistOf(part);
-
-  // The assemblies, from the tree.
-  const assemblies = assembliesOf(root, WORLD);
-  expect(assemblies.length === 2, `assemblies ${assemblies.join(", ")}`);
-  const [first, second] = assemblies as [string, string];
-  // Which one the path rules move to its snapshots.
-  const ruled = (prefix: string) =>
-    Object.keys(levels.paths ?? {}).some((path) =>
-      path.startsWith(`${prefix}.`)
-    );
-  const snapshotSide = ruled(first) ? first : second;
-  const detailedSide = snapshotSide === first ? second : first;
-  expect(
-    ruled(snapshotSide) && !ruled(detailedSide),
-    "one assembly carries the path rules"
-  );
-
-  // The world, and each assembly alone: the same root with one instance.
-  const alone = (keep: string, name: string, rules: Levels): string => {
-    const instances = Object.fromEntries(
-      Object.entries(net.instances).filter(
-        ([id]) => id === keep || !assemblies.includes(id)
-      )
-    );
-    const one: PartFile = structuredClone(part);
-    const oneNet = netlistOf(one);
-    oneNet.instances = instances;
-    oneNet.wires = [];
-    one.play.levels = rules;
-    return writeRoot(root, one, name);
-  };
-  const scoped = (prefix: string): Levels => ({
-    default: levels.default,
-    paths: Object.fromEntries(
-      Object.entries(levels.paths ?? {}).filter(([path]) =>
-        path.startsWith(`${prefix}.`)
-      )
-    ),
-  });
-  const across = (prefix: string) => QUANTITIES.map((q) => `${prefix}.${q}`);
-
-  // A lone non-environment instance unwraps to the root: its paths lose
-  // the prefix, so the alone runs read the bare quantities.
-  const worldRun = await run(root, WORLD, [
-    ...across(detailedSide),
-    ...across(snapshotSide),
-  ]);
-  const detailedAlone = await run(
-    root,
-    alone(detailedSide, "world-detailed-alone", scoped(detailedSide)),
-    QUANTITIES
-  );
-  const snapshotAlone = await run(
-    root,
-    alone(snapshotSide, "world-snapshot-alone", {
-      default: levels.default,
-      paths: Object.fromEntries(
-        Object.entries(levels.paths ?? {}).map(([path, spec]) => [
-          path.slice(snapshotSide.length + 1),
-          spec,
-        ])
-      ),
-    }),
-    QUANTITIES
-  );
-
-  // Separate supplies: one island each, nothing crosses.
-  const islands = islandsOf(root, WORLD);
-  expect(
-    islands.length === 2 && islands.every((id) => !id.includes("+")),
-    `separate islands ${islands.join(", ")}`
-  );
-  expect(
-    worldRun.snapshots.length > 0 &&
-      worldRun.snapshots.every((row) => row.startsWith(`${snapshotSide}.`)),
-    `snapshots ${worldRun.snapshots.join(", ")}`
-  );
-  expect(
-    detailedAlone.snapshots.length === 0,
-    `the detailed assembly alone runs ${detailedAlone.snapshots.join(", ")}`
-  );
-  expect(
-    JSON.stringify(
-      snapshotAlone.snapshots.map((row) => `${snapshotSide}.${row}`)
-    ) === JSON.stringify(worldRun.snapshots),
-    `alone ${snapshotAlone.snapshots.join(", ")} vs world ${worldRun.snapshots.join(", ")}`
-  );
-  let crossed = 0;
-  for (const [prefix, aloneRun] of [
-    [detailedSide, detailedAlone],
-    [snapshotSide, snapshotAlone],
-  ] as const) {
-    for (const q of QUANTITIES) {
-      crossed = Math.max(
-        crossed,
-        maxGap(worldRun.series.get(`${prefix}.${q}`), aloneRun.series.get(q))
-      );
+/** Every stored assembly check in the project, by the context it measured. */
+function storedChecks(): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (dir: string, rel: string) => {
+    if (!existsSync(dir)) return;
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const at = join(dir, ent.name);
+      const shown = `${rel}/${ent.name}`;
+      if (ent.isDirectory()) walk(at, shown);
+      else if (ent.name.endsWith(".json")) {
+        const file = JSON.parse(readFileSync(at, "utf8")) as {
+          format?: string;
+          context?: string;
+        };
+        if (file.format === "sfab.assembly-check@2" && file.context) {
+          out.set(file.context, shown);
+        }
+      }
     }
-  }
-  expect(crossed < 1e-12, `an assembly on its own supply moved by ${crossed}`);
-  const draws = [...worldRun.supplies.entries()]
-    .map(([id, values]) => `${id} ${(mean(values) * 1e3).toFixed(2)} mA`)
-    .join(", ");
-  console.log(
-    `world: ${detailedSide} runs detailed, ${snapshotSide} runs ${worldRun.snapshots.join(", ")}; islands ${islands.join(", ")}; each reads its run alone (max Δ ${crossed.toExponential(1)}); mean draw ${draws}`
-  );
+  };
+  walk(join(example, "checks"), "checks");
+  return out;
+}
 
-  // Shared: GND to GND and 5V to 5V. Two supplies on one rail.
-  const tied: PartFile = structuredClone(part);
-  netlistOf(tied).wires = [
-    [`${first}.GND`, `${second}.GND`],
-    [`${first}.5V`, `${second}.5V`],
-  ];
-  const tiedWorld = writeRoot(root, tied, "world-tied");
-  const tiedIslands = islandsOf(root, tiedWorld);
-  expect(
-    tiedIslands.length === 1 && tiedIslands[0]?.split("+").length === 2,
-    `tied islands ${tiedIslands.join(", ")}`
-  );
-  const tiedRun = await run(root, tiedWorld, [
-    ...across(detailedSide),
-    ...across(snapshotSide),
-  ]);
-  const shares = [...tiedRun.supplies.values()].map((values) => mean(values));
-  expect(
-    shares.length === 2 && shares.every((amps) => amps > 0.01),
-    `tied supplies ${shares.join(", ")}`
-  );
-  const rail = Math.max(
-    maxGap(
-      tiedRun.series.get(`${detailedSide}.uno.5V.voltage`),
-      worldRun.series.get(`${detailedSide}.uno.5V.voltage`)
-    ),
-    maxGap(
-      tiedRun.series.get(`${snapshotSide}.uno.5V.voltage`),
-      worldRun.series.get(`${snapshotSide}.uno.5V.voltage`)
+const short = (hash: string) => hash.slice(0, 12);
+
+const world = openContext(nodeRunFiles, example, WORLD);
+expect(world.authored.ok, `${WORLD} does not plan as authored`);
+const part = world.document as PartFile;
+const levels = part.play.levels;
+if (!levels) throw new Error(`${WORLD}: no play levels`);
+const net = netlistOf(part);
+const checks = storedChecks();
+
+// The assemblies, from the tree.
+const assemblies = assembliesOf(world);
+expect(assemblies.length === 2, `assemblies ${assemblies.join(", ")}`);
+const [first, second] = assemblies as [string, string];
+// Which one the path rules move to its snapshots.
+const ruled = (prefix: string) =>
+  Object.keys(levels.paths ?? {}).some((path) => path.startsWith(`${prefix}.`));
+const snapshotSide = ruled(first) ? first : second;
+const detailedSide = snapshotSide === first ? second : first;
+expect(
+  ruled(snapshotSide) && !ruled(detailedSide),
+  "one assembly carries the path rules"
+);
+
+// The world, and each assembly alone: the same root with one instance.
+const alone = (keep: string, rules: Levels): RunContext => {
+  const instances = Object.fromEntries(
+    Object.entries(net.instances).filter(
+      ([id]) => id === keep || !assemblies.includes(id)
     )
   );
-  expect(rail > 1e-6, `tying the rails moved no 5V node (${rail})`);
-  console.log(
-    `world tied: island ${tiedIslands.join(", ")}; mean draw ${[...tiedRun.supplies.entries()].map(([id, values]) => `${id} ${(mean(values) * 1e3).toFixed(2)} mA`).join(", ")}; 5V moves up to ${(rail * 1e3).toFixed(3)} mV from separate`
-  );
+  const one: PartFile = structuredClone(part);
+  const oneNet = netlistOf(one);
+  oneNet.instances = instances;
+  oneNet.wires = [];
+  one.play.levels = rules;
+  return contextOf(one);
+};
+const scoped = (prefix: string): Levels => ({
+  default: levels.default,
+  paths: Object.fromEntries(
+    Object.entries(levels.paths ?? {}).filter(([path]) =>
+      path.startsWith(`${prefix}.`)
+    )
+  ),
+});
+const across = (prefix: string) => QUANTITIES.map((q) => `${prefix}.${q}`);
 
-  // Cost. Four detailed copies against one, placed apart.
-  const four: PartFile = structuredClone(part);
-  const fourNet = netlistOf(four);
-  const template = net.instances[detailedSide];
-  if (!template) throw new Error("unreachable");
-  fourNet.instances = Object.fromEntries([
-    ...Object.entries(net.instances).filter(([id]) => !assemblies.includes(id)),
-    ...[0, 1, 2, 3].map((i) => [
-      `copy${i}`,
-      {
-        part: template.part,
-        pose: { position: [0.35 * i, 0, 0], rotation: [1, 0, 0, 0] },
-      },
-    ]),
-  ]);
-  fourNet.wires = [];
-  four.play.levels = { default: levels.default };
-  const fourRun = await run(root, writeRoot(root, four, "world-four"), []);
-  const one = perSecond(detailedAlone);
-  const snap = perSecond(snapshotAlone);
-  const both = perSecond(worldRun);
-  const quad = perSecond(fourRun);
-  const pair = both / (one + snap);
-  const scale = quad / one;
-  // Wall time varies run to run: print it only on request, so the check's
-  // log stays byte-identical (docs/testing.md). The ratios still gate.
-  if (process.env.BENCH_TIMINGS === "1")
-    console.log(
-      `world cost (${cpus()[0]?.model ?? "unknown cpu"}, wall ms per simulated s): detailed ${one.toFixed(0)}, snapshot ${snap.toFixed(0)}, world of both ${both.toFixed(0)} (${pair.toFixed(2)}× the two alone), four detailed ${quad.toFixed(0)} (${scale.toFixed(2)}× one)`
+// A lone non-environment instance unwraps to the root: its paths lose
+// the prefix, so the alone runs read the bare quantities.
+const worldRun = await run(world, [
+  ...across(detailedSide),
+  ...across(snapshotSide),
+]);
+const detailedAlone = await run(
+  alone(detailedSide, scoped(detailedSide)),
+  QUANTITIES
+);
+const snapshotAlone = await run(
+  alone(snapshotSide, {
+    default: levels.default,
+    paths: Object.fromEntries(
+      Object.entries(levels.paths ?? {}).map(([path, spec]) => [
+        path.slice(snapshotSide.length + 1),
+        spec,
+      ])
+    ),
+  }),
+  QUANTITIES
+);
+
+// Separate supplies: one island each, nothing crosses.
+const islands = islandsOf(world);
+expect(
+  islands.length === 2 && islands.every((id) => !id.includes("+")),
+  `separate islands ${islands.join(", ")}`
+);
+expect(
+  worldRun.snapshots.length > 0 &&
+    worldRun.snapshots.every((row) => row.startsWith(`${snapshotSide}.`)),
+  `snapshots ${worldRun.snapshots.join(", ")}`
+);
+expect(
+  detailedAlone.snapshots.length === 0,
+  `the detailed assembly alone runs ${detailedAlone.snapshots.join(", ")}`
+);
+expect(
+  JSON.stringify(
+    snapshotAlone.snapshots.map((row) => `${snapshotSide}.${row}`)
+  ) === JSON.stringify(worldRun.snapshots),
+  `alone ${snapshotAlone.snapshots.join(", ")} vs world ${worldRun.snapshots.join(", ")}`
+);
+let crossed = 0;
+for (const [prefix, aloneRun] of [
+  [detailedSide, detailedAlone],
+  [snapshotSide, snapshotAlone],
+] as const) {
+  for (const q of QUANTITIES) {
+    crossed = Math.max(
+      crossed,
+      maxGap(worldRun.series.get(`${prefix}.${q}`), aloneRun.series.get(q))
     );
-  expect(pair > 0.6 && pair < 1.6, `world / both alone ${pair}`);
-  expect(scale > 2.5 && scale < 6, `four / one ${scale}`);
-  console.log("world.selfcheck ok");
-} finally {
-  rmSync(root, { recursive: true, force: true });
+  }
 }
+expect(crossed < 1e-12, `an assembly on its own supply moved by ${crossed}`);
+const draws = [...worldRun.supplies.entries()]
+  .map(([id, values]) => `${id} ${(mean(values) * 1e3).toFixed(2)} mA`)
+  .join(", ");
+console.log(
+  `world: ${detailedSide} runs detailed, ${snapshotSide} runs ${worldRun.snapshots.join(", ")}; islands ${islands.join(", ")}; each reads its run alone (max Δ ${crossed.toExponential(1)}); mean draw ${draws}`
+);
+
+// Each assembly in its own context, and the check stored for it.
+const contexts = [
+  [detailedSide, detailedAlone.context],
+  [snapshotSide, snapshotAlone.context],
+] as const;
+expect(
+  new Set([worldRun.context, ...contexts.map(([, hash]) => hash)]).size === 3,
+  "the world and each assembly alone are three contexts"
+);
+console.log(
+  `world contexts: ${contexts
+    .map(
+      ([side, hash]) =>
+        `${side} alone ${short(hash)} (${checks.get(hash) ?? "no stored check"})`
+    )
+    .join(", ")}; stored ${[...checks]
+    .map(([hash, file]) => `${file} ${short(hash)}`)
+    .join(", ")}`
+);
+
+// Shared: GND to GND and 5V to 5V. Two supplies on one rail.
+const tied: PartFile = structuredClone(part);
+netlistOf(tied).wires = [
+  [`${first}.GND`, `${second}.GND`],
+  [`${first}.5V`, `${second}.5V`],
+];
+const tiedContext = contextOf(tied);
+const tiedIslands = islandsOf(tiedContext);
+expect(
+  tiedIslands.length === 1 && tiedIslands[0]?.split("+").length === 2,
+  `tied islands ${tiedIslands.join(", ")}`
+);
+const tiedRun = await run(tiedContext, [
+  ...across(detailedSide),
+  ...across(snapshotSide),
+]);
+const shares = [...tiedRun.supplies.values()].map((values) => mean(values));
+expect(
+  shares.length === 2 && shares.every((amps) => amps > 0.01),
+  `tied supplies ${shares.join(", ")}`
+);
+const rail = Math.max(
+  maxGap(
+    tiedRun.series.get(`${detailedSide}.uno.5V.voltage`),
+    worldRun.series.get(`${detailedSide}.uno.5V.voltage`)
+  ),
+  maxGap(
+    tiedRun.series.get(`${snapshotSide}.uno.5V.voltage`),
+    worldRun.series.get(`${snapshotSide}.uno.5V.voltage`)
+  )
+);
+expect(rail > 1e-6, `tying the rails moved no 5V node (${rail})`);
+console.log(
+  `world tied: island ${tiedIslands.join(", ")}; mean draw ${[...tiedRun.supplies.entries()].map(([id, values]) => `${id} ${(mean(values) * 1e3).toFixed(2)} mA`).join(", ")}; 5V moves up to ${(rail * 1e3).toFixed(3)} mV from separate`
+);
+expect(
+  !checks.has(tiedRun.context) &&
+    contexts.every(([, hash]) => hash !== tiedRun.context),
+  "the tied world is a context of its own"
+);
+console.log(
+  `world tied: context ${short(tiedRun.context)} has no budget of its own: no assembly check measured it`
+);
+
+// Cost. Four detailed copies against one, placed apart.
+const four: PartFile = structuredClone(part);
+const fourNet = netlistOf(four);
+const template = net.instances[detailedSide];
+if (!template) throw new Error("unreachable");
+fourNet.instances = Object.fromEntries([
+  ...Object.entries(net.instances).filter(([id]) => !assemblies.includes(id)),
+  ...[0, 1, 2, 3].map((i) => [
+    `copy${i}`,
+    {
+      part: template.part,
+      pose: { position: [0.35 * i, 0, 0], rotation: [1, 0, 0, 0] },
+    },
+  ]),
+]);
+fourNet.wires = [];
+four.play.levels = { default: levels.default };
+const fourRun = await run(contextOf(four), []);
+const one = perSecond(detailedAlone);
+const snap = perSecond(snapshotAlone);
+const both = perSecond(worldRun);
+const quad = perSecond(fourRun);
+const pair = both / (one + snap);
+const scale = quad / one;
+// Wall time varies run to run: print it only on request, so the check's
+// log stays byte-identical (docs/testing.md). The ratios still gate.
+if (process.env.BENCH_TIMINGS === "1")
+  console.log(
+    `world cost (${cpus()[0]?.model ?? "unknown cpu"}, wall ms per simulated s): detailed ${one.toFixed(0)}, snapshot ${snap.toFixed(0)}, world of both ${both.toFixed(0)} (${pair.toFixed(2)}× the two alone), four detailed ${quad.toFixed(0)} (${scale.toFixed(2)}× one)`
+  );
+expect(pair > 0.6 && pair < 1.6, `world / both alone ${pair}`);
+expect(scale > 2.5 && scale < 6, `four / one ${scale}`);
+console.log("world.selfcheck ok");
