@@ -7,6 +7,7 @@ import {
   isEditableTarget,
   probeEscLayers,
 } from "@/lib/shortcuts";
+import { accuracyView } from "@/lib/world-accuracy";
 import { formatSimTime } from "@/lib/world-issues";
 import { partFileName } from "@/lib/world-rename-part";
 import { findViewNode } from "@/lib/world-tree";
@@ -22,6 +23,7 @@ import { useWorldTimeline } from "@/state/world-timeline";
 import { InstanceBody, RenamePartFile } from "./world-inspector/instance-card";
 import { PlayFields } from "./world-inspector/params";
 import { Field, WarningList } from "./world-inspector/parts";
+import { AccuracyBlock } from "./world-inspector/run-card";
 
 function useWorldSelectionEsc() {
   useEffect(() => {
@@ -65,6 +67,7 @@ export function WorldInspector() {
     () => warningsFromRun(report, diagnostics),
     [report, diagnostics]
   );
+  const accuracy = useMemo(() => accuracyView(report), [report]);
   const node =
     selection && tree ? findViewNode(tree.nodes, selection.path) : null;
   const wireNode = wire && tree ? findViewNode(tree.nodes, wire.owner) : null;
@@ -127,6 +130,7 @@ export function WorldInspector() {
                 Reading the world…
               </p>
             )}
+            {accuracy ? <AccuracyBlock view={accuracy} summary /> : null}
             {tree ? (
               <RenamePartFile
                 name={partFileName(tree.part)}

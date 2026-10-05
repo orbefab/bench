@@ -47,6 +47,7 @@ import {
   type Wire,
   type WireEnd,
 } from "@sfab-bench/parts";
+import { noteAccuracy, recordPathFor } from "./accuracy";
 import {
   adcHeaderLabels,
   boardGpio,
@@ -1783,6 +1784,7 @@ export function planWorld(
     found.root,
     env
   );
+  readAccuracy(built.plan.report ?? null, parsed, worldRel, found.root, env);
   return { ok: true, plan: built.plan };
 }
 
@@ -1837,6 +1839,29 @@ function noteFreshness(
       })
     );
   }
+}
+
+/** The document's assembly check, when it has one (`accuracy.ts`). */
+function readAccuracy(
+  report: RunReport | null,
+  document: unknown,
+  worldRel: string,
+  root: string,
+  env: PlanEnv
+): void {
+  const id = (document as { id?: unknown }).id;
+  const recordRel = typeof id === "string" ? recordPathFor(id) : null;
+  if (!report || !recordRel) return;
+  const abs = env.resolve(root, recordRel);
+  if (!env.exists(abs)) return;
+  let record: unknown = null;
+  try {
+    record = JSON.parse(env.readText(abs)) as unknown;
+  } catch {
+    return;
+  }
+  const rel = worldRel.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  noteAccuracy(report, document, rel, recordRel, record);
 }
 
 function markStaleOptions(

@@ -5,6 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { sendWorldGhost } from "@/hooks/useWorldRun";
 import { type LevelSnapshot, levelCard } from "@/lib/level-card";
+import {
+  type AccuracyView,
+  accuracySummary,
+  accuracyView,
+} from "@/lib/world-accuracy";
 import { type GhostReadout, ghostOffer, ghostReadout } from "@/lib/world-ghost";
 import { useWorld, worldLiveState } from "@/state/world";
 
@@ -92,6 +97,85 @@ function SnapshotBlock({
   );
 }
 
+const TONE = {
+  ok: "text-emerald-700 dark:text-emerald-400",
+  warn: "text-amber-800 dark:text-amber-400",
+  none: "text-muted-foreground",
+} as const;
+
+/**
+ * Accuracy: each quantity's gap, and per resolution the verdict, from the
+ * document's assembly check when it is this run's. With `summary`, the
+ * document card's one line above the rows.
+ */
+export function AccuracyBlock({
+  view,
+  summary,
+}: {
+  view: AccuracyView;
+  summary?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2" aria-label="Accuracy">
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
+          Accuracy, with {view.snapshots} as snapshots
+        </span>
+        {view.domain.length > 0 ? (
+          <span title={view.domain.join("\n")}>
+            <Tag text="out of domain" tone="warn" />
+          </span>
+        ) : null}
+      </div>
+      {summary || !view.applies ? (
+        <div className="break-words text-[12px]">{accuracySummary(view)}</div>
+      ) : null}
+      {view.domain.map((line) => (
+        <div
+          key={line}
+          className="break-words text-[12px] text-amber-800 dark:text-amber-400"
+        >
+          Out of domain: {line}
+        </div>
+      ))}
+      {view.lines.map((line) => (
+        <div key={line.quantity} className="min-w-0">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className="min-w-0 flex-1 font-mono text-[12px]">
+              {line.quantity}
+            </span>
+            {line.criteria.length === 0 ? <Tag text="no resolution" /> : null}
+            {line.criteria.map((row) => (
+              <span
+                key={row.against}
+                className={`shrink-0 text-[11px] ${TONE[row.tone]}`}
+              >
+                {row.verdict}
+              </span>
+            ))}
+          </div>
+          <div className="break-words font-mono text-[12px] text-muted-foreground">
+            {line.gap}
+          </div>
+          {line.criteria.map((row) => (
+            <div key={row.against} className="min-w-0">
+              <div className="break-words text-[11px] text-muted-foreground">
+                {row.against}
+              </div>
+              <div className="break-words font-mono text-[12px]">
+                {row.measured}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+      <div className="break-words text-[11px] text-muted-foreground">
+        {view.record}
+      </div>
+    </div>
+  );
+}
+
 /** The live state is not React state: read the ghost a few times a second. */
 function useGhostReadout(path: string): GhostReadout | null {
   const [readout, setReadout] = useState<GhostReadout | null>(null);
@@ -163,6 +247,7 @@ export function RunCard({
 }) {
   const report = useWorld((s) => s.report);
   const card = useMemo(() => levelCard(report, path), [report, path]);
+  const accuracy = useMemo(() => accuracyView(report, path), [report, path]);
   if (!card) return null;
   const behaviour = card.axes.find((row) => row.axis === "behaviour");
   const kind = card.snapshot
@@ -189,6 +274,7 @@ export function RunCard({
         {card.nested.map((row) => (
           <SnapshotBlock key={row.path} snapshot={row} nested />
         ))}
+        {accuracy?.applies ? <AccuracyBlock view={accuracy} /> : null}
         {node ? <GhostBlock node={node} /> : null}
       </CardContent>
     </Card>

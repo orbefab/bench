@@ -33,8 +33,10 @@
  *
  * - Identity: the document, its lock and each child snapshot are the ones
  *   measured (`fixture`, `children`); the observations, the metric
- *   definitions and the observer code are (`identity`); and so are the
- *   criteria and the settle predicate (`policy`).
+ *   definitions and the observer code are (`identity`); so are the
+ *   criteria and the settle predicate (`policy`); and the snapshot side is
+ *   the run the record measured (`context`, the run a live verdict
+ *   belongs to: `@sfab-bench/sim/accuracy`).
  * - Reproduction: every stored metric of every row and criterion sits
  *   within `DRIFT` (`assembly-check.ts`) of its re-measure, with the same pair counts, and a max
  *   is set at the same time between the same values.
@@ -74,6 +76,7 @@ import {
   parsePartRef,
   sha256Bytes,
 } from "@sfab-bench/parts";
+import { runContext } from "@sfab-bench/sim/accuracy";
 import {
   type Criterion,
   comparisonIdentity,
@@ -138,6 +141,7 @@ type AssemblyCheck = {
   detailed: Levels;
   snapshot: Levels;
   children: Child[];
+  context?: string;
   quantities: string[];
   observations?: ObservationDescriptor[];
   identity?: string;
@@ -149,6 +153,8 @@ type AssemblyCheck = {
 
 type Side = ObservedRun & {
   snapshots: { path: string; axis: string; ref: string }[];
+  /** What makes this run the one a stored verdict belongs to. */
+  context: string;
 };
 
 function readJson<T>(file: string): T {
@@ -237,12 +243,18 @@ async function runSide(
         throw new Error(`${world}: ${String(err)}`);
       }
     );
-    const snapshots = (sim.report()?.snapshots ?? [])
+    const report = sim.report();
+    if (!report) throw new Error(`${world}: no report`);
+    const snapshots = report.snapshots
       .map((row) => ({ path: row.path, axis: row.axis, ref: row.ref }))
       .sort((a, b) =>
         `${a.path} ${a.axis}`.localeCompare(`${b.path} ${b.axis}`)
       );
-    return { ...observed, snapshots };
+    return {
+      ...observed,
+      snapshots,
+      context: runContext(readJson<unknown>(join(root, world)), report),
+    };
   } finally {
     sim.dispose();
   }
@@ -400,6 +412,10 @@ try {
         `${x.path} ${x.axis}`.localeCompare(`${y.path} ${y.axis}`)
       );
     expect(
+      write || b.context === record.context,
+      `${at}: the snapshot side is not the run the record measured (context ${b.context} vs ${String(record.context)}); remeasure and state why`
+    );
+    expect(
       write || JSON.stringify(b.snapshots) === JSON.stringify(named),
       `${at}: the snapshot side runs ${JSON.stringify(b.snapshots)}, the record names ${JSON.stringify(named)}`
     );
@@ -534,6 +550,7 @@ try {
           hash: contentHash(snapshotOf(dir, row.ref)),
           fromHash: sourceHash(dir, row.ref),
         })),
+        context: b.context,
         quantities: record.quantities,
         observations,
         identity,

@@ -249,6 +249,118 @@ export type Resolution = {
   source: Citation;
 };
 
+/** A named metric as an assembly check stores it. */
+export type AssemblyMetricRow = {
+  metric: string;
+  value: number;
+  pairs: number;
+  /** The pair that set a `-max` metric. */
+  at?: { ms: number; detailed: number; snapshot: number };
+};
+
+export type AssemblyVerdict =
+  | { verdict: "within" }
+  | { verdict: "over"; by: number }
+  | { verdict: "none"; reason: string };
+
+/** One resolution judged on one quantity of an assembly check. */
+export type AssemblyCriterionRow = {
+  kind: Resolution["kind"];
+  /** The part or type id that states it, and the port. */
+  from: string;
+  threshold: number;
+  reference: ResolutionReference;
+  conditions: ResolutionCondition[];
+  source: Citation;
+  metrics: AssemblyMetricRow[];
+  coverage: {
+    qualified: number;
+    /** Qualified master steps as simulated milliseconds. */
+    ms?: number;
+    excluded: Record<string, number>;
+  };
+} & AssemblyVerdict;
+
+export type AssemblyQuantityRow = {
+  quantity: string;
+  metrics: (AssemblyMetricRow & { unmatched: number })[];
+  criteria: AssemblyCriterionRow[];
+  /** Present when no criterion covers the quantity. */
+  verdict?: "none";
+  reason?: string;
+  inDomain: boolean;
+};
+
+/** What a run says about its own validity, with no observed numbers. */
+export type AssemblyValidity = {
+  envelope: {
+    path: string;
+    ref: string;
+    port: string;
+    quantity: string;
+    range: string;
+  }[];
+  stale: { path: string; ref: string }[];
+  unchecked: { path: string; ref: string; reason: string }[];
+  degraded: { path: string; code: string; port: string }[];
+};
+
+/**
+ * One assembly run twice on its own fixture, detailed and with its
+ * snapshot children (`docs/formats.md` › Assembly check). It lives at
+ * `checks/<publisher>/<name>@<version>.json` for the document's part id.
+ */
+export type AssemblyCheckFile = {
+  format: typeof ASSEMBLY_CHECK_FORMAT;
+  document: string;
+  fixture: { ms: number; hash: string; lock: string };
+  detailed: { default: LevelSpec; paths?: Record<string, LevelSpec> };
+  snapshot: { default: LevelSpec; paths?: Record<string, LevelSpec> };
+  children: {
+    path: string;
+    axis: string;
+    ref: string;
+    hash: string;
+    fromHash: string;
+  }[];
+  /** The snapshot side's run: the run a stored verdict belongs to. */
+  context: string;
+  quantities: string[];
+  observations: unknown[];
+  identity: string;
+  policy: string;
+  rows: AssemblyQuantityRow[];
+  domain: { detailed: AssemblyValidity; snapshot: AssemblyValidity };
+  inDomain: boolean;
+};
+
+/**
+ * One quantity of the assembly check whose context is this run, as the
+ * card shows it: the gap, and per criterion the threshold and verdict.
+ */
+export type AccuracyRow = {
+  quantity: string;
+  path: string;
+  port: string;
+  field: string;
+  /** The largest gap over every master step, and its RMS. */
+  gap: { max: number; rms: number };
+  /** Empty when no resolution covers the quantity: a gap, no verdict. */
+  criteria: ({
+    kind: Resolution["kind"];
+    from: string;
+    threshold: number;
+    /** The `PORT.field` a ratio-to resolution divides by. */
+    ratioTo?: string;
+    /** `steady@1`'s window, seconds. */
+    window?: number;
+    /** The judged metric and its value; no value when nothing qualified. */
+    metric: string;
+    value?: number;
+    coverage: AssemblyCriterionRow["coverage"];
+  } & AssemblyVerdict)[];
+};
+
 export type PortDecl = {
   domain: Domain;
   role?: PortRole;
@@ -327,6 +439,7 @@ export function isRunDocumentPath(path: string): boolean {
 export const LOCK_FORMAT = "sfab.lock@1" as const;
 export const RUN_REPORT_FORMAT = "sfab.run-report@1" as const;
 export const SNAPSHOT_FORMAT = "sfab.snapshot@1" as const;
+export const ASSEMBLY_CHECK_FORMAT = "sfab.assembly-check@2" as const;
 export const FIXTURE_FORMAT = "sfab.fixture@1" as const;
 export const LEVEL_OVERLAY_FORMAT = "sfab.level-overlay@1" as const;
 
@@ -1022,6 +1135,7 @@ export const DIAG_CODES = [
   "timestep-unsupported",
   "battery",
   "envelope",
+  "over-budget",
   "seam-residual-growing",
   "below-16mhz-soa",
   // A chip feature the emulator names and does not emulate.
@@ -1169,6 +1283,22 @@ export type RunReport = {
    * report without one stays byte-identical.
    */
   seams?: SeamEnergy[];
+  /**
+   * The document's assembly check. Absent when it has none, so a report
+   * without one stays byte-identical.
+   */
+  accuracy?: {
+    /** Project-relative record file. */
+    record: string;
+    /** This run is the run the record's snapshot side measured. */
+    applies: boolean;
+    /** The record's run stayed in every snapshot's domain. */
+    inDomain: boolean;
+    /** The replacements it compares, as `path ref`. */
+    snapshots: string[];
+    /** Empty unless it applies. */
+    rows: AccuracyRow[];
+  };
 };
 
 export type SnapshotQuality = "Q0" | "Q1" | "Q2a" | "Q2b" | "Q3";

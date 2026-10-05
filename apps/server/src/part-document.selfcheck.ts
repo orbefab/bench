@@ -212,10 +212,18 @@ for (const example of examples) {
       `${stem} levels diverged`
     );
     console.log(`round trip ${stem}: levels equal`);
-    const fields = differing(fromWorld, fromPart);
+    // A check is read for the part's id, so only the part has one, and a
+    // converted document is not the run it measured.
+    const fields = differing(fromWorld, fromPart).filter(
+      (field) => field !== "accuracy"
+    );
     expect(
-      fields.length === 2 && fields[0] === "lock" && fields[1] === "world",
-      `${stem} report fields ${fields.join(", ")}`
+      fields.length === 2 &&
+        fields[0] === "lock" &&
+        fields[1] === "world" &&
+        fromWorld.accuracy === undefined &&
+        fromPart.accuracy?.applies !== true,
+      `${stem} report fields ${fields.join(", ")}, accuracy ${JSON.stringify(fromPart.accuracy)}`
     );
     const legacy = await recorded(dir, example.world);
     const part = await recorded(dir, example.part);

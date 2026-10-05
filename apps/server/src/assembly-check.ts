@@ -7,6 +7,11 @@
  */
 
 import type {
+  AssemblyCriterionRow,
+  AssemblyMetricRow,
+  AssemblyQuantityRow,
+} from "@sfab-bench/contract";
+import type {
   Criterion,
   Judged,
   MetricName,
@@ -17,35 +22,9 @@ import type {
 /** How far a recomputed gap may sit from its row, relative (unit 4's). */
 export const DRIFT = 1e-4;
 
-/** A named metric as stored: `pairs` are the pairs it reduced. */
-export type MetricRow = {
-  metric: MetricName;
-  value: number;
-  pairs: number;
-  /** The pair that set a `-max` metric. */
-  at?: { ms: number; detailed: number; snapshot: number };
-};
-
-export type CriterionRow = {
-  kind: Judged["kind"];
-  from: string;
-  threshold: number;
-  reference: Criterion["resolution"]["reference"];
-  conditions: NonNullable<Criterion["resolution"]["conditions"]>;
-  source: Criterion["resolution"]["source"];
-  metrics: MetricRow[];
-  coverage: Judged["coverage"];
-} & Verdict;
-
-export type QuantityRow = {
-  quantity: string;
-  metrics: (MetricRow & { unmatched: number })[];
-  criteria: CriterionRow[];
-  /** Present when no criterion covers the quantity. */
-  verdict?: "none";
-  reason?: string;
-  inDomain: boolean;
-};
+export type MetricRow = AssemblyMetricRow;
+export type CriterionRow = AssemblyCriterionRow;
+export type QuantityRow = AssemblyQuantityRow;
 
 /** How far `got` is from `stored`, relative (unit 4's rule). */
 function driftOf(got: number, stored: number): number {
@@ -139,7 +118,7 @@ function verdictMoved(was: CriterionRow, now: CriterionRow): string | null {
   return null;
 }
 
-const names = (rows: { metric: MetricName }[]) =>
+const names = (rows: { metric: string }[]) =>
   JSON.stringify(rows.map((row) => row.metric));
 
 /**
