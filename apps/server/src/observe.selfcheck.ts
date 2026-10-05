@@ -345,7 +345,7 @@ try {
     expect(
       (moved !== build) === moves &&
         (comparisonIdentity(rows, moved) !== base) === moves,
-      `${file}: ${was} → ${now} ${moves ? "keeps" : "moves"} the identity`
+      `${file}: ${was} → ${now} should ${moves ? "move" : "keep"} the identity`
     );
   }
   console.log(
