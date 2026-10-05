@@ -148,6 +148,10 @@ async function run(context: RunContext, quantities: string[]): Promise<Run> {
     [...read.keys(), ...supplyOf.keys()],
     { ms: MS, host: nodeRunClock }
   );
+  expect(
+    context.late().length === 0,
+    `the run read files its plan did not: ${context.late().join(", ")}`
+  );
   const after = (row: Parameters<typeof descriptorId>[0]) =>
     (side.series.get(descriptorId(row)) ?? [])
       .filter((point) => point.ms >= RECORD_FRAME_MS)

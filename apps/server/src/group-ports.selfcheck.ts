@@ -245,12 +245,11 @@ function span(values: number[]): string {
 
 /** The world's own levels with `path`'s set to `levels`. */
 function withPath(
-  context: RunContext,
+  document: { play?: { levels?: Selection } },
   path: string,
   levels: LevelSpec
 ): Selection {
-  const own = (context.document as { play?: { levels?: Selection } }).play
-    ?.levels ?? { default: 1 };
+  const own = document.play?.levels ?? { default: 1 };
   return { ...own, paths: { ...own.paths, [path]: levels } };
 }
 
@@ -289,15 +288,19 @@ for (const { id, file } of catalogSnapshots()) {
     captured && recipe.snap ? recipe.snap : { behaviour: group.snap };
   const ms = captured && recipe.scene ? recipe.scene.ms : RUN_MS;
 
+  const document = readJson<{ play?: { levels?: Selection } }>(
+    join(examples, scene.project, scene.world)
+  );
+  const sides = [
+    withPath(document, scene.path, deep),
+    withPath(document, scene.path, snap),
+  ] as const;
   const context = openContext(
     nodeRunFiles,
     join(examples, scene.project),
-    scene.world
+    scene.world,
+    { selections: sides }
   );
-  const sides = [
-    withPath(context, scene.path, deep),
-    withPath(context, scene.path, snap),
-  ] as const;
   const quantities = [
     ...snapshot.ports.inputs,
     ...snapshot.ports.outputs,
@@ -310,6 +313,10 @@ for (const { id, file } of catalogSnapshots()) {
       `${id}: ${scene.path}.no-such-port has a reading`
     );
   }
+  expect(
+    context.late().length === 0,
+    `${id}: the sides read files after the context opened: ${context.late().join(", ")}`
+  );
   const at = `${scene.project}/${scene.world} ${scene.path}`;
   expect(
     a.impl === "composite" && a.snapshot === null,

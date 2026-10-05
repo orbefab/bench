@@ -25,6 +25,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -51,6 +52,17 @@ const FIRMWARE = "firmware/hold/hold.hex";
 const URDF = "robot/arm.urdf";
 const MESH = "robot/meshes/base.stl";
 const SHADOW = "parts/sfab/sg90@1.0.0.json";
+const GONE = "robot/meshes/upper_arm.stl";
+const ALIAS = "robot/alias.urdf";
+
+const reads = (fn: () => unknown) => {
+  try {
+    fn();
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const record = JSON.parse(readFileSync(join(example, RECORD), "utf8")) as {
   context: string;
@@ -165,6 +177,35 @@ try {
   expect(
     servoPin(planSide(after, record.snapshot).report.lock) !== pinned,
     "the project's copy shadows the catalog part in a new context"
+  );
+
+  // The copies answer whatever the disk does: a held file that is
+  // deleted, a miss that appears, and a second spelling of a held file.
+  const files = context.files();
+  const asHeld = (rel: string) => join(context.root, rel);
+  const gone = readFileSync(at(GONE));
+  rmSync(at(GONE));
+  expect(
+    files.readInside(context.root, GONE)?.length === gone.length &&
+      files.plan.readBytes?.(asHeld(GONE)).length === gone.length,
+    "a deleted file is still its copy, to the engines and the planner"
+  );
+  expect(
+    !files.plan.exists(asHeld(SHADOW)) &&
+      files.readInside(context.root, SHADOW) === null &&
+      !reads(() => files.plan.readText(asHeld(SHADOW))),
+    "a miss that appeared on disk stays a miss on every surface"
+  );
+  symlinkSync(at(URDF), at(ALIAS));
+  expect(
+    new TextDecoder().decode(
+      files.readInside(context.root, ALIAS) ?? new Uint8Array()
+    ) === urdf,
+    "a second spelling of a held file reads its copy"
+  );
+  expect(
+    context.late().includes(ALIAS),
+    `a new spelling is a late read, by its project path: ${context.late()}`
   );
 
   // The context writes nothing.

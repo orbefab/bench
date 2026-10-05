@@ -5,7 +5,7 @@
  * A run reads files through four surfaces: the planner's `PlanEnv`, the
  * loader's `Store`, `readInside` (the world file's own hash) and
  * `readerFor` (URDFs, meshes, firmware). `openContext` wraps all four with
- * one copy per absolute path. Each file is read from disk at most once,
+ * one copy per real path. Each file is read from disk at most once,
  * and every side of the context reads that copy, so nothing that changes
  * on disk after the context opened reaches a side. A missing file stays
  * missing, so a project file still shadows the catalog and the catalog
@@ -68,7 +68,7 @@ export type RunContext = {
   authored: PlanResult;
   /** Every file the context holds, by project or catalog path. */
   manifest(): ManifestRow[];
-  /** Files first read after the context opened. */
+  /** Paths first asked of the disk after the context opened. */
   late(): string[];
   /** The frozen files with `overrides` served in place of the copies. */
   files(overrides?: Map<string, Uint8Array | null>): RunFiles;
@@ -100,16 +100,29 @@ function cleanRel(rel: string): string {
 const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
 const encoder = new TextEncoder();
 
+/** What a context freezes: the planner's file surface, asked through. */
+export type FileSource = Pick<RunFiles, "plan">;
+
+/**
+ * Every file answer, asked of the host once. A path is first resolved to
+ * its real path, once, so two spellings of one file share one copy; its
+ * presence, bytes and directory listing are then held by that real path.
+ * `readInside` applies the host's rule (project-relative, no `..`, inside
+ * the project after symlinks, a file) to the held answers, so it agrees
+ * with `exists` and `read` whatever the disk does later.
+ */
 class Frozen {
-  readonly bytes = new Map<string, Uint8Array | null>();
-  readonly found = new Map<string, boolean>();
+  /** Each path asked, to its real path: null when it did not resolve. */
   readonly real = new Map<string, string | null>();
+  /** By real path: whether it exists. */
+  readonly found = new Map<string, boolean>();
+  /** By real path: its bytes, null when missing or not a file. */
+  readonly bytes = new Map<string, Uint8Array | null>();
   readonly lists = new Map<string, string[] | null>();
-  readonly inside = new Map<string, boolean>();
   readonly lateReads = new Set<string>();
   sealed = false;
 
-  constructor(readonly host: RunFiles) {}
+  constructor(readonly host: FileSource) {}
 
   key(file: string): string {
     return this.host.plan.absolutePath(file);
@@ -119,107 +132,108 @@ class Frozen {
     if (this.sealed) this.lateReads.add(key);
   }
 
-  read(file: string): Uint8Array | null {
-    const key = this.key(file);
-    if (this.bytes.has(key)) return this.bytes.get(key) ?? null;
-    this.first(key);
-    let got: Uint8Array | null = null;
-    try {
-      const env = this.host.plan;
-      if (env.exists(key)) {
-        got = env.readBytes
-          ? new Uint8Array(env.readBytes(key))
-          : encoder.encode(env.readText(key));
-      }
-    } catch {
-      got = null;
-    }
-    this.bytes.set(key, got);
-    return got;
-  }
-
-  exists(file: string): boolean {
-    const key = this.key(file);
-    const known = this.found.get(key);
-    if (known !== undefined) return known;
-    if (this.bytes.get(key)) {
-      this.found.set(key, true);
-      return true;
-    }
-    this.first(key);
-    const is = this.host.plan.exists(key);
-    this.found.set(key, is);
-    return is;
-  }
-
-  list(file: string): string[] {
-    const key = this.key(file);
-    if (!this.lists.has(key)) {
-      this.first(key);
-      let names: string[] | null = null;
-      try {
-        names = this.host.plan.store.list(key);
-      } catch {
-        names = null;
-      }
-      this.lists.set(key, names);
-    }
-    const names = this.lists.get(key);
-    if (!names) throw new Error(`${key}: not a directory`);
-    return [...names];
-  }
-
-  realpath(file: string): string {
+  /** The real path `file` names; the path itself when it does not resolve. */
+  canonical(file: string): string {
     const key = this.key(file);
     if (!this.real.has(key)) {
       this.first(key);
       let got: string | null = null;
       try {
-        got = this.host.plan.realpath(key);
+        got = this.key(this.host.plan.realpath(key));
       } catch {
         got = null;
       }
       this.real.set(key, got);
+      if (got && !this.real.has(got)) this.real.set(got, got);
     }
-    const got = this.real.get(key);
-    if (!got) throw new Error(`${key}: no such file`);
+    return this.real.get(key) ?? key;
+  }
+
+  exists(file: string): boolean {
+    const at = this.canonical(file);
+    const known = this.found.get(at);
+    if (known !== undefined) return known;
+    this.first(at);
+    const is = this.host.plan.exists(at);
+    this.found.set(at, is);
+    return is;
+  }
+
+  read(file: string): Uint8Array | null {
+    const at = this.canonical(file);
+    if (this.bytes.has(at)) return this.bytes.get(at) ?? null;
+    let got: Uint8Array | null = null;
+    if (this.exists(at)) {
+      this.first(at);
+      try {
+        const env = this.host.plan;
+        got = env.readBytes
+          ? new Uint8Array(env.readBytes(at))
+          : encoder.encode(env.readText(at));
+      } catch {
+        got = null;
+      }
+    }
+    this.bytes.set(at, got);
     return got;
   }
 
-  /**
-   * The real host says whether `rel` stays inside the project; the bytes
-   * are the context's copy.
-   */
-  readInside(root: string, rel: string): Uint8Array | null {
+  list(file: string): string[] {
+    const at = this.canonical(file);
+    if (!this.lists.has(at)) {
+      this.first(at);
+      let names: string[] | null = null;
+      try {
+        names = this.host.plan.store.list(at);
+      } catch {
+        names = null;
+      }
+      this.lists.set(at, names);
+    }
+    const names = this.lists.get(at);
+    if (!names) throw new Error(`${at}: not a directory`);
+    return [...names];
+  }
+
+  realpath(file: string): string {
+    const at = this.canonical(file);
+    if (!this.real.get(this.key(file))) throw new Error(`${at}: no such file`);
+    return at;
+  }
+
+  /** `rel` under `root`, by the host's `resolveInside` rule, from `read`. */
+  inside(
+    root: string,
+    rel: string,
+    read: (file: string) => Uint8Array | null
+  ): Uint8Array | null {
+    const env = this.host.plan;
     const clean = cleanRel(rel);
-    const at = `${root}\0${clean}`;
-    const key = this.key(this.host.plan.resolve(root, clean));
-    if (!this.inside.has(at)) {
-      const got = this.host.readInside(root, rel);
-      this.inside.set(at, got !== null);
-      if (got !== null && !this.bytes.has(key)) {
-        this.first(key);
-        this.bytes.set(key, new Uint8Array(got));
+    if (!clean || clean.split("/").includes("..") || env.isAbsolute(clean)) {
+      return null;
+    }
+    const at = this.canonical(env.resolve(root, clean));
+    const under = env.relative(this.canonical(root), at);
+    if (under.startsWith("..") || env.isAbsolute(under)) return null;
+    return read(at);
+  }
+
+  /** A held path as the project or the catalog names it. */
+  shown(root: string, abs: string): string {
+    const env = this.host.plan;
+    for (const [base, prefix] of [
+      [root, ""],
+      [this.canonical(env.catalogDir()), "catalog/"],
+    ] as const) {
+      const rel = env.relative(base, abs);
+      if (rel && !rel.startsWith("..") && !env.isAbsolute(rel)) {
+        return `${prefix}${rel.split(env.sep).join("/")}`;
       }
     }
-    return this.inside.get(at) ? (this.bytes.get(key) ?? null) : null;
+    return abs;
   }
 
   manifest(root: string): ManifestRow[] {
-    const env = this.host.plan;
-    const catalog = env.absolutePath(env.catalogDir());
-    const shown = (abs: string) => {
-      for (const [base, prefix] of [
-        [root, ""],
-        [catalog, "catalog/"],
-      ] as const) {
-        const rel = env.relative(base, abs);
-        if (rel && !rel.startsWith("..") && !env.isAbsolute(rel)) {
-          return `${prefix}${rel.split(env.sep).join("/")}`;
-        }
-      }
-      return abs;
-    };
     // A file looked for and not found is held too: it is why a layer
     // further down answered.
     const rows = new Map<string, string>();
@@ -230,26 +244,28 @@ class Frozen {
       if (!is && !rows.has(abs)) rows.set(abs, "missing");
     }
     return [...rows]
-      .map(([abs, sha256]) => ({ file: shown(abs), sha256 }))
+      .map(([abs, sha256]) => ({ file: this.shown(root, abs), sha256 }))
       .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
   }
 
-  /** The four surfaces, with `overrides` (by absolute path) served first. */
+  /**
+   * The four surfaces, with `overrides` (by real path) served first: a
+   * file, or null for one hidden.
+   */
   view(overrides: Map<string, Uint8Array | null>): RunFiles {
     const env = this.host.plan;
-    const over = (file: string) => {
-      const key = this.key(file);
-      return overrides.has(key) ? { bytes: overrides.get(key) ?? null } : null;
+    const bytesOf = (file: string): Uint8Array | null => {
+      const at = this.canonical(file);
+      return overrides.has(at) ? (overrides.get(at) ?? null) : this.read(at);
     };
     const read = (file: string): Uint8Array => {
-      const held = over(file);
-      const bytes = held ? held.bytes : this.read(file);
+      const bytes = bytesOf(file);
       if (!bytes) throw new Error(`${this.key(file)}: no such file`);
       return bytes;
     };
     const exists = (file: string): boolean => {
-      const held = over(file);
-      return held ? held.bytes !== null : this.exists(file);
+      const at = this.canonical(file);
+      return overrides.has(at) ? overrides.get(at) !== null : this.exists(at);
     };
     const refuse = (what: string) => () => {
       throw new Error(`a frozen run context does not ${what}`);
@@ -276,11 +292,8 @@ class Frozen {
       absolutePath: (file) => env.absolutePath(file),
       sep: env.sep,
     };
-    const readInside = (root: string, rel: string) => {
-      const held = over(env.resolve(root, cleanRel(rel)));
-      if (held) return held.bytes;
-      return this.readInside(root, rel);
-    };
+    const readInside = (root: string, rel: string) =>
+      this.inside(root, rel, bytesOf);
     return {
       plan,
       projectReal: (project) => {
@@ -308,7 +321,7 @@ class Frozen {
  * A store over frozen copies of `host`'s files, with no document: what a
  * capture's fitter reads its source part through. Each file is read once.
  */
-export function frozenStore(host: RunFiles): Store {
+export function frozenStore(host: FileSource): Store {
   return new Frozen(host).view(new Map()).plan.store;
 }
 
@@ -332,7 +345,7 @@ function withLevels(document: unknown, selection: Selection): unknown {
  * now, so their sides read only what the context already holds.
  */
 export function openContext(
-  host: RunFiles,
+  host: FileSource,
   project: string,
   world: string,
   options: { document?: unknown; selections?: readonly Selection[] } = {}
@@ -341,24 +354,21 @@ export function openContext(
   const env = host.plan;
   const root = frozen.view(new Map()).projectReal(project);
   if (!root) throw new Error(`${project}: the project folder is gone`);
+  frozen.canonical(env.catalogDir());
   const rel = cleanRel(world);
-  const asked = frozen.key(env.resolve(root, rel));
-  const worldAbs = frozen.key(frozen.realpath(asked));
-  const lockAbs = frozen.key(lockPathFor(worldAbs));
+  const worldAbs = frozen.canonical(env.resolve(root, rel));
+  const lockAbs = frozen.canonical(lockPathFor(worldAbs));
   const given = options.document !== undefined;
   const text = given ? null : frozen.read(worldAbs);
   if (!given && !text) throw new Error(`${world}: no such document`);
   const document = given
     ? structuredClone(options.document)
     : (JSON.parse(decoder.decode(text ?? new Uint8Array())) as unknown);
-  const served = (doc: unknown) => {
-    const bytes = encoder.encode(JSON.stringify(doc));
-    return new Map<string, Uint8Array | null>([
-      [asked, bytes],
-      [worldAbs, bytes],
+  const served = (doc: unknown) =>
+    new Map<string, Uint8Array | null>([
+      [worldAbs, encoder.encode(JSON.stringify(doc))],
       [lockAbs, null],
     ]);
-  };
   // The authored document plans with its lock; the context hash reads
   // every file its run reads (firmware, URDFs, meshes) into the copies.
   const authoredFiles = frozen.view(given ? served(document) : new Map());
@@ -370,7 +380,8 @@ export function openContext(
     document,
     authored,
     manifest: () => frozen.manifest(root),
-    late: () => [...frozen.lateReads].sort(),
+    late: () =>
+      [...frozen.lateReads].map((abs) => frozen.shown(root, abs)).sort(),
     files: (overrides) => frozen.view(overrides ?? new Map()),
     stampEnv: () => ({
       store: frozen.view(new Map()).plan.store,
