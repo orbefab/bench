@@ -13,8 +13,10 @@
  *   reference and dimensionless for `ratio-to`;
  * - a `ratio-to` reference names `PORT.field` on the same part, in the
  *   same quantity, so the ratio's units cancel;
+ * - a `reader` reads a `voltage`: it is judged at its conversions;
  * - conditions are `within-ratings` and `steady@1` (a positive `window`
- *   in seconds); a `precision` carries `steady@1`, a `reader` never does;
+ *   in seconds, stated once); a `precision` carries `steady@1`, a
+ *   `reader` never does;
  * - a source with a title and a reference.
  */
 
@@ -135,11 +137,17 @@ function resolutionProblem(
   if (row.kind !== "precision" && row.kind !== "reader") {
     return `kind ${String(row.kind)} is not precision or reader`;
   }
+  if (row.kind === "reader" && row.field !== "voltage") {
+    return "a reader is judged at its conversions, which read a voltage";
+  }
   const reference = row.reference as { kind?: unknown; quantity?: unknown };
   let unit: Quantity;
   if (reference?.kind === "absolute" && Object.keys(reference).length === 1) {
     unit = RESOLVED_FIELD_QUANTITY[row.field];
   } else if (reference?.kind === "ratio-to") {
+    if (Object.keys(reference).length !== 2) {
+      return "ratio-to takes a quantity and nothing else";
+    }
     const target =
       typeof reference.quantity === "string"
         ? splitPortField(reference.quantity)
@@ -173,6 +181,7 @@ function resolutionProblem(
       continue;
     }
     if (condition?.kind === "steady@1") {
+      if (steady) return "steady@1 is stated twice";
       if (Object.keys(condition).length !== 2) {
         return "steady@1 takes a window and nothing else";
       }

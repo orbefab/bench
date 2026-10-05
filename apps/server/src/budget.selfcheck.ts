@@ -237,6 +237,47 @@ const SOURCE = { title: "a datasheet", ref: "a table" };
       "resolution names a port the type does not have",
     ],
     [
+      "a reader of an angle",
+      {
+        shaft: [
+          {
+            ...reader,
+            field: "angle",
+            reference: { kind: "absolute" },
+            value: 0.01,
+          },
+        ],
+      },
+      "which read a voltage",
+    ],
+    [
+      "two windows",
+      {
+        shaft: [
+          {
+            ...precision,
+            conditions: [
+              { kind: "steady@1", window: 0.06 },
+              { kind: "steady@1", window: 0.01 },
+            ],
+          },
+        ],
+      },
+      "steady@1 is stated twice",
+    ],
+    [
+      "a ratio with another key",
+      {
+        A0: [
+          {
+            ...reader,
+            reference: { kind: "ratio-to", quantity: "5V.voltage", note: "x" },
+          },
+        ],
+      },
+      "takes a quantity and nothing else",
+    ],
+    [
       "two of one field and kind",
       { shaft: [precision, precision] },
       "two angle precision resolutions",
@@ -616,14 +657,17 @@ function scriptedRun(
     referencePort: null,
     voltage: 1,
   };
+  // An AVCC conversion read on another port: the port binds, not the mode.
+  const vin: Scripted = { ...avcc(600, 5), referencePort: "VIN" };
   const excluded = await judgeRuns(
-    [avcc(100, 5), bandgap, avcc(500, 0, 0), avcc(700, 5)],
-    [avcc(100, 5), bandgap, avcc(500, 0, 0), avcc(900, 5)]
+    [avcc(100, 5), bandgap, avcc(500, 0, 0), vin, avcc(700, 5)],
+    [avcc(100, 5), bandgap, avcc(500, 0, 0), vin, avcc(900, 5)]
   );
   expect(
     excluded.verdict === "within" &&
       excluded.coverage.qualified === 1 &&
       excluded.coverage.excluded["a: reference bandgap is not 5V"] === 1 &&
+      excluded.coverage.excluded["a: reference avcc is not 5V"] === 1 &&
       excluded.coverage.excluded[
         "a: reference avcc is not finite and non-zero"
       ] === 1 &&
@@ -758,6 +802,24 @@ function scriptedRun(
       },
     ],
     ["out of domain", bare, { ...bare, inDomain: !bare.inDomain }],
+    [
+      "a row's frame-max x 1.001",
+      bare,
+      {
+        ...bare,
+        metrics: bare.metrics.map((m) =>
+          m.metric === "frame-max" ? { ...m, value: m.value * 1.001 } : m
+        ),
+      },
+    ],
+    [
+      "the stored citation edited",
+      stored,
+      criterion(stored, (c) => ({
+        ...c,
+        source: { ...c.source, title: `${c.source.title}.` },
+      })),
+    ],
   ];
   for (const [what, was, now] of mutations) {
     expect(rowProblems(was, now).length > 0, `${what} is red`);

@@ -182,6 +182,14 @@ export function rowProblems(was: QuantityRow, now: QuantityRow): string[] {
         `${label}: the record's criterion ${i} is ${prior.kind} from ${prior.from}`
       );
     }
+    // The resolution as cited: the policy pins the catalog's, this the row's.
+    for (const key of ["reference", "conditions", "source"] as const) {
+      if (JSON.stringify(prior[key]) !== JSON.stringify(row[key])) {
+        problems.push(
+          `${label}: ${key} ${JSON.stringify(row[key])} vs the stated ${JSON.stringify(prior[key])}`
+        );
+      }
+    }
     if (names(prior.metrics) !== names(row.metrics)) {
       problems.push(
         `${label}: metrics ${names(row.metrics)} vs the stated ${names(prior.metrics)}`
