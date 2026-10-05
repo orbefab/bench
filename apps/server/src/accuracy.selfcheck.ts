@@ -226,10 +226,68 @@ try {
     "a record of another document is not this document's check"
   );
   const { children: _children, ...truncated } = record;
-  writeRecord(truncated as AssemblyCheckFile);
+  const { verdict: _verdict, ...unjudged } = shaftRow.criteria[0] ?? {};
+  const malformed: [string, unknown][] = [
+    ["no children", truncated],
+    [
+      "an envelope row with no quantity",
+      {
+        ...record,
+        domain: {
+          ...record.domain,
+          snapshot: { ...record.domain.snapshot, envelope: [{}] },
+        },
+      },
+    ],
+    [
+      "a criterion with no verdict",
+      {
+        ...record,
+        rows: record.rows.map((row) =>
+          row === shaftRow ? { ...row, criteria: [unjudged] } : row
+        ),
+      },
+    ],
+  ];
+  for (const [what, bad] of malformed) {
+    writeRecord(bad as AssemblyCheckFile);
+    expect(
+      report().accuracy === undefined,
+      `a record with ${what} is not this document's check`
+    );
+  }
+
+  // The record's domain, one line per row: two degraded ports stay two.
+  writeRecord({
+    ...record,
+    domain: {
+      detailed: {
+        ...record.domain.detailed,
+        degraded: [
+          { path: "uno", code: "missing-file", port: "D2" },
+          { path: "uno", code: "missing-file", port: "D3" },
+        ],
+        unchecked: [
+          {
+            path: "servo",
+            ref: "sfab/sg90-servo@1.0.0",
+            reason: "a measured snapshot",
+          },
+        ],
+      },
+      snapshot: record.domain.snapshot,
+    },
+  });
+  const lines = report().accuracy?.domain ?? [];
   expect(
-    report().accuracy === undefined,
-    "a record missing what the card reads is not this document's check"
+    JSON.stringify(lines) ===
+      JSON.stringify([
+        "servo sfab/sg90-servo@1.0.0 was unchecked on the check's detailed side (a measured snapshot)",
+        "uno port D2 ran degraded (missing-file) on the check's detailed side",
+        "uno port D3 ran degraded (missing-file) on the check's detailed side",
+        "the check's snapshot side took uno.power VBUS current outside 0..0.5 A",
+      ]),
+    `the record's domain lines: ${JSON.stringify(lines)}`
   );
   rmSync(join(dir, RECORD));
   expect(report().accuracy === undefined, "no record, no accuracy");

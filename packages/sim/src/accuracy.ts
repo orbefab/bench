@@ -163,6 +163,18 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const isList = (value: unknown, row: (item: unknown) => boolean) =>
   Array.isArray(value) && value.every(row);
 
+/** An object whose `keys` are all strings. */
+const strings =
+  (...keys: string[]) =>
+  (item: unknown) =>
+    isObject(item) && keys.every((key) => typeof item[key] === "string");
+
+/** A verdict the check stated: within, over by a number, or none with why. */
+const stated = (item: Record<string, unknown>) =>
+  item.verdict === "within" ||
+  (item.verdict === "over" && typeof item.by === "number") ||
+  (item.verdict === "none" && typeof item.reason === "string");
+
 /** An `@2` record with everything the card and the warning read. */
 function isCheck(record: unknown): record is AssemblyCheckFile {
   if (!isObject(record) || record.format !== ASSEMBLY_CHECK_FORMAT) {
@@ -171,9 +183,13 @@ function isCheck(record: unknown): record is AssemblyCheckFile {
   const domain = record.domain;
   const validity = (side: unknown) =>
     isObject(side) &&
-    ["envelope", "stale", "unchecked", "degraded"].every((key) =>
-      isList(side[key], isObject)
-    );
+    isList(
+      side.envelope,
+      strings("path", "ref", "port", "quantity", "range")
+    ) &&
+    isList(side.stale, strings("path", "ref")) &&
+    isList(side.unchecked, strings("path", "ref", "reason")) &&
+    isList(side.degraded, strings("path", "code", "port"));
   const criterion = (item: unknown) =>
     isObject(item) &&
     typeof item.threshold === "number" &&
@@ -181,7 +197,8 @@ function isCheck(record: unknown): record is AssemblyCheckFile {
     isList(item.conditions, isObject) &&
     isList(item.metrics, isObject) &&
     isObject(item.coverage) &&
-    isObject(item.coverage.excluded);
+    isObject(item.coverage.excluded) &&
+    stated(item);
   const row = (item: unknown) =>
     isObject(item) &&
     typeof item.quantity === "string" &&
@@ -195,7 +212,7 @@ function isCheck(record: unknown): record is AssemblyCheckFile {
     isObject(domain) &&
     validity(domain.detailed) &&
     validity(domain.snapshot) &&
-    isList(record.children, isObject) &&
+    isList(record.children, strings("path", "ref")) &&
     isList(record.rows, row)
   );
 }
@@ -212,11 +229,11 @@ function domainLines(record: AssemblyCheckFile): string[] {
     ),
     ...validity.unchecked.map(
       (row) =>
-        `${row.path} ${row.ref} was unchecked on the check's ${side} side`
+        `${row.path} ${row.ref} was unchecked on the check's ${side} side (${row.reason})`
     ),
     ...validity.degraded.map(
       (row) =>
-        `${row.path} ran degraded (${row.code}) on the check's ${side} side`
+        `${row.path}${row.port ? ` port ${row.port}` : ""} ran degraded (${row.code}) on the check's ${side} side`
     ),
   ];
   const all = [
