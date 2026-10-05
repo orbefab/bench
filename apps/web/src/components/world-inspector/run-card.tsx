@@ -119,7 +119,9 @@ export function AccuracyBlock({
     <div className="flex min-w-0 flex-col gap-2" aria-label="Accuracy">
       <div className="flex min-w-0 items-baseline gap-2">
         <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
-          Accuracy, with {view.snapshots} as snapshots
+          {view.applies
+            ? `Accuracy, with ${view.snapshots} as snapshots`
+            : `Accuracy check of ${view.snapshots} as snapshots`}
         </span>
         {view.domain.length > 0 ? (
           <span title={view.domain.join("\n")}>

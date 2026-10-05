@@ -206,6 +206,20 @@ export const RESOLVED_FIELD_QUANTITY = {
 export type ResolvedField = keyof typeof RESOLVED_FIELD_QUANTITY;
 
 /**
+ * `n` to 3 significant digits, in the field's SI unit when it is a
+ * resolved field; a dash when there is no number.
+ */
+export function resolvedAmount(n: number, field: string | null): string {
+  if (!Number.isFinite(n)) return "—";
+  const digits = String(Number(n.toPrecision(3)));
+  const quantity =
+    field && field in RESOLVED_FIELD_QUANTITY
+      ? RESOLVED_FIELD_QUANTITY[field as ResolvedField]
+      : null;
+  return quantity ? `${digits} ${SI_UNIT[quantity]}` : digits;
+}
+
+/**
  * What a resolution's value is measured against.
  *
  * - `absolute`: the value is in the field's own SI unit.
@@ -1294,6 +1308,8 @@ export type RunReport = {
     applies: boolean;
     /** The record's run stayed in every snapshot's domain. */
     inDomain: boolean;
+    /** Why it did not, one line per row of the record's `domain`. */
+    domain: string[];
     /** The replacements it compares, as `path ref`. */
     snapshots: string[];
     /** Empty unless it applies. */

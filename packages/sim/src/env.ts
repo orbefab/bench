@@ -9,6 +9,8 @@ export type PlanEnv = {
   catalogDir(): string;
   exists(file: string): boolean;
   readText(file: string): string;
+  /** The file's bytes. Without it, a file is hashed as its text. */
+  readBytes?(file: string): Uint8Array;
   realpath(file: string): string;
   resolve(...parts: string[]): string;
   relative(from: string, to: string): string;

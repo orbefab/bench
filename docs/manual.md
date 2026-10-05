@@ -190,16 +190,16 @@ Problems show **three ways**: a small icon on the tree row (hover for a short wh
 
 A part running on a snapshot says how true it is. An assembly's check runs it twice on its own bench, once with its parts detailed and once with some of them on snapshots, and keeps both. When the run you are looking at is that run (this assembly, these parts replaced, these settings), each replaced part's card lists, for each port it is checked at, the **gap** between the two runs and the **resolution** it is judged against: the smallest difference that a part on that port can tell apart or hold to, as its datasheet states it. The open assembly's card sums it up, for example "1 within, 3 no resolution".
 
-A resolution is judged only where it means something. A servo's dead band is judged on its own shaft angle while the shaft is settled: samples where it is still moving, or too close to the start or end of the run, are left out, and the card shows how many were kept and why the rest were not. A chip's ADC step is judged at the instants it converts. The worst kept sample counts; the average (RMS) gap is shown beside it.
+A resolution is judged only where it means something. A servo's dead band is judged on its own shaft angle while the shaft is settled: samples where it is still moving, or too close to the start or end of the run, are left out, and the card shows how many were kept and why the rest were not. The card names that rule `steady@1`, with its window. A chip's ADC step is judged at the instants it converts. The worst kept sample counts; the average (RMS) gap is shown beside it.
 
 - **Within:** the gap is at most the resolution. It shows on the card only.
 - **Over by x:** the gap is larger, by x. It shows amber on the card and as a warning, with the margin. It is a known limit of that snapshot, stated, not hidden.
 - **No verdict:** no sample qualified, so there is nothing to judge, and the card says why.
 - A quantity no resolution covers (the current a servo draws, for example) shows its gap with no verdict.
 
-A verdict is marked **out of domain** when the check's own run took a snapshot outside its valid range, or when a snapshot this run loads is stale or unchecked. It still shows, with that beside it.
+A verdict is marked **out of domain** when the check's own run took a snapshot outside its valid range, ran one stale, unchecked or degraded (the card says which), or when a snapshot this run loads is stale or unchecked. It still shows, with that beside it.
 
-On any other run (other levels, a part edited since, other play settings) the check does not apply. The assembly's card names it and says it is not this run's; no part shows a verdict, and none moves to the nearest part.
+On any other run (other levels, a part edited since, a rebuilt firmware image, an edited robot, other play settings) the check does not apply. The assembly's card names it and says it is not this run's; no part shows a verdict, and none moves to the nearest part.
 
 The **ghost** (a toggle on the card) runs the other level beside the live one, drawn translucent, so the gap is visible as motion.
 

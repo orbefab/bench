@@ -76,7 +76,6 @@ import {
   parsePartRef,
   sha256Bytes,
 } from "@sfab-bench/parts";
-import { runContext } from "@sfab-bench/sim/accuracy";
 import {
   type Criterion,
   comparisonIdentity,
@@ -112,6 +111,7 @@ import { observerBuild } from "./observer-build";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
+import { planWorld } from "./world/plan";
 import { nodePlanEnv, nodeStampEnv } from "./world/plan-host";
 
 const catalog = fileURLToPath(new URL("../catalog/", import.meta.url));
@@ -250,11 +250,10 @@ async function runSide(
       .sort((a, b) =>
         `${a.path} ${a.axis}`.localeCompare(`${b.path} ${b.axis}`)
       );
-    return {
-      ...observed,
-      snapshots,
-      context: runContext(readJson<unknown>(join(root, world)), report),
-    };
+    const planned = planWorld(root, world, { context: true });
+    const context = planned.ok ? planned.plan.context : undefined;
+    if (!context) throw new Error(`${world}: no run context`);
+    return { ...observed, snapshots, context };
   } finally {
     sim.dispose();
   }

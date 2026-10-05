@@ -5,10 +5,11 @@
  * these replacements, this observation. It applies to a run only when the
  * run is the one the record's snapshot side measured: the same document
  * apart from its id and its play levels, the same locked parts and types
- * apart from the root, and the same realized levels and snapshots
- * (`runContext`). Any other run, including the document at other levels,
- * shows the record as not applying, with no verdict, and never moves a
- * verdict onto the nearest part.
+ * apart from the root, the same realized levels, nets and snapshots, and
+ * the same bytes in every file the run reads (`runContext`). Any other
+ * run, including the document at other levels or with its firmware
+ * rebuilt, shows the record as not applying, with no verdict, and never
+ * moves a verdict onto the nearest part.
  *
  * An `over` verdict is an `over-budget` warning at the quantity's path and
  * port, so it shows three ways. It says out of domain when the record's
@@ -19,19 +20,29 @@ import {
   type AccuracyRow,
   ASSEMBLY_CHECK_FORMAT,
   type AssemblyCheckFile,
-  RESOLVED_FIELD_QUANTITY,
-  type ResolvedField,
+  type AssemblyValidity,
+  type Quantity,
   type RunReport,
+  resolvedAmount,
   SI_UNIT,
 } from "@sfab-bench/contract";
 import { contentHash, makeDiag, siValue } from "@sfab-bench/parts";
 
+/** A file the run reads: its project-relative path and content hash. */
+export type RunInput = { file: string; sha256: string };
+
 /**
  * What makes `report`'s run the run a record measured, as a hash: the
  * document without its id and play levels, the lock without the root's
- * own entry, and every path's realized level and snapshot.
+ * own entry, every path's realized level, net level and snapshot, and the
+ * files the run reads (`inputs`: firmware images, URDFs and their meshes,
+ * level overlays).
  */
-export function runContext(document: unknown, report: RunReport): string {
+export function runContext(
+  document: unknown,
+  report: RunReport,
+  inputs: readonly RunInput[]
+): string {
   const doc = structuredClone(document) as {
     id?: string;
     play?: { levels?: unknown };
@@ -72,10 +83,15 @@ export function runContext(document: unknown, report: RunReport): string {
       })),
       (row) => `${row.path} ${row.axis}`
     ),
+    nets: byKey(
+      report.nets.map(({ id, domain, level }) => ({ id, domain, level })),
+      (row) => row.id
+    ),
     snapshots: byKey(
       report.snapshots.map(({ path, axis, ref }) => ({ path, axis, ref })),
       (row) => `${row.path} ${row.axis}`
     ),
+    inputs: byKey([...inputs], (row) => row.file),
   });
 }
 
@@ -88,32 +104,31 @@ export function recordPathFor(partId: string): string | null {
 
 /**
  * Add `record`'s accuracy to `report`, and an `over-budget` warning for
- * each criterion over its resolution, when the record is this run's. A
- * record of another format or document is not this document's check.
+ * each criterion over its resolution, when the record is this run's
+ * (`context` is `runContext` of this run). A record of another format or
+ * document, or one missing what the card reads, is not this document's
+ * check.
  */
 export function noteAccuracy(
   report: RunReport,
-  document: unknown,
+  context: string,
   worldRel: string,
   recordRel: string,
   record: unknown
 ): void {
-  const file = record as Partial<AssemblyCheckFile> | null;
-  if (file?.format !== ASSEMBLY_CHECK_FORMAT || file.document !== worldRel) {
-    return;
-  }
-  const check = file as AssemblyCheckFile;
-  const applies = check.context === runContext(document, report);
+  if (!isCheck(record) || record.document !== worldRel) return;
+  const applies = record.context === context;
   const accuracy = {
     record: recordRel,
     applies,
-    inDomain: check.inDomain,
-    snapshots: check.children.map((row) => `${row.path} ${row.ref}`),
-    rows: applies ? check.rows.map(accuracyRow) : [],
+    inDomain: record.inDomain,
+    domain: record.inDomain ? [] : domainLines(record),
+    snapshots: record.children.map((row) => `${row.path} ${row.ref}`),
+    rows: applies ? record.rows.map(accuracyRow) : [],
   };
   report.accuracy = accuracy;
   const qualifier = [
-    ...(check.inDomain ? [] : ["the check ran outside a snapshot's envelope"]),
+    ...accuracy.domain,
     ...report.snapshots
       .filter((row) => row.stale || row.unchecked)
       .map(
@@ -125,7 +140,7 @@ export function noteAccuracy(
     for (const criterion of row.criteria) {
       if (criterion.verdict !== "over") continue;
       const shown = (n: number) =>
-        amount(n, criterion.ratioTo ? null : row.field);
+        resolvedAmount(n, criterion.ratioTo ? null : row.field);
       report.warnings.push(
         makeDiag({
           severity: "warning",
@@ -142,14 +157,73 @@ export function noteAccuracy(
   }
 }
 
-/** `n` to 3 significant digits, in the field's SI unit when it has one. */
-export function amount(n: number, field: string | null): string {
-  const digits = String(Number(n.toPrecision(3)));
-  const quantity =
-    field && field in RESOLVED_FIELD_QUANTITY
-      ? RESOLVED_FIELD_QUANTITY[field as ResolvedField]
-      : null;
-  return quantity ? `${digits} ${SI_UNIT[quantity]}` : digits;
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isList = (value: unknown, row: (item: unknown) => boolean) =>
+  Array.isArray(value) && value.every(row);
+
+/** An `@2` record with everything the card and the warning read. */
+function isCheck(record: unknown): record is AssemblyCheckFile {
+  if (!isObject(record) || record.format !== ASSEMBLY_CHECK_FORMAT) {
+    return false;
+  }
+  const domain = record.domain;
+  const validity = (side: unknown) =>
+    isObject(side) &&
+    ["envelope", "stale", "unchecked", "degraded"].every((key) =>
+      isList(side[key], isObject)
+    );
+  const criterion = (item: unknown) =>
+    isObject(item) &&
+    typeof item.threshold === "number" &&
+    isObject(item.reference) &&
+    isList(item.conditions, isObject) &&
+    isList(item.metrics, isObject) &&
+    isObject(item.coverage) &&
+    isObject(item.coverage.excluded);
+  const row = (item: unknown) =>
+    isObject(item) &&
+    typeof item.quantity === "string" &&
+    item.quantity.split(".").length >= 3 &&
+    isList(item.metrics, isObject) &&
+    isList(item.criteria, criterion);
+  return (
+    typeof record.document === "string" &&
+    typeof record.context === "string" &&
+    typeof record.inDomain === "boolean" &&
+    isObject(domain) &&
+    validity(domain.detailed) &&
+    validity(domain.snapshot) &&
+    isList(record.children, isObject) &&
+    isList(record.rows, row)
+  );
+}
+
+/** Why the record's own run was out of domain, from its `domain`. */
+function domainLines(record: AssemblyCheckFile): string[] {
+  const lines = (side: string, validity: AssemblyValidity) => [
+    ...validity.envelope.map((row) => {
+      const unit = SI_UNIT[row.quantity as Quantity];
+      return `the check's ${side} side took ${row.path} ${row.port} ${row.quantity.toLowerCase()} outside ${row.range}${unit ? ` ${unit}` : ""}`;
+    }),
+    ...validity.stale.map(
+      (row) => `${row.path} ${row.ref} was stale on the check's ${side} side`
+    ),
+    ...validity.unchecked.map(
+      (row) =>
+        `${row.path} ${row.ref} was unchecked on the check's ${side} side`
+    ),
+    ...validity.degraded.map(
+      (row) =>
+        `${row.path} ran degraded (${row.code}) on the check's ${side} side`
+    ),
+  ];
+  const all = [
+    ...lines("detailed", record.domain.detailed),
+    ...lines("snapshot", record.domain.snapshot),
+  ];
+  return all.length > 0 ? [...new Set(all)] : ["the check ran out of domain"];
 }
 
 function accuracyRow(row: AssemblyCheckFile["rows"][number]): AccuracyRow {

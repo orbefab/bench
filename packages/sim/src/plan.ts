@@ -43,11 +43,17 @@ import {
   makeDiag,
   mergeFormParams,
   pinMapRefused,
+  sha256Bytes,
   siValue,
   type Wire,
   type WireEnd,
 } from "@sfab-bench/parts";
-import { noteAccuracy, recordPathFor } from "./accuracy";
+import {
+  noteAccuracy,
+  type RunInput,
+  recordPathFor,
+  runContext,
+} from "./accuracy";
 import {
   adcHeaderLabels,
   boardGpio,
@@ -352,6 +358,11 @@ export type RunPlan = {
   levels?: RunLevel[];
   /** Run report from the loader. The worker keeps it and amends envelope warnings. */
   report?: RunReport | null;
+  /**
+   * The run's context (`runContext` in `accuracy.ts`), the run an assembly
+   * check's record names. Present only when the caller asked for it.
+   */
+  context?: string;
   /**
    * A part whose non-ground nets touch two boards. Stamped once on the
    * island rail, with both boards' node names. Absent when there are none.
@@ -1708,7 +1719,8 @@ function build(
 export function planWorld(
   project: string,
   worldRel: string,
-  env: PlanEnv
+  env: PlanEnv,
+  options: { context?: boolean } = {}
 ): PlanResult {
   const found = opened(project, worldRel, env);
   if ("error" in found) return { ok: false, errors: [schema(found.error)] };
@@ -1784,8 +1796,28 @@ export function planWorld(
     found.root,
     env
   );
-  readAccuracy(built.plan.report ?? null, parsed, worldRel, found.root, env);
-  return { ok: true, plan: built.plan };
+  const plan = built.plan;
+  const report = plan.report ?? null;
+  let context: string | undefined;
+  const contextOf = () => {
+    if (context === undefined && report) {
+      const inputs = runInputs(
+        plan,
+        loaded.lock,
+        found.root,
+        assetDir(found.abs),
+        env
+      );
+      context = runContext(parsed, report, inputs);
+    }
+    return context;
+  };
+  readAccuracy(report, parsed, worldRel, found.root, env, contextOf);
+  if (options.context) {
+    const own = contextOf();
+    if (own !== undefined) plan.context = own;
+  }
+  return { ok: true, plan };
 }
 
 /**
@@ -1841,13 +1873,69 @@ function noteFreshness(
   }
 }
 
+/**
+ * Every file the run reads, by its project path and content hash: each
+ * board's firmware image, each robot's URDF and every mesh it names, and
+ * the level overlays merged into a part. A file that cannot be read is
+ * stated as such, so it still differs from one that can.
+ */
+function runInputs(
+  plan: RunPlan,
+  lock: LoadResult["lock"],
+  root: string,
+  worldDir: string,
+  env: PlanEnv
+): RunInput[] {
+  const inputs = new Map<string, string>();
+  const add = (abs: string) => {
+    const file = env.relative(root, abs).split(env.sep).join("/");
+    if (inputs.has(file)) return;
+    let sha256 = "missing";
+    try {
+      if (env.exists(abs)) {
+        sha256 = sha256Bytes(
+          env.readBytes
+            ? env.readBytes(abs)
+            : new TextEncoder().encode(env.readText(abs))
+        );
+      }
+    } catch {
+      sha256 = "unreadable";
+    }
+    inputs.set(file, sha256);
+  };
+  for (const board of plan.boards) add(env.resolve(worldDir, board.firmware));
+  for (const robot of plan.robots) {
+    const urdf = env.resolve(worldDir, robot.urdf);
+    add(urdf);
+    let xml = "";
+    try {
+      xml = env.exists(urdf) ? env.readText(urdf) : "";
+    } catch {
+      xml = "";
+    }
+    const mesh = /<mesh\b[^>]*?filename\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+    for (const match of xml.matchAll(mesh)) {
+      add(env.resolve(env.dirname(urdf), match[1] ?? match[2] ?? ""));
+    }
+  }
+  return [
+    ...[...inputs].map(([file, sha256]) => ({ file, sha256 })),
+    ...(lock?.overlays ?? []).map((row) => ({
+      file: row.path,
+      sha256: row.sha256,
+    })),
+  ];
+}
+
 /** The document's assembly check, when it has one (`accuracy.ts`). */
 function readAccuracy(
   report: RunReport | null,
   document: unknown,
   worldRel: string,
   root: string,
-  env: PlanEnv
+  env: PlanEnv,
+  contextOf: () => string | undefined
 ): void {
   const id = (document as { id?: unknown }).id;
   const recordRel = typeof id === "string" ? recordPathFor(id) : null;
@@ -1861,7 +1949,9 @@ function readAccuracy(
     return;
   }
   const rel = worldRel.trim().replace(/\\/g, "/").replace(/^\/+/, "");
-  noteAccuracy(report, document, rel, recordRel, record);
+  const context = contextOf();
+  if (context === undefined) return;
+  noteAccuracy(report, context, rel, recordRel, record);
 }
 
 function markStaleOptions(

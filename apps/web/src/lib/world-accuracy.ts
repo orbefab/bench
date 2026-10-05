@@ -5,7 +5,11 @@
  * snapshots it compares, and never on another run.
  */
 
-import type { AccuracyRow, RunReport } from "@sfab-bench/contract";
+import {
+  type AccuracyRow,
+  resolvedAmount as amount,
+  type RunReport,
+} from "@sfab-bench/contract";
 
 export type AccuracyCriterionLine = {
   /** "precision 0.0169 rad from sfab/sg90@1.0.0 shaft, steady@1 W 0.06 s". */
@@ -34,19 +38,6 @@ export type AccuracyView = {
   domain: string[];
   lines: AccuracyLine[];
 };
-
-const UNIT: Record<string, string> = {
-  voltage: "V",
-  current: "A",
-  angle: "rad",
-};
-
-function amount(n: number, field: string | null): string {
-  if (!Number.isFinite(n)) return "—";
-  const digits = String(Number(n.toPrecision(3)));
-  const unit = field ? UNIT[field] : undefined;
-  return unit ? `${digits} ${unit}` : digits;
-}
 
 function criterionLine(
   row: AccuracyRow,
@@ -114,9 +105,7 @@ export function accuracyView(
       : accuracy.rows.filter((row) => row.path === path);
   if (path !== undefined && rows.length === 0) return null;
   const domain = [
-    ...(accuracy.inDomain
-      ? []
-      : ["the check ran outside a snapshot's envelope"]),
+    ...accuracy.domain,
     ...report.snapshots
       .filter((row) => row.stale || row.unchecked)
       .map(

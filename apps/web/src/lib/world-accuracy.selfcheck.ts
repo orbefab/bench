@@ -58,6 +58,7 @@ const accuracy = (
   record: "checks/sfab/arm-bench@1.0.0.json",
   applies,
   inDomain: true,
+  domain: [],
   snapshots: ["rig.actuator sfab/sg90-servo@1.0.0"],
   rows,
 });
@@ -142,6 +143,40 @@ expect(
   `over and none: ${JSON.stringify(over)}`
 );
 
+// A reader judged against a ratio: no unit, the ratio named, conversions.
+const reader = accuracyView(
+  report(
+    accuracy(true, [
+      {
+        ...supply,
+        quantity: "rig.board.A0.voltage",
+        path: "rig.board",
+        port: "A0",
+        criteria: [
+          {
+            kind: "reader",
+            from: "arduino-uno-r3 A0",
+            threshold: 0.0009765625,
+            ratioTo: "5V.voltage",
+            metric: "event-max",
+            value: 0.0005,
+            coverage: { qualified: 40, excluded: { "no counterpart": 2 } },
+            verdict: "within",
+          },
+        ],
+      },
+    ])
+  ),
+  "rig.board"
+);
+const ratio = reader?.lines[0]?.criteria[0];
+expect(
+  ratio?.against === "reader 0.000977 of 5V.voltage from arduino-uno-r3 A0" &&
+    ratio.measured ===
+      "event-max 0.0005 of 5V.voltage on 40 of 42 conversions (2 no counterpart)",
+  `a ratio-to reader: ${JSON.stringify(reader)}`
+);
+
 // Not this run's: the record is named, no rows, and the card says why.
 const other = accuracyView(report(accuracy(false, [])));
 expect(
@@ -158,7 +193,13 @@ expect(
 
 // Out of domain: the record's run, a stale or unchecked snapshot, and
 // this run leaving an envelope.
-const outside = report({ ...accuracy(true, [shaft]), inDomain: false });
+const outside = report({
+  ...accuracy(true, [shaft]),
+  inDomain: false,
+  domain: [
+    "the check's snapshot side took uno.power VBUS current outside 0..0.5 A",
+  ],
+});
 outside.snapshots = [
   {
     path: "rig.actuator",
@@ -168,13 +209,21 @@ outside.snapshots = [
     stale: true,
     envelope: ["shaft.angle 3.4 rad above 3.14 rad"],
   },
+  {
+    path: "uno.power",
+    axis: "behaviour",
+    ref: "sfab/uno-power-input@1.0.0",
+    quality: "Q1",
+    unchecked: "a measured snapshot",
+  },
 ];
 const domain = accuracyView(outside, "rig.actuator")?.domain ?? [];
 expect(
   JSON.stringify(domain) ===
     JSON.stringify([
-      "the check ran outside a snapshot's envelope",
+      "the check's snapshot side took uno.power VBUS current outside 0..0.5 A",
       "rig.actuator sfab/sg90-servo@1.0.0 is stale",
+      "uno.power sfab/uno-power-input@1.0.0 is unchecked",
       "this run took rig.actuator outside its envelope",
     ]),
   `out of domain: ${JSON.stringify(domain)}`

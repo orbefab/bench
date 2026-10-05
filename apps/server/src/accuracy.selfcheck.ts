@@ -144,7 +144,7 @@ try {
       ) &&
       warning.message.includes(RECORD) &&
       warning.message.includes(
-        "out of domain: the check ran outside a snapshot's envelope"
+        "out of domain: the check's snapshot side took uno.power VBUS current outside 0..0.5 A"
       ),
     `an over verdict: ${JSON.stringify(over)}`
   );
@@ -156,6 +156,45 @@ try {
   );
   console.log(
     `accuracy: an over verdict warns at servo shaft: ${warning?.message}`
+  );
+
+  // A no-verdict criterion is card-only; a nested path keeps all of it.
+  const shaftRow = record.rows.find(
+    (row) => row.quantity === "servo.shaft.angle"
+  );
+  if (!shaftRow) throw new Error("no shaft row");
+  writeRecord({
+    ...record,
+    rows: [
+      ...record.rows.map((row) =>
+        row === shaftRow
+          ? {
+              ...row,
+              criteria: row.criteria.map((criterion) => ({
+                ...criterion,
+                verdict: "none" as const,
+                reason: "no settled samples",
+              })),
+            }
+          : row
+      ),
+      {
+        ...shaftRow,
+        quantity: "rig.arm.servo.shaft.angle",
+        criteria: shaftRow.criteria.map((criterion) => ({
+          ...criterion,
+          verdict: "over" as const,
+          by: 0.002,
+        })),
+      },
+    ],
+  });
+  const nested = overBudget(report());
+  expect(
+    nested.length === 1 &&
+      nested[0]?.path === "rig.arm.servo" &&
+      nested[0].port === "shaft",
+    `none is card-only, a nested path is whole: ${JSON.stringify(nested)}`
   );
 
   // 4. Not this run's: another context, an edited part, another document.
@@ -186,10 +225,74 @@ try {
     report().accuracy === undefined,
     "a record of another document is not this document's check"
   );
+  const { children: _children, ...truncated } = record;
+  writeRecord(truncated as AssemblyCheckFile);
+  expect(
+    report().accuracy === undefined,
+    "a record missing what the card reads is not this document's check"
+  );
   rmSync(join(dir, RECORD));
   expect(report().accuracy === undefined, "no record, no accuracy");
   console.log(
-    "accuracy: another context, an edited part, a record of another document or none: no verdict"
+    "accuracy: another context, an edited part, a record of another document, a truncated one or none: no verdict"
+  );
+
+  // 5. The bytes the run reads are the run: a rebuilt firmware image, a
+  // heavier link in the URDF, an edited mesh or a forced net level is not
+  // the run the check measured.
+  writeRecord(record);
+  const text = (edit: (was: string) => string) => (was: Buffer) =>
+    Buffer.from(edit(was.toString("utf8")), "utf8");
+  const edits: [string, string, (was: Buffer) => Buffer][] = [
+    [
+      "firmware",
+      "firmware/hold/hold.hex",
+      text((was) => was.replace(/^:10/m, ":11")),
+    ],
+    [
+      "URDF",
+      "robot/arm.urdf",
+      text((was) => was.replace(/<mass value="([^"]*)"/, '<mass value="1$1"')),
+    ],
+    [
+      "mesh",
+      "robot/meshes/base.stl",
+      (was) => Buffer.concat([was, Buffer.from([0])]),
+    ],
+  ];
+  for (const [what, file, edit] of edits) {
+    const abs = join(dir, file);
+    const was = readFileSync(abs);
+    const next = edit(was);
+    expect(!next.equals(was), `${what}: the edit changed nothing`);
+    writeFileSync(abs, next);
+    const got = report();
+    writeFileSync(abs, was);
+    expect(
+      got.accuracy?.applies === false,
+      `an edited ${what} still applies: ${JSON.stringify(got.accuracy)}`
+    );
+  }
+  expect(report().accuracy?.applies === true, "restored, it applies again");
+  const digital = checked.nets.find((net) => net.level === "digital");
+  if (!digital) throw new Error("no digital net on the arm");
+  writeFileSync(
+    join(dir, DOCUMENT),
+    JSON.stringify({
+      ...document,
+      play: {
+        ...document.play,
+        levels: { ...record.snapshot, nets: { [digital.id]: "analog" } },
+      },
+    })
+  );
+  const forced = report();
+  expect(
+    forced.accuracy?.applies === false,
+    `a forced net level ${digital.id} still applies`
+  );
+  console.log(
+    `accuracy: a rebuilt firmware image, a URDF mass, a mesh, or net ${digital.id} forced analog: no verdict`
   );
 } finally {
   rmSync(dir, { recursive: true, force: true });

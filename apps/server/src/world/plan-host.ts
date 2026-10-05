@@ -18,6 +18,7 @@ export const nodePlanEnv: PlanEnv = {
   catalogDir,
   exists: existsSync,
   readText: (file) => readFileSync(file, "utf8"),
+  readBytes: (file) => readFileSync(file),
   realpath: (file) => realpathSync(file),
   resolve: (...parts) => path.resolve(...parts),
   relative: (from, to) => path.relative(from, to),
