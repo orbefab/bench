@@ -1,7 +1,12 @@
 /**
  * Form adapters. Stamps moved from the circuit and plan if-chains (layered-sim A2b).
  */
-import type { BehaviourImpl, DiagCode, Pose } from "@sfab-bench/contract";
+import type {
+  BehaviourImpl,
+  DiagCode,
+  Params,
+  Pose,
+} from "@sfab-bench/contract";
 import type { Diode, Element } from "@sfab-bench/engine-circuit";
 import type { LiveInstance } from "@sfab-bench/parts";
 
@@ -63,7 +68,7 @@ export type FormAdapter = {
   ) => StampedElements;
   parse?: (
     behaviour: BehaviourImpl,
-    params: Record<string, number | string | boolean>
+    params: Params
   ) => Record<string, number> | null;
   place?: (ctx: PlaceCtx) => void;
   /**

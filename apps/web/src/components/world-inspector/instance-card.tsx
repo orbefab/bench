@@ -20,6 +20,7 @@ import { LiveBody } from "./live-card";
 import { commitOnEnter, commitParam, NumberField } from "./params";
 import { Section, WarningList } from "./parts";
 import { PoseSection } from "./pose-section";
+import { StructuredParams } from "./program-editor";
 import { RunCard } from "./run-card";
 
 function ForwardedParam({
@@ -249,6 +250,11 @@ export function InstanceBody({
               </label>
             )
           )}
+        </Section>
+      ) : null}
+      {card.structured.length > 0 ? (
+        <Section title="Programs">
+          <StructuredParams node={node} rows={card.structured} />
         </Section>
       ) : null}
       {card.axes.map((axis) => (

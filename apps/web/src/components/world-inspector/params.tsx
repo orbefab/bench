@@ -54,7 +54,8 @@ export function NumberField({
 }: {
   label: string;
   value: number;
-  onCommit: (value: number) => void;
+  /** `false` refuses the value, and the field shows the stored one again. */
+  onCommit: (value: number) => unknown;
   disabled?: boolean;
   title?: string;
 }) {
@@ -76,7 +77,7 @@ export function NumberField({
             setDraft(String(value));
             return;
           }
-          onCommit(next);
+          if (onCommit(next) === false) setDraft(String(value));
         }}
         onKeyDown={commitOnEnter}
       />

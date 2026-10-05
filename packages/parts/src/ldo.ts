@@ -4,6 +4,7 @@ import {
   type FormParam,
   type LdoParams,
   ldoError,
+  type Params,
 } from "@sfab-bench/contract";
 
 import { isScalarParam } from "./si";
@@ -11,7 +12,7 @@ import { isScalarParam } from "./si";
 export type { DropoutKnot, LdoParams };
 
 function scalar(
-  override: number | string | boolean | undefined,
+  override: Params[string] | undefined,
   value: FormParam | undefined
 ): number | undefined {
   if (override !== undefined) {
@@ -42,7 +43,7 @@ function readDropout(
 /** Catalog params plus instance number overrides. `dropout` is not overridden. */
 export function ldoFrom(
   params: Record<string, FormParam>,
-  overrides: Record<string, number | string | boolean>
+  overrides: Params
 ): { ok: true; params: LdoParams } | { ok: false; error: string } {
   const dropout = readDropout(params.dropout);
   if (!dropout) {

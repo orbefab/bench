@@ -8,6 +8,7 @@ import {
   onboardLedPath,
   PART_FORMAT,
   PART_TYPE_FORMAT,
+  type Params,
   type PartFile,
   type PortDecl,
   ROOT_PATH,
@@ -177,7 +178,7 @@ type NetPorts = {
 /** Numeric form params, with an instance number winning on the same name. */
 export function circuitNumbers(
   behaviour: BehaviourImpl,
-  params: Record<string, number | string | boolean>
+  params: Params
 ): Record<string, number> | null {
   if (behaviour.kind !== "form" || !isCircuitForm(behaviour.form)) return null;
   return formAdapter(behaviour.form)?.parse?.(behaviour, params) ?? null;
@@ -935,7 +936,7 @@ export function boundPairs(
  */
 export function ldoLaw(
   behaviour: BehaviourImpl,
-  overrides: Record<string, number | string | boolean>
+  overrides: Params
 ): LdoParams | null | undefined {
   if (behaviour.kind !== "form" || behaviour.form !== "ldo-regulator@1") {
     return undefined;

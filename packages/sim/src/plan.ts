@@ -574,7 +574,8 @@ function visualBox(
       const read = isParamRef(value)
         ? (inst.params[value.$param] ?? numbers?.[value.$param])
         : value;
-      if (read !== undefined) params[name] = read;
+      // A program or a value set is never a visual's number.
+      if (read !== undefined && typeof read !== "object") params[name] = read;
     }
     return params;
   };

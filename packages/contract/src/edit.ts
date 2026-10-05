@@ -13,6 +13,7 @@ import type {
   NetlistInstance,
   NetlistParams,
   ParamRef,
+  ParamValue,
   PlayBlock,
   PortRef,
   Pose,
@@ -85,7 +86,8 @@ export type SetParamOp = {
   document: string;
   id: string;
   name: string;
-  value?: number | string | boolean | ParamRef;
+  /** A scalar, a program or value set (canonical), or a forward. */
+  value?: ParamValue | ParamRef;
   /** Inverse: this instance had no such param. */
   clear?: boolean;
 };

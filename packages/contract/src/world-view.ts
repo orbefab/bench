@@ -10,6 +10,7 @@ import type {
   ParamForward,
   Params,
   Pose,
+  StructuredDecl,
 } from "./layered";
 import type { WorldPrimitive, WorldStepProp, WorldTarget } from "./world";
 import type { ChipClock } from "./world-live";
@@ -70,13 +71,13 @@ export type WorldViewSupply = {
  */
 export type WorldViewForm = {
   form: string;
-  params: Record<string, number | string | boolean>;
+  params: Params;
   /** Forms drawn inside this one, centred at `at` in its box frame. */
   inner?: {
     form: string;
     size: [number, number, number];
     at: [number, number, number];
-    params: Record<string, number | string | boolean>;
+    params: Params;
   }[];
 };
 
@@ -206,6 +207,11 @@ export type WorldViewNode = {
   ports: WorldViewPort[];
   /** Instance params, SI. Empty when the instance sets none. */
   params: Params;
+  /**
+   * The programs and value sets the instance's form declares, set or not,
+   * with the quantity of their levels. Absent when it declares none.
+   */
+  structured?: Readonly<Record<string, StructuredDecl>>;
   /**
    * Params filled from the parent via `$param`. Keyed by this instance's
    * param name. Absent when none were forwarded. The card shows these

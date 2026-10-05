@@ -8,6 +8,7 @@ export * from "./layered";
 export * from "./pin";
 export * from "./pose";
 export * from "./principal";
+export * from "./program";
 export * from "./session";
 export * from "./snapshot";
 export * from "./step-package";

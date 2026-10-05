@@ -1,5 +1,5 @@
 /** `comparator@1` param parsing. The element lives in the circuit engine. */
-import type { FormParam } from "@sfab-bench/contract";
+import type { FormParam, Params } from "@sfab-bench/contract";
 
 import { isScalarParam } from "./si";
 
@@ -9,7 +9,7 @@ import { isScalarParam } from "./si";
  */
 export function comparatorFrom(
   params: Record<string, FormParam>,
-  overrides: Record<string, number | string | boolean>
+  overrides: Params
 ): { ok: true; vHyst: number } | { ok: false; error: string } {
   let vHyst: number | undefined;
   const catalog = params.vHyst;

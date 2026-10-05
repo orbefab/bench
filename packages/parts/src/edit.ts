@@ -19,16 +19,19 @@ import type {
   PlayBlock,
   PortRef,
   Pose,
-  Quantity,
 } from "@sfab-bench/contract";
 import {
   DEFAULT_TIMESTEP_S,
   isParamRef,
+  isStructured,
   type NetlistParams,
+  parseProgram,
+  parseStructured,
+  parseValueSet,
 } from "@sfab-bench/contract";
-
 import { environmentKind } from "./document";
 import { applyLevelEdit } from "./level-edit";
+import type { ParamQuantity } from "./params";
 import { diagMessage, parsePartRef, splitPortRef } from "./si";
 
 /** A refused edit: the diagnostic, and the detail its sentence was built from. */
@@ -59,10 +62,10 @@ export type EditContext = {
   /** The domain the part's type declares for a port. Null when it has none. */
   domainOf(partId: string, port: string): string | null;
   /**
-   * The quantity of one behaviour param, or `"text"` for a firmware
-   * path. Null when the part or the param is unknown.
+   * The quantity of one behaviour param, `"text"` for a firmware path, or
+   * a structured kind. Null when the part or the param is unknown.
    */
-  quantityOf(partId: string, name: string): Quantity | "text" | null;
+  quantityOf(partId: string, name: string): ParamQuantity | null;
 };
 
 export type EditSuccess = { part: PartFile; inverse: EditOp };
@@ -168,16 +171,28 @@ function readEditOpRaw(value: unknown): EditOp | { error: string } {
       if (typeof row.id !== "string" || typeof row.name !== "string") {
         return { error: "set-param needs an id and a name" };
       }
-      if (!isParamValue(row.value) && !isParamRef(row.value)) {
-        return { error: "set-param needs a value" };
+      if (isParamValue(row.value) || isParamRef(row.value)) {
+        return {
+          kind: "set-param",
+          document,
+          id: row.id,
+          name: row.name,
+          value: row.value,
+        };
       }
-      return {
-        kind: "set-param",
-        document,
-        id: row.id,
-        name: row.name,
-        value: row.value,
-      };
+      if (row.value && typeof row.value === "object") {
+        // A program or a value set travels whole, in its canonical form.
+        const parsed = parseStructured(row.value);
+        if (!parsed.ok) return { error: `set-param: ${parsed.error}` };
+        return {
+          kind: "set-param",
+          document,
+          id: row.id,
+          name: row.name,
+          value: parsed.value,
+        };
+      }
+      return { error: "set-param needs a value" };
     case "set-level": {
       if (
         row.scope !== "default" &&
@@ -593,6 +608,7 @@ function applyParam(
       `no instance "${op.id}"`
     );
   }
+  let stored = op.value;
   if (!op.clear) {
     const quantity = ctx.quantityOf(instance.part, op.name);
     if (!ctx.partById(instance.part)) {
@@ -627,6 +643,31 @@ function applyParam(
     }
     if (isParamRef(op.value)) {
       // A forward keeps the parent's value, whatever its quantity.
+    } else if (quantity === "program" || quantity === "values") {
+      const parsed =
+        quantity === "values"
+          ? parseValueSet(op.value)
+          : parseProgram(op.value);
+      if (!parsed.ok) {
+        return fail(
+          op.id,
+          op.name,
+          "Param",
+          JSON.stringify(op.value),
+          quantity,
+          `param ${op.name} is a ${quantity === "values" ? "value set" : "program"}: ${parsed.error}`
+        );
+      }
+      stored = parsed.value;
+    } else if (isStructured(op.value)) {
+      return fail(
+        op.id,
+        op.name,
+        quantity,
+        op.value.kind,
+        quantity,
+        `param ${op.name} is quantity ${quantity}, not a ${op.value.kind}`
+      );
     } else if (quantity === "text") {
       if (typeof op.value !== "string") {
         return fail(
@@ -658,7 +699,7 @@ function applyParam(
     }
   } else {
     if (!instance.params) instance.params = {};
-    instance.params[op.name] = op.value;
+    instance.params[op.name] = stored as NonNullable<typeof op.value>;
   }
   if (!had) {
     return {

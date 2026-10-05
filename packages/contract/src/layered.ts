@@ -506,7 +506,61 @@ export type Pose = {
   rotation: [number, number, number, number];
 };
 
-export type Params = Record<string, number | string | boolean>;
+/**
+ * One piece of a program, timed in seconds from its own start. Segments
+ * abut: segment i owns [T_i, T_i + dur), and the next starts where it
+ * ends. `step` samples like `hold`; it marks a step input. A chirp's
+ * `phase` (radians) is its phase at its own start. A PRBS is the
+ * x^7 + x^6 + 1 register from `seed` (1..127), one bit per `period`,
+ * reset at the segment's start.
+ */
+export type Segment =
+  | { kind: "hold"; dur: number; level: number }
+  | { kind: "step"; dur: number; level: number }
+  | { kind: "ramp"; dur: number; from: number; to: number }
+  | {
+      kind: "chirp";
+      dur: number;
+      amp: number;
+      f0: number;
+      f1: number;
+      phase: number;
+    }
+  | {
+      kind: "prbs";
+      dur: number;
+      seed: number;
+      period: number;
+      low: number;
+      high: number;
+    };
+
+export type SegmentKind = Segment["kind"];
+
+/**
+ * An instrument's program: named variants of an ordered segment list.
+ * Levels are SI numbers in the quantity the form declares. Play runs the
+ * variant `use`; a capture runs each.
+ */
+export type Program = {
+  kind: "program";
+  use: string;
+  variants: { id: string; segments: Segment[] }[];
+};
+
+/**
+ * A physical value a rig swaps between runs (a flywheel's inertia): SI
+ * numbers in the declared quantity. Play runs `values[use]`; a capture
+ * runs each, from t = 0.
+ */
+export type ValueSet = { kind: "values"; use: number; values: number[] };
+
+/** A param that is not one scalar. */
+export type StructuredValue = Program | ValueSet;
+
+export type ParamValue = number | string | boolean | StructuredValue;
+
+export type Params = Record<string, ParamValue>;
 
 /**
  * A netlist child's param that reads the parent instance's param of that
@@ -598,6 +652,8 @@ export type FormId =
   | "transfer-fn@1"
   | "multibody@1"
   | "ranger@1"
+  | "current-source@1"
+  | "dynamometer@1"
   | "hinge@1"
   | "ground-plane@1"
   | "target@1";
@@ -616,6 +672,13 @@ export type FormDef = {
    * declares and reads no `bind`.
    */
   ports?: readonly string[];
+  /** Params that hold a program or a value set, with their level quantity. */
+  structured?: Partial<Record<string, StructuredDecl>>;
+};
+
+export type StructuredDecl = {
+  kind: StructuredValue["kind"];
+  quantity: Quantity;
 };
 
 /**
@@ -748,6 +811,25 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
   "ground-plane@1": { params: {} },
   /** A mocap body. Shape, size, and path live on the instance, not here. */
   "target@1": { params: {} },
+  /**
+   * Drives a current program into its port. Declared here; its runtime
+   * comes with the instrument contributions (run 7 unit 5a-2).
+   */
+  "current-source@1": {
+    params: {},
+    structured: { program: { kind: "program", quantity: "Current" } },
+  },
+  /**
+   * A torque program on a shaft, against an inertia a rig swaps between
+   * runs. Declared here; its runtime comes with unit 5a-2.
+   */
+  "dynamometer@1": {
+    params: {},
+    structured: {
+      torque: { kind: "program", quantity: "Torque" },
+      inertia: { kind: "values", quantity: "Inertia" },
+    },
+  },
 };
 
 /** Forms the plan treats as a supply. */

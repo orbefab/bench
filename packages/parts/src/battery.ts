@@ -1,5 +1,10 @@
 /** `battery@1` param parsing. The element lives in the circuit engine. */
-import type { BatteryParams, FormParam, OcvKnot } from "@sfab-bench/contract";
+import type {
+  BatteryParams,
+  FormParam,
+  OcvKnot,
+  Params,
+} from "@sfab-bench/contract";
 import { batteryError, ocvAt } from "@sfab-bench/contract";
 
 import { isScalarParam } from "./si";
@@ -21,7 +26,7 @@ function readOcv(value: FormParam | undefined): readonly OcvKnot[] | null {
 }
 
 function scalar(
-  override: number | string | boolean | undefined,
+  override: Params[string] | undefined,
   value: FormParam | undefined
 ): number | undefined {
   if (override !== undefined) {
@@ -37,7 +42,7 @@ function scalar(
 /** Catalog params plus instance number overrides. `ocv` is not overridden. */
 export function batteryFrom(
   params: Record<string, FormParam>,
-  overrides: Record<string, number | string | boolean>
+  overrides: Params
 ): { ok: true; params: BatteryParams } | { ok: false; error: string } {
   const ocv = readOcv(params.ocv);
   if (!ocv) {

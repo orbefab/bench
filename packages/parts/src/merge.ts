@@ -1,4 +1,4 @@
-import type { FormParam, SiNumber } from "@sfab-bench/contract";
+import type { FormParam, Params, SiNumber } from "@sfab-bench/contract";
 
 import { isScalarParam } from "./si";
 
@@ -14,7 +14,7 @@ import { isScalarParam } from "./si";
  */
 export function mergeFormParams(
   variant: Record<string, FormParam>,
-  instance: Record<string, number | string | boolean>,
+  instance: Params,
   known?: Partial<Record<string, unknown>>
 ): Record<string, SiNumber> {
   const out: Record<string, SiNumber> = {};

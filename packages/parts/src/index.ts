@@ -102,7 +102,11 @@ export {
   type Wire,
   type WireEnd,
 } from "./nets";
-export { declaredQuantity, quantityOn } from "./params";
+export {
+  declaredQuantity,
+  quantityOn,
+  structuredDecl,
+} from "./params";
 export {
   bindDependents,
   collectPartPorts,

@@ -9,6 +9,7 @@ import {
   FORM_PARAMS,
   GROUND_PART_ID,
   isParamRef,
+  isStructured,
   LEVEL_OVERLAY_FORMAT,
   type LevelOverlayFile,
   type Netlist,
@@ -16,9 +17,10 @@ import {
   PART_TYPE_FORMAT,
   type PartFile,
   type PartTypeFile,
+  parseDeclared,
+  type StructuredDecl,
   TARGET_PART_ID,
 } from "@sfab-bench/contract";
-
 import { batteryFrom } from "./battery";
 import { bindProblems } from "./bind";
 import { PIN_MAP_FIELD, pinMapRefusal, pinMapSource } from "./board-host";
@@ -34,7 +36,7 @@ import {
 import { expandPartType } from "./expand";
 import { gearTrainErrors } from "./gear-train";
 import { ldoFrom } from "./ldo";
-import { declaredQuantity } from "./params";
+import { declaredQuantity, structuredDecl } from "./params";
 import { basename, join, relative, sep } from "./path";
 import { collectPartPorts, type PortLevel, type PortWorld } from "./ports";
 import { lintResolutions } from "./resolution";
@@ -917,6 +919,21 @@ function lintBehaviour(
       );
     }
   }
+  for (const key of Object.keys(form.structured ?? {})) {
+    if (variant.params[key] === undefined) continue;
+    diags.push(
+      makeDiag({
+        severity: "error",
+        code: "bad-params",
+        path: partId,
+        port: name,
+        quantity: "Form",
+        left: key,
+        right: "instance param",
+        detail: `form ${variant.form} param ${key} is set on the instance that uses the part, not on the part`,
+      })
+    );
+  }
   for (const key of Object.keys(form.params)) {
     if (optional.has(key)) continue;
     if (variant.params[key] === undefined) {
@@ -1099,10 +1116,18 @@ function partAt(
 }
 
 /**
- * A child param that is an object must be `{ "$param": name }`, and the
- * parent part must declare `name`: a form or firmware param of its own, or
- * one it forwards to a child that declares the param it is given to.
+ * A child param that is an object is a program or a value set the child
+ * declares, in its canonical form, or `{ "$param": name }`. A forward's
+ * parent part must declare `name`: a form or firmware param of its own,
+ * or one it forwards to a child that declares the param it is given to;
+ * a structured param forwards only into a structured param of its kind.
  */
+/** How a lint names what a param holds. */
+function kindName(decl: StructuredDecl | null): string {
+  if (!decl) return "a single value";
+  return decl.kind === "values" ? "a value set" : "a program";
+}
+
 function lintParamRefs(
   lib: Library,
   part: PartFile,
@@ -1112,7 +1137,53 @@ function lintParamRefs(
   const partById = (id: string) => lib.parts.get(id)?.part ?? null;
   for (const [id, child] of Object.entries(instances)) {
     for (const [key, value] of Object.entries(child.params ?? {})) {
-      if (typeof value !== "object" || value === null) continue;
+      if (typeof value !== "object" || value === null) {
+        const childPart = partById(child.part);
+        const decl = childPart
+          ? structuredDecl(childPart, key, partById)
+          : null;
+        if (decl) {
+          diags.push(
+            makeDiag({
+              severity: "error",
+              code: "bad-params",
+              path: part.id,
+              port: `${id}.${key}`,
+              quantity: "Param",
+              left: JSON.stringify(value),
+              right: decl.kind,
+              detail: `param ${key} is a ${decl.kind === "values" ? "value set" : "program"}, not one value`,
+            })
+          );
+        }
+        continue;
+      }
+      if (isStructured(value)) {
+        const childPart = partById(child.part);
+        const decl = childPart
+          ? structuredDecl(childPart, key, partById)
+          : null;
+        const parsed =
+          decl && decl.kind === value.kind ? parseDeclared(decl, value) : null;
+        if (parsed?.ok) continue;
+        diags.push(
+          makeDiag({
+            severity: "error",
+            code: "bad-params",
+            path: part.id,
+            port: `${id}.${key}`,
+            quantity: "Param",
+            left: JSON.stringify(value),
+            right: decl?.kind ?? "declared structured param",
+            detail: !decl
+              ? `param ${key} is a ${value.kind}, which ${child.part} does not declare`
+              : parsed && !parsed.ok
+                ? `param ${key}: ${parsed.error}`
+                : `param ${key} is a ${decl.kind === "values" ? "value set" : "program"}, not a ${value.kind === "values" ? "value set" : "program"}`,
+          })
+        );
+        continue;
+      }
       if (!isParamRef(value)) {
         diags.push(
           makeDiag({
@@ -1124,6 +1195,24 @@ function lintParamRefs(
             left: JSON.stringify(value),
             right: "value or $param",
             detail: `param ${key} is an object that is not { "$param": name }`,
+          })
+        );
+        continue;
+      }
+      const given = structuredDecl(part, value.$param, partById);
+      const childPart = partById(child.part);
+      const taken = childPart ? structuredDecl(childPart, key, partById) : null;
+      if ((given || taken) && given?.kind !== taken?.kind) {
+        diags.push(
+          makeDiag({
+            severity: "error",
+            code: "bad-params",
+            path: part.id,
+            port: `${id}.${key}`,
+            quantity: "Param",
+            left: value.$param,
+            right: taken?.kind ?? "one value",
+            detail: `param ${key} forwards $param ${value.$param}, ${kindName(given)}, into ${kindName(taken)}`,
           })
         );
         continue;

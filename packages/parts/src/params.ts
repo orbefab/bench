@@ -6,10 +6,15 @@ import {
   type Netlist,
   type PartFile,
   type Quantity,
+  type StructuredDecl,
 } from "@sfab-bench/contract";
 
-/** A quantity, or `text` for a file name such as the firmware image. */
-export type ParamQuantity = Quantity | "text";
+/**
+ * A quantity, `text` for a file name such as the firmware image, or a
+ * structured kind (`program`, `values`) whose levels have a quantity of
+ * their own (`structuredDecl`).
+ */
+export type ParamQuantity = Quantity | "text" | StructuredDecl["kind"];
 
 export function quantityOn(part: PartFile, name: string): ParamQuantity | null {
   const behaviour = part.axes?.behaviour;
@@ -21,6 +26,8 @@ export function quantityOn(part: PartFile, name: string): ParamQuantity | null {
         const form = FORM_PARAMS[variant.form];
         const quantity = form?.params[name];
         if (quantity) return quantity;
+        const structured = form?.structured?.[name];
+        if (structured) return structured.kind;
       }
       if (variant.kind === "firmware") {
         if (variant.imageParam === name || name === "source") return "text";
@@ -65,6 +72,44 @@ export function declaredQuantity(
           const childPart = partById(child.part);
           const found = childPart
             ? declaredQuantity(childPart, key, partById, visiting)
+            : null;
+          if (found) return found;
+        }
+      }
+    }
+    return null;
+  } finally {
+    visiting.delete(part.id);
+  }
+}
+
+/**
+ * The structured param `name` a part declares, or forwards to a child that
+ * declares it: its kind and the quantity of its levels.
+ */
+export function structuredDecl(
+  part: PartFile,
+  name: string,
+  partById: (id: string) => PartFile | null,
+  visiting: Set<string> = new Set()
+): StructuredDecl | null {
+  for (const slot of Object.values(part.axes?.behaviour ?? {})) {
+    for (const variant of Object.values(slot?.variants ?? {})) {
+      if (variant.kind !== "form") continue;
+      const found = FORM_PARAMS[variant.form]?.structured?.[name];
+      if (found) return found;
+    }
+  }
+  if (visiting.has(part.id)) return null;
+  visiting.add(part.id);
+  try {
+    for (const netlist of netlistsOf(part)) {
+      for (const child of Object.values(netlist.instances)) {
+        for (const [key, value] of Object.entries(child.params ?? {})) {
+          if (!isParamRef(value) || value.$param !== name) continue;
+          const childPart = partById(child.part);
+          const found = childPart
+            ? structuredDecl(childPart, key, partById, visiting)
             : null;
           if (found) return found;
         }

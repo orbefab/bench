@@ -6,10 +6,12 @@ import {
   type BehaviourImpl,
   type BodyImpl,
   type CaptureAxisName,
+  FORM_PARAMS,
   type LevelClass,
   type PartFile,
   type Pose,
   ROOT_PATH,
+  type StructuredDecl,
   type VisualImpl,
   type WorldViewCapture,
   type WorldViewLevelAxis,
@@ -156,7 +158,8 @@ export function runTree(input: {
       role: roleFor(inst, sets),
       pose: poseOf(inst.pose),
       ports: portsOf(inst, world, dependents(inst.part.id)),
-      params: { ...inst.params },
+      params: structuredClone(inst.params),
+      ...structuredOf(behaviour),
       ...(inst.forwards ? { forwards: { ...inst.forwards } } : {}),
       ...(netlist ? { wires: netlist.wires.map(([a, b]) => ({ a, b })) } : {}),
       levels: levelAxes(inst.part, chosenOf(inst), inst.declaredOnly, {
@@ -599,6 +602,20 @@ function behaviourRunnable(
     return { runnable: false, reason: `no runtime for form ${impl.form}` };
   }
   return { runnable: false, reason: "no behaviour" };
+}
+
+/** The structured params the instance's form declares, for the card. */
+function structuredOf(
+  behaviour: BehaviourImpl | null
+): Pick<WorldViewNode, "structured"> {
+  if (behaviour?.kind !== "form") return {};
+  const structured: Record<string, StructuredDecl> = {};
+  for (const [name, decl] of Object.entries(
+    FORM_PARAMS[behaviour.form]?.structured ?? {}
+  )) {
+    if (decl) structured[name] = { ...decl };
+  }
+  return Object.keys(structured).length > 0 ? { structured } : {};
 }
 
 function bodyRunnable(impl: BodyImpl): { runnable: boolean; reason?: string } {

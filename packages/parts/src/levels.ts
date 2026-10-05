@@ -356,7 +356,7 @@ function resolveParams(
   const forwards: Record<string, ParamForward> = {};
   for (const [name, value] of Object.entries(written ?? {})) {
     if (!isParamRef(value)) {
-      params[name] = value;
+      params[name] = typeof value === "object" ? structuredClone(value) : value;
       continue;
     }
     const forwarded = Object.hasOwn(parent, value.$param)
@@ -368,7 +368,8 @@ function resolveParams(
       }
       continue;
     }
-    params[name] = forwarded;
+    params[name] =
+      typeof forwarded === "object" ? structuredClone(forwarded) : forwarded;
     forwards[name] = { from: parentPath, param: value.$param };
   }
   return { params, forwards };

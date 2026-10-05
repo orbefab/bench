@@ -7,6 +7,7 @@
 import {
   DEFAULT_TIMESTEP_S,
   type EditOp,
+  type StructuredValue,
   type WorldViewNode,
   type WorldViewPlay,
 } from "@sfab-bench/contract";
@@ -37,6 +38,23 @@ export function setParamOp(
     id: target.id,
     name,
     value,
+  };
+}
+
+/** A program or a value set, whole: one gesture is one edit. */
+export function setStructuredOp(
+  target: InstanceTarget,
+  name: string,
+  next: StructuredValue | null,
+  previous: StructuredValue | null
+): EditOp | null {
+  if (!next || JSON.stringify(next) === JSON.stringify(previous)) return null;
+  return {
+    kind: "set-param",
+    document: target.document,
+    id: target.id,
+    name,
+    value: next,
   };
 }
 

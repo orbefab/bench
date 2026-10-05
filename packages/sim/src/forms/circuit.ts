@@ -1,7 +1,7 @@
 /**
  * Circuit form stamps. Moved from `elementOf` (layered-sim A2b).
  */
-import type { BehaviourImpl, FormId } from "@sfab-bench/contract";
+import type { BehaviourImpl, FormId, Params } from "@sfab-bench/contract";
 import { FORM_PARAMS } from "@sfab-bench/contract";
 import {
   BridgeDriver,
@@ -41,7 +41,7 @@ function needNum(part: AssignedPart, key: string): number {
 /** Same numbers `circuitNumbers` published for a circuit form. */
 export function parseCircuitParams(
   behaviour: BehaviourImpl,
-  params: Record<string, number | string | boolean>
+  params: Params
 ): Record<string, number> | null {
   if (behaviour.kind !== "form") return null;
   const form = FORM_PARAMS[behaviour.form as FormId];
