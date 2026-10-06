@@ -24,11 +24,12 @@ const PERSIST_VERSION = 0;
 
 /**
  * Written under `sfab-bench.desktop` as `{ state, version }`.
- * Order is the JSON key order `partialize` has always emitted.
+ * Order is the JSON key order `partialize` emits.
+ * `treeOpen` used to follow `chatOpen`. Old blobs may still have it;
+ * keys outside this list are ignored, and the sidebar starts collapsed.
  */
 const PERSISTED_PREF_KEYS = [
   "chatOpen",
-  "treeOpen",
   "partsOpen",
   "axesVisible",
   "chatWidth",
@@ -40,7 +41,6 @@ const PERSISTED_PREF_KEYS = [
 
 type DesktopPrefs = {
   chatOpen: boolean;
-  treeOpen: boolean;
   partsOpen: boolean;
   axesVisible: boolean;
   chatWidth: number;
@@ -105,7 +105,6 @@ function validatedDesktopPrefs(stored: StoredPrefs | undefined): DesktopPrefs {
     : DEFAULT_HARNESS;
   return {
     chatOpen: stored?.chatOpen ?? true,
-    treeOpen: stored?.treeOpen ?? true,
     partsOpen: stored?.partsOpen ?? true,
     axesVisible: stored?.axesVisible ?? true,
     chatWidth:
@@ -171,7 +170,6 @@ export type PrefsState = DesktopPrefs & {
   /** Not persisted. The server sends the folder's list. */
   recentFiles: string[];
   setRecentFiles: (paths: string[]) => void;
-  setTreeOpen: (open: Setter) => void;
   setPartsOpen: (open: Setter) => void;
   setChatOpen: (open: Setter) => void;
   setChatWidth: (width: number) => void;
@@ -201,8 +199,6 @@ export const prefsStore = createStore<PrefsState>()(
         }
         set({ recentFiles });
       },
-      setTreeOpen: (open) =>
-        set((s) => ({ treeOpen: resolve(s.treeOpen, open) })),
       setPartsOpen: (open) =>
         set((s) => ({ partsOpen: resolve(s.partsOpen, open) })),
       setChatOpen: (open) =>
@@ -251,7 +247,6 @@ export const prefsStore = createStore<PrefsState>()(
       }),
       partialize: (s): DesktopPrefs => ({
         chatOpen: s.chatOpen,
-        treeOpen: s.treeOpen,
         partsOpen: s.partsOpen,
         axesVisible: s.axesVisible,
         chatWidth: s.chatWidth,
@@ -261,9 +256,11 @@ export const prefsStore = createStore<PrefsState>()(
         chatDock: s.chatDock,
       }),
       merge: (persisted, current) => {
-        const stored = persisted as StoredPrefs | undefined;
+        const stored = persisted as
+          | (StoredPrefs & { treeOpen?: unknown })
+          | undefined;
         if (!stored) return current;
-        const { recentFiles: _ignored, ...rest } = stored;
+        const { recentFiles: _files, treeOpen: _tree, ...rest } = stored;
         return { ...current, ...rest, recentFiles: current.recentFiles };
       },
     }
