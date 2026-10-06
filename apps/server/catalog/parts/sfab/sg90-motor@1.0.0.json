@@ -3,11 +3,56 @@
   "id": "sfab/sg90-motor@1.0.0",
   "type": "dc-motor-terminals",
   "foreign": false,
-  "declaredOnly": true,
   "sources": [
     {
       "title": "SG90 internal motor",
-      "ref": "declared-only child of sfab/sg90@1.0.0"
+      "ref": "Child of sfab/sg90@1.0.0. K is the SG90 fit's output-side 0.458 V·s/rad over the gear ratio 82156/315. R and efficiency are that fit's; efficiency carries the gear loss, which the gear train does not model."
     }
-  ]
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "law",
+        "variants": {
+          "law": {
+            "kind": "form",
+            "form": "dc-motor@1",
+            "params": {
+              "K": 0.00175604946686791,
+              "R": 7.1,
+              "efficiency": 0.57
+            },
+            "omits": [
+              "motor inductance",
+              "winding heat",
+              "brush drop",
+              "cogging"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["rotor inertia is the gear train's rotor shaft"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["inside the servo case"]
+          }
+        }
+      }
+    }
+  }
 }

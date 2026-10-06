@@ -1,7 +1,6 @@
+import { catalogAncestors } from "@sfab-bench/contract";
 import { useState } from "react";
-
 import { loadExpandedDirs, saveExpandedDirs } from "@/lib/files-rail";
-import { catalogAncestors } from "@/lib/viewer-snapshot";
 
 export function useFileTreeExpansion(projectPath: string, current: string) {
   const [expanded, setExpanded] = useState<Set<string>>(() => {

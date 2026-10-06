@@ -12,6 +12,7 @@ import {
   type Element,
   Engine,
   iSource,
+  LdoRegulator,
   MF_MSMF050,
   PtcFuseElement,
   resistor,
@@ -29,7 +30,8 @@ import {
   UNO_T1_DIODE,
   UNO_T1_RDS,
   UNO_TERM_NODE,
-} from "./power-path";
+  UNO_U2_LDO,
+} from "@sfab-bench/sim/power-path";
 
 const PC2_NODE = "pc2";
 const DECOUPLE = ["c2", "c4", "c6", "c7"] as const;
@@ -145,6 +147,9 @@ export class UnoReferenceRail {
         ...(fuse
           ? [fuse, ...unoBoardElements(UNO_SW_NODE, UNO_BOARD_NODE)]
           : unoHeaderCaps(UNO_BOARD_NODE)),
+        // U2 runs from +5V on either feed: its ground current is on the
+        // board node. The ngspice deck above predates it (65 µA).
+        new LdoRegulator("u2", UNO_BOARD_NODE, "u2out", "0", UNO_U2_LDO),
       ],
       {
         method: "be",

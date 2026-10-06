@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { RunPlayingDialog } from "@/components/RunPlayingDialog";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { formatWorldIssues, visibleAssetIssues } from "@/lib/world-issues";
 import { moveTarget } from "@/lib/world-move";
 import { isPoseTool, toolTitle, WORLD_TOOLS } from "@/lib/world-tool";
@@ -24,13 +25,11 @@ export function useMoveReason(): string | null {
 }
 
 export function WorldControls({
-  top,
-  left,
   onHome,
+  layout,
 }: {
-  top: number;
-  left: number;
   onHome: () => void;
+  layout: { left: number; top: number } | null;
 }) {
   const { connection, notice, selected } = useWorld(
     useShallow((s) => ({
@@ -49,11 +48,14 @@ export function WorldControls({
         ? "Connecting…"
         : null;
   return (
-    <>
-      <div
-        className="pointer-events-auto absolute z-20 flex items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-lg"
-        style={{ top, left }}
-      >
+    <div
+      className={cn(
+        "pointer-events-none absolute z-20 flex flex-col items-center gap-2",
+        layout ? undefined : "top-4 left-1/2 -translate-x-1/2"
+      )}
+      style={layout ? { left: layout.left, top: layout.top } : undefined}
+    >
+      <div className="pointer-events-auto flex items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-lg">
         <Button
           type="button"
           variant="secondary"
@@ -95,26 +97,19 @@ export function WorldControls({
         ) : null}
       </div>
       {showReason ? (
-        <div
-          className="pointer-events-none absolute z-20 rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-lg"
-          style={{ top: top + 52, left }}
-        >
+        <div className="rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-lg">
           {reason}
         </div>
       ) : null}
       {notice ? (
         <div
-          className="pointer-events-none absolute z-20 rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs shadow-lg"
-          style={{
-            top: top + (showReason ? 92 : 52),
-            left,
-          }}
+          className="rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs shadow-lg"
           aria-live="polite"
         >
           {notice}
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 

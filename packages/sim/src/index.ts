@@ -34,7 +34,6 @@ export {
   type CircuitInst,
   circuitNumbers,
   connectorPort,
-  describeNetlist,
   groundPorts,
   isCircuitForm,
   ldoLaw,
@@ -48,7 +47,14 @@ export {
   stampBoard,
   touches,
 } from "./circuit-stamp";
-export { type PlanEnv, type StampEnv } from "./env";
+export type { PlanEnv, StampEnv } from "./env";
+export {
+  type GpioHost,
+  type GpioLookup,
+  type GpioPin,
+  type GpioReach,
+  gpioIndex,
+} from "./gpio-binding";
 export {
   type PlanResult,
   planWorld,
@@ -64,10 +70,6 @@ export {
   WORLD_V1_MESSAGE,
 } from "./plan";
 export {
-  BOD_ASSERT_V,
-  BOD_RELEASE_V,
-  type BrownoutPhase,
-  type BrownoutState,
   DISPLAY_MOVE_DEG,
   DISPLAY_STALL_DEG_PER_SEC,
   DISPLAY_STALL_HOLD_MS,
@@ -75,27 +77,15 @@ export {
   type MotorLaw,
   noLoadSpeedRad,
   type RailMotor,
-  RESET_HOLD_MS,
-  runningBrownout,
   servoElectrical,
   solveRail,
   stallCurrent,
   stallTorque,
-  stepBrownout,
 } from "./power";
 export {
   BOARD_LOAD_KNEE_V,
-  NANO_BOARD_A,
   type RailFeed,
   railAttachment,
-  UNO_BOARD_NODE,
-  UNO_DECOUPLE_C,
-  UNO_PC2_C,
-  UNO_PC2_ESR,
-  UNO_SW_NODE,
-  UNO_T1_DIODE,
-  UNO_T1_RDS,
-  UNO_TERM_NODE,
 } from "./power-path";
 export { type ProbeIndex, probeTracks } from "./probe";
 export {

@@ -1,6 +1,7 @@
 import type {
   CaptureAxisName,
   EditOp,
+  WorldGhostSpec,
   WorldPinState,
   WorldSender,
   WorldServerMessage,
@@ -144,6 +145,11 @@ export function sendWorldCapture(
 
 export function abortWorldCapture(nonce: string) {
   sendSocket({ type: "capture-abort", nonce });
+}
+
+/** Turn the snapshot ghost on, or off with null. The run restarts. */
+export function sendWorldGhost(ghost: WorldGhostSpec | null) {
+  sendSocket({ type: "ghost", ghost });
 }
 
 /** What the socket hands capture messages to. Injected, so no import cycle. */
@@ -393,7 +399,10 @@ export function useWorldRun(
         worldStore
           .getState()
           .refuseHistory(message.kind, message.part ?? pending?.part);
-        showToast({ type: "info", title: historyRefusalTitle(message.kind) });
+        showToast({
+          type: "info",
+          title: historyRefusalTitle(message.kind, message.message),
+        });
         return;
       }
       if (message.type === "error") {

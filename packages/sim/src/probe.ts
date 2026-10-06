@@ -5,9 +5,9 @@
  */
 
 import {
-  arduinoPinBit,
-  maskHasPin,
   parsePortProbeId,
+  pinHas,
+  pinIndex,
   portTrackId,
   type RecordedFrame,
   type RecordingRead,
@@ -18,6 +18,19 @@ import {
 export type ProbeIndex = {
   /** Servo instance to the `robot/joint` it turns. */
   shafts: Record<string, string>;
+  /** Board id to exposed GPIO names, in pin-state order. */
+  pins: Record<string, readonly string[]>;
+  /**
+   * Board id to its power pin (`voltagePin`), supply id to its positive
+   * pin. That port reads the recorded voltage. Absent ids read nothing.
+   */
+  powerPins?: Record<string, string>;
+  /**
+   * Ranger id to the ports its recorded row answers: the power ports
+   * (voltage and current) and the echo port (echo width). Absent ids read
+   * nothing.
+   */
+  rangers?: Record<string, { power: readonly string[]; echo: string | null }>;
 };
 
 type Kind = "servo" | "ranger" | "supply" | "board" | "robot";
@@ -39,7 +52,7 @@ function kindOf(read: RecordingRead, instance: string): Kind | null {
 
 type Pick = (frame: RecordedFrame) => number | null;
 
-type Channel = { unit: TimelineUnit; pick: Pick; lo?: Pick };
+type Channel = { unit: TimelineUnit; pick: Pick; lo?: Pick; hi?: Pick };
 
 function partChannel(
   instance: string,
@@ -66,7 +79,8 @@ function channelsOf(
   kind: Kind,
   instance: string,
   port: string,
-  index: ProbeIndex
+  index: ProbeIndex,
+  read: RecordingRead
 ): Channel[] {
   if (kind === "servo") {
     if (port === "signal") {
@@ -104,13 +118,14 @@ function channelsOf(
     return [];
   }
   if (kind === "ranger") {
-    if (port === "VCC") {
+    const ports = index.rangers?.[instance];
+    if (ports?.power.includes(port)) {
       return [
         { unit: "V", pick: partChannel(instance, (p) => p.voltage) },
         { unit: "A", pick: partChannel(instance, (p) => p.current) },
       ];
     }
-    if (port === "Echo") {
+    if (ports && port === ports.echo) {
       return [
         {
           unit: "ms",
@@ -123,10 +138,10 @@ function channelsOf(
     return [];
   }
   if (kind === "supply") {
-    return port === "5V" || port === "+" ? supplyChannels(instance) : [];
+    return port === index.powerPins?.[instance] ? supplyChannels(instance) : [];
   }
   if (kind === "board") {
-    if (port === "5V") {
+    if (port === index.powerPins?.[instance]) {
       return [
         {
           unit: "V",
@@ -135,14 +150,28 @@ function channelsOf(
         },
       ];
     }
-    if (arduinoPinBit(port) === undefined) return [];
+    const names = index.pins[instance];
+    if (!names || pinIndex(names, port) === undefined) return [];
+    // A pin with a circuit on its net reads its solved node; one without
+    // reads its output level times the board node.
+    const solved = (f: RecordedFrame) => f.boards[instance]?.pinVolts?.[port];
+    if (read.frames.some((f) => solved(f) !== undefined)) {
+      return [
+        {
+          unit: "V",
+          pick: (f) => solved(f)?.v ?? null,
+          lo: (f) => solved(f)?.lo ?? 0,
+          hi: (f) => solved(f)?.hi ?? 0,
+        },
+      ];
+    }
     return [
       {
         unit: "V",
         pick: (f) => {
           const board = f.boards[instance];
           if (!board) return null;
-          return maskHasPin(board.pins.level, port) ? board.voltage : 0;
+          return pinHas(board.pins.level, names, port) ? board.voltage : 0;
         },
       },
     ];
@@ -176,7 +205,7 @@ export function probeTracks(
     const kind = parsed ? kindOf(read, parsed.instance) : null;
     const channels =
       parsed && kind
-        ? channelsOf(kind, parsed.instance, parsed.port, index)
+        ? channelsOf(kind, parsed.instance, parsed.port, index, read)
         : [];
     const built: TimelineTrack[] = [];
     for (const channel of channels) {
@@ -188,6 +217,7 @@ export function probeTracks(
         t,
         v,
         ...(channel.lo ? { lo: read.frames.map(channel.lo) as number[] } : {}),
+        ...(channel.hi ? { hi: read.frames.map(channel.hi) as number[] } : {}),
       });
     }
     if (built.length === 0) unrecorded.push(probe);

@@ -23,12 +23,11 @@
           "law": {
             "kind": "form",
             "form": "dc-motor@1",
+            "bind": { "A": "V+", "B": "GND" },
             "params": {
               "K": 0.05,
               "R": 2,
-              "efficiency": 0.7,
-              "eSat": 0.2,
-              "quiescent": 0.02
+              "efficiency": 0.7
             },
             "omits": ["inductance", "heat", "brush drop"]
           }
@@ -48,12 +47,21 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.04, 0.03, 0.03],
             "omits": ["shaft detail"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "can@1",
+            "size": [0.04, 0.03, 0.03],
+            "params": {
+              "axis": "x"
+            },
+            "omits": ["mounting holes", "terminals"]
           }
         }
       }

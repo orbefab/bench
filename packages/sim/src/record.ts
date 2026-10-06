@@ -2,8 +2,9 @@
  * Columnar recording of one world run. The worker calls `commit` once per
  * simulated millisecond. A frame is written every 10 ms and covers (t−10 ms, t]:
  * the value at t, plus the minimum terminal and board-node voltage, the
- * maximum current, the worst part state, any brownout, any out-of-SOA
- * supply, and the furthest a joint passed its limit in that window.
+ * maximum current, the worst part state, any reset, any out-of-SOA
+ * supply, the furthest a joint passed its limit, and each stamped pin
+ * node's mean, lowest and highest volts in that window.
  * A 1 ms dip therefore lands on the frame that closes the window.
  *
  * Storage is typed-array chunks. Queries copy out plain objects. Downsampling
@@ -29,6 +30,7 @@ import {
   type TimelineMarker,
   type TimelineTrack,
   type WorldPartMotion,
+  type WorldPinState,
   type WorldSender,
 } from "@sfab-bench/contract";
 
@@ -49,23 +51,19 @@ function motionName(rank: number): WorldPartMotion {
 
 /**
  * Bytes of frame storage for one minute of sim time, channels only.
- * A chunk may hold a little more until its front is dropped.
- * Events sit beside this and are not counted.
+ * Measured from the chunk layout, so a new column is counted. A chunk may
+ * hold a little more until its front is dropped. Events sit beside this
+ * and are not counted.
  */
-export function recordingFootprint(counts: {
-  joints: number;
-  bodies: number;
-  parts: number;
-  supplies: number;
-  boards: number;
-}): { bytesPerFrame: number; bytesPerMinute: number } {
-  const bytesPerFrame =
-    4 +
-    counts.joints * 8 +
-    counts.bodies * 28 +
-    counts.parts * 22 +
-    counts.supplies * 20 +
-    counts.boards * 24;
+export function recordingFootprint(counts: ChunkCounts): {
+  bytesPerFrame: number;
+  bytesPerMinute: number;
+} {
+  let bytes = 0;
+  for (const column of Object.values(createChunk(counts))) {
+    if (ArrayBuffer.isView(column)) bytes += column.byteLength;
+  }
+  const bytesPerFrame = bytes / CHUNK;
   const framesPerMinute = 60_000 / RECORD_FRAME_MS;
   return {
     bytesPerFrame,
@@ -84,10 +82,17 @@ export type RecordSpec = {
   partRanger?: boolean[];
   supplies: string[];
   boards: string[];
-  /** Parallel to `boards`. True when that board records `leds[`${id}.led`]`. */
+  /**
+   * Words of pin state per board. Absent is one word, the layout a board
+   * of at most 32 pins has always used.
+   */
+  pinWords?: number[];
+  /** Parallel to `boards`. True when that board records `leds[onboardLedPath(id)]`. */
   boardLed?: boolean[];
   /** LED paths on each board. Each frame stores that LED's mean current. */
   leds?: { board: string; path: string }[];
+  /** Stamped pins by header port. Each frame stores the solved node's mean, low and high. */
+  pins?: { board: string; port: string }[];
 };
 
 type Chunk = {
@@ -104,6 +109,8 @@ type Chunk = {
   partCurrent: Float32Array;
   partMax: Float32Array;
   partVoltage: Float32Array;
+  /** NaN when that part has no driven motor. */
+  partTorque: Float32Array;
   voltage: Float32Array;
   minVoltage: Float32Array;
   supplyCurrent: Float32Array;
@@ -118,6 +125,10 @@ type Chunk = {
   boardLed: Float32Array | null;
   /** Null when this run stamps no LED. One sample per `ledPaths` entry. */
   leds: Float32Array | null;
+  /** Null when this run stamps no pin. One sample per `pinPaths` entry. */
+  pinV: Float32Array | null;
+  pinLo: Float32Array | null;
+  pinHi: Float32Array | null;
   /** Null when no part on this run is a ranger. Metres; NaN is no echo. */
   rangerDistance: Float32Array | null;
   /** 1 when the last trigger hit. Null when no part is a ranger. */
@@ -126,8 +137,8 @@ type Chunk = {
   level: Uint32Array;
   toggled: Uint32Array;
   running: Uint8Array;
-  brownout: Uint8Array;
-  brownoutAny: Uint8Array;
+  inReset: Uint8Array;
+  inResetAny: Uint8Array;
   belowSoa: Uint8Array;
 };
 
@@ -142,6 +153,7 @@ type StoredEvent = {
   by?: WorldSender;
   id?: string;
   position?: [number, number, number];
+  cause?: "pin";
 };
 
 type Slot = { chunk: Chunk; slot: number; timeMs: number };
@@ -169,12 +181,20 @@ export class RunRecorder {
   readonly partCurrent: Float64Array;
   /** Volts at V+ relative to GND. */
   readonly partVoltage: Float64Array;
+  /** Newton-metres at the shaft. NaN when that part has no driven motor. */
+  readonly partTorque: Float64Array;
   readonly voltage: Float64Array;
+  /** Lowest terminal volts over this step's sub-steps. The frame minimum folds it. */
+  readonly voltageLow: Float64Array;
   readonly supplyCurrent: Float64Array;
+  /** Highest terminal current over this step's sub-steps. The frame maximum folds it. */
+  readonly supplyCurrentHigh: Float64Array;
   /** NaN when that supply has no state of charge. */
   readonly supplySoc: Float64Array;
   /** Volts on each board's 5V node. */
   readonly boardVoltage: Float64Array;
+  /** Lowest volts on that node over this step's sub-steps. The frame minimum folds it. */
+  readonly boardVoltageLow: Float64Array;
   /** Regulator pass current into that node. */
   readonly regulatorA: Float64Array;
   /** Amperes through each board's onboard LED. Read only where `ledOn` is set. */
@@ -185,11 +205,17 @@ export class RunRecorder {
   readonly ledPaths: readonly { board: string; path: string }[];
   /** Forward current of each `ledPaths` entry, amperes. */
   readonly ledAmps: Float64Array;
+  /** Stamped pins, in record order. */
+  readonly pinPaths: readonly { board: string; port: string }[];
+  /** Each `pinPaths` node over the frame: mean, lowest and highest volts. */
+  readonly pinV: Float64Array;
+  readonly pinLo: Float64Array;
+  readonly pinHi: Float64Array;
   readonly ddr: Uint32Array;
   readonly level: Uint32Array;
   readonly toggled: Uint32Array;
   readonly running: Uint8Array;
-  readonly brownout: Uint8Array;
+  readonly inReset: Uint8Array;
   /** 1 when this step's supply is in the 16 MHz out-of-SOA band. */
   readonly belowSoa: Uint8Array;
   /** Degrees past the joint limit at this step. The frame keeps the max. */
@@ -208,13 +234,17 @@ export class RunRecorder {
   private readonly hasRanger: boolean;
   private readonly supplies: { id: string; track: string }[];
   private readonly boards: { id: string; track: string }[];
+  /** Words stored for each board. One while every board has at most 32 pins. */
+  private readonly pinWords: readonly number[];
+  /** Max of `pinWords`. Channel `board * pinStride + word` is that word. */
+  private readonly pinStride: number;
   private readonly minV: Float64Array;
   private readonly maxSupply: Float64Array;
   private readonly minBoardV: Float64Array;
   private readonly maxRegulator: Float64Array;
   private readonly worst: Uint8Array;
   private readonly partMax: Float64Array;
-  private readonly brownAny: Uint8Array;
+  private readonly inResetAny: Uint8Array;
   private readonly soaAny: Uint8Array;
   private readonly pastMax: Float64Array;
   private readonly chunks: Chunk[] = [];
@@ -245,6 +275,13 @@ export class RunRecorder {
       track: supplyTrackId(id),
     }));
     this.boards = spec.boards.map((id) => ({ id, track: boardTrackId(id) }));
+    this.pinWords = spec.boards.map((_, index) =>
+      Math.max(1, spec.pinWords?.[index] ?? 1)
+    );
+    this.pinStride = this.pinWords.reduce(
+      (max, words) => Math.max(max, words),
+      1
+    );
     const nJ = this.joints.length;
     const nB = this.bodies.length;
     const nP = this.parts.length;
@@ -259,24 +296,33 @@ export class RunRecorder {
     this.state = new Uint8Array(nP);
     this.partCurrent = new Float64Array(nP);
     this.partVoltage = new Float64Array(nP);
+    this.partTorque = new Float64Array(nP).fill(Number.NaN);
     this.rangerDistance = this.hasRanger ? new Float64Array(nP) : null;
     this.rangerHit = this.hasRanger ? new Uint8Array(nP) : null;
     this.rangerDistance?.fill(Number.NaN);
     this.voltage = new Float64Array(nS);
+    this.voltageLow = new Float64Array(nS);
     this.supplyCurrent = new Float64Array(nS);
+    this.supplyCurrentHigh = new Float64Array(nS);
     this.supplySoc = new Float64Array(nS);
     this.supplySoc.fill(Number.NaN);
     this.boardVoltage = new Float64Array(nD);
+    this.boardVoltageLow = new Float64Array(nD);
     this.regulatorA = new Float64Array(nD);
     this.ledCurrent = new Float64Array(nD);
     this.ledOn = spec.boardLed ?? this.boards.map(() => false);
     this.ledPaths = spec.leds ?? [];
     this.ledAmps = new Float64Array(this.ledPaths.length);
-    this.ddr = new Uint32Array(nD);
-    this.level = new Uint32Array(nD);
-    this.toggled = new Uint32Array(nD);
+    this.pinPaths = spec.pins ?? [];
+    this.pinV = new Float64Array(this.pinPaths.length);
+    this.pinLo = new Float64Array(this.pinPaths.length);
+    this.pinHi = new Float64Array(this.pinPaths.length);
+    const nPins = nD * this.pinStride;
+    this.ddr = new Uint32Array(nPins);
+    this.level = new Uint32Array(nPins);
+    this.toggled = new Uint32Array(nPins);
     this.running = new Uint8Array(nD);
-    this.brownout = new Uint8Array(nD);
+    this.inReset = new Uint8Array(nD);
     this.belowSoa = new Uint8Array(nD);
     this.soaAny = new Uint8Array(nD);
     this.minV = new Float64Array(nS);
@@ -285,7 +331,7 @@ export class RunRecorder {
     this.maxRegulator = new Float64Array(nD);
     this.worst = new Uint8Array(nP);
     this.partMax = new Float64Array(nP);
-    this.brownAny = new Uint8Array(nD);
+    this.inResetAny = new Uint8Array(nD);
     this.resetFold();
   }
 
@@ -313,6 +359,15 @@ export class RunRecorder {
     this.resetFold();
     const cutoff = timeMs - this.boundMs;
     if (cutoff > 0) this.dropBefore(cutoff);
+  }
+
+  /**
+   * A master step inside a millisecond: fold its extremes into the window.
+   * The sample at the millisecond is still the one `commit` takes.
+   */
+  foldStep() {
+    if (!this.enabled) return;
+    this.fold();
   }
 
   noteSerial(board: string, text: string, timeMs: number) {
@@ -408,8 +463,8 @@ export class RunRecorder {
 
   private fold() {
     for (let i = 0; i < this.supplies.length; i++) {
-      const voltage = this.voltage[i] ?? 0;
-      const current = this.supplyCurrent[i] ?? 0;
+      const voltage = this.voltageLow[i] ?? 0;
+      const current = this.supplyCurrentHigh[i] ?? 0;
       if (voltage < (this.minV[i] ?? Number.POSITIVE_INFINITY)) {
         this.minV[i] = voltage;
       }
@@ -426,7 +481,7 @@ export class RunRecorder {
       }
     }
     for (let i = 0; i < this.boards.length; i++) {
-      const voltage = this.boardVoltage[i] ?? 0;
+      const voltage = this.boardVoltageLow[i] ?? 0;
       if (voltage < (this.minBoardV[i] ?? Number.POSITIVE_INFINITY)) {
         this.minBoardV[i] = voltage;
       }
@@ -434,7 +489,7 @@ export class RunRecorder {
       if (pass > (this.maxRegulator[i] ?? Number.NEGATIVE_INFINITY)) {
         this.maxRegulator[i] = pass;
       }
-      if ((this.brownout[i] ?? 0) !== 0) this.brownAny[i] = 1;
+      if ((this.inReset[i] ?? 0) !== 0) this.inResetAny[i] = 1;
       if ((this.belowSoa[i] ?? 0) !== 0) this.soaAny[i] = 1;
     }
     for (let i = 0; i < this.joints.length; i++) {
@@ -450,7 +505,7 @@ export class RunRecorder {
     this.maxRegulator.fill(Number.NEGATIVE_INFINITY);
     this.worst.fill(0);
     this.partMax.fill(Number.NEGATIVE_INFINITY);
-    this.brownAny.fill(0);
+    this.inResetAny.fill(0);
     this.soaAny.fill(0);
     this.pastMax.fill(0);
   }
@@ -478,6 +533,7 @@ export class RunRecorder {
       chunk.partCurrent[channel(i, slot)] = this.partCurrent[i] ?? 0;
       chunk.partMax[channel(i, slot)] = this.partMax[i] ?? 0;
       chunk.partVoltage[channel(i, slot)] = this.partVoltage[i] ?? 0;
+      chunk.partTorque[channel(i, slot)] = this.partTorque[i] ?? Number.NaN;
       if (chunk.rangerDistance && this.rangerDistance) {
         chunk.rangerDistance[channel(i, slot)] =
           this.rangerDistance[i] ?? Number.NaN;
@@ -494,12 +550,16 @@ export class RunRecorder {
       chunk.supplySoc[channel(i, slot)] = this.supplySoc[i] ?? Number.NaN;
     }
     for (let i = 0; i < this.boards.length; i++) {
-      chunk.ddr[channel(i, slot)] = this.ddr[i] ?? 0;
-      chunk.level[channel(i, slot)] = this.level[i] ?? 0;
-      chunk.toggled[channel(i, slot)] = this.toggled[i] ?? 0;
+      const words = this.pinWords[i] ?? 1;
+      for (let w = 0; w < words; w++) {
+        const index = i * this.pinStride + w;
+        chunk.ddr[channel(index, slot)] = this.ddr[index] ?? 0;
+        chunk.level[channel(index, slot)] = this.level[index] ?? 0;
+        chunk.toggled[channel(index, slot)] = this.toggled[index] ?? 0;
+      }
       chunk.running[channel(i, slot)] = this.running[i] ?? 0;
-      chunk.brownout[channel(i, slot)] = this.brownout[i] ?? 0;
-      chunk.brownoutAny[channel(i, slot)] = this.brownAny[i] ?? 0;
+      chunk.inReset[channel(i, slot)] = this.inReset[i] ?? 0;
+      chunk.inResetAny[channel(i, slot)] = this.inResetAny[i] ?? 0;
       chunk.belowSoa[channel(i, slot)] = this.soaAny[i] ?? 0;
       chunk.boardVoltage[channel(i, slot)] = this.boardVoltage[i] ?? 0;
       chunk.boardMinVoltage[channel(i, slot)] = this.minBoardV[i] ?? 0;
@@ -514,7 +574,41 @@ export class RunRecorder {
         chunk.leds[channel(i, slot)] = this.ledAmps[i] ?? 0;
       }
     }
+    if (chunk.pinV && chunk.pinLo && chunk.pinHi) {
+      for (let i = 0; i < this.pinPaths.length; i++) {
+        chunk.pinV[channel(i, slot)] = this.pinV[i] ?? 0;
+        chunk.pinLo[channel(i, slot)] = this.pinLo[i] ?? 0;
+        chunk.pinHi[channel(i, slot)] = this.pinHi[i] ?? 0;
+      }
+    }
     chunk.count += 1;
+  }
+
+  /** Copy this board's pin words. `i` is the board, not the word. */
+  setPins(i: number, pins: WorldPinState): void {
+    const words = this.pinWords[i] ?? 1;
+    for (let w = 0; w < words; w++) {
+      const at = i * this.pinStride + w;
+      this.ddr[at] = pins.ddr[w] ?? 0;
+      this.level[at] = pins.level[w] ?? 0;
+      this.toggled[at] = pins.toggled[w] ?? 0;
+    }
+  }
+
+  private storedPins(chunk: Chunk, board: number, slot: number): WorldPinState {
+    const words = this.pinWords[board] ?? 1;
+    const take = (field: Uint32Array) => {
+      const out: number[] = [];
+      for (let w = 0; w < words; w++) {
+        out.push(field[channel(board * this.pinStride + w, slot)] ?? 0);
+      }
+      return out;
+    };
+    return {
+      ddr: take(chunk.ddr),
+      level: take(chunk.level),
+      toggled: take(chunk.toggled),
+    };
   }
 
   private counts() {
@@ -524,8 +618,10 @@ export class RunRecorder {
       parts: this.parts.length,
       supplies: this.supplies.length,
       boards: this.boards.length,
+      pinStride: this.pinStride,
       boardLed: this.ledOn.some(Boolean),
       leds: this.ledPaths.length,
+      pins: this.pinPaths.length,
       ranger: this.hasRanger,
     };
   }
@@ -666,9 +762,9 @@ export class RunRecorder {
     const partMax = this.parts.map(
       (_item, i) => chosen.chunk.partMax[channel(i, chosen.slot)] ?? 0
     );
-    const brown = this.boards.map(
+    const held = this.boards.map(
       (_item, i) =>
-        (chosen.chunk.brownoutAny[channel(i, chosen.slot)] ?? 0) !== 0
+        (chosen.chunk.inResetAny[channel(i, chosen.slot)] ?? 0) !== 0
     );
     const soa = this.boards.map(
       (_item, i) => (chosen.chunk.belowSoa[channel(i, chosen.slot)] ?? 0) !== 0
@@ -681,6 +777,12 @@ export class RunRecorder {
     );
     const past = this.joints.map(
       (_item, i) => chosen.chunk.limitDeg[channel(i, chosen.slot)] ?? 0
+    );
+    const pinLo = this.pinPaths.map(
+      (_item, k) => chosen.chunk.pinLo?.[channel(k, chosen.slot)] ?? 0
+    );
+    const pinHi = this.pinPaths.map(
+      (_item, k) => chosen.chunk.pinHi?.[channel(k, chosen.slot)] ?? 0
     );
     for (let index = start; index <= end; index++) {
       if (index === pick) continue;
@@ -699,8 +801,8 @@ export class RunRecorder {
         if (current > (partMax[i] ?? 0)) partMax[i] = current;
       }
       for (let i = 0; i < this.boards.length; i++) {
-        if ((slot.chunk.brownoutAny[channel(i, slot.slot)] ?? 0) !== 0) {
-          brown[i] = true;
+        if ((slot.chunk.inResetAny[channel(i, slot.slot)] ?? 0) !== 0) {
+          held[i] = true;
         }
         if ((slot.chunk.belowSoa[channel(i, slot.slot)] ?? 0) !== 0) {
           soa[i] = true;
@@ -713,6 +815,12 @@ export class RunRecorder {
       for (let i = 0; i < this.joints.length; i++) {
         const deg = slot.chunk.limitDeg[channel(i, slot.slot)] ?? 0;
         if (deg > (past[i] ?? 0)) past[i] = deg;
+      }
+      for (let k = 0; k < this.pinPaths.length; k++) {
+        const lo = slot.chunk.pinLo?.[channel(k, slot.slot)];
+        const hi = slot.chunk.pinHi?.[channel(k, slot.slot)];
+        if (lo !== undefined && lo < (pinLo[k] ?? 0)) pinLo[k] = lo;
+        if (hi !== undefined && hi > (pinHi[k] ?? 0)) pinHi[k] = hi;
       }
     }
     for (let i = 0; i < this.supplies.length; i++) {
@@ -733,10 +841,17 @@ export class RunRecorder {
       const board = this.boards[i];
       const row = board ? frame.boards[board.id] : undefined;
       if (!row) continue;
-      row.brownoutAny = brown[i] ?? row.brownoutAny;
+      row.inResetAny = held[i] ?? row.inResetAny;
       row.belowSoa = soa[i] ?? row.belowSoa;
       row.minVoltage = minBoard[i] ?? row.minVoltage;
       row.regulatorMax = maxPass[i] ?? row.regulatorMax;
+    }
+    for (let k = 0; k < this.pinPaths.length; k++) {
+      const path = this.pinPaths[k];
+      const row = path ? frame.boards[path.board]?.pinVolts?.[path.port] : null;
+      if (!row) continue;
+      row.lo = pinLo[k] ?? row.lo;
+      row.hi = pinHi[k] ?? row.hi;
     }
     for (let i = 0; i < this.joints.length; i++) {
       const spec = this.joints[i];
@@ -797,6 +912,7 @@ export class RunRecorder {
       if (!spec || !want(spec.track)) continue;
       const pulse = slot.chunk.pulse[channel(i, slot.slot)] ?? Number.NaN;
       const command = slot.chunk.command[channel(i, slot.slot)] ?? Number.NaN;
+      const torque = slot.chunk.partTorque[channel(i, slot.slot)] ?? Number.NaN;
       parts[spec.id] = {
         pulseUs: Number.isNaN(pulse) ? null : pulse,
         commandDeg: Number.isNaN(command) ? null : command,
@@ -805,6 +921,7 @@ export class RunRecorder {
         current: slot.chunk.partCurrent[channel(i, slot.slot)] ?? 0,
         maxCurrent: slot.chunk.partMax[channel(i, slot.slot)] ?? 0,
         voltage: slot.chunk.partVoltage[channel(i, slot.slot)] ?? 0,
+        ...(Number.isNaN(torque) ? {} : { torqueNm: torque }),
         ...(this.partRanger[i]
           ? {
               distanceM: Number.isNaN(
@@ -834,14 +951,10 @@ export class RunRecorder {
       const spec = this.boards[i];
       if (!spec || !want(spec.track)) continue;
       boards[spec.id] = {
-        pins: {
-          ddr: slot.chunk.ddr[channel(i, slot.slot)] ?? 0,
-          level: slot.chunk.level[channel(i, slot.slot)] ?? 0,
-          toggled: slot.chunk.toggled[channel(i, slot.slot)] ?? 0,
-        },
+        pins: this.storedPins(slot.chunk, i, slot.slot),
         running: (slot.chunk.running[channel(i, slot.slot)] ?? 0) !== 0,
-        brownout: (slot.chunk.brownout[channel(i, slot.slot)] ?? 0) !== 0,
-        brownoutAny: (slot.chunk.brownoutAny[channel(i, slot.slot)] ?? 0) !== 0,
+        inReset: (slot.chunk.inReset[channel(i, slot.slot)] ?? 0) !== 0,
+        inResetAny: (slot.chunk.inResetAny[channel(i, slot.slot)] ?? 0) !== 0,
         belowSoa: (slot.chunk.belowSoa[channel(i, slot.slot)] ?? 0) !== 0,
         voltage: slot.chunk.boardVoltage[channel(i, slot.slot)] ?? 0,
         minVoltage: slot.chunk.boardMinVoltage[channel(i, slot.slot)] ?? 0,
@@ -861,14 +974,10 @@ export class RunRecorder {
       if (!spec || boards[spec.id]) continue;
       const at = channel(i, slot.slot);
       boards[spec.id] = {
-        pins: {
-          ddr: slot.chunk.ddr[at] ?? 0,
-          level: slot.chunk.level[at] ?? 0,
-          toggled: slot.chunk.toggled[at] ?? 0,
-        },
+        pins: this.storedPins(slot.chunk, i, slot.slot),
         running: (slot.chunk.running[at] ?? 0) !== 0,
-        brownout: (slot.chunk.brownout[at] ?? 0) !== 0,
-        brownoutAny: (slot.chunk.brownoutAny[at] ?? 0) !== 0,
+        inReset: (slot.chunk.inReset[at] ?? 0) !== 0,
+        inResetAny: (slot.chunk.inResetAny[at] ?? 0) !== 0,
         belowSoa: (slot.chunk.belowSoa[at] ?? 0) !== 0,
         voltage: slot.chunk.boardVoltage[at] ?? 0,
         minVoltage: slot.chunk.boardMinVoltage[at] ?? 0,
@@ -880,6 +989,7 @@ export class RunRecorder {
       };
     }
     this.attachLeds(boards, slot);
+    this.attachPins(boards, slot);
     return {
       t: slot.timeMs / 1000,
       joints,
@@ -900,6 +1010,25 @@ export class RunRecorder {
       if (!board) continue;
       const amps = slot.chunk.leds[channel(k, slot.slot)] ?? 0;
       board.leds = { ...(board.leds ?? {}), [row.path]: amps };
+    }
+  }
+
+  private attachPins(boards: RecordedFrame["boards"], slot: Slot): void {
+    if (!slot.chunk.pinV || !slot.chunk.pinLo || !slot.chunk.pinHi) return;
+    for (let k = 0; k < this.pinPaths.length; k++) {
+      const row = this.pinPaths[k];
+      if (!row) continue;
+      const board = boards[row.board];
+      if (!board) continue;
+      const at = channel(k, slot.slot);
+      board.pinVolts = {
+        ...(board.pinVolts ?? {}),
+        [row.port]: {
+          v: slot.chunk.pinV[at] ?? 0,
+          lo: slot.chunk.pinLo[at] ?? 0,
+          hi: slot.chunk.pinHi[at] ?? 0,
+        },
+      };
     }
   }
 
@@ -950,12 +1079,12 @@ function publishEvent(event: StoredEvent): RecordingEvent | null {
       message: event.message ?? "",
     };
   }
-  if (
-    (event.kind === "reset" ||
-      event.kind === "reboot" ||
-      event.kind === "reload") &&
-    event.board
-  ) {
+  if (event.kind === "reset" && event.board) {
+    return event.cause
+      ? { t, kind: "reset", board: event.board, cause: event.cause }
+      : { t, kind: "reset", board: event.board };
+  }
+  if ((event.kind === "reboot" || event.kind === "reload") && event.board) {
     return { t, kind: event.kind, board: event.board };
   }
   if (
@@ -997,16 +1126,21 @@ function bucketIndexes(indexes: number[], maxFrames: number): number[][] {
   return out;
 }
 
-function createChunk(counts: {
+type ChunkCounts = {
   joints: number;
   bodies: number;
   parts: number;
   supplies: number;
   boards: number;
+  /** Words per board. Absent is one, so a 32-pin board keeps the old stride. */
+  pinStride?: number;
   boardLed?: boolean;
   leds?: number;
+  pins?: number;
   ranger?: boolean;
-}): Chunk {
+};
+
+function createChunk(counts: ChunkCounts): Chunk {
   return {
     start: 0,
     count: 0,
@@ -1021,6 +1155,7 @@ function createChunk(counts: {
     partCurrent: new Float32Array(counts.parts * CHUNK),
     partMax: new Float32Array(counts.parts * CHUNK),
     partVoltage: new Float32Array(counts.parts * CHUNK),
+    partTorque: new Float32Array(counts.parts * CHUNK),
     voltage: new Float32Array(counts.supplies * CHUNK),
     minVoltage: new Float32Array(counts.supplies * CHUNK),
     supplyCurrent: new Float32Array(counts.supplies * CHUNK),
@@ -1032,16 +1167,19 @@ function createChunk(counts: {
     regulatorMax: new Float32Array(counts.boards * CHUNK),
     boardLed: counts.boardLed ? new Float32Array(counts.boards * CHUNK) : null,
     leds: counts.leds ? new Float32Array(counts.leds * CHUNK) : null,
+    pinV: counts.pins ? new Float32Array(counts.pins * CHUNK) : null,
+    pinLo: counts.pins ? new Float32Array(counts.pins * CHUNK) : null,
+    pinHi: counts.pins ? new Float32Array(counts.pins * CHUNK) : null,
     rangerDistance: counts.ranger
       ? new Float32Array(counts.parts * CHUNK)
       : null,
     rangerHit: counts.ranger ? new Uint8Array(counts.parts * CHUNK) : null,
-    ddr: new Uint32Array(counts.boards * CHUNK),
-    level: new Uint32Array(counts.boards * CHUNK),
-    toggled: new Uint32Array(counts.boards * CHUNK),
+    ddr: new Uint32Array(counts.boards * (counts.pinStride ?? 1) * CHUNK),
+    level: new Uint32Array(counts.boards * (counts.pinStride ?? 1) * CHUNK),
+    toggled: new Uint32Array(counts.boards * (counts.pinStride ?? 1) * CHUNK),
     running: new Uint8Array(counts.boards * CHUNK),
-    brownout: new Uint8Array(counts.boards * CHUNK),
-    brownoutAny: new Uint8Array(counts.boards * CHUNK),
+    inReset: new Uint8Array(counts.boards * CHUNK),
+    inResetAny: new Uint8Array(counts.boards * CHUNK),
     belowSoa: new Uint8Array(counts.boards * CHUNK),
   };
 }

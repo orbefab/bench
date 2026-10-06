@@ -8,6 +8,7 @@ import {
   type LevelClass,
   type Netlist,
   type NetlistParams,
+  type ParamForward,
   type Params,
   type PartFile,
   type PartTypeFile,
@@ -57,6 +58,11 @@ export type LiveInstance = {
   part: PartFile;
   type: PartTypeFile;
   params: Params;
+  /**
+   * Params filled from the parent via `$param`. Keyed by this instance's
+   * param name. Absent when this instance forwarded none.
+   */
+  forwards?: Readonly<Record<string, ParamForward>>;
   /** Placement from the netlist instance. Absent when the instance sets none. */
   pose?: Pose;
   axes: Record<AxisName, ResolvedAxis>;
@@ -245,7 +251,9 @@ function resolveAxis(
   // The chosen level cannot express a port this scene drives. The
   // nearest other class runs instead. On a tie, the more detailed one.
   // Children do not inherit it; a fallback parent does not pass its
-  // class down. The reason is the card's warning.
+  // class down. The reason is the card's warning. The loader fills the
+  // map (`nearestFallback` in `load.ts`): today, a snapshot part whose
+  // branch does not span the ports a supply drives.
   const forced = fallbackClass?.get(instancePath);
   if (
     axis === "behaviour" &&
@@ -333,19 +341,22 @@ export type UnresolvedParam = {
 
 /**
  * A netlist child's params as plain values. `{ $param: name }` becomes the
- * parent instance's value of `name`. A name the parent lacks leaves the key
- * out and is reported, so the child never sees an `undefined`.
+ * parent instance's value of `name`, and `forwards` records that parent.
+ * A name the parent lacks leaves the key out and is reported, so the child
+ * never sees an `undefined`.
  */
 function resolveParams(
   written: NetlistParams | undefined,
   parent: Params,
+  parentPath: string,
   path: string,
   unresolved: UnresolvedParam[]
-): Params {
-  const out: Params = {};
+): { params: Params; forwards: Record<string, ParamForward> } {
+  const params: Params = {};
+  const forwards: Record<string, ParamForward> = {};
   for (const [name, value] of Object.entries(written ?? {})) {
     if (!isParamRef(value)) {
-      out[name] = value;
+      params[name] = value;
       continue;
     }
     const forwarded = Object.hasOwn(parent, value.$param)
@@ -357,9 +368,10 @@ function resolveParams(
       }
       continue;
     }
-    out[name] = forwarded;
+    params[name] = forwarded;
+    forwards[name] = { from: parentPath, param: value.$param };
   }
-  return out;
+  return { params, forwards };
 }
 
 export function resolveLevels(
@@ -383,7 +395,8 @@ export function resolveLevels(
     params: Params,
     pose?: Pose,
     parentClass?: LevelClass,
-    instanceLevel?: Partial<Record<AxisName, AxisRequest>>
+    instanceLevel?: Partial<Record<AxisName, AxisRequest>>,
+    forwards?: Readonly<Record<string, ParamForward>>
   ) => {
     const type = typeOf(lib, part);
     const axes = {
@@ -425,6 +438,7 @@ export function resolveLevels(
       part,
       type,
       params,
+      ...(forwards && Object.keys(forwards).length > 0 ? { forwards } : {}),
       ...(pose ? { pose } : {}),
       axes,
       foreign: part.foreign === true,
@@ -454,13 +468,21 @@ export function resolveLevels(
         // Ground and targets are the environment, not level rows.
         if (environmentKind(childPart.part) !== "other") continue;
         const path = childPath(instancePath, id);
+        const resolved = resolveParams(
+          child.params,
+          params,
+          instancePath,
+          path,
+          unresolved
+        );
         visit(
           childPart.part,
           path,
-          resolveParams(child.params, params, path, unresolved),
+          resolved.params,
           child.pose,
           nextParent,
-          child.level === undefined ? undefined : specAxes(child.level)
+          child.level === undefined ? undefined : specAxes(child.level),
+          resolved.forwards
         );
       }
     }
@@ -473,11 +495,15 @@ export function resolveLevels(
       : stage.part;
   if (!rootPart) throw new Error("root part did not resolve");
   // The document above the stage has no params, so a ref here is unresolved.
+  const rootParams = resolveParams(stage.params, {}, "", ROOT_PATH, unresolved);
   visit(
     rootPart,
     ROOT_PATH,
-    resolveParams(stage.params, {}, ROOT_PATH, unresolved),
-    stage.pose
+    rootParams.params,
+    stage.pose,
+    undefined,
+    undefined,
+    rootParams.forwards
   );
   instances.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { instances, appliedPaths, missing, unresolved };

@@ -16,7 +16,7 @@
         "variants": {
           "shockley": {
             "kind": "form",
-            "form": "diode@1",
+            "form": "led@1",
             "params": {
               "Is": 3.5191328433049383e-16,
               "N": 2.2204522451395414,
@@ -40,12 +40,21 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.005, 0.005, 0.008],
             "omits": ["lens", "leads"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "lens@1",
+            "size": [0.005, 0.005, 0.008],
+            "params": {
+              "color": "red"
+            },
+            "omits": ["leads", "glow with current"]
           }
         }
       }

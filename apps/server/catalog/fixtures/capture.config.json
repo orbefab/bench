@@ -52,6 +52,7 @@
       "through": "IN",
       "iSense": 1,
       "fitV": 0.002,
+      "fit": "diode@1",
       "baseline": { "level": "2", "value": 0 },
       "heldOut": "fixture",
       "staticError": true,
@@ -70,6 +71,23 @@
       "baseline": { "level": "2", "value": 0 },
       "heldOut": "fixture",
       "sourceLevel": "2"
+    },
+    {
+      "form": "position-servo@1",
+      "id": "sfab/sg90-servo@1.0.0",
+      "part": "sfab/sg90@1.0.0",
+      "sourceLevel": "2",
+      "baseline": { "level": "2", "value": 0 },
+      "heldOut": "fixture",
+      "scene": {
+        "project": "arm",
+        "world": "parts/sfab/arm-bench@1.0.0.json",
+        "instance": "servo",
+        "ms": 3000
+      },
+      "deep": { "behaviour": 2 },
+      "snap": { "behaviour": { "class": 1, "variant": "group" }, "body": 2 },
+      "vNominal": 5
     }
   ]
 }

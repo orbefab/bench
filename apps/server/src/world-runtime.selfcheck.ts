@@ -37,6 +37,9 @@ import type { FromWorker, ToWorker } from "./world/worker";
  * `step(n)` advances exactly n milliseconds of simulation.
  */
 
+// Other checks share this process; count workers from here.
+const workersBefore = worldWorkerCount();
+
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
@@ -365,8 +368,8 @@ try {
   if ("error" in attachedB) throw new Error(String(attachedB.error));
   handleB = attachedB;
   expect(
-    worldWorkerCount() === 1,
-    `one worker while shared, saw ${worldWorkerCount()}`
+    worldWorkerCount() === workersBefore + 1,
+    `one worker while shared, saw ${worldWorkerCount() - workersBefore}`
   );
   const stateA = eventsA.find((event) => event.type === "state");
   const stateB = eventsB.find((event) => event.type === "state");
@@ -510,7 +513,10 @@ try {
   await stopWorld(shared, "parts/sfab/arm-bench@1.0.0.json");
   rmSync(shared, { recursive: true, force: true });
 }
-expect(worldWorkerCount() === 0, `worker leaked (${worldWorkerCount()})`);
+expect(
+  worldWorkerCount() === workersBefore,
+  `worker leaked (${worldWorkerCount() - workersBefore})`
+);
 
 const bad = mkdtempSync(join(tmpdir(), "sfab-world-bad-"));
 try {
@@ -543,8 +549,8 @@ try {
     );
   }
   expect(
-    worldWorkerCount() === 0,
-    `invalid world left a worker (${worldWorkerCount()})`
+    worldWorkerCount() === workersBefore,
+    `invalid world left a worker (${worldWorkerCount() - workersBefore})`
   );
   const again: WorldServerMessage[] = [];
   const reattached = await withTimeout(
@@ -572,7 +578,7 @@ try {
   if (!("error" in attached)) attached.detach();
   if (!("error" in reattached)) reattached.detach();
   await stopWorld(bad, "parts/sfab/arm-bench@1.0.0.json");
-  expect(worldWorkerCount() === 0, "stop leaves no worker");
+  expect(worldWorkerCount() === workersBefore, "stop leaves no worker");
 } finally {
   rmSync(bad, { recursive: true, force: true });
 }
@@ -594,7 +600,10 @@ try {
   );
   if ("error" in attached) throw new Error(String(attached.error));
   faultHandle = attached;
-  expect(worldWorkerCount() === 1, "fault world has one worker");
+  expect(
+    worldWorkerCount() === workersBefore + 1,
+    "fault world has one worker"
+  );
   faultWorld(faultRoot, "parts/sfab/arm-bench@1.0.0.json");
   faultHandle.step(1);
   await waitUntil(
@@ -609,7 +618,10 @@ try {
       `fault message ${fault.message ?? ""}`
     );
   }
-  expect(worldWorkerCount() === 1, "a caught step fault leaves the thread up");
+  expect(
+    worldWorkerCount() === workersBefore + 1,
+    "a caught step fault leaves the thread up"
+  );
   expect(process.exitCode == null, "the host process is still running");
   const lateFault: WorldServerMessage[] = [];
   const lateFaultAttach = await withTimeout(
@@ -639,7 +651,10 @@ try {
   await stopWorld(faultRoot, "parts/sfab/arm-bench@1.0.0.json");
   rmSync(faultRoot, { recursive: true, force: true });
 }
-expect(worldWorkerCount() === 0, "fault world did not leak a worker");
+expect(
+  worldWorkerCount() === workersBefore,
+  "fault world did not leak a worker"
+);
 
 const twoRoot = mkdtempSync(join(tmpdir(), "sfab-world-two-"));
 cpSync(armDir, twoRoot, { recursive: true });

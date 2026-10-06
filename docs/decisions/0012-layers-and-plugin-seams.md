@@ -14,6 +14,9 @@ is the orchestrator plus every form adapter. The engines are TypeScript or WASM,
 so nothing stops them from running headless in Node, in a browser worker, or
 in CI, except where the code sits.
 
+(That was the tree on 2026-09-27. Since the split this ADR decided,
+`packages/sim` owns the run and `worker.ts` is a host of about 50 lines.)
+
 The owner asked for the code to decouple into levels, with the engine apart
 from the UI, perhaps with plugins, and noted that the wire tool is only one of
 many tools a robotics world simulator needs. The editor and chat are peers
@@ -42,6 +45,18 @@ Tools, the agent, and scripts change a document only through L1's typed edit
 operations (add, remove, wire, set param, set level, rename, …). There is one
 undo history per open document. Nothing above L1 writes a part file directly.
 
+**Maintenance exception (run 7, 2026-10-04).** `sfab-bench repin`
+(`apps/server/src/repin.ts`) rewrites hash fields outside the edit path:
+lock rows; an assembly check's `fixture.lock`, `children[].hash` and
+`children[].fromHash`; and a catalog snapshot's `provenance.from.hash`.
+It writes the hash the loader already computes, replacing hex in place, so
+the diff is hash lines only. It changes no document's meaning and no
+measurement. It accepts a new capture signature only when a dry capture into
+a temp catalog reproduces every other byte of the snapshot. A change that is
+more than a pin (an id set, a document an assembly check measured, a
+snapshot whose numbers would move) is refused. Writes are staged through a journal and are recoverable, not
+atomic as a set. Nothing else above L1 may use this exception.
+
 ### Plugin seams
 
 Four compile-time registries of in-repo packages, each with a written
@@ -67,8 +82,9 @@ registry with publishing and signing, because it is a security surface.
 ## Consequences
 
 ### Positive
-- The simulation runs headless (`bench run`) with no server: CI, scripts, and
-  RL can use it directly.
+- The simulation runs headless (`bench run`) with no server, so CI and
+  scripts use it directly. RL can build on it; it has no reset, observe
+  or act API yet.
 - The web client depends on the protocol, not on server code.
 - A new form, tool, importer, or engine is one package in one registry.
 - Undo, the agent, and scripts share one edit path.

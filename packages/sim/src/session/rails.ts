@@ -1,9 +1,14 @@
 /** Rails: the supply-to-board lookups, binding the rail circuits, the degraded notes, and the node latches the CPUs read. */
 
-import { arduinoPinBit, type Diagnostic } from "@sfab-bench/contract";
+import {
+  type DiagCode,
+  type Diagnostic,
+  onboardLedPath,
+  pinIndex,
+} from "@sfab-bench/contract";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 import { splitPortRef } from "@sfab-bench/parts";
-import type { RunBoard, RunPlan } from "../plan";
+import type { RunBoard, RunPart, RunPlan } from "../plan";
 import { railAttachment } from "../power-path";
 import { createRailCircuit, type RailCircuit } from "../rail-circuit";
 import { blankTrack } from "../servo";
@@ -14,7 +19,8 @@ import {
   supplyPositiveNode,
   wireGraph,
 } from "../wiring";
-import { simMs } from "./common";
+import { simMs, stepS } from "./common";
+import { bindShafts } from "./shafts";
 import { solveSupplies } from "./solve";
 import type { Load, ServoDrive, SessionState, SupplySpec } from "./state";
 
@@ -54,9 +60,11 @@ function spansOn(s: SessionState, ids: readonly string[]) {
  * The board whose 5V, VIN, or VBUS the part's power pins reach.
  * Ground wires are not followed, so a shared ground is not a second board.
  */
-function powerBoardOf(plan: RunPlan, partId: string): string | null {
-  const part = plan.parts.find((item) => item.id === partId);
-  if (!part) return null;
+export function powerBoardOf(
+  plan: RunPlan,
+  part: { id: string; pins: RunPart["pins"] }
+): string | null {
+  const partId = part.id;
   const adjacent = wireGraph(plan);
   const isGround = (full: string): boolean => {
     const end = splitPortRef(full);
@@ -88,8 +96,8 @@ function powerBoardOf(plan: RunPlan, partId: string): string | null {
         if (
           onBoard &&
           (end.port === board.voltagePin ||
-            end.port === "VIN" ||
-            end.port === "VBUS")
+            end.port === board.regulatorPin ||
+            end.port === board.usbPin)
         ) {
           found.add(board.id);
         }
@@ -104,7 +112,7 @@ function powerBoardOf(plan: RunPlan, partId: string): string | null {
 export function noteDegraded(
   s: SessionState,
   path: string,
-  code: string,
+  code: DiagCode,
   message: string
 ): void {
   if (s.degradedLive.some((row) => row.path === path && row.code === code)) {
@@ -145,7 +153,10 @@ export function bindPower(s: SessionState, plan: RunPlan) {
       const jointId =
         actuatorId === undefined ? -1 : (trnid[actuatorId * 2] ?? -1);
       if (actuatorId !== undefined && jointId >= 0) {
-        const bit = signal ? arduinoPinBit(signal.pin) : undefined;
+        const names = signal
+          ? plan.boards.find((item) => item.id === signal.boardId)?.pinOrder
+          : undefined;
+        const bit = signal && names ? pinIndex(names, signal.pin) : undefined;
         const board = signal
           ? s.boards.find((item) => item.id === signal.boardId)
           : undefined;
@@ -175,11 +186,12 @@ export function bindPower(s: SessionState, plan: RunPlan) {
       stallMs: 0,
       winding: 0,
       railSlot: -1,
-      powerBoard: powerBoardOf(plan, part.id),
+      powerBoard: powerBoardOf(plan, part),
     };
     s.loads.push(load);
   }
   bindRails(s);
+  bindShafts(s, plan);
   solveSupplies(s);
   latchSupplyNodes(s);
   stampNodes(s, simMs(s));
@@ -201,6 +213,15 @@ function supplyTerms(
   };
 }
 
+/**
+ * The board whose node a servo's current is stamped on: the one its V+
+ * reaches, else the one that drives its signal. Null means the rail's
+ * board node.
+ */
+export function loadBoard(load: Load): string | null {
+  return load.powerBoard ?? load.drive?.board?.id ?? null;
+}
+
 /** The winding sits on the powering board's 5V node, not on the terminal. */
 function motorsOf(members: readonly Load[]) {
   return members.map((load) => {
@@ -209,7 +230,7 @@ function motorsOf(members: readonly Load[]) {
     return {
       resistance: drive.law.resistance,
       k: drive.law.k,
-      boardId: load.powerBoard ?? drive.board?.id,
+      boardId: loadBoard(load) ?? undefined,
     };
   });
 }
@@ -261,8 +282,10 @@ function bindRails(s: SessionState) {
         a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
       const reachedBy = (supplyId: string) =>
         boardsSorted.filter((board) =>
-          [board.voltagePin, "VIN", "VBUS"].some((port) =>
-            suppliesOnPort(plan, board.id, port).includes(supplyId)
+          [board.voltagePin, board.regulatorPin, board.usbPin].some(
+            (port) =>
+              port !== null &&
+              suppliesOnPort(plan, board.id, port).includes(supplyId)
           )
         );
       const claimed = new Set<string>();
@@ -303,26 +326,27 @@ function bindRails(s: SessionState) {
         if (!supply || !board || !stamp) {
           return supplyPositiveNode(plan, supplyId);
         }
-        const onVin = suppliesOnPort(plan, board.id, "VIN").includes(supplyId);
-        const onVbus = suppliesOnPort(plan, board.id, "VBUS").includes(
-          supplyId
-        );
+        const regulatorNode = stamp.regulatorNode;
+        const onVin =
+          board.regulatorPin !== null &&
+          suppliesOnPort(plan, board.id, board.regulatorPin).includes(supplyId);
+        const onVbus =
+          board.usbPin !== null &&
+          suppliesOnPort(plan, board.id, board.usbPin).includes(supplyId);
         const onRail = suppliesOnPort(
           plan,
           board.id,
           board.voltagePin
         ).includes(supplyId);
         if (onVbus && stamp.vbusNode) return stamp.vbusNode;
-        if (onVin && !onRail && stamp.portNodes.VIN) {
-          return stamp.portNodes.VIN;
-        }
+        if (onVin && !onRail && regulatorNode) return regulatorNode;
         if (supply.connector === "usb" && onRail && stamp.vbusNode) {
           return stamp.vbusNode;
         }
         if (onRail) {
           return stamp.portNodes[board.voltagePin] ?? stamp.boardNode;
         }
-        if (onVin && stamp.portNodes.VIN) return stamp.portNodes.VIN;
+        if (onVin && regulatorNode) return regulatorNode;
         return stamp.boardNode;
       };
       const primaryNode = nodeFor(primary.id);
@@ -331,6 +355,7 @@ function bindRails(s: SessionState) {
         boardsSorted.map((board) => board.id)
       );
       const circuit = createRailCircuit({
+        masterS: stepS(s),
         ...supplyTerms(primary),
         motors: motorsOf(members),
         ...(islandSpans ? { spans: islandSpans } : {}),
@@ -380,31 +405,35 @@ function bindRails(s: SessionState) {
       builtIsland.add(island.id);
       continue;
     }
-    const onVin = suppliesOnPort(plan, only.id, "VIN")[0] ?? null;
+    const onVin = only.regulatorPin
+      ? (suppliesOnPort(plan, only.id, only.regulatorPin)[0] ?? null)
+      : null;
     const onRail = suppliesOnPort(plan, only.id, only.voltagePin)[0] ?? null;
     const railSupply = plan.supplies.find((item) => item.id === onRail);
     const vinSupply = plan.supplies.find((item) => item.id === onVin);
     const vbus = only.stamp.vbusNode;
-    const vinNode = only.stamp.portNodes.VIN ?? null;
+    const regulatorNode = only.stamp.regulatorNode;
     if (
       !railSupply ||
       !vinSupply ||
-      !vinNode ||
+      !regulatorNode ||
       vinSupply.id === railSupply.id
     ) {
       continue;
     }
     const usb = railSupply.connector === "usb";
     const railNode = usb ? vbus : only.stamp.boardNode;
-    if (!railNode || railNode === vinNode) continue;
+    if (!railNode || railNode === regulatorNode) continue;
     const members = island.supplyIds.flatMap((id) => groups.get(id) ?? []);
     const primary = vinSupply;
     const circuit = createRailCircuit({
+      masterS: stepS(s),
       ...supplyTerms(primary),
       motors: motorsOf(members),
       pin: only.pin,
-      ledAlias: `${only.id}.led`,
+      ledAlias: onboardLedPath(only.id),
       stamp: only.stamp,
+      owner: only.id,
       feed: "vin",
       ...(usb && vbus ? { keep: [vbus] } : {}),
       primaryId: primary.id,
@@ -453,10 +482,11 @@ function bindRails(s: SessionState) {
     );
     const circuit = shared
       ? createRailCircuit({
+          masterS: stepS(s),
           ...supplyTerms(supply),
           motors: motorsOf(members),
           ...(stamped.length === 1 && fed
-            ? { pin: fed.pin, ledAlias: `${fed.id}.led` }
+            ? { pin: fed.pin, ledAlias: onboardLedPath(fed.id) }
             : {}),
           ...(sharedSpans ? { spans: sharedSpans } : {}),
           boards: stamped.map((board) => {
@@ -478,12 +508,14 @@ function bindRails(s: SessionState) {
           }),
         })
       : createRailCircuit({
+          masterS: stepS(s),
           ...supplyTerms(supply),
           motors: motorsOf(members),
-          ...(fed ? { pin: fed.pin, ledAlias: `${fed.id}.led` } : {}),
+          ...(fed ? { pin: fed.pin, ledAlias: onboardLedPath(fed.id) } : {}),
           ...(attached.stamp && (fed?.vinFeed || attached.feed)
             ? {
                 stamp: attached.stamp,
+                ...(fed?.stamp ? { owner: fed.id } : {}),
                 feed: fed?.vinFeed ? "vin" : attached.feed,
               }
             : {}),
@@ -530,15 +562,12 @@ export function drivenBoard(
 }
 
 /**
- * Volts the ranger may read. A board on the same supply contributes its
- * latched node. A supply with no board contributes its latched terminal,
- * so a bench supply can feed the sensor on its own.
+ * Volts a ranger with no power board reads: the latched `boardNodeOf`,
+ * the node the state and the solve use for it. A supply with no board
+ * reads its terminal, so a bench supply can feed the sensor on its own.
  */
 export function latchedSupplyNode(s: SessionState, supplyId: string): number {
-  for (const [boardId, power] of s.boardPower) {
-    if (power.supplyId === supplyId) return latchedBoardNode(s, boardId);
-  }
-  return s.latchedTerminal.get(supplyId) ?? 0;
+  return s.latchedRail.get(supplyId) ?? 0;
 }
 
 /** Board node at the end of the step. With no cable this is the terminal. */
@@ -550,6 +579,26 @@ export function boardVolts(s: SessionState, boardId: string): number {
   const supplyId = s.boardPower.get(boardId)?.supplyId;
   if (!supplyId) return 0;
   return s.rails.get(supplyId)?.circuit.boardReading(boardId).voltage ?? 0;
+}
+
+/** Lowest volts on a board's node over the last solve's sub-steps. */
+export function boardMinVolts(s: SessionState, boardId: string): number {
+  const supplyId = s.boardPower.get(boardId)?.supplyId;
+  if (!supplyId) return 0;
+  return s.rails.get(supplyId)?.circuit.boardReading(boardId).min ?? 0;
+}
+
+/**
+ * Volts at the node a part's current is stamped on: its power board's
+ * node, else the rail's board node.
+ */
+export function partVolts(
+  s: SessionState,
+  supplyId: string | null,
+  board: string | null | undefined
+): number {
+  if (!supplyId) return 0;
+  return board ? boardVolts(s, board) : boardNodeOf(s, supplyId);
 }
 
 /** Node the CPU is allowed to see: the latch, not the solve in progress. */
@@ -569,10 +618,7 @@ export function latchSupplyNodes(s: SessionState) {
     s.latchedNode.set(board.id, supplyId ? boardVolts(s, board.id) : 0);
   }
   for (const supply of s.supplySpecs) {
-    s.latchedTerminal.set(
-      supply.id,
-      s.rails.get(supply.id)?.circuit.sourceVoltage(supply.id) ?? 0
-    );
+    s.latchedRail.set(supply.id, boardNodeOf(s, supply.id));
   }
 }
 

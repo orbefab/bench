@@ -18,12 +18,22 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  arduinoPinBit,
+  pinBitSet,
   type RecordingRead,
   type WorldState,
 } from "@sfab-bench/contract";
 import { SS14, thermalVoltage } from "@sfab-bench/engine-circuit";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import {
+  createRailCircuit,
+  type RailCircuit,
+} from "@sfab-bench/sim/rail-circuit";
 import { closeRootWatches } from "./projects";
+import {
+  BOD_ASSERT_V,
+  BOD_RELEASE_V,
+  RESET_HOLD_MS,
+} from "./world/chip-brownout";
 import { boardStampOf } from "./world/circuit-stamp";
 import {
   type AttachWorldOptions,
@@ -33,9 +43,6 @@ import {
 } from "./world/host";
 import { maxBoardDelta } from "./world/nano-reference";
 import { planWorld } from "./world/plan";
-import { BOD_ASSERT_V, BOD_RELEASE_V, RESET_HOLD_MS } from "./world/power";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 
 /** Frozen with the SG90 catalog fit the arm self-checks use. */
 const law = {
@@ -60,17 +67,17 @@ const nanoDir = fileURLToPath(
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
-const D13 = 1 << (arduinoPinBit("D13") ?? 13);
+/** D13 is GPIO index 13 on the Nano expose order (D0–D13, A0–A5). */
+const D13 = 13;
 
 function driveSamples(
   read: RecordingRead
 ): { fraction: number; d13: "high" | "low" | "input" }[] {
-  const bit = 1 << (arduinoPinBit("D13") ?? 13);
   return read.frames.map((frame) => {
     const pulse = frame.parts.servo?.pulseUs ?? 0;
     const pins = frame.boards.nano?.pins;
-    const driving = pins ? (pins.ddr & bit) !== 0 : false;
-    const high = pins ? (pins.level & bit) !== 0 : false;
+    const driving = pins ? pinBitSet(pins.ddr, D13) : false;
+    const high = pins ? pinBitSet(pins.level, D13) : false;
     const fraction =
       pulse > 0 ? Math.min(1, Math.max(0, (pulse - 1000) / 1000)) : 0;
     return {
@@ -128,12 +135,13 @@ function settle(
   mode: "high" | "low" | "input"
 ): { margin: number } {
   circuit.setFixed(NANO_BOARD_A + law.quiescent);
-  circuit.setD13(mode);
+  circuit.setPin("D13", mode);
   circuit.setMotor(0, fraction, 0, connected);
   let margin = Number.POSITIVE_INFINITY;
   for (let i = 0; i < SETTLE; i++) {
     circuit.solve();
-    if (circuit.resetMarginMin < margin) margin = circuit.resetMarginMin;
+    const reset = circuit.boardReading("nano").resetMargin;
+    if (reset !== null && reset < margin) margin = reset;
   }
   return { margin };
 }
@@ -668,8 +676,8 @@ try {
     const pins = board?.pins;
     const led = board?.ledCurrent;
     if (!pins || led === undefined) continue;
-    const driving = (pins.ddr & D13) !== 0;
-    const high = (pins.level & D13) !== 0;
+    const driving = pinBitSet(pins.ddr, D13);
+    const high = pinBitSet(pins.level, D13);
     if (!driving) continue;
     if (high) {
       on += 1;

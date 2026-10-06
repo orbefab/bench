@@ -1,3 +1,8 @@
+import {
+  HARNESS_LABEL,
+  type HarnessId,
+  type HarnessInfo,
+} from "@sfab-bench/contract";
 import { useEffect, useState } from "react";
 import {
   firstSetupCopy,
@@ -6,7 +11,6 @@ import {
   showFirstSetupHint,
 } from "@/chat/composer-recovery";
 import type { HarnessRefreshReason } from "@/chat/model-picker";
-import { HARNESS_LABEL, type HarnessId, type HarnessInfo } from "@/lib/harness";
 import { usePrefs } from "@/state/prefs";
 
 /** Line under the composer while this machine installs the selected provider. */

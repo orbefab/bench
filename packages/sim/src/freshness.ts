@@ -1,128 +1,102 @@
 /**
- * Whether a capture's `from.hash` still matches the part at `from.level`.
- * The variant and board instance come from the snapshot's provenance; the
- * catalog config answers only for a snapshot that predates them.
- * Table captures hash `describeNetlist(stamp, 0, "header")`. Hinge
- * captures hash the gear-train variant. One stamp or one hash per
- * snapshot per plan, not per step.
+ * Whether a capture's `from.hash` still matches its source. The level,
+ * variant and (for a sweep) the stamped instance come from the snapshot's
+ * provenance; the signature is the one the capture runner wrote
+ * (`capture-signature.ts`), read through the same capture source: the
+ * project, then the catalog. One stamp or one hash per snapshot per plan,
+ * not per step.
  */
 import type { SnapshotFile } from "@sfab-bench/contract";
-import { contentHash, loadPartById, type Store } from "@sfab-bench/parts";
 
-import { assemblyStampOf, describeNetlist } from "./circuit-stamp";
+import {
+  groupSource,
+  hingeSignature,
+  stampSignature,
+} from "./capture-signature";
+import { captureSource } from "./capture-source";
+import { assemblyStampOf } from "./circuit-stamp";
 import type { StampEnv } from "./env";
 
-export type Freshness = { checked: true; hash: string } | { checked: false };
+export type Freshness =
+  | { checked: true; hash: string }
+  | { checked: false; reason: string };
 
 /**
- * Recompute the hash the capture runner stored. A measured snapshot, or
- * a level that is neither a stampable netlist nor a gear train, is not
- * checked. The caller leaves `stale` off in that case.
+ * Recompute the signature the capture runner stored. A measured snapshot,
+ * a provenance that does not name its source, or a source that no longer
+ * builds is not checked, and says why.
  */
 export function provenanceHash(
   file: SnapshotFile,
-  opts: { catalogDir: string; worldDir: string; assetRoot: string },
+  opts: { catalogDir: string; worldDir: string },
   env: StampEnv
 ): Freshness {
   const from = file.provenance.from;
-  if (!from || file.provenance.source === "measured") return { checked: false };
+  if (file.provenance.source === "measured") {
+    return { checked: false, reason: "a measured snapshot has no source" };
+  }
+  if (!from) return { checked: false, reason: "no source part" };
+  const variant = file.provenance.variant;
+  if (!variant) {
+    return { checked: false, reason: "the provenance names no variant" };
+  }
+  const source = { level: from.level, variant };
+  const read = captureSource(opts.catalogDir, opts.worldDir, env);
+  const readPart = (id: string) => read.part(id)?.part ?? null;
+  const unbuilt = (what: string): Freshness => ({
+    checked: false,
+    reason: `${from.part} class ${from.level} variant ${variant} is not ${what}`,
+  });
   try {
     if (file.form === "hinge@1" && file.axis === "body") {
-      const hash = hingeHash(from.part, from.level, opts, env);
-      return hash ? { checked: true, hash } : { checked: false };
+      const part = readPart(from.part);
+      const hash = part ? hingeSignature(part, source) : null;
+      return hash ? { checked: true, hash } : unbuilt("a gear train");
     }
-    if (file.form !== "table@1") return { checked: false };
+    // A capture across a port pair (a table, or a law fitted to that
+    // sweep) hashes the stamp it swept. Any other behaviour snapshot was
+    // captured from the group running.
     const across = pair(file.params.across);
-    if (!across) return { checked: false };
-    const captured =
-      file.provenance.variant && file.provenance.instance
-        ? {
-            variant: file.provenance.variant,
-            instance: file.provenance.instance,
-          }
-        : captureOf(from.part, opts.catalogDir, env);
-    const variant =
-      captured?.variant ?? defaultVariant(from.part, from.level, opts, env);
-    if (!variant) return { checked: false };
+    if (file.axis === "behaviour" && !across) {
+      const group = groupSource(
+        from.part,
+        source,
+        readPart,
+        (id) => read.type(id)?.type ?? null
+      );
+      if (!group) return unbuilt("a composite");
+      if (group.nested.length > 0) {
+        return {
+          checked: false,
+          reason: `the group reaches ${group.nested.join(", ")}, whose snapshot files its signature does not cover`,
+        };
+      }
+      return { checked: true, hash: group.hash };
+    }
+    if (!across) return unbuilt("a group or a sweep");
+    const instance = file.provenance.instance;
+    if (!instance) {
+      return { checked: false, reason: "the provenance names no instance" };
+    }
     const stamp = assemblyStampOf(
       from.part,
       variant,
       {
         catalogDir: opts.catalogDir,
-        worldDir: opts.worldDir,
-        assetRoot: opts.assetRoot,
-        boardId: captured?.instance ?? "board",
+        worldDir: read.worldDir,
+        assetRoot: read.worldDir,
+        boardId: instance,
         across,
       },
       env
     );
+    return { checked: true, hash: stampSignature(stamp, source) };
+  } catch (err) {
     return {
-      checked: true,
-      hash: contentHash(describeNetlist(stamp, 0, "header")),
+      checked: false,
+      reason: err instanceof Error ? err.message : String(err),
     };
-  } catch {
-    return { checked: false };
   }
-}
-
-function hingeHash(
-  partId: string,
-  level: string,
-  opts: { catalogDir: string; worldDir: string; assetRoot: string },
-  env: StampEnv
-): string | null {
-  const found = loadPartById(opts.worldDir, libOpts(opts, env.store), partId);
-  if (!("part" in found)) return null;
-  const slot = found.part.axes?.body?.[level as "0"];
-  const impl = slot?.variants[slot.default];
-  if (!impl || impl.kind !== "gear-train") return null;
-  return contentHash(impl);
-}
-
-function defaultVariant(
-  partId: string,
-  level: string,
-  opts: { catalogDir: string; worldDir: string; assetRoot: string },
-  env: StampEnv
-): string | null {
-  const found = loadPartById(opts.worldDir, libOpts(opts, env.store), partId);
-  if (!("part" in found)) return null;
-  const slot = found.part.axes?.behaviour?.[level as "0"];
-  return slot?.default ?? null;
-}
-
-function captureOf(
-  partId: string,
-  catalogDir: string,
-  env: StampEnv
-): { variant: string; instance: string } | null {
-  const file = env.join(
-    env.absolutePath(catalogDir),
-    "fixtures",
-    "capture.config.json"
-  );
-  if (!env.store.exists(file)) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(env.store.readText(file)) as unknown;
-  } catch {
-    return null;
-  }
-  const entries = (parsed as { entries?: unknown }).entries;
-  if (!Array.isArray(entries)) return null;
-  for (const entry of entries) {
-    if (!entry || typeof entry !== "object") continue;
-    const row = entry as {
-      part?: unknown;
-      variant?: unknown;
-      instance?: unknown;
-    };
-    if (row.part !== partId) continue;
-    if (typeof row.variant !== "string" || typeof row.instance !== "string")
-      continue;
-    return { variant: row.variant, instance: row.instance };
-  }
-  return null;
 }
 
 function pair(value: unknown): [string, string] | null {
@@ -131,15 +105,4 @@ function pair(value: unknown): [string, string] | null {
   const b = value[1];
   if (typeof a !== "string" || typeof b !== "string") return null;
   return [a, b];
-}
-
-function libOpts(
-  opts: { catalogDir: string; assetRoot: string },
-  store: Store
-) {
-  return {
-    store,
-    catalogDir: opts.catalogDir,
-    assetRoot: opts.assetRoot,
-  };
 }

@@ -1,12 +1,12 @@
 import { ok as expect } from "node:assert/strict";
 import {
   CHAT_DEFAULT_WIDTH,
+  CHAT_MAX_WIDTH,
   CHAT_MIN_WIDTH,
   chatWidthAfterKey,
 } from "./layout";
 import {
   activeEscLayer,
-  compactChatSheetOpen,
   ESC_ORDER,
   escBelongsTo,
   formatShortcut,
@@ -16,6 +16,8 @@ import {
   isEditableTarget,
   isMacPlatform,
   matchesShortcut,
+  popupChatEscape,
+  popupChatOwnsEscape,
   probeEscLayers,
   SETTINGS_SHORTCUTS,
   SHORTCUTS,
@@ -317,7 +319,7 @@ expect(
 );
 
 expect(
-  ESC_ORDER.join(",") === "mention,popover-select,dialog,voice,compact-chat",
+  ESC_ORDER.join(",") === "mention,popover-select,dialog,voice,popup-chat",
   "esc order"
 );
 
@@ -330,42 +332,39 @@ expect(
   "popover before dialog"
 );
 expect(
-  activeEscLayer({ dialog: true, compactChat: true }) === "dialog",
-  "dialog before compact"
+  activeEscLayer({ dialog: true, popupChat: true }) === "dialog",
+  "dialog before popup chat"
 );
 expect(
-  activeEscLayer({ compactChat: true, voice: true }) === "voice",
-  "voice before compact"
+  activeEscLayer({ popupChat: true, voice: true }) === "voice",
+  "voice before popup chat"
 );
-expect(activeEscLayer({ voice: true }) === "voice", "voice without compact");
+expect(activeEscLayer({ voice: true }) === "voice", "voice without popup chat");
+expect(activeEscLayer({ popupChat: true }) === "popup-chat", "popup chat last");
 expect(
-  activeEscLayer({ compactChat: true }) === "compact-chat",
-  "compact last"
-);
-expect(
-  escBelongsTo("compact-chat", { compactChat: true, voice: true }) === false,
-  "compact yields to voice"
+  escBelongsTo("popup-chat", { popupChat: true, voice: true }) === false,
+  "popup chat yields to voice"
 );
 expect(
-  escBelongsTo("voice", { compactChat: true, voice: true }),
-  "voice wins over compact"
+  escBelongsTo("voice", { popupChat: true, voice: true }),
+  "voice wins over popup chat"
 );
 expect(
   escBelongsTo("voice", { dialog: true, voice: true }) === false,
   "voice yields to dialog"
 );
 expect(
-  escBelongsTo("compact-chat", { dialog: true, compactChat: true }) === false,
-  "compact yields to dialog"
+  escBelongsTo("popup-chat", { dialog: true, popupChat: true }) === false,
+  "popup chat yields to dialog"
 );
 expect(
-  escBelongsTo("compact-chat", { compactChat: true }),
-  "compact when nothing higher"
+  escBelongsTo("popup-chat", { popupChat: true }),
+  "popup chat when nothing higher"
 );
 expect(
-  escBelongsTo("compact-chat", { compactChat: true, popoverOrSelect: true }) ===
+  escBelongsTo("popup-chat", { popupChat: true, popoverOrSelect: true }) ===
     false,
-  "compact yields to file context menu"
+  "popup chat yields to file context menu"
 );
 expect(
   probeEscLayers({
@@ -402,50 +401,135 @@ expect(
   }).dialog,
   "alert-dialog slot is a dialog layer"
 );
+const composer = { id: "composer" };
+const grownCard = {
+  contains(node: unknown) {
+    return node === composer;
+  },
+};
 expect(
-  compactChatSheetOpen({
+  popupChatOwnsEscape({
+    activeElement: composer,
     querySelector(sel: string) {
-      return sel.includes("data-compact-chat") ? { id: "sheet" } : null;
+      return sel.includes("data-chat-popup") ? grownCard : null;
     },
   }),
-  "compact sheet probe"
+  "focus inside the grown card owns escape"
+);
+expect(
+  popupChatOwnsEscape({
+    activeElement: { id: "canvas" },
+    querySelector(sel: string) {
+      return sel.includes("data-chat-popup") ? grownCard : null;
+    },
+  }) === false,
+  "focus outside the card does not own escape"
+);
+expect(
+  popupChatOwnsEscape({
+    activeElement: composer,
+    querySelector() {
+      return null;
+    },
+  }) === false,
+  "a missing card does not own escape"
+);
+expect(
+  popupChatEscape({
+    popup: true,
+    open: true,
+    grown: true,
+    focusInside: true,
+    layers: {},
+  }),
+  "escape collapses a focused grown popup"
+);
+expect(
+  popupChatEscape({
+    popup: true,
+    open: true,
+    grown: true,
+    focusInside: false,
+    layers: {},
+  }) === false,
+  "escape outside the card leaves it open"
+);
+expect(
+  popupChatEscape({
+    popup: true,
+    open: true,
+    grown: false,
+    focusInside: true,
+    layers: {},
+  }) === false,
+  "the bare composer has nothing to collapse"
+);
+expect(
+  popupChatEscape({
+    popup: false,
+    open: true,
+    grown: true,
+    focusInside: true,
+    layers: {},
+  }) === false,
+  "docked chat does not collapse"
+);
+expect(
+  popupChatEscape({
+    popup: true,
+    open: false,
+    grown: true,
+    focusInside: true,
+    layers: {},
+  }) === false,
+  "a closed popup does not take escape"
+);
+expect(
+  popupChatEscape({
+    popup: true,
+    open: true,
+    grown: true,
+    focusInside: true,
+    layers: { voice: true },
+  }) === false,
+  "voice keeps escape"
+);
+expect(
+  popupChatEscape({
+    popup: true,
+    open: true,
+    grown: true,
+    focusInside: true,
+    layers: { dialog: true },
+  }) === false,
+  "a dialog keeps escape"
 );
 
 expect(
-  chatWidthAfterKey("ArrowLeft", false, 384, 1440, true) === 400,
+  chatWidthAfterKey("ArrowLeft", false, 384) === 400,
   "arrow left grows 16"
 );
 expect(
-  chatWidthAfterKey("ArrowRight", false, 384, 1440, true) === 368,
+  chatWidthAfterKey("ArrowRight", false, 384) === 368,
   "arrow right shrinks 16"
 );
+expect(chatWidthAfterKey("ArrowLeft", true, 384) === 448, "shift arrow 64");
+expect(chatWidthAfterKey("Home", false, 500) === CHAT_MIN_WIDTH, "Home is min");
 expect(
-  chatWidthAfterKey("ArrowLeft", true, 384, 1440, true) === 448,
-  "shift arrow 64"
+  chatWidthAfterKey("End", false, 384) === CHAT_MAX_WIDTH,
+  "End is the floating max"
 );
 expect(
-  chatWidthAfterKey("Home", false, 500, 1440, true) === CHAT_MIN_WIDTH,
-  "Home is min"
-);
-expect(
-  chatWidthAfterKey("End", false, 384, 1440, true) === 1440 - 304 - 480,
-  "End is layout max"
-);
-expect(
-  chatWidthAfterKey("ArrowLeft", false, 650, 1440, true) === 656,
+  chatWidthAfterKey("ArrowLeft", false, 710) === CHAT_MAX_WIDTH,
   "step still clamps"
 );
 expect(
-  chatWidthAfterKey("ArrowRight", false, 290, 1440, true) === CHAT_MIN_WIDTH,
+  chatWidthAfterKey("ArrowRight", false, 290) === CHAT_MIN_WIDTH,
   "shrink still floors"
 );
+expect(chatWidthAfterKey("Enter", false, 384) === null, "other keys ignored");
 expect(
-  chatWidthAfterKey("Enter", false, 384, 1440, true) === null,
-  "other keys ignored"
-);
-expect(
-  chatWidthAfterKey("Home", false, CHAT_DEFAULT_WIDTH, 1440, true) ===
-    CHAT_MIN_WIDTH,
+  chatWidthAfterKey("Home", false, CHAT_DEFAULT_WIDTH) === CHAT_MIN_WIDTH,
   "Home from default"
 );
 

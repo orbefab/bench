@@ -275,6 +275,7 @@ async function spawn(doc: Doc): Promise<void> {
     generation,
     ...(doc.fuseStart === "tripped" ? { fuseStart: "tripped" as const } : {}),
     ...(doc.adcTrace ? { adcTrace: true as const } : {}),
+    ...(doc.ghost ? { ghost: doc.ghost } : {}),
   } satisfies ToWorker);
   tie(doc);
   try {
@@ -305,7 +306,11 @@ async function reload(doc: Doc): Promise<void> {
   resetSerial(doc);
   const generation = doc.generation;
   const pending = waitForResult(worker, generation);
-  worker.postMessage({ type: "reload", generation } satisfies ToWorker);
+  worker.postMessage({
+    type: "reload",
+    generation,
+    ghost: doc.ghost,
+  } satisfies ToWorker);
   try {
     await pending;
   } catch (err: unknown) {
@@ -450,6 +455,7 @@ export function ensure(
       world: named.world,
       fuseStart: "cold",
       adcTrace: false,
+      ghost: null,
       subs: new Set(),
       worker: null,
       generation: 0,
@@ -546,6 +552,12 @@ export async function attachWorld(
     },
     timeline(query) {
       return timelineDoc(doc, query);
+    },
+    ghost(spec) {
+      if (sub.detached) return;
+      // Both runs start together so the ghost sees the same inputs.
+      doc.ghost = spec;
+      void startLoad(doc, "restart");
     },
     detach() {
       if (sub.detached) return;

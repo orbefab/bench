@@ -1,6 +1,5 @@
+import { emptySnapshot, type ViewerSnapshot } from "@sfab-bench/contract";
 import { treeTops } from "@/cad/tree";
-import type { ViewerSnapshot } from "@/lib/viewer-snapshot";
-import { emptySnapshot } from "@/lib/viewer-snapshot";
 import { viewerStore } from "@/state/viewer";
 import { type WorldSelection, worldLiveState, worldStore } from "@/state/world";
 

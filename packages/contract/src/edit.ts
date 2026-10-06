@@ -18,6 +18,13 @@ import type {
   Pose,
 } from "./layered";
 
+/**
+ * Why an undo or redo is refused when its step is there: a file in it no
+ * longer matches what the step wrote. The server sends it as the refusal
+ * message, and the web names it.
+ */
+export const EXTERNAL_EDIT = "the document changed outside this session";
+
 export type EditOp = (
   | AddInstanceOp
   | RemoveInstanceOp

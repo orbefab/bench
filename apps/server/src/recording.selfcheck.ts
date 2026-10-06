@@ -18,7 +18,12 @@ import {
 } from "@sfab-bench/contract";
 
 import { BROWNOUT_RESET, FIRMWARE_RELOADED } from "@sfab-bench/engine-mcu";
-
+import {
+  motionRank,
+  RunRecorder as Recorder,
+  type RunRecorder,
+  recordingFootprint,
+} from "@sfab-bench/sim/record";
 import { closeRootWatches } from "./projects";
 import {
   attachWorld,
@@ -30,12 +35,6 @@ import {
   setRecordingEnabled,
   stopWorld,
 } from "./world/host";
-import {
-  motionRank,
-  RunRecorder as Recorder,
-  type RunRecorder,
-  recordingFootprint,
-} from "./world/record";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
 
 /**
@@ -43,6 +42,9 @@ import { readDraft, writeDraft } from "./world/selfcheck-draft";
  * recording; a hex restart does not. Scrub is per subscriber.
  */
 
+const gaugeDir = fileURLToPath(
+  new URL("../../../examples/gauge/", import.meta.url)
+);
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)
 );
@@ -74,7 +76,7 @@ function fill(
     state?: "idle" | "moving" | "stall";
     current?: number;
     ddr?: number;
-    brownout?: boolean;
+    inReset?: boolean;
     command?: number;
   }
 ) {
@@ -85,10 +87,12 @@ function fill(
   rec.state[0] = motionRank(sample.state ?? "idle");
   rec.partCurrent[0] = sample.current ?? 0.01;
   rec.voltage[0] = sample.voltage ?? 5;
+  rec.voltageLow[0] = rec.voltage[0];
   rec.supplyCurrent[0] = 0.06;
+  rec.supplyCurrentHigh[0] = 0.06;
   rec.ddr[0] = sample.ddr ?? 0;
   rec.running[0] = 1;
-  rec.brownout[0] = sample.brownout ? 1 : 0;
+  rec.inReset[0] = sample.inReset ? 1 : 0;
 }
 
 function unitRecorder(boundMs?: number): RunRecorder {
@@ -147,7 +151,10 @@ expect(
 );
 close(closed?.supplies.usb?.minVoltage ?? 0, 1.2, "min voltage");
 close(closed?.supplies.usb?.voltage ?? 0, 5, "the value at t recovered");
-expect(closed?.boards.uno?.pins.ddr === 10, "pins are the sample at the frame");
+expect(
+  closed?.boards.uno?.pins.ddr[0] === 10,
+  "pins are the sample at the frame"
+);
 console.log("recorder: 10 ms frames, frameAt, and the 1 ms dip");
 
 const shaped = unitRecorder();
@@ -184,10 +191,16 @@ close(
   0.4,
   "the skipped frame keeps its minimum voltage"
 );
-expect(first?.boards.uno?.pins.ddr === 2, "the pin mask is the picked frame's");
+expect(
+  first?.boards.uno?.pins.ddr[0] === 2,
+  "the pin mask is the picked frame's"
+);
 expect(msOf(second?.t ?? -1) === 30, "the second bucket picks the last frame");
 expect(second?.parts.servo?.worst === "stall", "the skipped stall is kept");
-expect(second?.boards.uno?.pins.ddr === 4, "the later pin mask is not blended");
+expect(
+  second?.boards.uno?.pins.ddr[0] === 4,
+  "the later pin mask is not blended"
+);
 console.log("recorder: downsample picks frames and keeps extremes");
 
 const bounded = unitRecorder(30);
@@ -370,6 +383,12 @@ try {
     supplies: foot.tracks.supplies.length,
     boards: foot.tracks.boards.length,
   });
+  // Per row: time 4; joint 8; body 28; part 26 (pulse, command, current,
+  // max, voltage, torque 4 each; state, worst 1 each); supply 20; board 32.
+  expect(
+    bytes.bytesPerFrame === 4 + 8 + 2 * 28 + 26 + 20 + 32,
+    `arm bench ${bytes.bytesPerFrame} B/frame`
+  );
   console.log(
     `fixture: ${foot.tracks.bodies.length} bodies, ${foot.tracks.joints.length} joint, ` +
       `${bytes.bytesPerFrame} B/frame, ${(bytes.bytesPerMinute / 1024).toFixed(1)} KiB/min`
@@ -433,6 +452,38 @@ try {
   await stopWorld(armDir, "parts/sfab/arm-bench@1.0.0.json");
 }
 
+// Each posted state drains the board's serial. Stepping one millisecond
+// at a time drains it inside each gauge line, and the recording still
+// holds every byte.
+{
+  const world = "parts/sfab/gauge-scene@1.0.0.json";
+  const trace = openTrace(gaugeDir, world);
+  const attached = await trace.attached;
+  if ("error" in attached) throw new Error(attached.error);
+  try {
+    for (let ms = 1; ms <= 1500; ms++) {
+      attached.step(1);
+      await trace.at(ms / 1000);
+    }
+    const read = await readRecording(gaugeDir, world, { from: 0, to: 1.5 });
+    if ("error" in read) throw new Error(read.error);
+    const ring = readSerial(gaugeDir, world, "nano", 0);
+    if ("error" in ring) throw new Error(ring.error);
+    const printed = serialOf(read.events, "nano");
+    expect(
+      printed === ring.text,
+      `stepped serial ${JSON.stringify(printed)} ring ${JSON.stringify(ring.text)}`
+    );
+    expect(printed.includes("vcc,"), "the gauge printed no vcc line");
+    console.log(
+      `stepped recording: ${printed.length} serial bytes match the ring`
+    );
+  } finally {
+    attached.detach();
+    await stopWorld(gaugeDir, world);
+  }
+}
+
 const demo2 = await recordedRun(
   armDir,
   "parts/sfab/arm-stall@1.0.0.json",
@@ -459,8 +510,9 @@ try {
       `arm ${deg(angle).toFixed(3)}° at ${frame.t.toFixed(3)} s reached the stop ${deg(upper).toFixed(3)}°`
     );
   }
-  // The capacitors hold the board node during the brownout.
-  expect(Math.abs(minV - 2.099) <= 0.02, `recorded minimum ${minV} V`);
+  // The servo opens at the sub-step the node crosses assert, so the rail
+  // undershoots it by about one 0.1 ms sub-step of slew.
+  expect(Math.abs(minV - 2.557) <= 0.02, `recorded minimum ${minV} V`);
   expect(resets.length >= 1, "no recorded reset within 2 s");
   expect(
     reboots.length === resets.length,
@@ -491,9 +543,9 @@ try {
     if (frame.t <= firstReset.t || frame.t >= firstReboot.t) continue;
     const board = frame.boards.uno;
     expect(
-      board?.brownout === true &&
-        board.pins.ddr === 0 &&
-        board.pins.level === 0,
+      board?.inReset === true &&
+        board.pins.ddr[0] === 0 &&
+        board.pins.level[0] === 0,
       `driven at ${frame.t.toFixed(3)} s`
     );
   }

@@ -1,22 +1,17 @@
 import { ok as expect } from "node:assert/strict";
 import {
-  CANVAS_MIN_WIDTH,
   CHAT_DEFAULT_WIDTH,
   CHAT_MAX_WIDTH,
   CHAT_MIN_WIDTH,
-  chatLayoutWidth,
-  chatMaxForWindow,
   clampChatDrag,
   clampStoredChatWidth,
   detailPanelWidth,
-  FILES_RAIL_WIDTH,
   fitBelowInsets,
   fitBesideInsets,
   fitCardsReady,
   fitDistanceScale,
   fitInsets,
   fitPanNdc,
-  isCompactChat,
   OVERLAY_CLUSTER_GAP,
   OVERLAY_LEFT,
   OVERLAY_RIGHT,
@@ -26,8 +21,11 @@ import {
   PART_TREE_WIDTH,
   preferredChatWidth,
   TOOLBAR_TOP,
+  TOOLBAR_WIDTH,
   toolbarLayout,
   toolbarRightReserve,
+  WORLD_FLOAT_RIGHT,
+  WORLD_TOOLBAR_WIDTH,
 } from "./layout";
 
 expect(preferredChatWidth(100) === CHAT_MIN_WIDTH, "stored below min");
@@ -36,54 +34,15 @@ expect(preferredChatWidth(384.4) === 384, "rounds");
 expect(clampStoredChatWidth(720) === 720, "persist path keeps 720");
 expect(clampStoredChatWidth(200) === 280, "persist path still has 280 floor");
 
-expect(isCompactChat(980, false), "980px is compact (max-width: 980px)");
-expect(isCompactChat(979, true), "below 980 compact");
-expect(isCompactChat(981, false) === false, "981 without rail is docked");
-expect(isCompactChat(1024, true), "1024 + rail cannot hold 304+280+480");
-expect(
-  isCompactChat(1064, true) === false,
-  "exactly rail+min chat+canvas stays docked"
-);
-expect(isCompactChat(1280, true) === false, "1280 + rail is docked");
-expect(isCompactChat(900, true), "900 is compact");
-expect(isCompactChat(800, false), "800 tab is compact even with rail closed");
-
-expect(
-  chatMaxForWindow(1440, true) === 1440 - 304 - 480,
-  "1440 rail leaves 656 for chat"
-);
-expect(
-  chatLayoutWidth(720, 1440, true) === 656,
-  "layout clamps 720 so canvas stays 480"
-);
 expect(
   clampStoredChatWidth(720) === 720,
   "layout clamp does not rewrite stored 720"
 );
-expect(chatLayoutWidth(384, 1440, true) === 384, "default fits at 1440");
+expect(clampChatDrag(800) === CHAT_MAX_WIDTH, "drag stays within 720");
+expect(clampChatDrag(200) === CHAT_MIN_WIDTH, "drag still has 280 floor");
 expect(
-  chatLayoutWidth(720, 1280, true) === 1280 - 304 - 480,
-  "1280 clamps stored 720"
-);
-expect(clampChatDrag(800, 1440, true) === 656, "drag cannot starve the canvas");
-expect(clampChatDrag(200, 1440, true) === 280, "drag still has 280 floor");
-expect(
-  clampChatDrag(CHAT_DEFAULT_WIDTH, 1440, true) === CHAT_DEFAULT_WIDTH,
+  clampChatDrag(CHAT_DEFAULT_WIDTH) === CHAT_DEFAULT_WIDTH,
   "double-click default"
-);
-
-expect(
-  chatLayoutWidth(720, 900, true) === 720,
-  "900×90vw is above max so stored 720 wins"
-);
-expect(
-  chatLayoutWidth(720, 600, true) === Math.floor(600 * 0.9),
-  "compact sheet is min(stored, 90vw)"
-);
-expect(chatLayoutWidth(280, 900, true) === 280, "compact keeps 280");
-expect(
-  chatLayoutWidth(500, 500, false) === Math.floor(500 * 0.9),
-  "compact 90vw when stored is wider"
 );
 
 const overlaysWide = overlayLayout(800);
@@ -271,6 +230,64 @@ expect(squeezed.stacked, "tiny canvas offsets the toolbar");
 expect(squeezed.top === TOOLBAR_TOP, "stays on the top row, not over PartTree");
 expect(squeezed.left >= 12, "offset toolbar stays on the canvas");
 
+expect(WORLD_TOOLBAR_WIDTH === 240, "world bar is home plus five tools");
+expect(WORLD_FLOAT_RIGHT === 332, "float column ends at left-3 plus w-80");
+const worldFree = toolbarLayout({
+  canvasWidth: 900,
+  leftReserve: WORLD_FLOAT_RIGHT,
+  rightReserve: 12,
+  barWidth: WORLD_TOOLBAR_WIDTH,
+});
+const worldGap = 900 - WORLD_FLOAT_RIGHT - 12;
+expect(
+  worldFree.stacked === false,
+  "900px stage keeps the bar beside the tree"
+);
+expect(
+  worldFree.left === WORLD_FLOAT_RIGHT + (worldGap - WORLD_TOOLBAR_WIDTH) / 2,
+  "world bar centers in the free rect"
+);
+expect(
+  worldFree.left >= WORLD_FLOAT_RIGHT,
+  "world bar starts to the right of the column"
+);
+expect(
+  worldFree.left + WORLD_TOOLBAR_WIDTH <= 900 - 12,
+  "world bar ends before the right reserve"
+);
+const dockedViewer = toolbarLayout({
+  canvasWidth: 640,
+  leftReserve: WORLD_FLOAT_RIGHT,
+  rightReserve: toolbarRightReserve(false, false),
+  barWidth: WORLD_TOOLBAR_WIDTH,
+});
+expect(
+  dockedViewer.stacked === false,
+  "a 640px docked viewer still clears the tree"
+);
+expect(
+  dockedViewer.left >= WORLD_FLOAT_RIGHT,
+  "docked bar stays to the right of the column"
+);
+const worldTight = toolbarLayout({
+  canvasWidth: 520,
+  leftReserve: WORLD_FLOAT_RIGHT,
+  rightReserve: 12,
+  barWidth: WORLD_TOOLBAR_WIDTH,
+});
+expect(worldTight.stacked, "a stage narrower than the bar drops the column");
+expect(worldTight.top === TOOLBAR_TOP, "the bar stays on the top row");
+const cadDefault = toolbarLayout({
+  canvasWidth: 752,
+  leftReserve: OVERLAY_LEFT,
+  rightReserve: 48,
+});
+expect(
+  cadDefault.left ===
+    OVERLAY_LEFT + (752 - OVERLAY_LEFT - 48 - TOOLBAR_WIDTH) / 2,
+  "omitted bar width is the CAD bar"
+);
+
 expect(toolbarRightReserve(false, false) === 12, "padding only");
 expect(toolbarRightReserve(true, false) === 12 + 44, "chat toggle");
 expect(toolbarRightReserve(false, true) === 12 + 140, "Enter Studio");
@@ -279,21 +296,6 @@ expect(toolbarRightReserve(true, false, true) === 12 + 220, "live chip");
 expect(
   toolbarRightReserve(true, true, true) === 12 + 140 + 220 + 8,
   "live chip plus Enter Studio"
-);
-
-const needed = FILES_RAIL_WIDTH + CHAT_MIN_WIDTH + CANVAS_MIN_WIDTH;
-expect(needed === 1064, "rail + min chat + canvas");
-expect(
-  isCompactChat(needed - 1, true),
-  "one pixel under the floor sheets chat"
-);
-expect(
-  chatLayoutWidth(720, needed, true) === 280,
-  "at the floor chat is min width"
-);
-expect(
-  needed - FILES_RAIL_WIDTH - 280 === CANVAS_MIN_WIDTH,
-  "canvas keeps 480 when docked at the floor"
 );
 
 console.log("layout.selfcheck ok");

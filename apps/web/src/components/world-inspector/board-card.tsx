@@ -1,20 +1,18 @@
 /** The board card: pins, LEDs, serial console and firmware source for one live board. */
 
-import {
-  ARDUINO_PINS,
-  maskHasPin,
-  type WorldPinState,
-} from "@sfab-bench/contract";
+import { onboardLedPath, type WorldPinState } from "@sfab-bench/contract";
 import { SerialConsole } from "@/components/SerialConsole";
 import { SourceView } from "@/components/SourceView";
 import { sendBoardSerial } from "@/hooks/useWorldRun";
 import { ampsText } from "@/lib/amps-text";
 import {
   boardStatusLabel,
-  boardWarningLine,
+  boardWarningLines,
+  ledLabel,
   recordedSoaLine,
   scrubbedBoardStatus,
 } from "@/lib/board-status";
+import { pinRows } from "@/lib/pin-rows";
 import { faultUntil, resetsUntil, serialUntil } from "@/lib/timeline";
 import { relFromWorldFile } from "@/lib/world-assets";
 import type { WorldOutlineBoard, WorldOutlinePart } from "@/lib/world-outline";
@@ -60,11 +58,13 @@ function pulseOnPin(
 }
 
 function PinTable({
+  names,
   pins,
   boardId,
   parts,
   live,
 }: {
+  names: readonly string[];
   pins: WorldPinState | undefined;
   boardId: string;
   parts: readonly WorldOutlinePart[];
@@ -74,6 +74,13 @@ function PinTable({
     return (
       <p className="mb-3 text-[12px] text-muted-foreground">
         Pins appear with the next state.
+      </p>
+    );
+  }
+  if (names.length === 0) {
+    return (
+      <p className="mb-3 text-[12px] text-muted-foreground">
+        This board exposes no GPIO pins.
       </p>
     );
   }
@@ -90,25 +97,24 @@ function PinTable({
         </tr>
       </thead>
       <tbody>
-        {ARDUINO_PINS.map((pin) => {
-          const active = maskHasPin(pins.toggled, pin);
-          const pulse = pulseOnPin(boardId, pin, parts, live);
+        {pinRows(names, pins).map((row) => {
+          const pulse = pulseOnPin(boardId, row.name, parts, live);
           const width =
             pulse === undefined || pulse === null
               ? null
               : `${Math.round(pulse)} µs`;
           return (
-            <tr key={pin} className="font-mono">
-              <td>{pin}</td>
-              <td>{maskHasPin(pins.ddr, pin) ? "out" : "in"}</td>
-              <td>{maskHasPin(pins.level, pin) ? "H" : "L"}</td>
+            <tr key={row.name} className="font-mono">
+              <td>{row.name}</td>
+              <td>{row.dir}</td>
+              <td>{row.level}</td>
               <td className="whitespace-nowrap">
-                {active ? (
+                {row.active ? (
                   <span title="Toggled since the last state">●</span>
                 ) : null}
                 {width ? (
                   <span title="Servo pulse width">
-                    {active ? " " : ""}
+                    {row.active ? " " : ""}
                     {width}
                   </span>
                 ) : null}
@@ -124,7 +130,7 @@ function PinTable({
 function extraLeds(boardId: string, leds: Record<string, number> | undefined) {
   if (!leds) return null;
   const rows = Object.entries(leds).filter(
-    ([path]) => path !== `${boardId}.led`
+    ([path]) => path !== onboardLedPath(boardId)
   );
   if (rows.length === 0) return null;
   return rows.map(([path, amps]) => (
@@ -157,12 +163,14 @@ export function BoardBody({
     scrub.playhead !== null
       ? faultUntil(markers, id, scrub.playhead)
       : undefined;
+  // A scrubbed frame shows only what was recorded. The live run's
+  // `unpowered` can belong to another build (a parked strip, a recording
+  // id reused after the worker restarts), so it is not merged in.
   const statusBoard = recorded
     ? {
         running: recorded.running,
-        brownout: recorded.brownout || recorded.brownoutAny,
+        inReset: recorded.inReset || recorded.inResetAny,
         ...(pastFault ? { fault: pastFault } : {}),
-        ...(live?.unpowered ? { unpowered: true } : {}),
       }
     : live;
   const serialText =
@@ -199,7 +207,7 @@ export function BoardBody({
         }
       />
       <Field
-        label="5V"
+        label={info?.voltagePin ?? "Board voltage"}
         value={
           scrub.playhead !== null
             ? recorded
@@ -214,20 +222,22 @@ export function BoardBody({
         <Field label="Min" value={voltsText(recorded.minVoltage)} />
       ) : null}
       {ledCurrent === undefined ? null : (
-        <Field label="D13 LED" value={ampsText(ledCurrent)} />
+        <Field label={ledLabel(info?.ledPin)} value={ampsText(ledCurrent)} />
       )}
       {extraLeds(id, scrub.playhead !== null ? recorded?.leds : live?.leds)}
-      <SoaLine
-        text={
-          recorded
-            ? recordedSoaLine(
-                recorded.belowSoa,
-                recorded,
-                info?.brownoutVoltage
-              )
-            : boardWarningLine(live?.warnings)
-        }
-      />
+      {recorded ? (
+        <SoaLine
+          text={recordedSoaLine(recorded.belowSoa, recorded, {
+            brownoutVoltage: info?.brownoutVoltage,
+            minOperatingVoltage: info?.minOperatingVoltage,
+            clock: info?.clock,
+          })}
+        />
+      ) : (
+        boardWarningLines(live?.warnings).map((line) => (
+          <SoaLine key={line} text={line} />
+        ))
+      )}
       <Field label="Resets" value={resets} />
       <div className="mb-3 flex h-36 flex-col overflow-hidden rounded-md border border-border">
         <SerialConsole
@@ -240,6 +250,7 @@ export function BoardBody({
         />
       </div>
       <PinTable
+        names={info?.pins ?? []}
         pins={pins}
         boardId={id}
         parts={outlineParts}

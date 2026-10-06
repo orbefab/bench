@@ -13,6 +13,8 @@ const HELP = `sfab-bench — CAD workbench
   sfab-bench open <dir> --dev
   sfab-bench run <projectDir> <world> [--ms N]
   sfab-bench convert <world.json>
+  sfab-bench repin [--dry] [<dir>...]
+                          re-stamp lock and check hashes after a part edit
 `;
 
 async function main() {
@@ -40,6 +42,10 @@ async function main() {
     const rel = (file: string) => relative(project, file) || file;
     process.stdout.write(`${rel(wrote.partFile)}\n${rel(wrote.lockFile)}\n`);
     return;
+  }
+  if (action.kind === "repin") {
+    const { repinCli } = await import("./repin-cli");
+    process.exit(await repinCli(action));
   }
   if (action.kind === "run") {
     const project = resolveRunProject(action.project);

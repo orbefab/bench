@@ -12,9 +12,9 @@
   "axes": {
     "behaviour": {
       "1": {
-        "default": "table",
+        "default": "diode",
         "variants": {
-          "table": {
+          "diode": {
             "kind": "snapshot",
             "ref": "sfab/led-module-red@1.0.0",
             "omits": ["temperature", "colour", "capacitance"]
@@ -31,9 +31,13 @@
               "instances": {
                 "r": {
                   "part": "sfab/resistor@1.0.0",
-                  "params": { "R": 220 }
+                  "params": {
+                    "R": 220
+                  }
                 },
-                "led": { "part": "sfab/led-red@1.0.0" }
+                "led": {
+                  "part": "sfab/led-red@1.0.0"
+                }
               },
               "wires": [["r.B", "led.A"]],
               "expose": {
@@ -49,18 +53,31 @@
       "0": {
         "default": "none",
         "variants": {
-          "none": { "kind": "none", "omits": ["package body"] }
+          "none": {
+            "kind": "none",
+            "omits": ["package body"]
+          }
         }
       }
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.01, 0.005, 0.008],
             "omits": ["lens", "leads"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "lens@1",
+            "size": [0.01, 0.005, 0.008],
+            "params": {
+              "color": "red",
+              "board": "#1f6f43"
+            },
+            "omits": ["resistor", "header pins", "glow with current"]
           }
         }
       }

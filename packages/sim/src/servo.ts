@@ -37,7 +37,7 @@ export function commandDegFromPulse(us: number): number | null {
 }
 
 /**
- * One millisecond of one servo. `pulsesUs` are the widths completed during
+ * One master step of one servo. `pulsesUs` are the widths completed during
  * this step. No signal leaves the joint limp: the caller applies no motor
  * voltage. The position loop itself is the motor law, not a slew.
  */
@@ -69,11 +69,8 @@ export function trackServo(input: {
     commandDeg = command;
     seen = input.simTime;
   }
-  // Round to whole steps: MuJoCo's time is a float sum of 0.001 s steps.
-  if (
-    seen !== null &&
-    Math.round((input.simTime - seen) * 1000) > SIGNAL_GAP_MS
-  ) {
+  // MuJoCo's time is a float sum of steps: the slack absorbs that sum.
+  if (seen !== null && (input.simTime - seen) * 1000 > SIGNAL_GAP_MS + 1e-6) {
     pulseUs = null;
     commandDeg = null;
     seen = null;

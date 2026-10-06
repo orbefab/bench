@@ -1,61 +1,95 @@
 /** The run's plan, built from loadWorldV2 (layered-sim E7, 318b899). */
 
 import {
-  arduinoPinBit,
   type BehaviourImpl,
   type BodyImpl,
+  type ChipClock,
+  composePose,
   DEFAULT_TIMESTEP_S,
+  type DiagCode,
   type Diagnostic,
+  isParamRef,
+  type LogicRatings,
   type PortDecl,
   type Pose,
+  pinIndex,
   ROOT_PATH,
   type RunReport,
   SUPPLY_FORMS,
+  stepsPerMs,
   type VisualImpl,
+  type VisualParam,
+  WORLD_ERROR_CODES,
   type WorldError,
+  type WorldErrorCode,
   type WorldPrimitive,
   type WorldStepProp,
   type WorldTarget,
+  type WorldViewForm,
   type WorldViewNode,
   type WorldViewTree,
 } from "@sfab-bench/contract";
 import { collapse } from "@sfab-bench/engine-body";
-import { type AvrPinParams, avrPinParams } from "@sfab-bench/engine-circuit";
+import type { AvrPinParams } from "@sfab-bench/engine-circuit";
 import {
   assetDir,
   type BatteryParams,
-  envelopeOf,
   gearTrainErrors,
   type LiveInstance,
   type LiveNet,
+  type LoadedSnapshot,
   type LoadResult,
   loadWorldV2,
   makeDiag,
   mergeFormParams,
+  pinMapRefused,
+  sha256Bytes,
   siValue,
-  tableLawOf,
   type Wire,
   type WireEnd,
 } from "@sfab-bench/parts";
-import { boardHostOf, chipExposure, chipFactsOf, wireOf } from "./chip-host";
+import {
+  noteAccuracy,
+  type RunInput,
+  recordPathFor,
+  runContext,
+} from "./accuracy";
+import {
+  adcHeaderLabels,
+  boardGpio,
+  boardHostOf,
+  boardResetPort,
+  chipClock,
+  chipExposure,
+  chipFactsOf,
+  missingChipFacts,
+} from "./chip-host";
 import {
   type AssignedPart,
   assignNodes,
   type BoardStamp,
+  boundPairs,
   type CircuitInst,
+  circuitInstOf,
   circuitNumbers,
   connectorPort,
+  formGapSentence,
   groundPorts,
   isCircuitForm,
   ldoLaw,
   liveNets,
   railPowerPorts,
+  regulatorInputPort,
   stampBoard,
+  tableInstOf,
+  withWatch,
 } from "./circuit-stamp";
 import type { PlanEnv, StampEnv } from "./env";
 import { formAdapter } from "./forms";
 import { provenanceHash } from "./freshness";
-import type { RangerLaw, RunRanger } from "./ranger";
+import { gpioIndex } from "./gpio-binding";
+import type { PlacedRanger, RunRanger } from "./ranger";
+import { coupleShafts, type RunControl, type RunShaft } from "./shafts";
 import { readTargets } from "./targets";
 import { runTree } from "./tree";
 import { type PowerWiring, suppliesOnPort } from "./wiring";
@@ -77,6 +111,8 @@ export type RunPin = {
   output: boolean;
   digital: boolean;
   pwm: boolean;
+  /** The port's input thresholds. A stamped GPIO reads its node against them. */
+  logic?: LogicRatings;
 };
 
 export type RunMotor = {
@@ -114,6 +150,8 @@ export type RunBoard = {
   source?: string;
   pose: Pose;
   size: [number, number, number];
+  /** A `form` visual, drawn inside the box. Absent: a plain box. */
+  form?: WorldViewForm;
   pins: Record<string, RunPin>;
   /** Pins a supply may power. On the Uno that is `5V`, not `VIN`. */
   powerInputs: readonly string[];
@@ -123,6 +161,16 @@ export type RunBoard = {
    */
   vinFeed: boolean;
   voltagePin: string;
+  /**
+   * The regulator input (`VIN` on the Nano and Uno, `RAW` on the Pro Micro),
+   * from `regulatorInputPort`. Null when the board has none.
+   */
+  regulatorPin: string | null;
+  /**
+   * The USB connector's power port (`VBUS` on the Nano and Uno), the port
+   * the type marks `connector: "usb"`. Null when the board has none.
+   */
+  usbPin: string | null;
   groundPin: string;
   /** Amperes drawn by the board, independent of voltage. */
   current: number;
@@ -133,16 +181,30 @@ export type RunBoard = {
   /** V_RST / VCC, from the chip part. */
   resetFraction: number;
   /**
-   * Wire bit to the chip pin the board's header port reaches through its
-   * `expose` table. Absent on a board that is its own chip: the default
-   * Arduino header applies.
+   * Exposed GPIO header names, in pin-state order. Empty when this board
+   * exposes no chip pin the emulator knows. Internal pins (an onboard
+   * LED) are not in this list; they are appended on `driveOrder`.
    */
-  wire?: (string | null)[];
+  pinOrder: readonly string[];
+  /**
+   * Header names in CPU pin-state order, including internal pins the
+   * stamp drives. `pinOrder` is the prefix. Absent when the two match.
+   */
+  driveOrder?: readonly string[];
+  /** Chip pin name for each drive-order entry. Same length, same order. */
+  wire: readonly string[];
+  /**
+   * ADC channel to the header label from this board's expose. Absent on a
+   * hand-built plan, which keeps the `A` plus channel-index names.
+   */
+  adcLabels?: Readonly<Record<number, string>>;
   /**
    * Volts. A running chip above its brownout level and below this is outside
    * its specification. Null when the chip part gives no such band.
    */
   minOperatingVoltage: number | null;
+  /** The chip's name and clock for warning text. Null: not in the registry. */
+  clock: ChipClock | null;
   /**
    * Circuit parts on this board's nets, including its board netlist.
    * Absent when there are none.
@@ -151,6 +213,8 @@ export type RunBoard = {
   brownoutVoltage: number;
   brownoutAssertVoltage: number;
   brownoutReleaseVoltage: number;
+  /** Milliseconds reset stays after the rail releases. From `resetHoldS`. */
+  resetHoldMs: number;
   operatingVoltage: number;
   supply: { min: number; max: number };
   /** `avr-pin@1`. High is the board node. The ADC and the Nano D13 stamp use it. */
@@ -197,6 +261,8 @@ export type RunBox = {
   id: string;
   pose: Pose;
   size: [number, number, number];
+  /** A `form` visual, drawn inside the box. Absent: a plain box. */
+  form?: WorldViewForm;
   pick: "part" | "supply";
 };
 
@@ -207,7 +273,15 @@ export type RunPart = {
   /** Part type id, for example `hobby-servo-3wire`. */
   type: string;
   pins: Record<string, RunPin>;
-  drive: { kind: "servo"; pin: string };
+  /**
+   * `pin` is the type's one logic input. `gpio` is the board pin on its
+   * net (`gpio-binding.ts`); absent when none or more than one is.
+   */
+  drive: {
+    kind: "servo";
+    pin: string;
+    gpio?: { boardId: string; pin: string };
+  };
   supply?: { nominal: number; min: number; max: number };
   torqueNm?: number;
   motor?: RunMotor;
@@ -220,9 +294,17 @@ export type RunPart = {
     ref: string;
     bounds: Record<string, [number, number]>;
   };
+  /**
+   * Set when the behaviour is a snapshot run as its form. The run checks
+   * the part's own current and voltage against these bounds.
+   */
+  behaviourSnapshot?: {
+    ref: string;
+    bounds: Record<string, [number, number]>;
+  };
 };
 
-export type { RunRanger };
+export type { RunControl, RunRanger, RunShaft };
 
 /**
  * What one run executes. Not a file format. Instance ids are the ones
@@ -262,6 +344,12 @@ export type RunPlan = {
    * `build` always sets this, possibly empty.
    */
   rangers?: RunRanger[];
+  /**
+   * A placed form casts rays into the body world (`FormAdapter.rays`).
+   * The body model then keeps only targets and static primitives in the
+   * ray group. Absent: no form casts.
+   */
+  rays?: boolean;
   /** Electrical pairs only. Mechanical links are `parts[].drives`. */
   wires: [string, string][];
   /** The scene's own electrical wires as authored, for the cards. */
@@ -271,10 +359,19 @@ export type RunPlan = {
   /** Run report from the loader. The worker keeps it and amends envelope warnings. */
   report?: RunReport | null;
   /**
+   * The run's context (`runContext` in `accuracy.ts`), the run an assembly
+   * check's record names. Present only when the caller asked for it.
+   */
+  context?: string;
+  /**
    * A part whose non-ground nets touch two boards. Stamped once on the
    * island rail, with both boards' node names. Absent when there are none.
    */
   spans?: { part: AssignedPart; boards: string[] }[];
+  /** Joints that circuit parts turn or read. Absent when there are none. */
+  shafts?: RunShaft[];
+  /** `servo-control@1` parts. Absent when there are none. */
+  controls?: RunControl[];
   /**
    * Parts that sit idle or fell back. The run still starts. Absent when
    * every part placed.
@@ -296,12 +393,10 @@ function schema(message: string, filePath = ""): WorldError {
 }
 
 function fromDiag(diag: Diagnostic): WorldError {
-  const missing = diag.message.includes("does not exist");
-  return {
-    code: missing ? "missing-file" : "schema",
-    path: diag.path,
-    message: diag.message,
-  };
+  const code = (WORLD_ERROR_CODES as readonly string[]).includes(diag.code)
+    ? (diag.code as WorldErrorCode)
+    : "schema";
+  return { code, path: diag.path, message: diag.message };
 }
 
 function opened(
@@ -377,17 +472,31 @@ function pinOf(decl: PortDecl): RunPin | null {
     };
   }
   if (decl.role === "logic" && decl.direction === "inout") {
+    const logic = decl.ratings?.logic;
     return {
       kind: "gpio",
       output: true,
       digital: true,
       pwm: decl.pwm === true,
+      ...(logic ? { logic } : {}),
     };
   }
   if (decl.role === "logic" && decl.direction === "in") {
     return { kind: "signal", output: false, digital: false, pwm: false };
   }
   return { kind: "signal", output: false, digital: false, pwm: false };
+}
+
+/** Electrical logic inputs of a type, in port order. */
+function logicInputs(ports: Record<string, PortDecl>): string[] {
+  return Object.entries(ports)
+    .filter(
+      ([, port]) =>
+        port.domain === "electrical" &&
+        port.role === "logic" &&
+        port.direction === "in"
+    )
+    .map(([name]) => name);
 }
 
 function pinsOf(ports: Record<string, PortDecl>): Record<string, RunPin> {
@@ -419,18 +528,72 @@ function formNumbers(inst: LiveInstance): Record<string, number> | null {
  * A placeholder mesh uses the nearest lower class whose visual is a box.
  * A mesh file is left undrawn.
  */
-function pushBox(boxes: RunBox[], inst: LiveInstance, pick: RunBox["pick"]) {
+function pushBox(
+  boxes: RunBox[],
+  inst: LiveInstance,
+  pose: Pose,
+  pick: RunBox["pick"]
+) {
   const drawn = drawnBox(inst);
   if (!drawn) return;
   boxes.push({
     id: inst.path,
-    pose: poseOf(inst),
+    pose,
     size: drawn.size,
+    ...(drawn.form ? { form: drawn.form } : {}),
     pick,
   });
   if (drawn.fallbackClass !== null) {
     inst.axes.visual.reason = `placeholder mesh; drawn as the class-${drawn.fallbackClass} box`;
   }
+}
+
+/**
+ * The box a `box` or `form` visual fills, and the form with its params
+ * resolved: a `$param` reads the instance's param, then the selected
+ * behaviour form's (a resistor's `R`). Null for any other visual.
+ */
+function visualBox(
+  inst: LiveInstance,
+  visual: VisualImpl | null
+): { size: [number, number, number]; form?: WorldViewForm } | null {
+  if (visual?.kind !== "box" && visual?.kind !== "form") return null;
+  if (!finiteSize(visual.size)) return null;
+  const size: [number, number, number] = [
+    visual.size[0],
+    visual.size[1],
+    visual.size[2],
+  ];
+  if (visual.kind === "box") return { size };
+  const numbers = formNumbers(inst);
+  const resolveParams = (
+    raw: Record<string, VisualParam> | undefined
+  ): WorldViewForm["params"] => {
+    const params: WorldViewForm["params"] = {};
+    for (const [name, value] of Object.entries(raw ?? {})) {
+      const read = isParamRef(value)
+        ? (inst.params[value.$param] ?? numbers?.[value.$param])
+        : value;
+      if (read !== undefined) params[name] = read;
+    }
+    return params;
+  };
+  const inner = (visual.inner ?? [])
+    .filter((row) => finiteSize(row.size) && finiteSize(row.at))
+    .map((row) => ({
+      form: row.form,
+      size: [row.size[0], row.size[1], row.size[2]] as [number, number, number],
+      at: [row.at[0], row.at[1], row.at[2]] as [number, number, number],
+      params: resolveParams(row.params),
+    }));
+  return {
+    size,
+    form: {
+      form: visual.form,
+      params: resolveParams(visual.params),
+      ...(inner.length > 0 ? { inner } : {}),
+    },
+  };
 }
 
 function finiteSize(size: readonly number[]): boolean {
@@ -447,18 +610,14 @@ function finiteSize(size: readonly number[]): boolean {
  */
 function drawnBox(inst: LiveInstance): {
   size: [number, number, number];
+  form?: WorldViewForm;
   fallbackClass: number | null;
 } | null {
   const body = inst.axes.body.impl as BodyImpl | null;
   if (body?.kind === "urdf") return null;
   const visual = inst.axes.visual.impl as VisualImpl | null;
-  if (visual?.kind === "box") {
-    if (!finiteSize(visual.size)) return null;
-    return {
-      size: [visual.size[0], visual.size[1], visual.size[2]],
-      fallbackClass: null,
-    };
-  }
+  const own = visualBox(inst, visual);
+  if (own) return { ...own, fallbackClass: null };
   if (visual?.kind !== "mesh" || visual.placeholder !== true) return null;
   const resolved = inst.axes.visual.class;
   if (resolved === null) return null;
@@ -488,15 +647,42 @@ function notePlaceholderBoxes(loaded: LoadResult): void {
   }
 }
 
-function poseOf(inst: LiveInstance): Pose {
-  if (!inst.pose) return IDENTITY;
-  return {
-    position: [...inst.pose.position] as Pose["position"],
-    rotation: [...inst.pose.rotation] as Pose["rotation"],
+/**
+ * Each instance's pose in the document frame: its own pose taken through
+ * every posed group above it, so an assembly placed with a pose carries
+ * its parts. The world root is placed once and the editor may move it,
+ * so its pose places nothing.
+ */
+function scenePoses(resolved: LiveInstance[]): Map<string, Pose> {
+  const byPath = new Map(resolved.map((inst) => [inst.path, inst]));
+  const poses = new Map<string, Pose>();
+  const at = (path: string): Pose => {
+    const done = poses.get(path);
+    if (done) return done;
+    const own = byPath.get(path)?.pose ?? IDENTITY;
+    const cut = path.lastIndexOf(".");
+    const local: Pose = {
+      position: [...own.position] as Pose["position"],
+      rotation: [...own.rotation] as Pose["rotation"],
+    };
+    const pose =
+      path === ROOT_PATH
+        ? IDENTITY
+        : cut < 0
+          ? local
+          : composePose(at(path.slice(0, cut)), local);
+    poses.set(path, pose);
+    return pose;
   };
+  for (const inst of resolved) at(inst.path);
+  return poses;
 }
 
-function cannot(inst: LiveInstance, detail: string, code = "idle"): Diagnostic {
+function cannot(
+  inst: LiveInstance,
+  detail: string,
+  code: DiagCode = "idle"
+): Diagnostic {
   const named =
     inst.path === ROOT_PATH
       ? `${shortName(inst.part.id)} sits idle: ${detail}`
@@ -513,8 +699,8 @@ function cannot(inst: LiveInstance, detail: string, code = "idle"): Diagnostic {
   };
 }
 
-function degrade(diag: Diagnostic, code: string): Diagnostic {
-  return { ...diag, severity: "degraded", code: diag.code ?? code };
+function degrade(diag: Diagnostic): Diagnostic {
+  return { ...diag, severity: "degraded" };
 }
 
 /** The sentence a person reads. The report's port, quantity, and comparison stay on the fields. */
@@ -527,8 +713,7 @@ function humanText(message: string): string {
 }
 
 function present(diag: Diagnostic): Diagnostic {
-  const next =
-    diag.severity === "degraded" ? diag : degrade(diag, degradeCode(diag));
+  const next = diag.severity === "degraded" ? diag : degrade(diag);
   const message = humanText(next.message);
   return message === next.message ? next : { ...next, message };
 }
@@ -608,53 +793,17 @@ function rangePair(
   return null;
 }
 
-function digitalPeer(
-  inst: LiveInstance,
-  port: string,
-  loaded: LoadResult,
-  boardPaths: ReadonlySet<string>
-): { boardId: string; bit: number } | null {
-  for (const wire of loaded.wires) {
-    const other =
-      wire.a.path === inst.path && wire.a.port === port
-        ? wire.b
-        : wire.b.path === inst.path && wire.b.port === port
-          ? wire.a
-          : null;
-    if (!other) continue;
-    if (!boardPaths.has(other.path)) continue;
-    const bit = arduinoPinBit(other.port);
-    if (bit === undefined) continue;
-    return { boardId: other.path, bit };
-  }
-  return null;
-}
-
-function circuitInstOf(inst: LiveInstance): CircuitInst | null {
-  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
-  if (
-    !behaviour ||
-    behaviour.kind !== "form" ||
-    !isCircuitForm(behaviour.form)
-  ) {
-    return null;
-  }
-  const params = circuitNumbers(behaviour, inst.params);
-  if (!params) return null;
-  const ports: Record<string, string> = {};
-  for (const [name, decl] of Object.entries(inst.type.ports)) {
-    if (decl.internal) continue;
-    ports[name] = `${inst.path}.${name}`;
-  }
-  const ldo = ldoLaw(behaviour, inst.params);
-  if (ldo === null) return null;
+/** A logic port left unbound: its net reaches more than one board pin. */
+function unbound(inst: LiveInstance, port: string, detail: string): Diagnostic {
   return {
+    severity: "degraded",
+    code: "wiring",
     path: inst.path,
-    form: behaviour.form,
-    typeId: inst.type.id,
-    params,
-    ports,
-    ...(ldo ? { ldo } : {}),
+    port,
+    quantity: "Net",
+    left: "several board pins",
+    right: "one",
+    message: `${inst.path} port ${port} quantity Net: ${detail} (several board pins vs one)`,
   };
 }
 
@@ -765,18 +914,30 @@ function numberParam(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function boundPairs(
-  bounds: Record<string, unknown>
-): Record<string, [number, number]> {
-  const out: Record<string, [number, number]> = {};
-  for (const [key, range] of Object.entries(bounds)) {
-    if (!Array.isArray(range) || range.length < 2) continue;
-    const lo = range[0];
-    const hi = range[1];
-    if (typeof lo !== "number" || typeof hi !== "number") continue;
-    out[key] = [siValue(lo), siValue(hi)];
-  }
-  return out;
+/** The behaviour snapshot file an instance runs, when the load ran one. */
+function behaviourSnapshotFile(
+  inst: LiveInstance,
+  loaded: LoadResult
+): LoadedSnapshot | undefined {
+  const ran = loaded.snapshotRuns.find(
+    (row) => row.path === inst.path && row.axis === "behaviour"
+  );
+  return ran ? loaded.snapshots.find((row) => row.id === ran.ref) : undefined;
+}
+
+/** The behaviour snapshot an instance runs as its form, with its bounds. */
+function behaviourSnapshotOf(
+  inst: LiveInstance,
+  loaded: LoadResult
+): Pick<RunPart, "behaviourSnapshot"> {
+  const found = behaviourSnapshotFile(inst, loaded);
+  if (!found) return {};
+  return {
+    behaviourSnapshot: {
+      ref: found.id,
+      bounds: boundPairs(found.file.envelope.bounds),
+    },
+  };
 }
 
 function selectedBehaviour(inst: LiveInstance): BehaviourImpl | null {
@@ -790,7 +951,9 @@ function runtimeGap(inst: LiveInstance): string {
   if (inst.declaredOnly) return "no runtime for a declared-only part";
   const behaviour = selectedBehaviour(inst);
   if (!behaviour) return "no runtime";
-  if (behaviour.kind === "form") return `no runtime for form ${behaviour.form}`;
+  if (behaviour.kind === "form") {
+    return formGapSentence(inst) ?? `no runtime for form ${behaviour.form}`;
+  }
   return `no runtime for ${behaviour.kind}`;
 }
 
@@ -868,26 +1031,11 @@ function stampSupply(
     powerPort: supply.positivePin,
     resetPort: null,
     usbPort: null,
+    regulatorPort: null,
     resetFraction: null,
     parts,
     nets,
   });
-}
-
-function rangerLaw(numbers: Record<string, number>): RangerLaw {
-  return {
-    c: numbers.c ?? 0,
-    rangeMin: numbers.rangeMin ?? 0,
-    rangeMax: numbers.rangeMax ?? 0,
-    beamHalf: numbers.beamHalf ?? 0,
-    trigMin: numbers.trigMin ?? 0,
-    echoDelay: numbers.echoDelay ?? 0,
-    echoTimeout: numbers.echoTimeout ?? 0,
-    working: numbers.working ?? 0,
-    quiescent: numbers.quiescent ?? 0,
-    vMin: numbers.vMin ?? 0,
-    face: numbers.face ?? 0,
-  };
 }
 
 function build(
@@ -904,27 +1052,25 @@ function build(
   const supplies: RunSupply[] = [];
   const parts: RunPart[] = [];
   const leaves: { id: string; model: string }[] = [];
-  const rangers: RunRanger[] = [];
+  const placedRangers: PlacedRanger[] = [];
+  // A placed form that casts rays into the body world.
+  let rays = false;
   const boxes: RunBox[] = [];
   const circuits: CircuitInst[] = [];
+  const trainParts: LiveInstance[] = [];
 
   // An if-chain on the selected behaviour. A composite is a shell and
-  // is skipped. What runs: firmware; form resistor@1, capacitor@1 and
-  // diode@1; form multibody@1 with a urdf body; form thevenin-limit@1;
-  // form dc-motor@1 with a lumped joint, a hinge@1 snapshot, or the
-  // collapse of a gear train; form ranger@1. Anything else is a plan
-  // error that names the path.
+  // is skipped. What runs: firmware; form resistor@1, capacitor@1,
+  // diode@1 and led@1; form multibody@1 with a urdf body; form thevenin-limit@1;
+  // form position-servo@1 on a type with one logic input, with a lumped
+  // joint, a hinge@1 snapshot, or the collapse of a gear train; forms
+  // dc-motor@1, servo-control@1 and potentiometer@1, coupled to a joint
+  // after the loop; a gear-train body with no behaviour, the collapse a
+  // motor reaches through it; a form whose adapter places it (the
+  // supplies, ranger@1). Anything else is a plan error that names the path.
   const byPath = new Map(loaded.resolved.map((item) => [item.path, item]));
-  // A board is a firmware part, or the composite a firmware chip runs as.
-  const boardPaths = new Set(
-    loaded.resolved
-      .filter(
-        (item) =>
-          (item.axes.behaviour.impl as BehaviourImpl | null)?.kind ===
-          "firmware"
-      )
-      .map((item) => boardHostOf(item, byPath, ROOT_PATH).path)
-  );
+  const scene = scenePoses(loaded.resolved);
+  const poseOf = (inst: LiveInstance): Pose => scene.get(inst.path) ?? IDENTITY;
   for (const inst of loaded.resolved) {
     // A composite root is a shell. A leaf opened as the root is the
     // instance: its body is planned, or it sits idle with a diagnostic.
@@ -938,11 +1084,11 @@ function build(
     if (behaviour?.kind === "composite") continue;
     const circuit = circuitInstOf(inst);
     if (circuit) {
-      circuits.push(circuit);
+      circuits.push(withWatch(circuit, behaviourSnapshotFile(inst, loaded)));
       if (!inst.path.includes(".")) {
         leaves.push({ id: inst.path, model: shortName(inst.part.id) });
       }
-      if (inst.pose) pushBox(boxes, inst, "part");
+      if (inst.pose) pushBox(boxes, inst, poseOf(inst), "part");
       continue;
     }
     const typeId = inst.type.id;
@@ -969,6 +1115,17 @@ function build(
       // `inst` is the chip that holds the image. `host` is the board it runs
       // as: the parent composite when this chip is a child of one, else itself.
       const host = boardHostOf(inst, byPath, ROOT_PATH);
+      // A board whose pin map the lint refused does not run as a bare chip.
+      // The loader idles such a part below the root, its row on the
+      // instance path; this is the root, the same row on the root path.
+      const refused =
+        host === inst
+          ? pinMapRefused(loaded.diagnostics, inst.part)
+          : undefined;
+      if (refused) {
+        diags.push(degrade({ ...refused, path: host.path }));
+        continue;
+      }
       const exposure = chipExposure(inst, host);
       // One board per host: a second chip exposed by the same parent does not
       // run, and the first one does.
@@ -983,8 +1140,13 @@ function build(
       }
       const facts = chipFactsOf(behaviour);
       if (!facts) {
+        const missing = missingChipFacts(behaviour).join(", ");
         diags.push(
-          cannot(host, `unknown chip "${behaviour.chip}"`, "unsupported")
+          cannot(
+            host,
+            `chip "${behaviour.chip}" lacks ${missing}`,
+            "unsupported"
+          )
         );
         continue;
       }
@@ -998,11 +1160,8 @@ function build(
         );
         continue;
       }
-      const visual = host.axes.visual.impl as VisualImpl | null;
-      const size =
-        visual?.kind === "box"
-          ? ([...visual.size] as [number, number, number])
-          : ([0, 0, 0] as [number, number, number]);
+      const drawn = visualBox(host, host.axes.visual.impl as VisualImpl | null);
+      const size = drawn?.size ?? ([0, 0, 0] as [number, number, number]);
       const powerName = chosenPowerPort(host, loaded, facts.railVoltage);
       if (!powerName) {
         diags.push(cannot(host, "the board has no power input"));
@@ -1018,6 +1177,14 @@ function build(
         facts.railVoltage,
       ];
       const source = inst.params.source;
+      const gpio = boardGpio(behaviour.chip, inst, host);
+      const internalPin = (name: string) =>
+        host.type.ports[name]?.internal === true;
+      const header = gpio.filter((pin) => !internalPin(pin.name));
+      const driven = [
+        ...header,
+        ...gpio.filter((pin) => internalPin(pin.name)),
+      ];
       // The board's own load rides on the chip instance: it counts the parts
       // the chip part does not carry (the USB bridge, the power LED).
       const quiescent =
@@ -1034,66 +1201,86 @@ function build(
           : {}),
         pose: poseOf(host),
         size,
+        ...(drawn?.form ? { form: drawn.form } : {}),
         pins: pinsOf(host.type.ports),
         powerInputs: [powerName],
         vinFeed: false,
         voltagePin: powerName,
+        regulatorPin: regulatorInputPort(host.type.ports, [powerName]),
+        usbPin: connectorPort(host.type.ports, "usb"),
         groundPin: groundName,
         current: quiescent ?? 0,
         hasNetlist: host.path !== inst.path,
-        resetPort:
-          host === inst
-            ? (behaviour.resetPort ?? null)
-            : ([...exposure.entries()].find(
-                ([, pin]) => pin === behaviour.resetPort
-              )?.[0] ?? null),
+        resetPort: boardResetPort(behaviour.resetPort, inst, host, exposure),
         resetFraction: facts.resetFraction,
-        ...(host === inst ? {} : { wire: wireOf(exposure) }),
+        pinOrder: header.map((pin) => pin.name),
+        ...(driven.length === header.length
+          ? {}
+          : { driveOrder: driven.map((pin) => pin.name) }),
+        wire: driven.map((pin) => pin.chip),
+        adcLabels: adcHeaderLabels(behaviour.chip, exposure),
         minOperatingVoltage: facts.minOperatingVoltage,
-        brownoutVoltage: params.brownoutVoltage ?? Number.POSITIVE_INFINITY,
-        brownoutAssertVoltage:
-          params.brownoutAssertVoltage ?? Number.POSITIVE_INFINITY,
-        brownoutReleaseVoltage:
-          params.brownoutReleaseVoltage ?? Number.POSITIVE_INFINITY,
+        clock: chipClock(behaviour.chip),
+        brownoutVoltage: facts.brownoutVoltage,
+        brownoutAssertVoltage: facts.brownoutAssertVoltage,
+        brownoutReleaseVoltage: facts.brownoutReleaseVoltage,
+        resetHoldMs: Math.round(facts.resetHoldS * 1000),
         operatingVoltage: rail[0],
         supply: { min: rail[0], max: rail[1] },
-        pin: avrPinParams(params),
+        pin: facts.pin,
       });
       continue;
     }
-    const place =
-      behaviour?.kind === "form"
-        ? formAdapter(behaviour.form)?.place
-        : undefined;
-    if (place && behaviour?.kind === "form") {
-      place({
+    const adapter =
+      behaviour?.kind === "form" ? formAdapter(behaviour.form) : undefined;
+    if (adapter?.place && behaviour?.kind === "form") {
+      if (adapter.rays) rays = true;
+      adapter.place({
         inst,
         behaviour,
         typeId,
+        model: shortName(inst.part.id),
         numbers: () => formNumbers(inst),
         pins: () => pinsOf(inst.type.ports),
-        reject: (detail) => {
-          diags.push(cannot(inst, detail, "bad-params"));
+        pose: () => poseOf(inst),
+        reject: (detail, code = "bad-params") => {
+          diags.push(cannot(inst, detail, code));
         },
-        add: (supply) => {
+        addSupply: (supply) => {
           supplies.push(supply);
         },
-        box: () => {
-          pushBox(boxes, inst, "supply");
+        addRanger: (ranger) => {
+          placedRangers.push(ranger);
+        },
+        box: (pick) => {
+          pushBox(boxes, inst, poseOf(inst), pick);
         },
       });
       continue;
     }
-    if (behaviour?.kind === "form" && behaviour.form === "dc-motor@1") {
+    if (behaviour?.kind === "form" && behaviour.form === "position-servo@1") {
       const numbers = formNumbers(inst);
       const hinge = jointOf(inst, loaded);
-      if (
-        !numbers ||
-        inst.axes.behaviour.label !== "form dc-motor@1" ||
-        !hinge
-      ) {
+      if (!numbers || !hinge) {
         diags.push(
-          cannot(inst, "the run needs dc-motor@1 and a lumped joint or a hinge")
+          cannot(
+            inst,
+            "the run needs position-servo@1 and a lumped joint or a hinge"
+          )
+        );
+        continue;
+      }
+      // The whole servo as one law: its control loop reads the type's one
+      // logic input. A bare winding is `dc-motor@1`, driven by its nets.
+      const [signal, ...extra] = logicInputs(inst.type.ports);
+      if (!signal || extra.length > 0) {
+        diags.push(
+          cannot(
+            inst,
+            signal
+              ? `position-servo@1 reads one pulse, and this type has ${extra.length + 1} logic inputs`
+              : "position-servo@1 reads one pulse, and this type has no logic input for it"
+          )
         );
         continue;
       }
@@ -1105,7 +1292,7 @@ function build(
         model: shortName(inst.part.id),
         type: typeId,
         pins: pinsOf(inst.type.ports),
-        drive: { kind: "servo", pin: "signal" },
+        drive: { kind: "servo", pin: signal },
         ...(supply
           ? {
               supply: {
@@ -1127,77 +1314,90 @@ function build(
           damping: hinge.damping,
         },
         ...(hinge.bodySnapshot ? { bodySnapshot: hinge.bodySnapshot } : {}),
+        ...behaviourSnapshotOf(inst, loaded),
         ...(drives ? { drives } : {}),
       });
-      pushBox(boxes, inst, "part");
-      continue;
-    }
-    if (behaviour?.kind === "form" && behaviour.form === "ranger@1") {
-      const numbers = formNumbers(inst);
-      if (!numbers) {
-        diags.push(cannot(inst, "the run needs ranger@1"));
-        continue;
-      }
-      // The ray uses this scene pose for the whole run. A sensor on a
-      // moving link is not supported yet.
-      rangers.push({
-        id: inst.path,
-        model: shortName(inst.part.id),
-        pose: poseOf(inst),
-        law: rangerLaw(numbers),
-        trig: digitalPeer(inst, "Trig", loaded, boardPaths),
-        echo: digitalPeer(inst, "Echo", loaded, boardPaths),
-      });
-      pushBox(boxes, inst, "part");
+      pushBox(boxes, inst, poseOf(inst), "part");
       continue;
     }
     if (behaviour?.kind === "snapshot") {
-      const found = loaded.snapshots.find((row) => row.id === behaviour.ref);
-      const law = found ? tableLawOf(found.file) : null;
-      const envelope = found ? envelopeOf(found.file) : null;
-      const ran = loaded.snapshotRuns.some(
-        (row) => row.path === inst.path && row.ref === behaviour.ref
-      );
-      if (
-        !found ||
-        !law ||
-        !envelope ||
-        !ran ||
-        found.file.form !== "table@1"
-      ) {
-        diags.push(
-          cannot(inst, `snapshot ${behaviour.ref} did not load as table@1`)
-        );
+      const found = behaviourSnapshotFile(inst, loaded);
+      if (!found) {
+        // The load's own row (missing, unreadable, refused by the lint)
+        // is on this instance already and says why it idles.
+        if (!loaded.diagnostics.some((diag) => diag.path === inst.path)) {
+          diags.push(cannot(inst, `snapshot ${behaviour.ref} did not load`));
+        }
         continue;
       }
-      for (const name of law.across) {
-        if (!inst.type.ports[name]) {
-          diags.push(
-            cannot(
-              inst,
-              `snapshot ${behaviour.ref} across port ${name} is not on ${inst.type.id}`
-            )
-          );
-        }
+      const table = tableInstOf(inst, found);
+      if (typeof table === "string") {
+        diags.push(cannot(inst, table));
+        continue;
       }
-      if (diags.some((diag) => diag.path === inst.path)) continue;
-      const ports: Record<string, string> = {};
-      for (const name of law.across) ports[name] = `${inst.path}.${name}`;
-      circuits.push({
-        path: inst.path,
-        form: "table@1",
-        typeId: inst.type.id,
-        params: {},
-        ports,
-        table: { ref: behaviour.ref, law, envelope },
-      });
+      circuits.push(table);
       if (!inst.path.includes(".")) {
         leaves.push({ id: inst.path, model: shortName(inst.part.id) });
       }
-      if (inst.pose) pushBox(boxes, inst, "part");
+      if (inst.pose) pushBox(boxes, inst, poseOf(inst), "part");
+      continue;
+    }
+    if (bodyImpl?.kind === "gear-train" && !behaviour) {
+      // Runs as the collapse of the joint a motor reaches through it.
+      trainParts.push(inst);
       continue;
     }
     diags.push(cannot(inst, runtimeGap(inst), "no-runtime"));
+  }
+
+  // Every board is planned: bind each consumer's logic port to the board
+  // pin on its resolved net.
+  const gpio = gpioIndex(loaded.nets, boards);
+  const bindPort = (path: string, port: string | null) => {
+    if (port === null) return null;
+    const reach = gpio(path, port);
+    const inst = byPath.get(path);
+    if (reach.detail && inst) diags.push(unbound(inst, port, reach.detail));
+    return reach.pin;
+  };
+  const rangers: RunRanger[] = placedRangers.map((ranger) => {
+    const trig = bindPort(ranger.id, ranger.ports.trig);
+    const echo = bindPort(ranger.id, ranger.ports.echo);
+    return {
+      ...ranger,
+      trig: trig ? { boardId: trig.boardId, bit: trig.bit } : null,
+      echo: echo ? { boardId: echo.boardId, bit: echo.bit } : null,
+    };
+  });
+  for (const part of parts) {
+    const pin = bindPort(part.id, part.drive.pin);
+    if (pin) part.drive.gpio = { boardId: pin.boardId, pin: pin.pin };
+  }
+
+  const coupled = coupleShafts({
+    circuits,
+    resolved: loaded.resolved,
+    nets: loaded.nets,
+    gpio: bindPort,
+    drivenJoints: new Set(
+      parts.flatMap((part) =>
+        part.drives ? [`${part.drives.robot}/${part.drives.joint}`] : []
+      )
+    ),
+  });
+  for (const row of coupled.idle) {
+    const inst = byPath.get(row.path);
+    if (inst) diags.push(cannot(inst, row.detail, "wiring"));
+  }
+  const idleShafts = new Set(coupled.idle.map((row) => row.path));
+  for (let i = circuits.length - 1; i >= 0; i--) {
+    if (idleShafts.has(circuits[i]?.path ?? "")) circuits.splice(i, 1);
+  }
+  for (const inst of trainParts) {
+    if (coupled.trains.has(inst.path)) continue;
+    diags.push(
+      cannot(inst, "the gear train couples no motor to a joint", "wiring")
+    );
   }
 
   const nets = liveNets(loaded.nets);
@@ -1226,9 +1426,64 @@ function build(
     }
     return boards.filter((board) => found.has(board.id));
   };
+  // A part whose nets reach no board and no supply (a winding between a
+  // bridge's outputs) takes the home of the circuit parts it shares a
+  // non-ground net with.
+  const homes = new Map(
+    circuits.map((part) => [
+      part.path,
+      {
+        hit: ownersOf(part),
+        reached: suppliesReached(part, supplies, nets),
+      },
+    ])
+  );
+  const netsOf = (part: CircuitInst): Set<string> => {
+    const ids = new Set<string>();
+    for (const full of Object.values(part.ports)) {
+      if (ground.has(full)) continue;
+      const net = nets.find((item) =>
+        item.ports.some((port) => port.full === full)
+      );
+      if (net) ids.add(net.ports.map((port) => port.full).sort()[0] ?? full);
+    }
+    return ids;
+  };
+  const homeless = (path: string) => {
+    const home = homes.get(path);
+    return !home || (home.hit.length === 0 && home.reached.length === 0);
+  };
+  // Homed through a neighbour, so it touches no board: the board takes it
+  // as an extra part.
+  const inherited = new Set<string>();
+  for (const part of circuits) {
+    if (!homeless(part.path)) continue;
+    const seen = new Set([part.path]);
+    const queue = [part];
+    let found: { hit: RunBoard[]; reached: string[] } | null = null;
+    while (queue.length > 0 && !found) {
+      const at = queue.shift();
+      if (!at) break;
+      const mine = netsOf(at);
+      for (const other of circuits) {
+        if (seen.has(other.path)) continue;
+        if (![...netsOf(other)].some((id) => mine.has(id))) continue;
+        seen.add(other.path);
+        if (!homeless(other.path)) {
+          found = homes.get(other.path) ?? null;
+          break;
+        }
+        queue.push(other);
+      }
+    }
+    if (found) {
+      homes.set(part.path, found);
+      inherited.add(part.path);
+    }
+  }
   const owners = new Map<string, RunBoard[]>();
   for (const part of circuits) {
-    const hit = ownersOf(part);
+    const hit = homes.get(part.path)?.hit ?? [];
     owners.set(part.path, hit);
     if (hit.length >= 2) {
       spans.push({
@@ -1237,7 +1492,7 @@ function build(
       });
       continue;
     }
-    const reached = suppliesReached(part, supplies, nets);
+    const reached = homes.get(part.path)?.reached ?? [];
     if (reached.length >= 2) {
       if (hit.length >= 1) continue;
       const homeSupply = reached[0];
@@ -1278,15 +1533,19 @@ function build(
     suppliesOnPort(wiring, board.id, port)[0] ?? null;
   for (const board of boards) {
     const onRail = supplyOnPort(board, board.voltagePin);
-    const onVin = supplyOnPort(board, "VIN");
-    // VIN feeds the regulator. Parts on the regulated port take this
-    // supply in the feed walk; their load sits on the 5V node.
+    const onVin = board.regulatorPin
+      ? supplyOnPort(board, board.regulatorPin)
+      : null;
+    // The regulator input (VIN, or the Pro Micro's RAW) feeds the regulator.
+    // Parts on the regulated port take this supply in the feed walk; their
+    // load sits on the regulated node.
     board.vinFeed = onRail === null && onVin !== null;
   }
   const boardsOn = new Map<string, RunBoard[]>();
   for (const board of boards) {
     const supplyId =
-      supplyOnPort(board, board.voltagePin) ?? supplyOnPort(board, "VIN");
+      supplyOnPort(board, board.voltagePin) ??
+      (board.regulatorPin ? supplyOnPort(board, board.regulatorPin) : null);
     if (!supplyId) continue;
     const list = boardsOn.get(supplyId) ?? [];
     list.push(board);
@@ -1326,7 +1585,9 @@ function build(
       powerPort: board.voltagePin,
       resetPort: board.resetPort,
       usbPort: connectorPort(inst.type.ports, "usb"),
+      regulatorPort: board.regulatorPin,
       resetFraction: board.resetFraction,
+      pins: board.driveOrder ?? board.pinOrder,
       parts: stampParts.filter((part) => {
         const hit = owners.get(part.path) ?? [];
         if (hit.length >= 2) return false;
@@ -1337,7 +1598,17 @@ function build(
             (part.path === other.id || part.path.startsWith(`${other.id}.`))
         );
       }),
-      also: alsoByBoard.get(board.id),
+      also: [
+        ...(alsoByBoard.get(board.id) ?? []),
+        ...stampParts.filter((part) => {
+          const hit = owners.get(part.path) ?? [];
+          return (
+            inherited.has(part.path) &&
+            hit.length === 1 &&
+            hit[0]?.id === board.id
+          );
+        }),
+      ],
       nets,
     });
     if (stamp) board.stamp = stamp;
@@ -1388,9 +1659,7 @@ function build(
   notePlaceholderBoxes(loaded);
   return {
     plan: {
-      ...(run.play.timestep === DEFAULT_TIMESTEP_S
-        ? { timestep: DEFAULT_TIMESTEP_S }
-        : {}),
+      ...planStep(run.play.timestep),
       environment: {
         ground: { plane: run.ground },
         gravity: [...run.play.gravity],
@@ -1408,6 +1677,7 @@ function build(
       parts,
       leaves,
       rangers,
+      ...(rays ? { rays } : {}),
       boxes,
       wires: electricalWires(loaded.nets),
       shownWires: authoredWires(loaded.nets, loaded.wires),
@@ -1422,6 +1692,8 @@ function build(
       ),
       report: loaded.report,
       ...(spans.length > 0 ? { spans } : {}),
+      ...(coupled.shafts.length > 0 ? { shafts: coupled.shafts } : {}),
+      ...(coupled.controls.length > 0 ? { controls: coupled.controls } : {}),
       ...(diags.length > 0 ? { degraded: diags } : {}),
       tree: runTree({
         run,
@@ -1447,7 +1719,8 @@ function build(
 export function planWorld(
   project: string,
   worldRel: string,
-  env: PlanEnv
+  env: PlanEnv,
+  options: { context?: boolean } = {}
 ): PlanResult {
   const found = opened(project, worldRel, env);
   if ("error" in found) return { ok: false, errors: [schema(found.error)] };
@@ -1458,7 +1731,9 @@ export function planWorld(
     return {
       ok: false,
       errors: [
-        schema("World file is not JSON. Hint: a world is <name>.world.json."),
+        schema(
+          "World file is not JSON. Hint: a world is a root part, parts/<publisher>/<name>@<version>.json."
+        ),
       ],
     };
   }
@@ -1491,14 +1766,20 @@ export function planWorld(
   if (!built.plan) {
     return { ok: false, errors: [schema("World file did not load.")] };
   }
-  const fromLoad = loaded.diagnostics
-    .filter((diag) => diag.severity === "error")
-    .map((diag) => present(diag));
+  const loadErrors = loaded.diagnostics.filter(
+    (diag) => diag.severity === "error"
+  );
+  const fromLoad = loadErrors.map((diag) => present(diag));
   const rows = [...fromLoad, ...built.diags.map((diag) => present(diag))];
   if (rows.length > 0) {
     built.plan.degraded = rows;
     if (built.plan.report) {
-      const drop = new Set(rows.map((row) => row.message));
+      // A load error that became a degraded row leaves the errors. The
+      // report holds it as the loader worded it, before `present`.
+      const drop = new Set([
+        ...loadErrors.map((diag) => diag.message),
+        ...rows.map((row) => row.message),
+      ]);
       built.plan.report = {
         ...built.plan.report,
         errors: built.plan.report.errors.filter(
@@ -1515,13 +1796,35 @@ export function planWorld(
     found.root,
     env
   );
-  return { ok: true, plan: built.plan };
+  const plan = built.plan;
+  const report = plan.report ?? null;
+  let context: string | undefined;
+  const contextOf = () => {
+    if (context === undefined && report) {
+      const inputs = runInputs(
+        plan,
+        loaded.lock,
+        found.root,
+        assetDir(found.abs),
+        env
+      );
+      context = runContext(parsed, report, inputs);
+    }
+    return context;
+  };
+  readAccuracy(report, parsed, worldRel, found.root, env, contextOf);
+  if (options.context) {
+    const own = contextOf();
+    if (own !== undefined) plan.context = own;
+  }
+  return { ok: true, plan };
 }
 
 /**
- * A capture is stale when its stored hash no longer matches the part.
- * It still runs. A hash that cannot be recomputed is left unmarked. Only
- * a snapshot this run loaded is checked, so the view marks those options.
+ * A capture is stale when its stored signature no longer matches its
+ * source. It still runs. A signature that cannot be recomputed marks the
+ * row unchecked, with why. Only a snapshot this run loaded is checked, so
+ * the view marks those options.
  */
 function noteFreshness(
   report: RunReport | null,
@@ -1541,10 +1844,14 @@ function noteFreshness(
     if (!snap) continue;
     const fresh = provenanceHash(
       snap.file,
-      { catalogDir: catalog, worldDir: world, assetRoot: world },
+      { catalogDir: catalog, worldDir: world },
       stamp
     );
-    if (!fresh.checked || fresh.hash === from.hash) continue;
+    if (!fresh.checked) {
+      row.unchecked = fresh.reason;
+      continue;
+    }
+    if (fresh.hash === from.hash) continue;
     row.stale = true;
     markStaleOptions(
       tree?.nodes ?? [],
@@ -1564,6 +1871,87 @@ function noteFreshness(
       })
     );
   }
+}
+
+/**
+ * Every file the run reads, by its project path and content hash: each
+ * board's firmware image, each robot's URDF and every mesh it names, and
+ * the level overlays merged into a part. A file that cannot be read is
+ * stated as such, so it still differs from one that can.
+ */
+function runInputs(
+  plan: RunPlan,
+  lock: LoadResult["lock"],
+  root: string,
+  worldDir: string,
+  env: PlanEnv
+): RunInput[] {
+  const inputs = new Map<string, string>();
+  const add = (abs: string) => {
+    const file = env.relative(root, abs).split(env.sep).join("/");
+    if (inputs.has(file)) return;
+    let sha256 = "missing";
+    try {
+      if (env.exists(abs)) {
+        sha256 = sha256Bytes(
+          env.readBytes
+            ? env.readBytes(abs)
+            : new TextEncoder().encode(env.readText(abs))
+        );
+      }
+    } catch {
+      sha256 = "unreadable";
+    }
+    inputs.set(file, sha256);
+  };
+  for (const board of plan.boards) add(env.resolve(worldDir, board.firmware));
+  for (const robot of plan.robots) {
+    const urdf = env.resolve(worldDir, robot.urdf);
+    add(urdf);
+    let xml = "";
+    try {
+      xml = env.exists(urdf) ? env.readText(urdf) : "";
+    } catch {
+      xml = "";
+    }
+    const mesh = /<mesh\b[^>]*?filename\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+    for (const match of xml.matchAll(mesh)) {
+      add(env.resolve(env.dirname(urdf), match[1] ?? match[2] ?? ""));
+    }
+  }
+  return [
+    ...[...inputs].map(([file, sha256]) => ({ file, sha256 })),
+    ...(lock?.overlays ?? []).map((row) => ({
+      file: row.path,
+      sha256: row.sha256,
+    })),
+  ];
+}
+
+/** The document's assembly check, when it has one (`accuracy.ts`). */
+function readAccuracy(
+  report: RunReport | null,
+  document: unknown,
+  worldRel: string,
+  root: string,
+  env: PlanEnv,
+  contextOf: () => string | undefined
+): void {
+  const id = (document as { id?: unknown }).id;
+  const recordRel = typeof id === "string" ? recordPathFor(id) : null;
+  if (!report || !recordRel) return;
+  const abs = env.resolve(root, recordRel);
+  if (!env.exists(abs)) return;
+  let record: unknown = null;
+  try {
+    record = JSON.parse(env.readText(abs)) as unknown;
+  } catch {
+    return;
+  }
+  const rel = worldRel.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  const context = contextOf();
+  if (context === undefined) return;
+  noteAccuracy(report, context, rel, recordRel, record);
 }
 
 function markStaleOptions(
@@ -1590,20 +1978,11 @@ function stampEnv(env: PlanEnv): StampEnv {
   };
 }
 
-function degradeCode(diag: Diagnostic): string {
-  const text = diag.message;
-  if (
-    text.includes("does not exist") ||
-    text.includes("not found") ||
-    text.includes("missing")
-  ) {
-    return "missing-file";
-  }
-  if (text.includes("unknown chip")) return "unsupported";
-  if (text.includes("no runtime")) return "no-runtime";
-  if (text.includes("reaches no supply") || text.includes("no supply")) {
-    return "unpowered";
-  }
-  if (text.includes("variant") || text.includes("param")) return "bad-params";
-  return "idle";
+/**
+ * `1 ms / k` exactly, so MuJoCo and the circuit read the same number. A step
+ * that does not divide 1 ms is omitted and the body steps 1 ms.
+ */
+function planStep(seconds: number | undefined): { timestep?: number } {
+  const k = typeof seconds === "number" ? stepsPerMs(seconds) : null;
+  return k === null ? {} : { timestep: DEFAULT_TIMESTEP_S / k };
 }

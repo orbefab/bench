@@ -104,8 +104,8 @@ The simulation is **specialized engines on one clock**, not one solver:
 MuJoCo for bodies and contact, our MNA engine for circuits, avr8js for
 firmware, and part models where a domain does not need its own engine.
 
-- **One orchestrator owns time.** A 1 ms master step; engines exchange port
-  quantities at seams. Tight loops (servo current against rail voltage)
+- **One orchestrator owns time.** A master step of 1 ms, or 1 ms / k when
+  the run names one; engines exchange port quantities at seams. Tight loops (servo current against rail voltage)
   stay inside one engine; nothing is flattened into one global matrix.
 - **One rail path.** A power island is one circuit. N = 1 is the
   single-board rail: the same element ids and node names. Pin edges
@@ -116,8 +116,9 @@ firmware, and part models where a domain does not need its own engine.
 - **Energy residuals at seams** are the honesty signal when coupling is
   imperfect. They are reported, not hidden (G2). The run report's `seams`
   field is joules at each circuit/body cut: energy sent, energy received,
-  the loss the model declares, and the residual. A seam is flagged when
-  that residual grows.
+  the loss the model declares, and the residual. The residual is the
+  coupling lag of one body step, not a conservation check of the run. A
+  seam is flagged when it grows.
 - **Levels and snapshots are the fidelity dial.** The same exposed ports,
   run live or from a snapshot. The snapshot container is universal (ports,
   a typed form, an envelope, error, provenance); forms stay typed, never
@@ -157,7 +158,9 @@ A parked part tab holds no socket; the server's idle timer stops that
 document's worker. The web editor reads
 `WorldView.tree` for the part tree, the card, and warning markers. L1 bubbles a composite's
 free nets into ports. L3, at plan time, recomputes a running capture's
-`from.hash` and marks it stale without changing its frames.
+`from.hash` with the capture runner's own signature, read through the
+same capture source as the runners (the project, then the catalog), and
+marks it stale (or unchecked, with why) without changing its frames.
 
 **Plugin seams** are compile-time registries of in-repo packages:
 
@@ -182,8 +185,9 @@ runner. The plan reads a run root from the open part — play, the stage,
 ground, and targets. A `.world.json` reaches it only as an import. It
 does not read files or the clock. The host passes a `Store`, absolute
 paths, package versions, and `now`. `apps/server/src/world/`
-keeps thin shims so existing imports still resolve, plus the test
-references (Uno, Nano, snapshot DC). The worker
+binds it to the Node host (`plan.ts`, `plan-host.ts` and `circuit-stamp.ts`
+pass the file store and the catalog) and holds the test references (Uno,
+Nano). Other code imports `@sfab-bench/sim` directly. The worker
 (`apps/server/src/world/worker.ts`) is the Node host: thread messages,
 the play timer, and file reads around `Sim`. `host.ts` and `live.ts`
 stay in the server and talk to that worker. `sfab-bench run` builds

@@ -22,6 +22,7 @@ import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { nodeStore } from "./world/node-store";
 import { catalogRoot } from "./world/plan-host";
+import { nodeRunFiles } from "./world/run-host";
 
 function benchVersions(): { version: string; mujoco: string; avr8js: string } {
   const pkg = JSON.parse(
@@ -123,6 +124,7 @@ export const nodeCaptureEnv: CaptureEnv = {
   },
   runWorld: runWorldIn(false),
   bench: benchVersions,
+  files: nodeRunFiles,
 };
 
 export const serverCaptureEnv: CaptureEnv = {

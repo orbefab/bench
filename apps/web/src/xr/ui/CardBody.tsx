@@ -9,12 +9,11 @@ import {
   Plus,
   Settings,
 } from "@react-three/uikit-lucide";
+import { catalogLabel } from "@sfab-bench/contract";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-
 import { treeTops } from "@/cad/tree";
 import { sendWorldCommand } from "@/hooks/useWorldRun";
-import { catalogLabel } from "@/lib/viewer-snapshot";
 import {
   formatSimTime,
   formatXrIssueLine,

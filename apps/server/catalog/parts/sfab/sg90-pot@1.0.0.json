@@ -3,11 +3,54 @@
   "id": "sfab/sg90-pot@1.0.0",
   "type": "potentiometer",
   "foreign": false,
-  "declaredOnly": true,
   "sources": [
     {
       "title": "SG90 feedback potentiometer",
-      "ref": "declared-only child"
+      "ref": "Child of sfab/sg90@1.0.0. 5 kΩ is the common hobby-servo feedback pot, an estimate; the track spans the servo's π rad of travel."
     }
-  ]
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "law",
+        "variants": {
+          "law": {
+            "kind": "form",
+            "form": "potentiometer@1",
+            "params": {
+              "R": 5000,
+              "travel": 3.141592653589793
+            },
+            "omits": [
+              "track nonlinearity",
+              "wiper noise",
+              "end-stop dead zones"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["on the output shaft"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["inside the servo case"]
+          }
+        }
+      }
+    }
+  }
 }

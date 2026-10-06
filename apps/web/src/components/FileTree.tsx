@@ -1,4 +1,13 @@
 import {
+  type CatalogEntry,
+  type CatalogNode,
+  catalogDirPaths,
+  catalogNodeCount,
+  catalogSections,
+  catalogTree,
+  filterCatalogTree,
+} from "@sfab-bench/contract";
+import {
   ChevronRight,
   EllipsisVertical,
   FileBox,
@@ -6,7 +15,6 @@ import {
   Globe,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-
 import {
   Collapsible,
   CollapsibleContent,
@@ -36,15 +44,6 @@ import { type CatalogKindFilter, catalogEmptyReason } from "@/lib/files-rail";
 import { displayLoadError } from "@/lib/load-copy";
 import { copyText } from "@/lib/settings";
 import { cn } from "@/lib/utils";
-import {
-  type CatalogEntry,
-  type CatalogNode,
-  catalogDirPaths,
-  catalogNodeCount,
-  catalogSections,
-  catalogTree,
-  filterCatalogTree,
-} from "@/lib/viewer-snapshot";
 
 function fileName(path: string) {
   return path.split("/").filter(Boolean).pop() ?? path;

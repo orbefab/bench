@@ -18,10 +18,29 @@ export function absolutePath(file: string): string {
   return path.isAbsolute(file) ? file : path.resolve(file);
 }
 
+/** Directories this process created for a write, so a prune drops only those. */
+const madeDirs = new Set<string>();
+
+/** Create `abs`'s parent directories, remembering each one that was missing. */
+function makeParent(abs: string): void {
+  const missing: string[] = [];
+  for (
+    let dir = path.dirname(abs);
+    !existsSync(dir) && dir !== path.dirname(dir);
+    dir = path.dirname(dir)
+  ) {
+    missing.push(dir);
+  }
+  if (missing.length === 0) return;
+  mkdirSync(path.dirname(abs), { recursive: true });
+  for (const dir of missing) madeDirs.add(dir);
+}
+
 /**
  * Undoing the first capture leaves `snapshots/<publisher>/` and
  * `overlays/<publisher>/` empty. Walk up from the removed file and drop each
- * empty directory, ending with `snapshots/` or `overlays/` itself.
+ * empty directory this process made, ending with `snapshots/` or
+ * `overlays/` itself. One the user made stays, even when empty.
  */
 function pruneEmptyCaptureDirs(removed: string): void {
   const parts = removed.split(path.sep);
@@ -32,9 +51,11 @@ function pruneEmptyCaptureDirs(removed: string): void {
   if (at < 0) return;
   for (let depth = parts.length - 1; depth > at; depth -= 1) {
     const dir = parts.slice(0, depth).join(path.sep);
+    if (!madeDirs.has(dir)) return;
     try {
       if (readdirSync(dir).length > 0) return;
       rmdirSync(dir);
+      madeDirs.delete(dir);
     } catch {
       return;
     }
@@ -50,7 +71,7 @@ export const nodeStore: Store = {
   },
   writeText(file, text) {
     const abs = absolutePath(file);
-    mkdirSync(path.dirname(abs), { recursive: true });
+    makeParent(abs);
     // A crash mid-write leaves the previous file. The temp is not a
     // part document, and it is removed if the rename does not land.
     const tmp = `${abs}.edit-tmp`;
@@ -64,7 +85,7 @@ export const nodeStore: Store = {
   },
   rename(from, to) {
     const abs = absolutePath(to);
-    mkdirSync(path.dirname(abs), { recursive: true });
+    makeParent(abs);
     renameSync(absolutePath(from), abs);
   },
   remove(file) {

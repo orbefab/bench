@@ -1,5 +1,6 @@
 // Ported from layered-sim E1 src/mna/engine.ts @ 031dc5e, E2 diode bypass @ 8731557, E3 stepTo @ fc7e8d3.
 import type { StampCtx } from "./context";
+import { type HeldElement, isHeld } from "./drive";
 import type { Element } from "./element";
 import {
   addSplit,
@@ -90,6 +91,8 @@ export class Engine {
   /** Board-node loads with a compliance knee. Ideal current sources are absent. */
   private readonly knees: CurrentLoad[];
   private readonly laws: LawTable[];
+  /** Elements whose held inputs (a bridge ratio, a wiper) are in the factor. */
+  private readonly held: HeldElement[];
   private readonly nonlinear: boolean;
   private readonly xSave: Float64Array;
   /** Diagonal shunt used only while source stepping. Zero afterwards. */
@@ -175,6 +178,7 @@ export class Engine {
       (el): el is CurrentLoad => el instanceof CurrentLoad && el.knee > 0
     );
     this.laws = elements.filter((el): el is LawTable => el instanceof LawTable);
+    this.held = elements.filter(isHeld);
     this.nonlinear = elements.some((el) => el.nonlinear);
     this.xSave = new Float64Array(n);
     this.diodeLimit = new Float64Array(this.diodes.length);
@@ -335,7 +339,10 @@ export class Engine {
     return true;
   }
 
-  /** Bridge ratio and open/closed state are inputs. A change rebuilds the factor. */
+  /**
+   * Bridge ratio and open/closed state are inputs, and so is every held
+   * element's input. A change rebuilds the factor.
+   */
   private bridgesStable(): boolean {
     const bridges = this.bridges;
     for (let i = 0; i < bridges.length; i++) {
@@ -346,6 +353,10 @@ export class Engine {
       ) {
         return false;
       }
+    }
+    const held = this.held;
+    for (let i = 0; i < held.length; i++) {
+      if (!held[i]!.factorStable()) return false;
     }
     return true;
   }
@@ -366,6 +377,9 @@ export class Engine {
     }
     for (let i = 0; i < this.laws.length; i++) {
       if (!this.laws[i]!.accepted(ctx)) return false;
+    }
+    for (let i = 0; i < this.held.length; i++) {
+      if (!this.held[i]!.accepted(ctx)) return false;
     }
     return true;
   }
@@ -721,6 +735,22 @@ export class Engine {
     b[i] = 1;
     luSolve(this.A, this.n, this.perm, b, y);
     return y[i] as number;
+  }
+
+  /**
+   * Amperes `elements` draw out of `node` at the last solve: the sum of
+   * their `leaving` terms there. 0 when the node is not in this circuit.
+   */
+  currentLeaving(elements: readonly Element[], node: string): number {
+    const index = this.nodeNames.indexOf(node);
+    if (index < 0) return 0;
+    let sum = 0;
+    for (const el of elements) {
+      for (const term of el.leaving(this.ctx)) {
+        if (term[0] === index) sum += term[1];
+      }
+    }
+    return sum;
   }
 
   branchCurrent(name: string): number {

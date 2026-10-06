@@ -1,5 +1,6 @@
 /** Web standards, in browsers and in Node. Not a host import. */
 declare class TextDecoder {
+  constructor(label?: string, options?: { ignoreBOM?: boolean });
   decode(input?: Uint8Array): string;
 }
 declare class TextEncoder {

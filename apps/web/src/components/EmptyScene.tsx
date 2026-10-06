@@ -7,6 +7,7 @@ import {
   WelcomeFolders,
 } from "@/components/OpenFolder";
 import { Button } from "@/components/ui/button";
+import { useSidebar } from "@/components/ui/sidebar";
 import { useProjectSession } from "@/hooks/useProjectSession";
 import { filesRailToggleTitle } from "@/lib/files-rail";
 import { isMacPlatform } from "@/lib/shortcuts";
@@ -18,7 +19,6 @@ import {
   NO_CAD_TRAIL,
   WELCOME_OPEN_COPY,
 } from "@/lib/welcome";
-import { usePrefs } from "@/state/prefs";
 
 function UnavailableFolderCard({ folder }: { folder: OpenFolderApi }) {
   return (
@@ -39,7 +39,7 @@ export function EmptyScene({
   folder: OpenFolderApi;
 }) {
   const { setDoc, fileRecents } = useProjectSession();
-  const setTreeOpen = usePrefs((s) => s.setTreeOpen);
+  const { setOpen } = useSidebar();
   return (
     <div className="pointer-events-none absolute inset-0 z-0 grid place-items-center">
       {scene === "welcome-hint" ? (
@@ -96,7 +96,7 @@ export function EmptyScene({
                   isMacPlatform(navigator.platform, navigator.userAgent),
                   "show"
                 )}
-                onClick={() => setTreeOpen(true)}
+                onClick={() => setOpen(true)}
               >
                 Show files
               </Button>

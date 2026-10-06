@@ -1,5 +1,5 @@
+import type { HarnessId, HarnessInfo } from "@sfab-bench/contract";
 import { useCallback, useEffect, useState } from "react";
-
 import {
   applyHarnessFetchResult,
   decideHarnessRefetch,
@@ -9,7 +9,6 @@ import {
 } from "@/chat/model-picker";
 import { useProjectSession } from "@/hooks/useProjectSession";
 import { apiFetch } from "@/lib/api";
-import type { HarnessId, HarnessInfo } from "@/lib/harness";
 import { projectUrl } from "@/lib/project-query";
 
 export function harnessModelName(

@@ -1,20 +1,12 @@
 /**
  * Desktop layout math for the Mac tab / Electron window.
- *
- * Compact chat rule (one place, so the self-check and the UI cannot drift):
- * sheet the chat when `window.innerWidth <= 980`
- * *or* when an open files rail + min chat (280) + canvas floor (480) cannot
- * fit. No phone layout — the rail stays a rail; the user can still ⌘B it.
+ * The floating composer's width is the stored size, 280–720.
+ * Docked chat is a resizable panel and does not use this width.
  */
 
-export const CANVAS_MIN_WIDTH = 480;
 export const CHAT_MIN_WIDTH = 280;
 export const CHAT_MAX_WIDTH = 720;
 export const CHAT_DEFAULT_WIDTH = 384;
-/** `--sidebar-width: 19rem` on `SidebarProvider`. */
-export const FILES_RAIL_WIDTH = 19 * 16;
-/** Compact chat when the window is at most this wide. */
-export const COMPACT_CHAT_BREAKPOINT = 980;
 
 export const PART_TREE_WIDTH = 280;
 export const PART_TREE_CHIP_WIDTH = 96;
@@ -29,6 +21,13 @@ export const DETAIL_COMPACT_THRESHOLD = 480;
 export const OVERLAY_MAX_HEIGHT_CAP = 32 * 16;
 /** Five 36px tools + gap-0.5 + p-1 + border (~198 measured). */
 export const TOOLBAR_WIDTH = 198;
+/**
+ * World bar: Home 36 + gap-0.5 + tools `mx-0.5` + five 36px tools + four
+ * gaps + `p-1` + border. Wider than the CAD bar.
+ */
+export const WORLD_TOOLBAR_WIDTH = 240;
+/** World float column: `left-3` (12) + `w-80` (320). */
+export const WORLD_FLOAT_RIGHT = 12 + 320;
 export const TOOLBAR_TOP = 16;
 export const CHAT_TOGGLE_RESERVE = 44;
 /** Hidden-chat "Replying… · Stop · Show chat" chip. */
@@ -72,45 +71,9 @@ export function clampStoredChatWidth(n: number): number {
   return preferredChatWidth(n);
 }
 
-export function isCompactChat(windowWidth: number, railOpen: boolean): boolean {
-  if (windowWidth <= COMPACT_CHAT_BREAKPOINT) return true;
-  const rail = railOpen ? FILES_RAIL_WIDTH : 0;
-  return rail + CHAT_MIN_WIDTH + CANVAS_MIN_WIDTH > windowWidth;
-}
-
-export function chatMaxForWindow(
-  windowWidth: number,
-  railOpen: boolean
-): number {
-  const rail = railOpen ? FILES_RAIL_WIDTH : 0;
-  return Math.max(CHAT_MIN_WIDTH, windowWidth - rail - CANVAS_MIN_WIDTH);
-}
-
-/**
- * Width used for layout. An over-wide stored preference is clamped here and
- * not written back until the user drags (or double-clicks) the handle.
- */
-export function chatLayoutWidth(
-  stored: number,
-  windowWidth: number,
-  railOpen: boolean
-): number {
-  const preferred = preferredChatWidth(stored);
-  if (isCompactChat(windowWidth, railOpen)) {
-    const max = Math.min(CHAT_MAX_WIDTH, Math.floor(windowWidth * 0.9));
-    return Math.max(CHAT_MIN_WIDTH, Math.min(max, preferred));
-  }
-  const max = Math.min(CHAT_MAX_WIDTH, chatMaxForWindow(windowWidth, railOpen));
-  return Math.max(CHAT_MIN_WIDTH, Math.min(max, preferred));
-}
-
 /** Drag / double-click: this value is what we persist. */
-export function clampChatDrag(
-  width: number,
-  windowWidth: number,
-  railOpen: boolean
-): number {
-  return chatLayoutWidth(width, windowWidth, railOpen);
+export function clampChatDrag(width: number): number {
+  return preferredChatWidth(width);
 }
 
 export const CHAT_RESIZE_STEP = 16;
@@ -123,19 +86,14 @@ export const CHAT_RESIZE_STEP_LARGE = 64;
 export function chatWidthAfterKey(
   key: string,
   shiftKey: boolean,
-  current: number,
-  windowWidth: number,
-  railOpen: boolean
+  current: number
 ): number | null {
-  if (key === "Home")
-    return clampChatDrag(CHAT_MIN_WIDTH, windowWidth, railOpen);
-  if (key === "End")
-    return clampChatDrag(CHAT_MAX_WIDTH, windowWidth, railOpen);
+  const clamp = (width: number) => clampChatDrag(width);
+  if (key === "Home") return clamp(CHAT_MIN_WIDTH);
+  if (key === "End") return clamp(CHAT_MAX_WIDTH);
   const step = shiftKey ? CHAT_RESIZE_STEP_LARGE : CHAT_RESIZE_STEP;
-  if (key === "ArrowLeft")
-    return clampChatDrag(current + step, windowWidth, railOpen);
-  if (key === "ArrowRight")
-    return clampChatDrag(current - step, windowWidth, railOpen);
+  if (key === "ArrowLeft") return clamp(current + step);
+  if (key === "ArrowRight") return clamp(current - step);
   return null;
 }
 
@@ -285,17 +243,20 @@ export function toolbarLayout(input: {
   canvasWidth: number;
   leftReserve: number;
   rightReserve: number;
+  /** Defaults to the CAD bar. Pass the world bar when that one is on screen. */
+  barWidth?: number;
 }): { stacked: boolean; left: number; top: number } {
   const { canvasWidth, leftReserve, rightReserve } = input;
+  const barWidth = input.barWidth ?? TOOLBAR_WIDTH;
   const remaining = canvasWidth - leftReserve - rightReserve;
-  if (remaining >= TOOLBAR_WIDTH + 8) {
+  if (remaining >= barWidth + 8) {
     return {
       stacked: false,
-      left: leftReserve + (remaining - TOOLBAR_WIDTH) / 2,
+      left: leftReserve + (remaining - barWidth) / 2,
       top: TOOLBAR_TOP,
     };
   }
-  const maxLeft = Math.max(12, canvasWidth - TOOLBAR_WIDTH - 12);
+  const maxLeft = Math.max(12, canvasWidth - barWidth - 12);
   return {
     stacked: true,
     left: Math.max(12, Math.min(leftReserve, maxLeft)),

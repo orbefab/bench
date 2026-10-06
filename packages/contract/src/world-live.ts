@@ -8,7 +8,7 @@
  */
 
 import type { EditOp } from "./edit";
-import type { EditRefusal, LevelClass, RunReport } from "./layered";
+import type { DiagCode, EditRefusal, LevelClass, RunReport } from "./layered";
 import type { WorldError, WorldQuat, WorldVec3 } from "./world";
 
 export type WorldLinkPose = {
@@ -19,78 +19,94 @@ export type WorldLinkPose = {
 };
 
 /**
- * Arduino pins in one number. Bit 0 is D0 … bit 13 is D13, bit 14 is A0 …
- * bit 19 is A5. PORTB6–7 and PORTC6–7 are not part of the mask.
+ * One board's GPIO at the state tick. Bit `i` of that board's pin list
+ * (the header names on the board view) is word `i >> 5`, bit `i & 31`.
+ * A board can have more than 32 pins: each field is a little-endian
+ * list of words, not one 32-bit mask. Names are not copied here; the
+ * tick runs often and the list changes only when the plan does.
  *
  * Collected at the state tick: port listeners OR the bits that changed,
  * and the tick reads DDR, PORT, and PIN. Nothing walks instructions.
  */
 export type WorldPinState = {
   /** 1 = output (DDR). */
-  ddr: number;
+  ddr: readonly number[];
   /** PORT when the pin is an output, PIN when it is an input. */
-  level: number;
+  level: readonly number[];
   /** 1 if that pin changed since the previous state tick. */
-  toggled: number;
+  toggled: readonly number[];
 };
 
-/** D0–D13, then A0–A5. The pin table and the mask use this order. */
-export const ARDUINO_PINS: readonly string[] = [
-  "D0",
-  "D1",
-  "D2",
-  "D3",
-  "D4",
-  "D5",
-  "D6",
-  "D7",
-  "D8",
-  "D9",
-  "D10",
-  "D11",
-  "D12",
-  "D13",
-  "A0",
-  "A1",
-  "A2",
-  "A3",
-  "A4",
-  "A5",
-];
-
-/** Bit index in `WorldPinState`, or undefined when `pin` is not D0–D13 or A0–A5. */
-export function arduinoPinBit(pin: string): number | undefined {
-  const digital = /^D(\d+)$/.exec(pin);
-  if (digital) {
-    const n = Number(digital[1]);
-    if (n >= 0 && n <= 13) return n;
-    return undefined;
-  }
-  const analog = /^A(\d+)$/.exec(pin);
-  if (analog) {
-    const n = Number(analog[1]);
-    if (n >= 0 && n <= 5) return 14 + n;
-    return undefined;
-  }
-  return undefined;
-}
-
-export function maskHasPin(mask: number, pin: string): boolean {
-  const bit = arduinoPinBit(pin);
-  if (bit === undefined) return false;
-  return (mask & (1 << bit)) !== 0;
+/** Words needed for `pinCount` bits. Empty boards still carry one zero word. */
+export function pinWordCount(pinCount: number): number {
+  return Math.max(1, Math.ceil(pinCount / 32));
 }
 
 /**
- * Pack PORTD, PORTB, and PORTC into the 20-bit Arduino mask.
- * D0–D7 = PORTD0–7, D8–D13 = PORTB0–5, A0–A5 = PORTC0–5.
+ * `pins` cut to the board's first `pinCount` pins: `pinWordCount` words,
+ * the bits past the list cleared. The CPU's words also carry the internal
+ * pins a stamp drives (the Pro Micro's RX and TX LEDs), which the board's
+ * pin list does not name.
  */
-export function arduinoPinMask(
-  portD: number,
-  portB: number,
-  portC: number
-): number {
-  return (portD & 0xff) | ((portB & 0x3f) << 8) | ((portC & 0x3f) << 14);
+export function boardPinState(
+  pins: WorldPinState,
+  pinCount: number
+): WorldPinState {
+  const words = pinWordCount(pinCount);
+  const cut = (field: readonly number[]) =>
+    Array.from({ length: words }, (_, w) => {
+      const bits = pinCount - w * 32;
+      const mask = bits >= 32 ? 0xffffffff : bits <= 0 ? 0 : (1 << bits) - 1;
+      return ((field[w] ?? 0) & mask) >>> 0;
+    });
+  return {
+    ddr: cut(pins.ddr),
+    level: cut(pins.level),
+    toggled: cut(pins.toggled),
+  };
+}
+
+/** A stopped board, or a board with no exposed GPIO. */
+export function emptyPinState(words = 1): WorldPinState {
+  const n = Math.max(1, words);
+  const zeros = () => Array.from({ length: n }, () => 0);
+  return { ddr: zeros(), level: zeros(), toggled: zeros() };
+}
+
+/** A bare number is one legacy word, from a reader that still has the old mask. */
+function asPinWords(value: number | readonly number[]): readonly number[] {
+  return typeof value === "number" ? [value >>> 0] : value;
+}
+
+/** True when bit `index` of the pin list is set. */
+export function pinBitSet(
+  words: number | readonly number[],
+  index: number
+): boolean {
+  if (index < 0) return false;
+  const list = asPinWords(words);
+  const word = list[index >>> 5] ?? 0;
+  return (word & (1 << (index & 31))) !== 0;
+}
+
+/** Index of `name` in the board's pin list, or undefined. */
+export function pinIndex(
+  names: readonly string[],
+  name: string
+): number | undefined {
+  const index = names.indexOf(name);
+  return index < 0 ? undefined : index;
+}
+
+/** True when the named pin is set. The names are that board's pin list. */
+export function pinHas(
+  words: number | readonly number[],
+  names: readonly string[],
+  name: string
+): boolean {
+  const index = pinIndex(names, name);
+  if (index === undefined) return false;
+  return pinBitSet(words, index);
 }
 
 /** Servo display state. The motor current does not follow this. */
@@ -134,7 +150,10 @@ export type WorldSupplyState = {
   soc?: number;
 };
 
-/** One board in the shared run. `pins` is the 20-bit snapshot for this tick. */
+/** What asserted a reset: the rail under the brownout level, or the RESET pin. */
+export type ResetCause = "brownout" | "pin";
+
+/** One board in the shared run. `pins` is this tick's GPIO words. */
 export type WorldBoardState = {
   /**
    * The firmware image is loaded. While the run is paused the CPU does
@@ -150,10 +169,19 @@ export type WorldBoardState = {
   unpowered?: boolean;
   /** Absent only on a client that has not seen a state tick yet. */
   pins?: WorldPinState;
-  /** Brownout reboots since this world was loaded. Absent on older clients. */
+  /**
+   * Reboots after a reset (brownout or RESET pin) since this world was
+   * loaded. Absent on older clients.
+   */
   resets?: number;
-  /** True while the CPU is in reset, including the delay after the rail recovers. */
-  brownout?: boolean;
+  /** True while the CPU is in reset, including the time-out after release. */
+  inReset?: boolean;
+  /**
+   * What holds the chip while `inReset`: the rail under its brownout level,
+   * or the RESET pin, including the hold before a fresh image's first
+   * instruction. Absent while running.
+   */
+  resetCause?: ResetCause;
   /**
    * Volts on this board's 5V node. Absent when no supply reaches the board.
    * With no cable this equals the supply terminal.
@@ -166,43 +194,59 @@ export type WorldBoardState = {
    */
   leds?: Record<string, number>;
   /**
-   * Frame mean through the onboard LED at `leds[`${id}.led`]`.
+   * Frame mean through the onboard LED at `leds[onboardLedPath(id)]`.
    * @deprecated Read `leds` instead. Kept for the D13 card and the gauge.
    */
   ledCurrent?: number;
   /**
-   * Set while a running ATmega328P supply is above brownout and below
-   * 3.78 V. Reporting only: the step does not change.
+   * Set while a running chip's supply is above its brownout level and
+   * below its minimum operating voltage. Reporting only: the step does
+   * not change.
    */
   warnings?: WorldBoardWarning[];
 };
 
-/** 16 MHz ATmega328P is specified only above this supply voltage. */
-export const ATMEGA328P_16MHZ_MIN_V = 3.78;
-
-/** ATmega328P brownout level in volts when a board does not set one. */
-export const ATMEGA328P_BROWNOUT_V = 2.7;
-
 export type WorldBoardWarning = {
-  code: "below-16mhz-soa" | "degraded";
+  /** `below-16mhz-soa`, or the code of a degraded row that names the board. */
+  code: DiagCode;
   message: string;
 };
 
+/** The running chip's datasheet name and CPU clock, for warning text. */
+export type ChipClock = { label: string; hz: number };
+
+/**
+ * The onboard LED's instance path: the board's child named `led`. Its
+ * current is the board's `ledCurrent`, and the card reads it apart from
+ * the board's other LEDs.
+ */
+export function onboardLedPath(boardId: string): string {
+  return `${boardId}.led`;
+}
+
+/** `the ATmega328P needs at 16 MHz`, for the chip that is running. */
+export function soaNeed(chip: ChipClock): string {
+  return `the ${chip.label} needs at ${chip.hz / 1e6} MHz`;
+}
+
 /**
  * Warning while `voltage` is above the chip's brownout level and below
- * the 16 MHz minimum. Null outside that band, including brownout itself.
+ * `minVoltage`. Null outside that band, including brownout itself.
+ * Callers pass both thresholds and the chip's name and clock; this
+ * function does not look up a board.
  */
-export function atmega328pSoaWarning(
+export function soaWarning(
   voltage: number,
   brownoutVoltage: number,
-  minVoltage: number = ATMEGA328P_16MHZ_MIN_V
+  minVoltage: number,
+  chip: ChipClock
 ): WorldBoardWarning | null {
   if (!(voltage > brownoutVoltage) || !(voltage < minVoltage)) {
     return null;
   }
   return {
     code: "below-16mhz-soa",
-    message: `supply ${voltage.toFixed(2)} V is below the ${minVoltage.toFixed(2)} V the ATmega328P needs at 16 MHz; real boards may misbehave`,
+    message: `supply ${voltage.toFixed(2)} V is below the ${minVoltage.toFixed(2)} V ${soaNeed(chip)}; real boards may misbehave`,
   };
 }
 
@@ -288,7 +332,7 @@ export type WorldState = {
    */
   diagnostics?: {
     severity: "degraded";
-    code: string;
+    code: DiagCode;
     path: string;
     message: string;
   }[];
@@ -297,7 +341,47 @@ export type WorldState = {
    * timelines. `from` > 0 means the front of the recording was dropped.
    */
   recording?: RecordingSummary;
+  /**
+   * The snapshot ghost, when a client asked for one. Absent when off, and
+   * on a client from before the ghost.
+   */
+  ghost?: WorldGhostState;
 };
+
+/**
+ * Run the same world a second time with the behaviour at instance `path`
+ * set to `class`/`variant`, its snapshot. Every other level is the world's.
+ */
+export type WorldGhostSpec = {
+  path: string;
+  class: LevelClass;
+  variant: string;
+};
+
+/** One joint's gap between the run and its ghost, in radians. */
+export type WorldGhostJoint = {
+  robot: string;
+  joint: string;
+  /** |run − ghost| at this step. */
+  now: number;
+  /** The largest `now` since both runs started. */
+  max: number;
+};
+
+/**
+ * The ghost run, stepped with the same inputs as the run. `poses` is its
+ * bodies, like `WorldState.poses`. `joints` is sorted by `max`, largest
+ * first. `error` replaces both when the ghost could not run.
+ */
+export type WorldGhostState =
+  | {
+      path: string;
+      ref?: string;
+      impl: string;
+      poses: Record<string, Record<string, WorldLinkPose>>;
+      joints: WorldGhostJoint[];
+    }
+  | { path: string; error: string };
 
 /**
  * Who sent play or pause. A principal is its kind plus the device label
@@ -354,7 +438,12 @@ export type WorldClientMessage =
    * `capture-progress`, then `captured` or `capture-failed`. One job per world.
    */
   | { type: "capture"; nonce: string; path: string; axis: CaptureAxisName }
-  | { type: "capture-abort"; nonce: string };
+  | { type: "capture-abort"; nonce: string }
+  /**
+   * Turn the snapshot ghost on or off for this document. Both runs restart
+   * from zero so they share every input.
+   */
+  | { type: "ghost"; ghost: WorldGhostSpec | null };
 
 /** The axes a capture recipe can fill. */
 export type CaptureAxisName = "behaviour" | "body";
@@ -377,7 +466,7 @@ export type WorldServerMessage =
    * only that sender shows the line.
    */
   | { type: "board-error"; board: string; message: string; nonce?: string }
-  /** USART0 TX since the previous event. `next` is the ring offset after `text`. */
+  /** Console USART TX since the previous event. `next` is the ring offset after `text`. */
   | { type: "serial"; board: string; text: string; next: number }
   | {
       type: "serial-sent";
@@ -613,7 +702,7 @@ export function probeOfTrack(id: string): string | null {
 
 /**
  * One recorded instant. Joints are radians, like `WorldState`.
- * `minVoltage`, `maxCurrent`, `worst`, and `brownoutAny` cover the
+ * `minVoltage`, `maxCurrent`, `worst`, and `inResetAny` cover the
  * window (t − frame, t], so a 1 ms dip is not lost between frames.
  */
 export type RecordedFrame = {
@@ -640,6 +729,13 @@ export type RecordedFrame = {
       maxCurrent: number;
       /** Volts at V+ relative to GND. 0 when that port is unwired. */
       voltage: number;
+      /**
+       * Newton-metres the motor applied at the shaft over the step that
+       * ended at t, after the gearbox efficiency and the torque clamp. 0
+       * when limp. Present on a driven servo, and on the part a
+       * `dc-motor@1` shaft is named after.
+       */
+      torqueNm?: number;
       /** Metres. Present on a ranger. Null is no echo. */
       distanceM?: number | null;
       /** Echo high time, seconds. Present on a ranger. */
@@ -666,10 +762,10 @@ export type RecordedFrame = {
     {
       pins: WorldPinState;
       running: boolean;
-      /** In brownout at t. */
-      brownout: boolean;
-      /** In brownout at any step of the window. */
-      brownoutAny: boolean;
+      /** In reset at t (brownout or RESET pin). */
+      inReset: boolean;
+      /** In reset at any step of the window. */
+      inResetAny: boolean;
       /** Supply was in the 16 MHz out-of-SOA band at any step of the window. */
       belowSoa: boolean;
       /** Volts on the 5V node at t. With no cable this equals the terminal. */
@@ -686,13 +782,23 @@ export type RecordedFrame = {
        */
       leds?: Record<string, number>;
       /**
-       * Frame mean through `leds[`${id}.led`]`.
+       * Frame mean through `leds[onboardLedPath(id)]`.
        * @deprecated Read `leds`. Kept for the D13 card and the gauge.
        */
       ledCurrent?: number;
+      /**
+       * Solved node of each stamped pin (a circuit on its net), keyed by
+       * header port, over this frame's circuit steps: `v` the time-weighted
+       * mean, `lo` / `hi` the lowest and highest step. A pin with no circuit
+       * has no entry.
+       */
+      pinVolts?: Record<string, PinVolts>;
     }
   >;
 };
+
+/** Volts on one stamped pin over a frame. */
+export type PinVolts = { v: number; lo: number; hi: number };
 
 export type RecordingEvent =
   | {
@@ -712,7 +818,11 @@ export type RecordingEvent =
       by: WorldSender;
     }
   | { t: number; kind: "fault"; board: string; message: string }
-  | { t: number; kind: "reset"; board: string }
+  /**
+   * The chip went into reset. `cause` is `pin` when the RESET pin asserted
+   * it; absent for a brownout, so older recordings read the same.
+   */
+  | { t: number; kind: "reset"; board: string; cause?: "pin" }
   | { t: number; kind: "reboot"; board: string }
   | { t: number; kind: "reload"; board: string }
   | { t: number; kind: "play"; by: WorldSender }
@@ -746,8 +856,10 @@ export type TimelineTrack = {
   t: number[];
   /** Picked frame: joint degrees, volts at that port, or the command in degrees. */
   v: (number | null)[];
-  /** Window minimum, when the series has one (a supply terminal or a board node). */
+  /** Window minimum, when the series has one (a supply terminal, a board node, a solved pin). */
   lo?: number[];
+  /** Window maximum, when the series has one (a solved pin). */
+  hi?: number[];
 };
 
 /** Resets, reloads, faults, and serial lines. Times are seconds. */

@@ -81,6 +81,37 @@ export function treeRows(
   return rows;
 }
 
+/**
+ * Keep a name match, the ancestors that lead to it, and that row's
+ * subtree. A blank query returns every row.
+ */
+export function filterTreeRows(
+  rows: readonly TreeRow[],
+  query: string
+): TreeRow[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return rows.slice();
+  const keep = new Array<boolean>(rows.length).fill(false);
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row?.name.toLowerCase().includes(q)) continue;
+    keep[i] = true;
+    let depth = row.depth;
+    for (let j = i - 1; j >= 0 && depth > 0; j--) {
+      const parent = rows[j];
+      if (!parent || parent.depth >= depth) continue;
+      keep[j] = true;
+      depth = parent.depth;
+    }
+    for (let j = i + 1; j < rows.length; j++) {
+      const child = rows[j];
+      if (!child || child.depth <= row.depth) break;
+      keep[j] = true;
+    }
+  }
+  return rows.filter((_, index) => keep[index]);
+}
+
 /** Deeper than the stage's own children. Depth 0 stays open. */
 export function initialCollapsed(nodes: readonly WorldViewNode[]): Set<string> {
   const collapsed = new Set<string>();

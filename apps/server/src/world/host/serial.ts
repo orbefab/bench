@@ -144,7 +144,7 @@ export function sendSerial(
   return deliverSerial(doc, sender, board, text, nonce);
 }
 
-/** Test-only. Bytes waiting on USART0 RX, and how many have been accepted. */
+/** Test-only. Bytes waiting on console USART RX, and how many have been accepted. */
 export function boardRx(
   project: string,
   worldRel: string,

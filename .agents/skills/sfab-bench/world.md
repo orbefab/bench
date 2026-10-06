@@ -102,7 +102,8 @@ few degrees from those impulses and does not reach the stop.
 Call these with the `world` path from `get_viewer`. Use sim time. Wait
 for the status they return. Do not sample "whatever arrived last".
 
-1. `world_set_level` — write one rule into `run.levels` and restart.
+1. `world_set_level` — write one rule into the root part's `play.levels`
+   (`run.levels` on a legacy `.world.json`) and restart.
    `scope` is `default`, `type`, or `path`. `key` is the part type or the
    instance path (`nano`). `class` is 0, 1, 2, 3, or `null` to remove the
    rule. The default cannot be removed. A missing type or path is an error
@@ -161,11 +162,14 @@ limit. USB ("500 mA" port) is 5 V, 0.5 Ω, 0.9 A. A bench supply is
 0.05 Ω with the voltage and current limit in the file.
 
 `parts/sfab/arm-stall@1.0.0.json` is a bench supply at 5 V / 0.3 A. The starting
-current at rest pulls the rail to about 1.70 V: 0.3 A minus the 50 mA
-board and the 10 mA servo electronics leaves 0.24 A through 7.1 Ω. The
-board resets on the first pulse, holds 66 ms, reboots, and repeats. Each
-of those steps torques the joint once and the open winding coasts, so in
-2 s the arm walks a few degrees and does not reach the stop. The
+current at rest would pull the rail toward about 1.70 V: 0.3 A minus the
+50 mA board and the 10 mA servo electronics leaves 0.24 A through 7.1 Ω.
+The rail crosses the reset voltage first. The board resets on the first
+pulse, inside that step, and the servo opens there; at the 1 ms step the
+recorded minimum is about 2.56 V. It holds 66 ms, reboots, and repeats.
+Each of those steps torques the joint until the crossing and the open
+winding coasts, so in 2 s the arm walks a few degrees and does not reach
+the stop. The
 ATmega328P resets below 2.675 V and releases
 above 2.725 V. Pins float from the reset. The recording has a `reset`
 event at the assert and a `reboot` event at the first instruction. The
@@ -178,7 +182,9 @@ then `read_recording` from 0 to 2. Expect `resets` ≥ 1 on the board, a
 `reset` event, a later `reboot`, and a board frame whose `minVoltage`
 (the 5V node) is under 2.675. On a bench header that node equals the
 supply terminal. The serial line `— brownout reset —` is on the reboot.
-The board status says **in reset** through the 66 ms hold.
+The board status says **in reset (brownout)** through the 66 ms hold. A
+live board in reset has `inReset: true` and a `resetCause` of `brownout`
+or `pin`; a scrubbed frame says only **in reset**.
 
 ## Not yet
 

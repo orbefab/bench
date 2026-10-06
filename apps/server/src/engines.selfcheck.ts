@@ -10,6 +10,8 @@ import type { Engine, FixtureFile, GearTrain } from "@sfab-bench/contract";
 import { BodyEngine, collapse } from "@sfab-bench/engine-body";
 import { CircuitEngine } from "@sfab-bench/engine-circuit";
 import { McuEngine, parseIntelHex } from "@sfab-bench/engine-mcu";
+import { loadTypeById, logicThresholds } from "@sfab-bench/parts";
+import { nodeStore } from "./world/node-store";
 import { catalogRoot } from "./world/plan";
 
 const STEP = 0.001;
@@ -40,7 +42,31 @@ const STEP = 0.001;
   expect(parsed.ok, parsed.ok ? "" : parsed.error);
   if (!parsed.ok) throw new Error("unreachable");
   const mcu: Engine = new McuEngine();
-  mcu.init({ firmware: parsed.bytes, brownoutVoltage: 2.7 });
+  const pins = [
+    ...Array.from({ length: 14 }, (_, n) => `D${n}`),
+    ...Array.from({ length: 6 }, (_, n) => `A${n}`),
+  ];
+  const wire = [
+    ...Array.from({ length: 8 }, (_, n) => `PD${n}`),
+    ...Array.from({ length: 6 }, (_, n) => `PB${n}`),
+    ...Array.from({ length: 6 }, (_, n) => `PC${n}`),
+  ];
+  const catalog = catalogRoot();
+  const nano = loadTypeById(
+    catalog,
+    { store: nodeStore, catalogDir: catalog, assetRoot: catalog },
+    "arduino-nano"
+  );
+  if (!("type" in nano)) throw new Error("arduino-nano type did not load");
+  mcu.init({
+    chip: "atmega328p",
+    firmware: parsed.bytes,
+    brownoutVoltage: 2.7,
+    pins,
+    wire,
+    edges: (pin: string, supply: number) =>
+      logicThresholds(nano.type.ports[pin]?.ratings?.logic, supply),
+  });
   mcu.write("supply", "voltage", 5);
   mcu.advance(0.001);
   let line = "";
@@ -53,9 +79,53 @@ const STEP = 0.001;
   expect(line === "10\r\n", `first serial line ${JSON.stringify(line)}`);
   const drive = mcu.read("D13", "voltage");
   expect(drive === 0, `D13 ${drive}`);
+  // 0.3·VCC / 0.6·VCC at 5 V: 1.5 V and 3.0 V. Between them the level holds.
+  const levels = [2.0, 3.5, 2.5, 1.4, 2.5].map((volts) => {
+    mcu.write("D2", "voltage", volts);
+    return mcu.read("D2", "level");
+  });
+  expect(
+    JSON.stringify(levels) === "[0,1,1,0,0]",
+    `D2 levels ${JSON.stringify(levels)}`
+  );
   mcu.dispose();
   console.log(
     'engine mcu: first serial line 10 (nano-led serial "10\\r\\n90\\r\\n" first line at 0.001 s)'
+  );
+  console.log(
+    "engine mcu: D2 at 2.0 / 3.5 / 2.5 / 1.4 / 2.5 V reads 0 1 1 0 0 (vil 0.3·VCC, vih 0.6·VCC at 5 V)"
+  );
+}
+
+{
+  const tickPath = fileURLToPath(
+    new URL(
+      "../../../examples/pro-micro/firmware/blink-serial1/blink-serial1.hex",
+      import.meta.url
+    )
+  );
+  const parsed = parseIntelHex(readFileSync(tickPath, "utf8"));
+  expect(parsed.ok, parsed.ok ? "" : parsed.error);
+  if (!parsed.ok) throw new Error("unreachable");
+  const mcu: Engine = new McuEngine("u4");
+  mcu.init({
+    chip: "atmega32u4",
+    firmware: parsed.bytes,
+    brownoutVoltage: 2.7,
+  });
+  mcu.write("supply", "voltage", 5);
+  let text = "";
+  for (let ms = 1; ms <= 1500 && !text.includes("tick"); ms++) {
+    mcu.advance(ms / 1000);
+    for (let byte = mcu.read("serial", "tx"); byte >= 0; ) {
+      text += String.fromCharCode(byte);
+      byte = mcu.read("serial", "tx");
+    }
+  }
+  expect(text.includes("tick"), `32U4 serial ${JSON.stringify(text)}`);
+  mcu.dispose();
+  console.log(
+    "engine mcu: an atmega32u4 prints tick on Serial1 (pro-micro Serial1 ticks)"
   );
 }
 

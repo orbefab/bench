@@ -17,7 +17,7 @@
       "heldOut": "fixture",
       "metric": "static-max-abs",
       "quantity": "VBUS.voltage",
-      "value": 0.001501644
+      "value": 0.005903559
     }
   ],
   "form": "table@1",
@@ -98,7 +98,7 @@
       "seed": 20260927
     },
     "from": {
-      "hash": "c9d48041156ee9329a03d102376bcf4aea67b4b82d621890078c2394316a9354",
+      "hash": "f9d2bcb64754b2321af3a5c032bd1fba9b85059392978f10c82e4bc8b2dc3bf6",
       "level": "2",
       "part": "sfab/nano-power-input@1.0.0"
     },

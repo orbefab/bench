@@ -49,7 +49,11 @@ function mergeRatings(base?: Ratings, over?: Ratings): Ratings {
   return out;
 }
 
-function portRatings(inst: LiveInstance, port: string): Ratings {
+/** The port's ratings: the type's, with the part's own merged over them. */
+export function instanceRatings(
+  inst: Pick<LiveInstance, "type" | "part">,
+  port: string
+): Ratings {
   return mergeRatings(
     inst.type.ports[port]?.ratings,
     inst.part.ratings?.[port]
@@ -69,7 +73,7 @@ export function collectPorts(instances: LiveInstance[]): Map<string, LivePort> {
         domain: decl.domain,
         role: decl.role,
         direction: decl.direction,
-        ratings: portRatings(inst, name),
+        ratings: instanceRatings(inst, name),
         across,
       });
     }

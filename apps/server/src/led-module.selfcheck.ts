@@ -1,5 +1,6 @@
 /**
- * A red LED and a 220 Ω resistor, as a circuit or as one plain-branch table.
+ * A red LED and a 220 Ω resistor, as a circuit or as one `diode@1` fitted
+ * to the plain-branch sweep, bound to the module's `IN` and `GND`.
  * The example holds D9 high. No sketch in the tree PWMs that pin.
  */
 
@@ -16,7 +17,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { SnapshotFile, WorldState } from "@sfab-bench/contract";
+import {
+  pinBitSet,
+  type SnapshotFile,
+  type WorldState,
+} from "@sfab-bench/contract";
+import { branchDc } from "@sfab-bench/sim";
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { assemblyStampOf } from "./world/circuit-stamp";
@@ -68,7 +74,7 @@ async function runWorld(dir: string, world: string): Promise<WorldState> {
 function pinHigh(state: WorldState, bit: number): boolean {
   const pins = state.boards.nano?.pins;
   if (!pins) return false;
-  return ((pins.ddr >> bit) & 1) === 1 && ((pins.level >> bit) & 1) === 1;
+  return pinBitSet(pins.ddr, bit) && pinBitSet(pins.level, bit);
 }
 
 {
@@ -113,7 +119,12 @@ function pinHigh(state: WorldState, bit: number): boolean {
       const row = planned.plan.boards
         .flatMap((board) => board.stamp?.parts ?? [])
         .find((part) => part.path === "module");
-      expect(row?.form === "table@1", `module form ${row?.form}`);
+      expect(
+        row?.form === "diode@1" &&
+          row.nodes.A !== undefined &&
+          row.nodes.K !== undefined,
+        `module form ${row?.form} nodes ${JSON.stringify(row?.nodes)}`
+      );
     }
     const report = low.boards.nano ? "ran" : "missing";
     expect(report === "ran", "no board");
@@ -216,7 +227,7 @@ function pinHigh(state: WorldState, bit: number): boolean {
 }
 
 {
-  const dir = mkdtempSync(join(tmpdir(), "sfab-led-across-"));
+  const dir = mkdtempSync(join(tmpdir(), "sfab-led-bind-"));
   try {
     cpSync(nanoExample, dir, { recursive: true });
     rmSync(join(dir, "parts/sfab/nano-led-module@1.0.0.lock.json"));
@@ -238,17 +249,171 @@ function pinHigh(state: WorldState, bit: number): boolean {
         "utf8"
       )
     ) as SnapshotFile;
-    const params = snap.params as { across?: string[] };
-    params.across = ["NOPE", "GND"];
+    const across = structuredClone(snap);
+    across.params.across = ["NOPE", "GND"];
+    writeFileSync(snapPath, `${JSON.stringify(across)}\n`);
+    const acrossPlan = planWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
+    const acrossSaid = acrossPlan.ok
+      ? [
+          ...(acrossPlan.plan.degraded ?? []),
+          ...(acrossPlan.plan.report?.errors ?? []),
+        ]
+      : acrossPlan.errors;
+    expect(
+      acrossSaid.some((item) =>
+        item.message.includes("across port NOPE is not on led-module")
+      ),
+      `no across-port diagnostic: ${acrossSaid.map((item) => item.message).join(" | ")}`
+    );
+    snap.bind = { A: "NOPE", K: "GND" };
     writeFileSync(snapPath, `${JSON.stringify(snap)}\n`);
     const planned = planWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
-    expect(planned.ok, "bad across port did not run");
+    expect(planned.ok, "bad bind port did not run");
     if (!planned.ok) throw new Error("unreachable");
-    const hit = (planned.plan.degraded ?? []).find((item) =>
-      item.message.includes("across port NOPE")
+    const said = [
+      ...(planned.plan.degraded ?? []),
+      ...(planned.plan.report?.errors ?? []),
+    ];
+    const hit = said.find((item) =>
+      item.message.includes("NOPE is not on led-module")
     );
-    expect(hit, "no across-port diagnostic");
+    expect(
+      hit &&
+        !planned.plan.boards.some((board) =>
+          board.stamp?.parts.some((part) => part.path === "module")
+        ),
+      `no bind-port diagnostic: ${said.map((item) => item.message).join(" | ")}`
+    );
+    if (!hit) throw new Error("unreachable");
     console.log(`degraded ${hit.path}: ${hit.message}`);
+    // A refused snapshot says why once; it never also claims a table.
+    expect(
+      !said.some((item) => item.message.includes("table@1")),
+      `a refused diode snapshot also says table@1: ${said.map((item) => item.message).join(" | ")}`
+    );
+    // A key the form does not stamp is refused too, not left to the stamp.
+    const key = structuredClone(snap);
+    key.bind = { anode: "IN", K: "GND" };
+    writeFileSync(snapPath, `${JSON.stringify(key)}\n`);
+    const keyPlan = planWorld(dir, "parts/sfab/nano-led-module@1.0.0.json");
+    const keySaid = keyPlan.ok
+      ? [
+          ...(keyPlan.plan.degraded ?? []),
+          ...(keyPlan.plan.report?.errors ?? []),
+        ]
+      : keyPlan.errors;
+    const keyHit = keySaid.find((item) =>
+      item.message.includes("diode@1 stamps no port anode")
+    );
+    expect(
+      keyHit?.path === "module" &&
+        !keySaid.some((item) => item.message.includes("table@1")),
+      `no bind-key diagnostic: ${keySaid.map((item) => item.message).join(" | ")}`
+    );
+    console.log(`degraded ${keyHit.path}: ${keyHit.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// The guard: a converged point whose current is the solver's gmin leak is
+// not the part's drop. Backwards, the LED blocks, and 1 µA can only flow
+// through gmin (about −1 MV). Forward, the class-2 knee and 2 mA still read.
+{
+  const stamp = assemblyStampOf("sfab/led-module-red@1.0.0", "netlist", {
+    boardId: "module",
+    across: ["IN", "GND"],
+  });
+  let refused = "";
+  try {
+    branchDc(stamp, "IN", "GND", -1e-6);
+  } catch (err) {
+    refused = messageOf(err);
+  }
+  expect(refused.includes("gmin leak"), `reverse 1 µA: ${refused || "read"}`);
+  const knee = branchDc(stamp, "IN", "GND", 3.7e-6);
+  const twoMa = branchDc(stamp, "IN", "GND", 2e-3);
+  expect(
+    Math.abs(knee - 1.317328) < 1e-6 && Math.abs(twoMa - 2.142192) < 1e-6,
+    `forward ${knee} V, ${twoMa} V`
+  );
+  console.log(
+    `branchDc guard: reverse 1 µA refused (${refused}); knee ${knee.toFixed(6)} V, 2 mA ${twoMa.toFixed(6)} V`
+  );
+}
+
+// The run checks a snapshot that runs as a circuit form at the part's own
+// ports. A copy of the module's snapshot bounded at 5 mA, with D9 high
+// (about 11 mA), warns once at `IN` and lists it on the report row.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-led-envelope-"));
+  const world = "parts/sfab/nano-led-module@1.0.0.json";
+  try {
+    cpSync(nanoExample, dir, { recursive: true });
+    rmSync(join(dir, "parts/sfab/nano-led-module@1.0.0.lock.json"));
+    mkdirSync(join(dir, "snapshots", "sfab"), { recursive: true });
+    const snap = JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL(
+            "../catalog/snapshots/sfab/led-module-red@1.0.0.json",
+            import.meta.url
+          )
+        ),
+        "utf8"
+      )
+    ) as SnapshotFile;
+    snap.envelope.bounds = { "IN.current": [0, 0.005] };
+    writeFileSync(
+      join(dir, "snapshots", "sfab", "led-module-red@1.0.0.json"),
+      `${JSON.stringify(snap)}\n`
+    );
+    const seen: {
+      report: {
+        snapshots: { path: string; ref: string; envelope?: string[] }[];
+        warnings: { code: string; path: string; message: string }[];
+      } | null;
+      failed: string | null;
+    } = { report: null, failed: null };
+    const attached = await attachWorld(dir, world, {
+      sender: { kind: "loopback", label: "Mac" },
+      onEvent(event) {
+        if (event.type === "error") {
+          seen.failed =
+            event.message ??
+            event.errors.map((item) => item.message).join("; ");
+        }
+        if (event.type === "state" && event.report) seen.report = event.report;
+      },
+    });
+    if ("error" in attached) throw new Error(attached.error);
+    try {
+      attached.step(400);
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline && !seen.failed) {
+        const hit = seen.report?.warnings.some(
+          (item) => item.code === "envelope" && item.path === "module"
+        );
+        if (hit) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      if (seen.failed) throw new Error(seen.failed);
+      const warned = (seen.report?.warnings ?? []).filter(
+        (item) => item.code === "envelope" && item.path === "module"
+      );
+      const row = seen.report?.snapshots.find((item) => item.path === "module");
+      expect(
+        warned.length === 1 &&
+          warned[0]?.message.includes("module port IN quantity Current") &&
+          row?.envelope?.length === 1,
+        `module envelope: ${JSON.stringify(warned)} row ${JSON.stringify(row?.envelope)}`
+      );
+      console.log(`led-module envelope: ${warned[0]?.message}`);
+    } finally {
+      attached.detach();
+      await stopWorld(dir, world);
+      closeRootWatches();
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

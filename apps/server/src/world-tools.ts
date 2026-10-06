@@ -1,30 +1,36 @@
 import {
-  ARDUINO_PINS,
-  ATMEGA328P_16MHZ_MIN_V,
-  ATMEGA328P_BROWNOUT_V,
-  atmega328pSoaWarning,
   boardTrackId,
-  type EditOp,
+  type ChipClock,
   extractUrdfJointsAndMeshes,
   type JointLimitKind,
   jointLimitWarning,
-  maskHasPin,
   partTrackId,
   pastLimitAmount,
+  pinBitSet,
   RECORD_FRAME_MS,
   type RecordingEvent,
   type RecordingManifest,
   type RecordingRead,
   type RecordingTracks,
+  type ResetCause,
+  soaNeed,
+  soaWarning,
   supplyTrackId,
   type WorldSender,
   type WorldState,
 } from "@sfab-bench/contract";
-import { confirmSentence, readEditOp } from "@sfab-bench/parts";
+import { confirmSentence } from "@sfab-bench/parts";
+import { commandDegFromPulse } from "@sfab-bench/sim/servo";
+import { powerFeedsOf, servoSignalDrives } from "@sfab-bench/sim/wiring";
 import { tool } from "ai";
 import { z } from "zod";
 import { viewerProjectRoot, WORLD_ARG } from "./viewer-context";
-import { applyDocumentEdit, redoDocument, undoDocument } from "./world/edit";
+import {
+  applyDocumentEdit,
+  type EditError,
+  redoDocument,
+  undoDocument,
+} from "./world/edit";
 import { readerFor } from "./world/files";
 import {
   ensureWorldRun,
@@ -39,9 +45,8 @@ import {
   stepWorld,
   worldRunView,
 } from "./world/host";
+import { parseEditRequest } from "./world/live-message";
 import { planWorld, type RunPlan, WORLD_V1_MESSAGE } from "./world/plan";
-import { commandDegFromPulse } from "./world/servo";
-import { powerFeedsOf, servoSignalDrives } from "./world/wiring";
 
 /** Who sent the command. Desktop clients show this label (D-015). */
 const AGENT: WorldSender = { kind: "agent" };
@@ -58,12 +63,13 @@ const PART_FIELDS = new Set([
   "state",
   "current",
   "voltage",
+  "torqueNm",
 ]);
 const SUPPLY_FIELDS = new Set(["voltage", "current", "minVoltage"]);
 const BOARD_FIELDS = new Set([
   "pins",
   "running",
-  "brownout",
+  "inReset",
   "voltage",
   "minVoltage",
   "ledCurrent",
@@ -83,6 +89,8 @@ type AgentEvent = {
   message?: string;
   id?: string;
   position?: [number, number, number];
+  /** On a reset: `pin` when the RESET pin asserted it, absent for a brownout. */
+  cause?: "pin";
 };
 
 type AgentFrame = {
@@ -97,6 +105,8 @@ type AgentFrame = {
       current?: number;
       /** Volts at V+ relative to GND. */
       voltage?: number;
+      /** Newton-metres at the shaft. Present on a driven servo. */
+      torqueNm?: number;
     }
   >;
   supplies?: Record<
@@ -108,12 +118,13 @@ type AgentFrame = {
     {
       pins?: string[];
       running?: boolean;
-      brownout?: boolean;
-      /** 5V node at t. */
+      /** In reset at t or at any step of the window. */
+      inReset?: boolean;
+      /** Board node at t. */
       voltage?: number;
-      /** Lowest 5V-node voltage in the window. */
+      /** Lowest board-node voltage in the window. */
       minVoltage?: number;
-      /** Amperes through the D13 LED. Absent when that board has no LED stamp. */
+      /** Amperes through the board's onboard LED (the view's `ledPin`). Absent when that board has no LED stamp. */
       ledCurrent?: number;
     }
   >;
@@ -141,16 +152,36 @@ function capTail<T>(items: T[]): { items: T[]; truncated: boolean } {
   return { items: items.slice(items.length - LIST_CAP), truncated: true };
 }
 
+/** Driven outputs, named from this board's pin list. Bit `i` is pin `i`. */
 function drivenPins(
-  pins: { ddr: number; level: number } | undefined
+  names: readonly string[] | undefined,
+  pins:
+    | { ddr: number | readonly number[]; level: number | readonly number[] }
+    | undefined
 ): string[] {
-  if (!pins) return [];
+  if (!pins || !names || names.length === 0) return [];
   const out: string[] = [];
-  for (const pin of ARDUINO_PINS) {
-    if (!maskHasPin(pins.ddr, pin)) continue;
-    out.push(`${pin}: out ${maskHasPin(pins.level, pin) ? "H" : "L"}`);
+  for (let i = 0; i < names.length; i++) {
+    const pin = names[i];
+    if (!pin || !pinBitSet(pins.ddr, i)) continue;
+    out.push(`${pin}: out ${pinBitSet(pins.level, i) ? "H" : "L"}`);
   }
   return out;
+}
+
+function pinOrdersOf(plan: RunPlan): Map<string, readonly string[]> {
+  return new Map(plan.boards.map((board) => [board.id, board.pinOrder]));
+}
+
+/** Brownout and the SOA floor. Null when the chip publishes none. */
+function chipBand(
+  loaded: Loaded,
+  id: string
+): { brownout: number; floor: number; clock: ChipClock } | null {
+  const board = loaded.plan.boards.find((row) => row.id === id);
+  const floor = board?.minOperatingVoltage;
+  if (!board || floor == null || !board.clock) return null;
+  return { brownout: board.brownoutVoltage, floor, clock: board.clock };
 }
 
 function loadPlan(project: string, world: string): RunPlan | { error: string } {
@@ -217,10 +248,19 @@ function liveWarnings(
   documentMessages: readonly string[]
 ): string[] {
   const out: string[] = [];
+  const boardIds = Object.keys(state.boards);
   for (const [id, board] of Object.entries(state.boards)) {
     for (const warning of board.warnings ?? []) {
       out.push(`${id}: ${warning.message}`);
     }
+  }
+  // A degraded row on a part, not a board, is not on a board's list: an
+  // unbound ranger or servo port, a shaft that reaches no joint.
+  for (const row of state.diagnostics ?? []) {
+    const onBoard = boardIds.some(
+      (id) => row.path === id || row.path.startsWith(`${id}.`)
+    );
+    if (!onBoard) out.push(`${row.path}: ${row.message}`);
   }
   const limits = jointLimits(loaded.root, loaded.world, loaded.plan);
   const units = jointUnits(loaded.root, loaded.world, loaded.plan);
@@ -255,16 +295,19 @@ function rangeWarnings(
     for (const [id, board] of Object.entries(frame.boards)) {
       if (!board.belowSoa) continue;
       soaSeen.add(id);
-      const brownout =
-        loaded.plan.boards.find((board) => board.id === id)?.brownoutVoltage ??
-        ATMEGA328P_BROWNOUT_V;
+      const band = chipBand(loaded, id);
       const row = frame.boards[id];
-      if (!row) continue;
+      if (!band || !row) continue;
       const candidate =
-        row.minVoltage > brownout && row.minVoltage < ATMEGA328P_16MHZ_MIN_V
+        row.minVoltage > band.brownout && row.minVoltage < band.floor
           ? row.minVoltage
           : row.voltage;
-      const warning = atmega328pSoaWarning(candidate, brownout);
+      const warning = soaWarning(
+        candidate,
+        band.brownout,
+        band.floor,
+        band.clock
+      );
       if (!warning) continue;
       const prev = soaVoltage.get(id);
       if (prev === undefined || candidate < prev) soaVoltage.set(id, candidate);
@@ -279,16 +322,15 @@ function rangeWarnings(
   }
   for (const id of soaSeen) {
     const voltage = soaVoltage.get(id);
-    const brownout =
-      loaded.plan.boards.find((board) => board.id === id)?.brownoutVoltage ??
-      ATMEGA328P_BROWNOUT_V;
+    const band = chipBand(loaded, id);
+    if (!band) continue;
     const warning =
-      voltage === undefined ? null : atmega328pSoaWarning(voltage, brownout);
-    out.push(
-      warning
-        ? `${id}: ${warning.message}`
-        : `${id}: supply was below the 3.78 V the ATmega328P needs at 16 MHz`
-    );
+      voltage === undefined
+        ? null
+        : soaWarning(voltage, band.brownout, band.floor, band.clock);
+    const floor = band.floor.toFixed(2);
+    const fallback = `${id}: supply was below the ${floor} V ${soaNeed(band.clock)}`;
+    out.push(warning ? `${id}: ${warning.message}` : fallback);
   }
   for (const [joint, amount] of past) {
     const kind = limitKind(units.get(joint));
@@ -335,11 +377,13 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       running: boolean;
       fault: string | null;
       resets: number;
-      brownout: boolean;
+      inReset: boolean;
+      /** While `inReset`: `brownout` or `pin`. Absent otherwise. */
+      resetCause?: ResetCause;
       pins: string[];
-      /** Volts on the 5V node. Null when no supply reaches the board. */
+      /** Volts on the board node. Null when no supply reaches the board. */
       voltage: number | null;
-      /** Amperes through the D13 LED. Absent when that board has no LED stamp. */
+      /** Amperes through the board's onboard LED (the view's `ledPin`). Absent when that board has no LED stamp. */
       ledCurrent?: number;
       level?: number | null;
       variant?: string | null;
@@ -352,8 +396,12 @@ function statusOf(loaded: Loaded, stateOverride?: WorldState) {
       running: unpowered ? false : board.running,
       fault: unpowered ? "unpowered" : (board.fault ?? null),
       resets: board.resets ?? 0,
-      brownout: board.brownout === true,
-      pins: drivenPins(board.pins),
+      inReset: board.inReset === true,
+      ...(board.resetCause ? { resetCause: board.resetCause } : {}),
+      pins: drivenPins(
+        doc.boards.find((row) => row.id === id)?.pinOrder,
+        board.pins
+      ),
       voltage:
         unpowered || board.voltage === undefined
           ? null
@@ -681,7 +729,8 @@ function wantsJoint(
 function trimFrame(
   frame: RecordingRead["frames"][number],
   selected: ReturnType<typeof selectTracks>,
-  units: Map<string, "deg" | "m">
+  units: Map<string, "deg" | "m">,
+  pinOrders: ReadonlyMap<string, readonly string[]>
 ): AgentFrame {
   const out: AgentFrame = { t: seconds(frame.t) };
   const joints: NonNullable<AgentFrame["joints"]> = {};
@@ -707,6 +756,9 @@ function trimFrame(
     if (all || fields.has("state")) part.state = row.state;
     if (all || fields.has("current")) part.current = row.current;
     if (all || fields.has("voltage")) part.voltage = row.voltage;
+    if ((all || fields.has("torqueNm")) && row.torqueNm !== undefined) {
+      part.torqueNm = row.torqueNm;
+    }
     parts[id] = part;
   }
   if (Object.keys(parts).length > 0) out.parts = parts;
@@ -717,10 +769,8 @@ function trimFrame(
     if (selected.filtered && !fields) continue;
     const all = !fields || fields === "all";
     const supply: NonNullable<AgentFrame["supplies"]>[string] = {};
-    if (all || fields.has("voltage") || fields.has("minVoltage")) {
-      if (all || fields.has("voltage")) supply.voltage = row.voltage;
-      supply.minVoltage = row.minVoltage;
-    }
+    if (all || fields.has("voltage")) supply.voltage = row.voltage;
+    if (all || fields.has("minVoltage")) supply.minVoltage = row.minVoltage;
     if (all || fields.has("current")) supply.current = row.current;
     supplies[id] = supply;
   }
@@ -732,10 +782,12 @@ function trimFrame(
     if (selected.filtered && !fields) continue;
     const all = !fields || fields === "all";
     const board: NonNullable<AgentFrame["boards"]>[string] = {};
-    if (all || fields.has("pins")) board.pins = drivenPins(row.pins);
+    if (all || fields.has("pins")) {
+      board.pins = drivenPins(pinOrders.get(id), row.pins);
+    }
     if (all || fields.has("running")) board.running = row.running;
-    if (all || fields.has("brownout")) {
-      board.brownout = row.brownout || row.brownoutAny;
+    if (all || fields.has("inReset")) {
+      board.inReset = row.inReset || row.inResetAny;
     }
     if (all || fields.has("voltage") || fields.has("minVoltage")) {
       if (all || fields.has("voltage")) board.voltage = row.voltage;
@@ -806,7 +858,18 @@ function agentEvents(events: RecordingEvent[]): {
   const capped = capSerial(kept);
   const slim: AgentEvent[] = [];
   for (const event of capped.events) {
-    if (event.kind === "reset" || event.kind === "reload") {
+    if (event.kind === "reset") {
+      slim.push(
+        event.cause
+          ? {
+              t: event.t,
+              kind: "reset",
+              board: event.board,
+              cause: event.cause,
+            }
+          : { t: event.t, kind: "reset", board: event.board }
+      );
+    } else if (event.kind === "reload") {
       slim.push({ t: event.t, kind: event.kind, board: event.board });
     } else if (event.kind === "fault") {
       slim.push({
@@ -876,6 +939,7 @@ async function readWindow(
   });
   if ("error" in read) return read;
   const units = jointUnits(loaded.root, loaded.world, loaded.plan);
+  const pinOrders = pinOrdersOf(loaded.plan);
   const serial = agentEvents(read.events);
   const events = capTail(serial.events);
   return {
@@ -883,7 +947,9 @@ async function readWindow(
     from,
     to,
     frameMs: read.frameMs,
-    frames: read.frames.map((frame) => trimFrame(frame, selected, units)),
+    frames: read.frames.map((frame) =>
+      trimFrame(frame, selected, units, pinOrders)
+    ),
     raw: read,
     events: events.items,
     truncated: serial.truncated || events.truncated,
@@ -951,9 +1017,26 @@ function commandAck(view: {
   };
 }
 
+/**
+ * What the agent reads when an edit, undo, or redo did not finish. A run
+ * fault means the file was written and the history moved; only the
+ * restart after it failed. A refusal changed nothing.
+ */
+export function editFailure(
+  failed: EditError
+): Omit<EditError, "runFault"> & { written?: true } {
+  if (failed.runFault) {
+    return {
+      error: `The file was written, but the run did not restart: ${failed.error}`,
+      written: true,
+    };
+  }
+  return failed;
+}
+
 export const worldTools = {
   world_status: tool({
-    description: `Read a world's shared run. ${WORLD_ARG} Returns sim time, who last played or paused, each board (running, fault, resets, brownout, voltage on its 5V node, ledCurrent in amperes through the D13 LED when that board stamps one, driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose 5V node is below the 16 MHz minimum, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.`,
+    description: `Read a world's shared run. ${WORLD_ARG} Returns sim time, who last played or paused, each board (running, fault, resets, inReset and, while in reset, resetCause "brownout" or "pin", voltage on its board node, ledCurrent in amperes through its onboard LED when that board stamps one (D13 on the Nano, RXLED on the Pro Micro), driven pins such as "D9: out H", and behaviour level, variant, and reason), each part including a ranger (pulseUs, commandDeg, state, current, voltage at V+ relative to GND, board, pin, and behaviour level, variant, and reason), each supply (terminal voltage and current, and behaviour level, variant, and reason), each joint in degrees or metres, the recording extent, validator diagnostics when the document has any, and warnings (empty when none). warnings names a board whose node is above its brownout but below its chip's minimum operating voltage at its clock, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. A board no supply reaches has fault "unpowered" and voltage null. boards, parts, and supplies also list axes: behaviour, body, and visual, each with class, variant, and reason.`,
     inputSchema: z.object({ world: z.string() }),
     execute: async ({ world }) => {
       const found = await openRun(world);
@@ -1004,7 +1087,7 @@ export const worldTools = {
     },
   }),
   read_recording: tool({
-    description: `Read a world's recording for an agent. ${WORLD_ARG} Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, supply:usb.voltage (the terminal), and board:uno.voltage (the 5V node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets, reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose 5V node was in the 16 MHz out-of-SOA band, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.`,
+    description: `Read a world's recording for an agent. ${WORLD_ARG} Tracks look like joint:shoulder, joint:arm/shoulder, part:servo.pulseUs, part:servo.voltage, part:servo.torqueNm (newton-metres at the shaft, driven servos only), supply:usb.voltage (the terminal), supply:usb.minVoltage (its lowest over the frame), and board:uno.voltage (the board node) or board:uno.pins. An unknown track is an error. Defaults to the last 5 seconds and 50 frames (max 500). Returns those tracks, plus resets (cause "pin" when the RESET pin held the chip, absent for a brownout), reloads, faults, and serial lines (at most 200), a provenance manifest, and warnings (empty when none). warnings cover the range: a board whose node was above its brownout but below its chip's minimum operating voltage, a hinge more than 1° or a slide more than 1 mm past its limit, and validator warnings. Serial text is the last 4000 characters. truncated is set when either cap drops data.`,
     inputSchema: z.object({
       world: z.string(),
       from: z.number().optional(),
@@ -1106,28 +1189,32 @@ export const worldTools = {
     execute: async ({ world, ops, label, part, break: breaking }) => {
       const found = await openRun(world);
       if ("error" in found) return found;
-      const parsed: EditOp[] = [];
-      for (const item of ops) {
-        const read = readEditOp({
+      // The socket's own edit schema; an op without a document edits the
+      // part this call names.
+      const request = parseEditRequest({
+        type: "edit",
+        ops: ops.map((item) => ({
           ...item,
           document:
             typeof item.document === "string"
               ? item.document
               : (part ?? found.world),
-        });
-        if ("error" in read) return read;
-        parsed.push(read);
-      }
+        })),
+        ...(label !== undefined ? { label } : {}),
+        ...(part !== undefined ? { part } : {}),
+        ...(breaking ? { confirm: "break" } : {}),
+      });
+      if ("error" in request) return request;
       const applied = await applyDocumentEdit(
         found.root,
         found.world,
-        parsed,
-        label,
-        part,
-        breaking ? "break" : undefined
+        request.ops,
+        request.label,
+        request.part,
+        request.confirm
       );
       if ("needsConfirm" in applied) return confirmSentence(applied.ports);
-      if ("error" in applied) return applied;
+      if ("error" in applied) return editFailure(applied);
       return applied.sentence;
     },
   }),
@@ -1141,7 +1228,7 @@ export const worldTools = {
       const found = await openRun(world);
       if ("error" in found) return found;
       const applied = await undoDocument(found.root, found.world, part);
-      if ("error" in applied) return applied;
+      if ("error" in applied) return editFailure(applied);
       return applied.sentence;
     },
   }),
@@ -1155,7 +1242,7 @@ export const worldTools = {
       const found = await openRun(world);
       if ("error" in found) return found;
       const applied = await redoDocument(found.root, found.world, part);
-      if ("error" in applied) return applied;
+      if ("error" in applied) return editFailure(applied);
       return applied.sentence;
     },
   }),
@@ -1201,7 +1288,7 @@ export const worldTools = {
       ]);
       if ("needsConfirm" in applied)
         return { error: confirmSentence(applied.ports) };
-      if ("error" in applied) return applied;
+      if ("error" in applied) return editFailure(applied);
       return {
         rows: levelRows(
           applied.report,

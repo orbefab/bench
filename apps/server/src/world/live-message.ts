@@ -19,6 +19,8 @@ const NONCE = "nonce must be a short string";
 const PART = "part must be a part id";
 const SERIAL_TEXT = `serial text must be a string of at most ${SERIAL_TEXT_MAX} characters`;
 const TRACKS = "timeline tracks must be a short list of port ids";
+const GHOST =
+  "ghost must be null or a path, a level class 0 to 3, and a variant";
 
 const nonce = z
   .string({ error: NONCE })
@@ -99,6 +101,22 @@ const schemas = {
     }),
   }),
   "capture-abort": z.object({ type: z.literal("capture-abort"), nonce }),
+  ghost: z.object({
+    type: z.literal("ghost"),
+    ghost: z
+      .object(
+        {
+          path: z.string({ error: GHOST }).min(1, GHOST).max(256, GHOST),
+          class: z.union(
+            [z.literal(0), z.literal(1), z.literal(2), z.literal(3)],
+            { error: GHOST }
+          ),
+          variant: z.string({ error: GHOST }).min(1, GHOST).max(64, GHOST),
+        },
+        { error: GHOST }
+      )
+      .nullable(),
+  }),
   edit: z
     .object({
       type: z.literal("edit"),
@@ -151,6 +169,19 @@ function firstIssue(
     rank(issue) < rank(best) ? issue : best
   );
   return first.message;
+}
+
+/**
+ * An edit request read by the socket's own `edit` schema. The agent's
+ * `world_edit` tool reads its ops here too, so both paths refuse the
+ * same input with the same sentence.
+ */
+export function parseEditRequest(
+  value: unknown
+): z.output<typeof schemas.edit> | { error: string } {
+  const read = schemas.edit.safeParse(value);
+  if (read.success) return read.data;
+  return { error: firstIssue(schemas.edit, read.error.issues) };
 }
 
 /** A message the socket refused. `refuses` and `board` say who is told. */

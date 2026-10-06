@@ -1,3 +1,4 @@
+import type { DiagCode } from "@sfab-bench/contract";
 import {
   type ADCConfig,
   type AVRPortConfig,
@@ -13,6 +14,7 @@ import {
   timer2Config,
   usart0Config,
 } from "avr8js";
+import { ATMEGA32U4 } from "./atmega32u4";
 
 /** A native pin: the chip's own name for it lives in `ChipSpec.pins`. */
 export type ChipPin = {
@@ -21,15 +23,25 @@ export type ChipPin = {
   bit: number;
 };
 
-/** Data-space addresses the reset check reads. Names are the 328P's. */
+/** A limit the emulator names once when this chip runs. It does not emulate it. */
+export type ChipGap = {
+  code: DiagCode;
+  /** Sentence a user can read. */
+  message: string;
+};
+
+/**
+ * Data-space addresses the reset check reads. `UCSRnA` and `UCSRnC` are
+ * the console USART's (USART0 on the 328P, USART1 on the 32U4).
+ */
 export type ChipIo = {
   DDRB: number;
   PORTB: number;
   SREG: number;
   TCCR1A: number;
   TCCR1B: number;
-  UCSR0A: number;
-  UCSR0C: number;
+  UCSRnA: number;
+  UCSRnC: number;
 };
 
 /**
@@ -44,6 +56,8 @@ export type ChipIo = {
  */
 export type ChipSpec = {
   chip: string;
+  /** Datasheet name for user-facing text, for example `ATmega328P`. */
+  label: string;
   /** CPU clock, hertz. */
   hz: number;
   /** Flash, bytes. */
@@ -60,8 +74,21 @@ export type ChipSpec = {
   io: ChipIo;
   /** Native pin name to port and bit. */
   pins: Readonly<Record<string, ChipPin>>;
+  /**
+   * ADC channel index to the chip's pin name. The board's expose turns that
+   * name into the header label. Analog-only pins (ADC6) live here and not
+   * in `pins`.
+   */
+  adcPins: Readonly<Record<number, string>>;
   /** Write hooks and other setup for a fresh CPU. Absent on the 328P. */
   onCpu?: (cpu: CPU) => void;
+  /**
+   * Runs once avr8js's ADC is attached, for a register layout avr8js
+   * reads differently (the 32U4's MUX5). Absent on the 328P.
+   */
+  onAdc?: (cpu: CPU) => void;
+  /** Named once per boot. Absent when the record emulates what it claims. */
+  gaps?: readonly ChipGap[];
 };
 
 function pinTable(
@@ -78,6 +105,7 @@ function pinTable(
 
 const ATMEGA328P: ChipSpec = {
   chip: "atmega328p",
+  label: "ATmega328P",
   hz: 16_000_000,
   flashBytes: 32 * 1024,
   sramBytes: 2048,
@@ -91,14 +119,25 @@ const ATMEGA328P: ChipSpec = {
     SREG: 0x5f,
     TCCR1A: 0x80,
     TCCR1B: 0x81,
-    UCSR0A: 0xc0,
-    UCSR0C: 0xc2,
+    UCSRnA: 0xc0,
+    UCSRnC: 0xc2,
   },
   pins: pinTable({ B: 8, C: 7, D: 8 }),
+  adcPins: {
+    0: "PC0",
+    1: "PC1",
+    2: "PC2",
+    3: "PC3",
+    4: "PC4",
+    5: "PC5",
+    6: "ADC6",
+    7: "ADC7",
+  },
 };
 
 const CHIPS: Readonly<Record<string, ChipSpec>> = {
   atmega328p: ATMEGA328P,
+  atmega32u4: ATMEGA32U4,
 };
 
 /** The record for a chip type, or null when the emulator does not know it. */

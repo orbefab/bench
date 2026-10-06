@@ -3,8 +3,16 @@
  * plan. Not a file format.
  */
 
-import type { AxisName, Domain, LevelClass, Params, Pose } from "./layered";
+import type {
+  AxisName,
+  Domain,
+  LevelClass,
+  ParamForward,
+  Params,
+  Pose,
+} from "./layered";
 import type { WorldPrimitive, WorldStepProp, WorldTarget } from "./world";
+import type { ChipClock } from "./world-live";
 
 export type WorldViewRobot = {
   id: string;
@@ -20,8 +28,33 @@ export type WorldViewBoard = {
   source?: string;
   pose: Pose;
   size: [number, number, number];
+  /** Drawn by this form's builder. Absent: a plain box. */
+  form?: WorldViewForm;
   /** Volts. The card's brownout line uses this, not a client-side catalog. */
   brownoutVoltage: number;
+  /**
+   * Volts. The chip part's minimum operating voltage, the SOA floor.
+   * Null when the chip does not publish one.
+   */
+  minOperatingVoltage: number | null;
+  /** The chip's datasheet name and clock, for the SOA line. Null: unknown. */
+  clock: ChipClock | null;
+  /**
+   * Exposed GPIO header names, in the order `WorldPinState` bits use.
+   * Sent with the view. A later state tick does not repeat the list.
+   */
+  pins: readonly string[];
+  /**
+   * The pin the onboard LED hangs on (`D13` on the Nano, `RXLED` on the
+   * Pro Micro). The card labels the LED current with it. Null when the
+   * running level stamps no onboard LED.
+   */
+  ledPin: string | null;
+  /**
+   * The board's power pin, whose node is the board voltage (`5V` on the Nano
+   * and the Uno, `VCC` on the Pro Micro). The card labels that voltage with it.
+   */
+  voltagePin: string;
 };
 
 export type WorldViewSupply = {
@@ -31,11 +64,29 @@ export type WorldViewSupply = {
   rSeries: number;
 };
 
+/**
+ * A procedural visual the client draws inside the box. Params are resolved:
+ * a `$param` already reads the instance's value.
+ */
+export type WorldViewForm = {
+  form: string;
+  params: Record<string, number | string | boolean>;
+  /** Forms drawn inside this one, centred at `at` in its box frame. */
+  inner?: {
+    form: string;
+    size: [number, number, number];
+    at: [number, number, number];
+    params: Record<string, number | string | boolean>;
+  }[];
+};
+
 /** A part or supply whose resolved visual is a box. A URDF body is not one. */
 export type WorldViewBox = {
   id: string;
   pose: Pose;
   size: [number, number, number];
+  /** Drawn by this form's builder. Absent: a plain box. */
+  form?: WorldViewForm;
   /** A click selects this part or supply. */
   pick: "part" | "supply";
 };
@@ -155,6 +206,12 @@ export type WorldViewNode = {
   ports: WorldViewPort[];
   /** Instance params, SI. Empty when the instance sets none. */
   params: Params;
+  /**
+   * Params filled from the parent via `$param`. Keyed by this instance's
+   * param name. Absent when none were forwarded. The card shows these
+   * read-only; editing stays on the parent.
+   */
+  forwards?: Readonly<Record<string, ParamForward>>;
   /**
    * Authored wires of this assembly, in netlist order. Absent on a
    * leaf, a ground, and a target.

@@ -1,0 +1,159 @@
+{
+  "format": "sfab.part-type@1",
+  "id": "sparkfun-pro-micro",
+  "plausible": {
+    "Voltage": [-1, 25],
+    "Current": [-5, 5]
+  },
+  "templates": [
+    {
+      "id": "D{n}",
+      "n": [0, 10],
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "pwm": [3, 5, 6, 9, 10],
+      "adc": [4, 6, 8, 9, 10],
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
+      }
+    },
+    {
+      "id": "D{n}",
+      "n": [14, 16],
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
+      }
+    },
+    {
+      "id": "A{n}",
+      "n": [0, 3],
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "adc": true,
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
+      }
+    }
+  ],
+  "ports": {
+    "VCC": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in",
+      "ratings": {
+        "voltage": [4.5, 5.5],
+        "absMaxVoltage": [0, 6]
+      }
+    },
+    "VBUS": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in",
+      "internal": true,
+      "connector": "usb",
+      "ratings": {
+        "voltage": [5, 5],
+        "absMaxVoltage": [0, 6]
+      }
+    },
+    "RAW": {
+      "domain": "electrical",
+      "role": "power",
+      "direction": "in",
+      "ratings": {
+        "voltage": [7, 12],
+        "absMaxVoltage": [0, 20]
+      }
+    },
+    "GND": {
+      "domain": "electrical",
+      "role": "ground",
+      "direction": "passive"
+    },
+    "RST": {
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "in",
+      "ratings": {
+        "absMaxVoltage": [-0.5, 13]
+      }
+    },
+    "RXLED": {
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "internal": true,
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
+      }
+    },
+    "TXLED": {
+      "domain": "electrical",
+      "role": "logic",
+      "direction": "inout",
+      "internal": true,
+      "ratings": {
+        "absMaxVoltage": [-0.5, 5.5],
+        "absMaxCurrent": [-0.04, 0.04],
+        "logic": {
+          "vil": [0.2, -0.1],
+          "vih": [0.2, 0.9],
+          "vol": 0.7,
+          "voh": 4.2,
+          "vcc": 5
+        }
+      }
+    }
+  },
+  "buses": {
+    "uart": {
+      "ports": ["D0", "D1"],
+      "protocol": "uart"
+    },
+    "i2c": {
+      "ports": ["D2", "D3"],
+      "protocol": "i2c"
+    },
+    "spi": {
+      "ports": ["D14", "D15", "D16"],
+      "protocol": "spi"
+    }
+  }
+}

@@ -3,7 +3,6 @@
   "id": "sfab/sg90-control@1.0.0",
   "type": "servo-control-ic",
   "foreign": true,
-  "declaredOnly": true,
   "ratings": {
     "V+": {
       "voltage": [4.8, 6],
@@ -21,6 +20,54 @@
     {
       "title": "SG90 control die",
       "ref": "closed; foreign part, no published equation"
+    },
+    {
+      "title": "Generic hobby-servo control",
+      "ref": "A model, not the die: servo-control@1 with the SG90 fit's eSat, and its quiescent less the pot's 0.001 A. Travel is π rad."
     }
-  ]
+  ],
+  "axes": {
+    "behaviour": {
+      "1": {
+        "default": "model",
+        "variants": {
+          "model": {
+            "kind": "form",
+            "form": "servo-control@1",
+            "params": {
+              "eSat": 0.3,
+              "quiescent": 0.009,
+              "travel": 3.141592653589793
+            },
+            "omits": [
+              "the die's own loop: deadband, PWM chopping, pulse filtering",
+              "bridge drop"
+            ]
+          }
+        }
+      }
+    },
+    "body": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["inside the servo case"]
+          }
+        }
+      }
+    },
+    "visual": {
+      "0": {
+        "default": "none",
+        "variants": {
+          "none": {
+            "kind": "none",
+            "omits": ["inside the servo case"]
+          }
+        }
+      }
+    }
+  }
 }

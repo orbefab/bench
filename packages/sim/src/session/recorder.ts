@@ -1,24 +1,27 @@
 /** Recorder: the live state sample, the recording layout and manifest, and the recorded query answers. */
 import {
-  ATMEGA328P_BROWNOUT_V,
-  atmega328pSoaWarning,
+  boardPinState,
   DEFAULT_TIMESTEP_S,
+  emptyPinState,
   type JointLimitKind,
+  onboardLedPath,
   pastLimitAmount,
+  pinWordCount,
   RECORD_FRAME_MS,
   type RecordingManifest,
   type RecordingPartCatalog,
+  soaWarning,
   type WorldPartState,
   type WorldState,
 } from "@sfab-bench/contract";
 import type { RunPlan } from "../plan";
-import { probeTracks } from "../probe";
+import { type ProbeIndex, probeTracks } from "../probe";
 import type { RailCircuit } from "../rail-circuit";
 import { motionRank, RunRecorder, timelineFromRead } from "../record";
 import type { RecordBody, RecordQuery, ToWorker } from "../sim";
 import { boardInSoa, ledCurrentOf, ledReading, regulatorAmps } from "./boards";
 import { post, simMs } from "./common";
-import { boardNodeOf, boardVolts } from "./rails";
+import { boardMinVolts, boardVolts, loadBoard, partVolts } from "./rails";
 import type { RecLayout, SessionState } from "./state";
 
 const INTEGRATORS = [
@@ -41,7 +44,8 @@ export function scalar(value: Float64Array): number {
   return value[0] ?? 0;
 }
 
-export function sample(s: SessionState): WorldState | null {
+/** robot id → link → world pose, after a forward pass. */
+export function samplePoses(s: SessionState): WorldState["poses"] | null {
   if (!s.sim) return null;
   const { mj, model, data, index } = s.sim;
   mj.mj_forward(model, data);
@@ -57,6 +61,13 @@ export function sample(s: SessionState): WorldState | null {
     }
     poses[robotId] = robot;
   }
+  return poses;
+}
+
+export function sample(s: SessionState): WorldState | null {
+  const poses = samplePoses(s);
+  if (!s.sim || !poses) return null;
+  const { data, index } = s.sim;
   const joints: WorldState["joints"] = {};
   for (const [robotId, names] of Object.entries(index.jointNamesByRobot)) {
     const robot: WorldState["joints"][string] = {};
@@ -67,24 +78,23 @@ export function sample(s: SessionState): WorldState | null {
   }
   const boardState: WorldState["boards"] = {};
   for (const board of s.boards) {
-    const pins = board.takePins();
+    const spec = s.specs.find((item) => item.id === board.id);
+    const pins = boardPinState(board.takePins(), spec?.pinCount ?? 0);
     const power = s.boardPower.get(board.id);
     const unpowered = !power?.supplyId;
     const node = power?.supplyId ? boardVolts(s, board.id) : 0;
-    const minVoltage = s.specs.find(
-      (item) => item.id === board.id
-    )?.minOperatingVoltage;
+    const minVoltage = spec?.minOperatingVoltage;
+    const clock = spec?.clock;
+    const brownoutVoltage = power?.brownoutVoltage;
     const soa =
       minVoltage != null &&
+      brownoutVoltage != null &&
+      clock &&
       board.running &&
-      !board.brownout &&
+      !board.inReset &&
       !board.fault &&
       !unpowered
-        ? atmega328pSoaWarning(
-            node,
-            power?.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V,
-            minVoltage
-          )
+        ? soaWarning(node, brownoutVoltage, minVoltage, clock)
         : null;
     boardState[board.id] = {
       ...(board.fault
@@ -92,7 +102,10 @@ export function sample(s: SessionState): WorldState | null {
         : { running: board.running, pins }),
       ...(unpowered ? { unpowered: true as const } : {}),
       resets: power?.resets ?? 0,
-      brownout: board.brownout,
+      inReset: board.inReset,
+      ...(board.inReset && power?.reset.cause
+        ? { resetCause: power.reset.cause }
+        : {}),
       ...(power?.supplyId ? { voltage: node } : {}),
       ...ledReading(s, board.id),
       ...(() => {
@@ -101,10 +114,7 @@ export function sample(s: SessionState): WorldState | null {
         );
         const warnings = [
           ...(soa ? [soa] : []),
-          ...extra.map((row) => ({
-            code: "degraded" as const,
-            message: row.message,
-          })),
+          ...extra.map((row) => ({ code: row.code, message: row.message })),
         ];
         return warnings.length > 0 ? { warnings } : {};
       })(),
@@ -120,11 +130,22 @@ export function sample(s: SessionState): WorldState | null {
       commandDeg: load.drive?.track.commandDeg ?? null,
       state: load.state,
       current: load.current,
-      voltage: load.drive?.board
-        ? boardVolts(s, load.drive.board.id)
-        : load.supplyId
-          ? boardNodeOf(s, load.supplyId)
-          : 0,
+      voltage: partVolts(s, load.supplyId, loadBoard(load)),
+    };
+  }
+  for (const shaft of s.shafts) {
+    const part = shaft.part;
+    if (!part) continue;
+    const control = part.control;
+    const command = control?.board
+      ? control.track.commandDeg
+      : (control?.manualDeg ?? null);
+    parts[shaft.spec.id] = {
+      pulseUs: control?.track.pulseUs ?? null,
+      commandDeg: command,
+      state: part.state,
+      current: part.current,
+      voltage: part.voltage,
     };
   }
   for (const ranger of s.rangers) {
@@ -134,7 +155,7 @@ export function sample(s: SessionState): WorldState | null {
       commandDeg: null,
       state: "idle",
       current: ranger.current,
-      voltage: ranger.supplyId ? boardNodeOf(s, ranger.supplyId) : 0,
+      voltage: partVolts(s, ranger.supplyId, ranger.powerBoard),
       distanceM: ranger.distanceM,
       echoS: ranger.echoS,
       hit: ranger.hit,
@@ -152,7 +173,7 @@ export function sample(s: SessionState): WorldState | null {
       ? {
           diagnostics: s.degradedLive.map((row) => ({
             severity: "degraded" as const,
-            code: row.code ?? "idle",
+            code: row.code,
             path: row.path,
             message: row.message,
           })),
@@ -205,13 +226,22 @@ function fillRecorder(s: SessionState, full: boolean) {
       rec.rangerDistance[index] = ranger.distanceM ?? Number.NaN;
       rec.rangerHit[index] = ranger.hit ? 1 : 0;
     }
+    for (let i = 0; i < lay.shafts.length; i++) {
+      const control = lay.shafts[i]?.part?.control;
+      const index = lay.parts.length + lay.rangers.length + i;
+      rec.pulse[index] = control?.track.pulseUs ?? Number.NaN;
+      rec.command[index] =
+        (control?.board ? control.track.commandDeg : control?.manualDeg) ??
+        Number.NaN;
+    }
     for (let i = 0; i < lay.boards.length; i++) {
       const id = lay.boards[i];
       const board = s.boards.find((item) => item.id === id);
-      const pins = board?.peekPins() ?? { ddr: 0, level: 0, toggled: 0 };
-      rec.ddr[i] = pins.ddr;
-      rec.level[i] = pins.level;
-      rec.toggled[i] = pins.toggled;
+      const pinCount = s.specs.find((item) => item.id === id)?.pinCount ?? 0;
+      rec.setPins(
+        i,
+        board ? boardPinState(board.peekPins(), pinCount) : emptyPinState()
+      );
       rec.running[i] = board?.running ? 1 : 0;
     }
   }
@@ -220,11 +250,11 @@ function fillRecorder(s: SessionState, full: boolean) {
     if (!load) continue;
     rec.state[i] = motionRank(load.state);
     rec.partCurrent[i] = load.current;
-    rec.partVoltage[i] = load.drive?.board
-      ? boardVolts(s, load.drive.board.id)
-      : load.supplyId
-        ? boardNodeOf(s, load.supplyId)
-        : 0;
+    rec.partVoltage[i] = partVolts(s, load.supplyId, loadBoard(load));
+    rec.partTorque[i] =
+      load.drive && s.sim
+        ? (s.sim.data.actuator(load.partId).ctrl as number)
+        : Number.NaN;
   }
   for (let i = 0; i < lay.rangers.length; i++) {
     const ranger = lay.rangers[i];
@@ -232,44 +262,92 @@ function fillRecorder(s: SessionState, full: boolean) {
     const index = lay.parts.length + i;
     rec.state[index] = 0;
     rec.partCurrent[index] = ranger.current;
-    rec.partVoltage[index] = ranger.supplyId
-      ? boardNodeOf(s, ranger.supplyId)
-      : 0;
+    rec.partVoltage[index] = partVolts(s, ranger.supplyId, ranger.powerBoard);
+  }
+  for (let i = 0; i < lay.shafts.length; i++) {
+    const shaft = lay.shafts[i];
+    const part = shaft?.part;
+    if (!shaft || !part) continue;
+    const index = lay.parts.length + lay.rangers.length + i;
+    rec.state[index] = motionRank(part.state);
+    rec.partCurrent[index] = part.current;
+    rec.partVoltage[index] = part.voltage;
+    rec.partTorque[index] = s.sim.data.actuator(shaft.spec.id).ctrl as number;
   }
   for (let i = 0; i < lay.supplies.length; i++) {
     const spec = lay.supplies[i];
     const live = spec ? s.supplyLive[spec.id] : undefined;
     rec.voltage[i] = live?.voltage ?? 0;
+    const circuit = spec ? s.rails.get(spec.id)?.circuit : undefined;
+    rec.voltageLow[i] =
+      spec && circuit ? circuit.sourceMin(spec.id) : rec.voltage[i];
+    rec.supplyCurrentHigh[i] =
+      spec && circuit ? circuit.sourceMax(spec.id) : rec.supplyCurrent[i];
     rec.supplyCurrent[i] = live?.current ?? 0;
     rec.supplySoc[i] = live?.soc ?? Number.NaN;
   }
-  const ledFrames = new Map<string, ReturnType<RailCircuit["takeLedFrame"]>>();
+  // Keyed by circuit: two supplies on one island are one rail, taken once.
+  const ledFrames = new Map<
+    RailCircuit,
+    ReturnType<RailCircuit["takeLedFrame"]>
+  >();
   const ledFrameOf = (supplyId: string) => {
-    const cached = ledFrames.get(supplyId);
-    if (cached) return cached;
     const circuit = s.rails.get(supplyId)?.circuit;
     if (!circuit) return undefined;
+    const cached = ledFrames.get(circuit);
+    if (cached) return cached;
     const frame = full ? circuit.takeLedFrame() : undefined;
-    if (frame) ledFrames.set(supplyId, frame);
+    if (frame) ledFrames.set(circuit, frame);
     return frame;
   };
   for (let i = 0; i < lay.boards.length; i++) {
     const id = lay.boards[i];
     const board = s.boards.find((item) => item.id === id);
     rec.boardVoltage[i] = id ? boardVolts(s, id) : 0;
+    rec.boardVoltageLow[i] = id ? boardMinVolts(s, id) : 0;
     rec.regulatorA[i] = id ? regulatorAmps(s, id) : 0;
     if (rec.ledOn[i]) {
       const supplyId = id ? s.boardPower.get(id)?.supplyId : undefined;
       const frame = supplyId ? ledFrameOf(supplyId) : undefined;
-      const key = `${id}.led`;
+      const key = onboardLedPath(id);
       rec.ledCurrent[i] = !id
         ? 0
         : frame && key in frame.leds
           ? (frame.leds[key] ?? 0)
           : (ledCurrentOf(s, id) ?? 0);
     }
-    rec.brownout[i] = board?.brownout ? 1 : 0;
+    rec.inReset[i] = board?.inReset ? 1 : 0;
     rec.belowSoa[i] = board && boardInSoa(s, board) ? 1 : 0;
+  }
+  const pinFrames = new Map<
+    RailCircuit,
+    ReturnType<RailCircuit["takePinFrame"]>
+  >();
+  const pinFrameOf = (supplyId: string) => {
+    const circuit = s.rails.get(supplyId)?.circuit;
+    if (!circuit) return undefined;
+    const cached = pinFrames.get(circuit);
+    if (cached) return cached;
+    const frame = full ? circuit.takePinFrame() : undefined;
+    if (frame) pinFrames.set(circuit, frame);
+    return frame;
+  };
+  for (let k = 0; k < rec.pinPaths.length; k++) {
+    const row = rec.pinPaths[k];
+    if (!row) continue;
+    const supplyId = s.boardPower.get(row.board)?.supplyId;
+    const pin = supplyId
+      ? s.rails
+          .get(supplyId)
+          ?.circuit.pinVolts(row.board)
+          .find((item) => item.port === row.port)
+      : undefined;
+    const frame = supplyId ? pinFrameOf(supplyId) : undefined;
+    const now = pin ? frame?.get(pin.node) : undefined;
+    const v = now?.v ?? pin?.volts ?? 0;
+    rec.pinV[k] = v;
+    rec.pinLo[k] = now?.lo ?? v;
+    rec.pinHi[k] = now?.hi ?? v;
   }
   for (let k = 0; k < rec.ledPaths.length; k++) {
     const row = rec.ledPaths[k];
@@ -320,12 +398,14 @@ export function openRecorder(s: SessionState) {
     }
   }
   const parts = s.loads.filter((load) => load.drive);
+  const shafts = s.shafts.filter((shaft) => shaft.part);
   const boardIds = s.boards.map((board) => board.id);
   s.layout = {
     joints,
     bodies,
     parts,
     rangers: s.rangers,
+    shafts,
     supplies: s.supplySpecs,
     boards: boardIds,
   };
@@ -338,14 +418,32 @@ export function openRecorder(s: SessionState) {
     parts: [
       ...parts.map((load) => load.partId),
       ...s.rangers.map((ranger) => ranger.spec.id),
+      ...shafts.map((shaft) => shaft.spec.id),
     ],
-    partRanger: [...parts.map(() => false), ...s.rangers.map(() => true)],
+    partRanger: [
+      ...parts.map(() => false),
+      ...s.rangers.map(() => true),
+      ...shafts.map(() => false),
+    ],
     supplies: s.supplySpecs.map((supply) => supply.id),
     boards: boardIds,
+    pinWords: boardIds.map((id) =>
+      pinWordCount(
+        s.runPlan?.boards.find((board) => board.id === id)?.pinOrder.length ?? 0
+      )
+    ),
     boardLed: boardIds.map((id) => {
       const supplyId = s.boardPower.get(id)?.supplyId;
       const group = supplyId ? s.rails.get(supplyId) : undefined;
-      return group?.circuit.ledPaths.includes(`${id}.led`) ?? false;
+      return group?.circuit.ledPaths.includes(onboardLedPath(id)) ?? false;
+    }),
+    pins: boardIds.flatMap((id) => {
+      const supplyId = s.boardPower.get(id)?.supplyId;
+      const group = supplyId ? s.rails.get(supplyId) : undefined;
+      return (group?.circuit.pinVolts(id) ?? []).map(({ port }) => ({
+        board: id,
+        port,
+      }));
     }),
     leds: boardIds.flatMap((id) => {
       const supplyId = s.boardPower.get(id)?.supplyId;
@@ -401,6 +499,14 @@ function manifestOf(s: SessionState): RecordingManifest {
   };
 }
 
+/** A master step that does not end a millisecond: extremes only. */
+export function foldStep(s: SessionState) {
+  const rec = s.recorder;
+  if (!rec?.enabled || !s.sim) return;
+  fillRecorder(s, false);
+  rec.foldStep();
+}
+
 export function recordStep(s: SessionState) {
   const rec = s.recorder;
   if (!rec?.enabled || !s.sim) {
@@ -411,16 +517,17 @@ export function recordStep(s: SessionState) {
   fillRecorder(s, ms % RECORD_FRAME_MS === 0);
   for (const board of s.boards) {
     const text = board.peekTx();
-    let seen = s.txSeen.get(board.id) ?? 0;
-    if (text.length < seen) seen = 0;
-    if (text.length > seen) {
-      rec.noteSerial(board.id, text.slice(seen), ms);
-      seen = text.length;
-    }
-    s.txSeen.set(board.id, seen);
+    const seen = s.txSeen.get(board.id) ?? 0;
+    if (text.length > seen) rec.noteSerial(board.id, text.slice(seen), ms);
+    s.txSeen.set(board.id, text.length);
   }
   for (const note of s.pendingNotes) {
-    rec.noteEvent({ timeMs: ms, kind: note.kind, board: note.board });
+    rec.noteEvent({
+      timeMs: ms,
+      kind: note.kind,
+      board: note.board,
+      ...(note.cause ? { cause: note.cause } : {}),
+    });
   }
   s.pendingNotes.length = 0;
   rec.commit(ms);
@@ -476,7 +583,30 @@ export function record(s: SessionState, query: RecordQuery): RecordBody {
     for (const load of s.loads) {
       if (load.drive) shafts[load.partId] = load.drive.jointName;
     }
-    const probed = probeTracks(read, query.tracks, { shafts });
+    const pins: Record<string, readonly string[]> = {};
+    const powerPins: Record<string, string> = {};
+    for (const board of s.runPlan?.boards ?? []) {
+      pins[board.id] = board.pinOrder;
+      powerPins[board.id] = board.voltagePin;
+    }
+    for (const supply of s.runPlan?.supplies ?? []) {
+      powerPins[supply.id] = supply.positivePin;
+    }
+    const rangers: NonNullable<ProbeIndex["rangers"]> = {};
+    for (const ranger of s.runPlan?.rangers ?? []) {
+      rangers[ranger.id] = {
+        power: Object.keys(ranger.pins).filter(
+          (pin) => ranger.pins[pin]?.kind === "power"
+        ),
+        echo: ranger.ports.echo,
+      };
+    }
+    const probed = probeTracks(read, query.tracks, {
+      shafts,
+      pins,
+      powerPins,
+      rangers,
+    });
     return {
       op: "timeline",
       id: info.id,

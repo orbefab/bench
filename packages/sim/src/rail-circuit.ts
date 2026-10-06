@@ -5,27 +5,30 @@
  * bridge ratio, each held speed, and, when the Uno path is on, the fuse
  * resistance after the electrical solve.
  *
- * L = 0 and no capacitor is one backward-Euler step per millisecond.
+ * L = 0 and no capacitor is one backward-Euler step per master step
+ * (1 ms unless the run names a finer one).
  * An algebraic board, including a class-1 table with no capacitor, is
  * that one step. A pin edge inside the step is its own piece, still one
  * step when the rail is algebraic. Inductance or capacitance is 10
  * backward-Euler steps with ω and the bridge ratio held. The fuse
  * temperature, and a battery's state of charge, move once per
- * millisecond, after those steps, not inside them.
+ * master step, after those steps, not inside them.
  * Implicit damping (E2 scheme (d)) is not applied here. It would stamp
  * ω = 0 and add B(s) on the joint.
  */
 
-import { arduinoPinBit } from "@sfab-bench/contract";
+import type { PinVolts } from "@sfab-bench/contract";
 import {
   AVR_PIN,
   type AvrPinParams,
   BatteryElement,
   type BatteryParams,
   type Braking,
+  BridgeDriver,
   BridgeMotor,
   Comparator,
   CurrentLoad,
+  DcWinding,
   Diode,
   type Element,
   Engine,
@@ -67,6 +70,8 @@ export type SharedBoard = {
 };
 
 export type RailCircuitSpec = {
+  /** Master step in seconds. Default 1 ms. */
+  masterS?: number;
   vNom: number;
   rSeries: number;
   iLimit: number;
@@ -105,6 +110,11 @@ export type RailCircuitSpec = {
    */
   primaryId?: string;
   /**
+   * The board instance `stamp` belongs to. It owns the pins and its own
+   * draw on the board load. `boards` entries name theirs by `id`.
+   */
+  owner?: string;
+  /**
    * `ideal-voltage@1`. The rail stamps a voltage source on the feed
    * terminal. A Thevenin limit is the supply when this is absent.
    */
@@ -142,14 +152,50 @@ export type RailCircuitSpec = {
 const MASTER_S = 0.001;
 const SUBSTEPS = 10;
 
+/** One board's node after a solve. */
+export type BoardReading = {
+  voltage: number;
+  /** Lowest board-node volts over the step's sub-steps. */
+  min: number;
+  /**
+   * Lowest `V_reset − resetFraction·V_board` over the step. Negative means
+   * RESET went below the chip's V_RST. Null when the board has no reset
+   * node on this rail or no reset fraction.
+   */
+  resetMargin: number | null;
+};
+
+/**
+ * A board's brownout inside one solve. At the first sub-step its node is
+ * under `assertV`, the chip resets, so the motors it drives (`motors`,
+ * indexes into the rail's motor list) open for the rest of the step.
+ */
+export type MotorTrip = {
+  boardId: string;
+  assertV: number;
+  motors: readonly number[];
+  /** Bridge drivers (element ids) whose pulse comes from that board. */
+  drivers?: readonly string[];
+};
+
 /** One slice of a master step, between pin edges. */
 type RailPiece = {
   dt: number;
   drive: readonly { bit: number; mode: PinMode; boardId?: string }[];
 };
 
+/** A stamped GPIO element: the drive the firmware sets and its node. */
+type DrivePin = { setMode(mode: PinMode): void; readonly pinNode: string };
+
 export class RailCircuit {
+  /**
+   * Winding current each motor charged to the last master step: its end
+   * current, or for a tripped motor its current at the trip times
+   * `onShare`, which is the step mean when the rest of the step is open.
+   */
   readonly winding: Float64Array;
+  /** Share of the last master step before a trip opened the motor; 1 with no trip. */
+  readonly onShare: Float64Array;
   /** True when the Uno cable sits between the terminal and the board node. */
   readonly path: boolean;
   /** Supply terminal. With no path this is the rail, and the only node. */
@@ -159,11 +205,13 @@ export class RailCircuit {
   boardVoltage = 0;
   /** Lowest board-node voltage across the sub-steps. The end voltage on the first solve. */
   boardMinVoltage = 0;
-  /** Electrical steps inside one 1 ms master step. */
+  /** Electrical steps inside one master step. */
   readonly substeps: number;
+  /** Master step in seconds. */
+  readonly masterS: number;
   /**
    * Pin-edge pieces inside the last master step. 0 when every stamped
-   * pin was held for the whole millisecond.
+   * pin was held for the whole master step.
    */
   lastPieceCount = 0;
   /** Frozen-factor steps during the last master step. */
@@ -179,17 +227,15 @@ export class RailCircuit {
    */
   leds: Record<string, number> = {};
   readonly ledPaths: readonly string[];
-  /** Arduino bits that have a pin element on this rail. */
+  /** Pin indexes that have a pin element on this rail. */
   get driveBits(): readonly number[] {
     return this.drives.map((row) => row.bit);
   }
-  /** Volts on the RESET node. 0 when this rail has no Nano path. */
-  resetVoltage = 0;
   /**
-   * Lowest `V_reset − 0.9·V_board` over this step's sub-steps.
-   * Positive means RESET stayed above the external threshold.
+   * Lowest `V_reset − resetFraction·V_board` over this step's sub-steps,
+   * when one board is on the rail. Read it through `boardReading()`.
    */
-  resetMarginMin = 0;
+  private resetMarginMin = 0;
   private readonly engine: Engine;
   private readonly load: CurrentLoad;
   private readonly motors: BridgeMotor[];
@@ -201,7 +247,8 @@ export class RailCircuit {
   private readonly ldos: LdoRegulator[];
   private readonly drives: {
     bit: number;
-    pin: { setMode(mode: PinMode): void };
+    port: string;
+    pin: DrivePin;
   }[];
   private readonly ledDiodes: { path: string; diode: Diode }[];
   private readonly ledAlias: string;
@@ -209,6 +256,10 @@ export class RailCircuit {
   private ledSpan = 0;
   /** Time-weighted mean of each LED since the last `takeLedFrame`. */
   private ledMean: Record<string, number> = {};
+  /** Seconds folded into `pinFrame` since the last `takePinFrame`. */
+  private pinSpan = 0;
+  /** Each stamped pin node since the last take: mean, lowest, highest. */
+  private pinFrame = new Map<string, PinVolts>();
   /**
    * Last completed frame. The card shows this so a pulse that ended
    * before the sample is not reported as 0 A.
@@ -237,13 +288,21 @@ export class RailCircuit {
   private readonly boardNodes = new Map<string, string>();
   private readonly boardDrives = new Map<
     string,
-    { bit: number; pin: { setMode(mode: PinMode): void } }[]
+    { bit: number; port: string; pin: DrivePin }[]
   >();
-  private readonly readings = new Map<
-    string,
-    { voltage: number; min: number }
-  >();
+  private readonly readings = new Map<string, BoardReading>();
+  /** Lowest reset margin of each board this step, when it has a reset node. */
+  private readonly resetMins = new Map<string, number>();
   private readonly boardOrder: string[] = [];
+  /** Lowest `src` terminal volts over the last solve's sub-steps. */
+  private termMin = 0;
+  /** Highest `src` current over the last solve's sub-steps. */
+  private termMax = 0;
+  /** Lowest volts and highest amperes of each `also` source over the last solve. */
+  private readonly extraMins = new Map<string, number>();
+  private readonly extraMaxes = new Map<string, number>();
+  /** Trips armed for the next solve. `solve` clears them. */
+  private trips: readonly MotorTrip[] = [];
   private readonly boardResets = new Map<
     string,
     { node: string; fraction: number | null }
@@ -252,8 +311,10 @@ export class RailCircuit {
   constructor(spec: RailCircuitSpec) {
     const built = assembleRail(spec);
     this.winding = built.winding;
+    this.onShare = new Float64Array(built.winding.length).fill(1);
     this.path = built.path;
     this.substeps = built.substeps;
+    this.masterS = spec.masterS ?? MASTER_S;
     this.ledPaths = built.ledPaths;
     this.engine = built.engine;
     this.load = built.load;
@@ -268,7 +329,13 @@ export class RailCircuit {
     this.ledDiodes = built.ledDiodes;
     this.ledAlias = built.ledAlias;
     this.resetFraction = built.resetFraction;
-    this.resetNode = built.resetNode;
+    // A RESET net with no element on this rail (a class-1 shared rail
+    // stamps no pins, so another board's pin is not here) has no voltage.
+    // Its margin stays null rather than read as a low pin.
+    const solved = (node: string) =>
+      node === "0" || built.engine.nodeNames.includes(node);
+    this.resetNode =
+      built.resetNode && solved(built.resetNode) ? built.resetNode : null;
     this.branchLaws = built.branchLaws;
     this.battery = built.battery;
     this.diodes = built.diodes;
@@ -279,16 +346,62 @@ export class RailCircuit {
     for (const [id, node] of built.boardNodes) this.boardNodes.set(id, node);
     for (const [id, rows] of built.boardDrives) this.boardDrives.set(id, rows);
     for (const [id, reset] of built.boardResets)
-      this.boardResets.set(id, reset);
+      if (solved(reset.node)) this.boardResets.set(id, reset);
     for (const [id, ports] of built.boardPorts) this.boardPorts.set(id, ports);
     for (const [id, node] of built.extraNodes) this.extraNodes.set(id, node);
     this.pruned = built.pruned;
+    for (const [id, owner] of built.owners) this.owners.set(id, owner);
+    for (const [owner, load] of built.ownedLoads) {
+      this.ownedLoads.set(load.id, { owner, load, own: 0 });
+    }
     for (const [id, nodes] of built.partNodes) this.partNodes.set(id, nodes);
+    for (const [full, node] of built.stampedPorts)
+      this.stampedPorts.set(full, node);
+    for (const el of built.engine.elements) {
+      if (el instanceof BridgeDriver) this.drivers.push(el);
+      if (el instanceof DcWinding) this.windings.push(el);
+    }
   }
 
   /** Scene parts this rail dropped because a node was open. */
   readonly pruned: readonly string[] = [];
+  /**
+   * Element id → the instance path that owns it: a stamped part's
+   * elements, a board's pins. Readings at an instance's ports sum what it
+   * owns; an element id is never parsed for its owner.
+   */
+  private readonly owners = new Map<string, string>();
+  /**
+   * A board load is one aggregate element: the board's own draw plus the
+   * quiescent draw of parts and rangers it carries. Its owner is credited
+   * with `own / amps` of it; the rest is attributed to no instance.
+   */
+  private readonly ownedLoads = new Map<
+    string,
+    { owner: string; load: CurrentLoad; own: number }
+  >();
   private readonly partNodes = new Map<string, readonly string[]>();
+  private readonly stampedPorts = new Map<string, string>();
+  private readonly drivers: BridgeDriver[] = [];
+  private readonly windings: DcWinding[] = [];
+  /** Each winding's charge over the solve in progress, coulombs. */
+  private charge = new Float64Array(0);
+  /** Mean current of each winding over the last solve, by element id. */
+  private readonly charged = new Map<string, number>();
+
+  /** A stamped element by id. Null when this rail does not have it. */
+  element(id: string): Element | null {
+    return this.engine.elements.find((item) => item.id === id) ?? null;
+  }
+
+  /**
+   * Amperes a `dc-motor@1` winding carried over the last master step, the
+   * time mean of its sub-steps. A bridge opened mid-step by a trip
+   * carries the share before it. Null when the winding is not here.
+   */
+  windingCurrent(id: string): number | null {
+    return this.charged.get(id) ?? null;
+  }
 
   elementCurrent(id: string): number | null {
     const el = this.engine.elements.find((item) => item.id === id);
@@ -311,14 +424,73 @@ export class RailCircuit {
     return this.partNodes.get(id) ?? null;
   }
 
-  setFixed(amps: number): void {
+  /** The node a stamped part's `path.port` sits on. Null when not here. */
+  stampedNode(full: string): string | null {
+    return this.stampedPorts.get(full) ?? null;
+  }
+
+  /**
+   * The stamped elements owned by the instance at `path` and everything
+   * under it. A board load is not one of them: see `currentInto`.
+   */
+  elementsUnder(path: string): Element[] {
+    return this.engine.elements.filter((el) =>
+      isUnder(this.owners.get(el.id), path)
+    );
+  }
+
+  /** True when this rail holds anything the instance at `path` owns. */
+  owns(path: string): boolean {
+    if (this.elementsUnder(path).length > 0) return true;
+    for (const row of this.ownedLoads.values()) {
+      if (isUnder(row.owner, path)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Amperes the instance at `path` (and everything under it) drew out of
+   * `node` at the end of the last solve: its elements, plus its own share
+   * of a board load on that node.
+   */
+  currentInto(path: string, node: string): number {
+    let amps = this.engine.currentLeaving(this.elementsUnder(path), node);
+    for (const row of this.ownedLoads.values()) {
+      if (!isUnder(row.owner, path) || !(row.load.amps > 0)) continue;
+      const share = Math.min(1, row.own / row.load.amps);
+      amps += this.engine.currentLeaving([row.load], node) * share;
+    }
+    return amps;
+  }
+
+  /** Amperes `elements` drew out of `node` at the end of the last solve. */
+  currentLeaving(elements: readonly Element[], node: string): number {
+    return this.engine.currentLeaving(elements, node);
+  }
+
+  /**
+   * The rail's aggregate load. `draws` is each board's own draw, by board
+   * id: the board that owns this load is credited with its entry, and the
+   * rest of `amps` (other parts' quiescent draw) with no instance.
+   */
+  setFixed(amps: number, draws?: ReadonlyMap<string, number>): void {
     if (this.boardOrder.length > 1) {
       const first = this.boardOrder[0];
       const load = first ? this.boardLoads.get(first) : undefined;
-      if (load) load.amps = amps;
+      if (load) this.setLoad(load, amps, draws);
       return;
     }
-    this.load.amps = amps;
+    this.setLoad(this.load, amps, draws);
+  }
+
+  private setLoad(
+    load: CurrentLoad,
+    amps: number,
+    draws?: ReadonlyMap<string, number>
+  ): void {
+    load.amps = amps;
+    const row = this.ownedLoads.get(load.id);
+    if (row) row.own = draws?.get(row.owner) ?? 0;
   }
 
   /** Boards on this rail. Empty when one board keeps the unprefixed names. */
@@ -335,6 +507,24 @@ export class RailCircuit {
       return -this.engine.branchCurrent(id);
     }
     return this.current;
+  }
+
+  /** Lowest terminal volts of one supply over the last solve's sub-steps. */
+  sourceMin(id: string): number {
+    if (this.primarySupply !== null && id !== this.primarySupply) {
+      const min = this.extraMins.get(id);
+      if (min !== undefined) return min;
+    }
+    return this.termMin;
+  }
+
+  /** Highest current out of one supply over the last solve's sub-steps. */
+  sourceMax(id: string): number {
+    if (this.primarySupply !== null && id !== this.primarySupply) {
+      const max = this.extraMaxes.get(id);
+      if (max !== undefined) return max;
+    }
+    return this.termMax;
   }
 
   /** Terminal voltage of one supply. A one-supply rail returns `voltage`. */
@@ -384,11 +574,18 @@ export class RailCircuit {
     return this.battery?.warnCount ?? 0;
   }
 
-  /** One board's knee load, when several boards share this rail. */
-  setBoardLoad(id: string, amps: number): void {
+  /**
+   * One board's knee load, when several boards share this rail. `draws`
+   * as in `setFixed`.
+   */
+  setBoardLoad(
+    id: string,
+    amps: number,
+    draws?: ReadonlyMap<string, number>
+  ): void {
     const load = this.boardLoads.get(id);
     if (!load) throw new Error(`no board ${id}`);
-    load.amps = amps;
+    this.setLoad(load, amps, draws);
   }
 
   /** One board's pins. A one-board rail answers for any id with its own. */
@@ -402,6 +599,18 @@ export class RailCircuit {
     return this.pinsOf(id).map((row) => row.bit);
   }
 
+  /** Solved voltage of each stamped pin of board `id`, after the last solve. */
+  pinVolts(
+    id: string
+  ): { bit: number; port: string; node: string; volts: number }[] {
+    return this.pinsOf(id).map((row) => ({
+      bit: row.bit,
+      port: row.port,
+      node: row.pin.pinNode,
+      volts: this.engine.voltage(row.pin.pinNode),
+    }));
+  }
+
   setBoardDrive(id: string, bit: number, mode: PinMode): void {
     this.pinsOf(id)
       .find((row) => row.bit === bit)
@@ -410,13 +619,17 @@ export class RailCircuit {
 
   /**
    * This board's node. One board on the rail is `boardVoltage` /
-   * `boardMinVoltage`.
+   * `boardMinVoltage` / `resetMarginMin`.
    */
-  boardReading(id: string): { voltage: number; min: number } {
+  boardReading(id: string): BoardReading {
     return (
       this.readings.get(id) ?? {
         voltage: this.boardVoltage,
         min: this.boardMinVoltage,
+        resetMargin:
+          this.resetNode && this.resetFraction !== null
+            ? this.resetMarginMin
+            : null,
       }
     );
   }
@@ -439,6 +652,14 @@ export class RailCircuit {
     motor.s = fraction;
     motor.omega = omega;
     motor.connected = connected;
+  }
+
+  /**
+   * Trips for the next solve only. Set after `setMotor`: a trip opens a
+   * motor that `setMotor` connected.
+   */
+  armTrips(trips: readonly MotorTrip[]): void {
+    this.trips = trips;
   }
 
   get tripped(): boolean {
@@ -491,11 +712,10 @@ export class RailCircuit {
     return { voltage, rSource: r ?? 0 };
   }
 
-  /** D13. Same as `setDrive` for that bit. */
-  setD13(mode: PinMode): void {
-    const bit = arduinoPinBit("D13");
-    if (bit === undefined) return;
-    this.setDrive(bit, mode);
+  /** The stamped pin named `port`. Same as `setDrive` for that pin's index. */
+  setPin(port: string, mode: PinMode): void {
+    const found = this.drives.find((row) => row.port === port);
+    found?.pin.setMode(mode);
   }
 
   /**
@@ -541,15 +761,64 @@ export class RailCircuit {
    * sample equals the mean. The operating point passes `dt` 0 and does
    * not enter the mean.
    */
-  private noteNano(dt: number): void {
+  private noteBoard(dt: number): void {
     this.foldLeds(dt);
+    this.foldPins(dt);
     if (!this.resetNode) return;
     const board = this.engine.voltage(this.boardNode);
     const reset = this.engine.voltage(this.resetNode);
-    this.resetVoltage = reset;
     if (this.resetFraction === null) return;
     const margin = reset - this.resetFraction * board;
     if (margin < this.resetMarginMin) this.resetMarginMin = margin;
+  }
+
+  /**
+   * One step's stamped pin nodes, folded into the frame by `dt`. Edges end
+   * a piece, so the step ends include each edge: a square wave's extremes.
+   */
+  private foldPins(dt: number): void {
+    if (!(dt > 0) || this.drives.length === 0) return;
+    const span = this.pinSpan;
+    const next = span + dt;
+    const folded = new Set<string>();
+    for (const row of this.drives) {
+      const node = row.pin.pinNode;
+      // Two pins on one net share a node: fold it once per step.
+      if (folded.has(node)) continue;
+      folded.add(node);
+      const v = this.engine.voltage(node);
+      const seen = span === 0 ? undefined : this.pinFrame.get(node);
+      if (!seen) {
+        this.pinFrame.set(node, { v, lo: v, hi: v });
+        continue;
+      }
+      seen.v += (v - seen.v) * (dt / next);
+      if (v < seen.lo) seen.lo = v;
+      if (v > seen.hi) seen.hi = v;
+    }
+    this.pinSpan = next;
+  }
+
+  /**
+   * The rail's stamped pin nodes over the frame since the previous take,
+   * keyed by node. With no timed step yet, each is the node now. Call once
+   * per frame for the whole rail: it starts the next frame.
+   */
+  takePinFrame(): Map<string, PinVolts> {
+    const out = new Map<string, PinVolts>();
+    for (const row of this.drives) {
+      const node = row.pin.pinNode;
+      const seen = this.pinSpan > 0 ? this.pinFrame.get(node) : undefined;
+      if (seen) {
+        out.set(node, { ...seen });
+        continue;
+      }
+      const v = this.engine.voltage(node);
+      out.set(node, { v, lo: v, hi: v });
+    }
+    this.pinSpan = 0;
+    this.pinFrame = new Map();
+    return out;
   }
 
   /** One step's LED currents, folded into the frame mean by `dt`. */
@@ -573,7 +842,7 @@ export class RailCircuit {
   /**
    * Solve the rail. Writes the terminal, the board node, and `winding`.
    * The fuse, when there is one, takes one thermal step from this current.
-   * `pieces`, when a stamped pin changed inside this millisecond, are the
+   * `pieces`, when a stamped pin changed inside this master step, are the
    * intervals between those edges. Their durations sum to one master step.
    * With no pieces the pin is held and the grid is the one used before.
    */
@@ -592,11 +861,77 @@ export class RailCircuit {
       for (const id of this.boardOrder) mins.set(id, Number.POSITIVE_INFINITY);
     }
     this.resetMarginMin = Number.POSITIVE_INFINITY;
+    this.resetMins.clear();
+    const motors = this.motors;
+    const winding = this.winding;
+    const onShare = this.onShare;
+    onShare.fill(1);
+    const pending = this.trips.filter(
+      (trip) => trip.motors.length > 0 || (trip.drivers?.length ?? 0) > 0
+    );
+    this.trips = [];
+    const opened: number[] = [];
+    let elapsed = 0;
+    const windings = this.windings;
+    if (this.charge.length !== windings.length) {
+      this.charge = new Float64Array(windings.length);
+    }
+    const charge = this.charge;
+    charge.fill(0);
+    // Before the step is noted: a trip at this sub-step keeps the current
+    // the motor ran on, and opens it for the sub-steps after.
+    const trip = (dt: number) => {
+      elapsed += dt;
+      if (!(dt > 0) || pending.length === 0) return;
+      for (let j = pending.length - 1; j >= 0; j--) {
+        const armed = pending[j]!;
+        const node = this.boardNodes.get(armed.boardId) ?? this.boardNode;
+        if (!(this.engine.voltage(node) < armed.assertV)) continue;
+        pending.splice(j, 1);
+        for (const index of armed.motors) {
+          const motor = motors[index];
+          if (!motor?.connected) continue;
+          winding[index] = this.engine.branchCurrent(motor.id);
+          onShare[index] = Math.min(1, elapsed / this.masterS);
+          motor.connected = false;
+          opened.push(index);
+        }
+        for (const id of armed.drivers ?? []) {
+          const driver = this.drivers.find((item) => item.id === id);
+          if (driver) driver.connected = false;
+        }
+      }
+    };
+    this.termMin = Number.POSITIVE_INFINITY;
+    this.termMax = Number.NEGATIVE_INFINITY;
+    this.extraMins.clear();
+    this.extraMaxes.clear();
+    const noteSources = () => {
+      const v = this.engine.voltage(this.termNode);
+      if (v < this.termMin) this.termMin = v;
+      const amps = -this.engine.branchCurrent("src");
+      if (amps > this.termMax) this.termMax = amps;
+      for (const [id, node] of this.extraNodes) {
+        const volts = this.engine.voltage(node);
+        const low = this.extraMins.get(id);
+        if (low === undefined || volts < low) this.extraMins.set(id, volts);
+        const out = -this.engine.branchCurrent(id);
+        const high = this.extraMaxes.get(id);
+        if (high === undefined || out > high) this.extraMaxes.set(id, out);
+      }
+    };
     const note = (dt: number) => {
+      for (let i = 0; i < windings.length; i++) {
+        charge[i] =
+          (charge[i] as number) +
+          this.engine.branchCurrent((windings[i] as DcWinding).id) * dt;
+      }
+      trip(dt);
+      noteSources();
       if (!many) {
         const v = this.engine.voltage(this.boardNode);
         if (v < min) min = v;
-        this.noteNano(dt);
+        this.noteBoard(dt);
         return;
       }
       for (const id of this.boardOrder) {
@@ -637,35 +972,50 @@ export class RailCircuit {
         this.readings.set(id, {
           voltage: this.engine.voltage(node),
           min: mins.get(id) ?? this.engine.voltage(node),
+          resetMargin: this.resetMins.get(id) ?? null,
         });
       }
     } else {
       this.boardVoltage = this.engine.voltage(this.boardNode);
       this.boardMinVoltage = min;
     }
-    const motors = this.motors;
-    const winding = this.winding;
     for (let i = 0; i < motors.length; i++) {
       const motor = motors[i]!;
+      if (opened.includes(i)) {
+        winding[i] = (winding[i] as number) * (onShare[i] as number);
+        continue;
+      }
       winding[i] = motor.connected ? this.engine.branchCurrent(motor.id) : 0;
     }
     const voltage = (node: string) => this.engine.voltage(node);
-    for (const fuse of this.fuse) fuse.advance(fuse.current(voltage), MASTER_S);
+    for (const fuse of this.fuse)
+      fuse.advance(fuse.current(voltage), this.masterS);
     for (const channel of this.channels) channel.latch(voltage);
     for (const cmp of this.comparators) cmp.latch(voltage);
-    this.battery?.advance(this.current, MASTER_S);
+    for (const driver of this.drivers) driver.latch(voltage);
+    for (let i = 0; i < windings.length; i++) {
+      const id = (windings[i] as DcWinding).id;
+      this.charged.set(
+        id,
+        elapsed > 0
+          ? (charge[i] as number) / elapsed
+          : this.engine.branchCurrent(id)
+      );
+    }
+    this.battery?.advance(this.current, this.masterS);
   }
 
   private noteShared(dt: number): void {
     this.foldLeds(dt);
+    this.foldPins(dt);
     for (const [id, reset] of this.boardResets) {
       const boardNode = this.boardNodes.get(id);
       if (!boardNode || reset.fraction === null) continue;
       const board = this.engine.voltage(boardNode);
       const volts = this.engine.voltage(reset.node);
-      this.resetVoltage = volts;
       const margin = volts - reset.fraction * board;
-      if (margin < this.resetMarginMin) this.resetMarginMin = margin;
+      const soFar = this.resetMins.get(id);
+      if (soFar === undefined || margin < soFar) this.resetMins.set(id, margin);
     }
   }
 
@@ -707,6 +1057,7 @@ function mapNodes(
     ...stamp,
     boardNode: node(stamp.boardNode),
     vbusNode: stamp.vbusNode ? node(stamp.vbusNode) : null,
+    regulatorNode: stamp.regulatorNode ? node(stamp.regulatorNode) : null,
     resetNode: stamp.resetNode ? node(stamp.resetNode) : null,
     portNodes: Object.fromEntries(
       Object.entries(stamp.portNodes).map(([key, value]) => [key, node(value)])
@@ -735,7 +1086,11 @@ type Assembled = {
   channels: PmosChannel[];
   comparators: Comparator[];
   ldos: LdoRegulator[];
-  drives: { bit: number; pin: { setMode(mode: PinMode): void } }[];
+  drives: {
+    bit: number;
+    port: string;
+    pin: DrivePin;
+  }[];
   ledDiodes: { path: string; diode: Diode }[];
   ledAlias: string;
   resetFraction: number | null;
@@ -748,16 +1103,26 @@ type Assembled = {
   boardOrder: string[];
   boardLoads: Map<string, CurrentLoad>;
   boardNodes: Map<string, string>;
-  boardDrives: Map<
-    string,
-    { bit: number; pin: { setMode(mode: PinMode): void } }[]
-  >;
+  boardDrives: Map<string, { bit: number; port: string; pin: DrivePin }[]>;
   boardResets: Map<string, { node: string; fraction: number | null }>;
   boardPorts: Map<string, Readonly<Record<string, string>>>;
   extraNodes: Map<string, string>;
   pruned: string[];
   partNodes: Map<string, readonly string[]>;
+  /** A stamped part's `path.port` → node, on a board or a span. */
+  stampedPorts: Map<string, string>;
+  /** Element id → owning instance path. */
+  owners: Map<string, string>;
+  /** Board instance path → its board load element. */
+  ownedLoads: Map<string, CurrentLoad>;
 };
+
+/** `owner` is the instance at `path` or one under it. */
+function isUnder(owner: string | undefined, path: string): boolean {
+  return (
+    owner !== undefined && (owner === path || owner.startsWith(`${path}.`))
+  );
+}
 
 function supplyElement(
   id: string,
@@ -826,17 +1191,18 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     const usb = sorted[0]?.feed === "usb";
     const vin = sorted[0]?.feed === "vin";
     const mapped = sorted.map((board) => {
+      const regulatorNode = board.stamp.regulatorNode;
       const stamp = usb
         ? mapNodes(board.stamp, (node) =>
             node === board.stamp.vbusNode ? TERM : node
           )
         : vin
           ? mapNodes(board.stamp, (node) =>
-              node === board.stamp.portNodes.VIN ? TERM : node
+              node === regulatorNode ? TERM : node
             )
           : board.stamp;
       remember(board.stamp.vbusNode, stamp.vbusNode);
-      remember(board.stamp.portNodes.VIN, stamp.portNodes.VIN);
+      remember(regulatorNode, stamp.regulatorNode);
       remember(board.stamp.boardNode, stamp.boardNode);
       return { ...board, stamp };
     });
@@ -863,7 +1229,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   const boardNodes = new Map<string, string>();
   const boardDrives = new Map<
     string,
-    { bit: number; pin: { setMode(mode: PinMode): void } }[]
+    { bit: number; port: string; pin: DrivePin }[]
   >();
   const boardResets = new Map<
     string,
@@ -872,19 +1238,28 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   const boardPorts = new Map<string, Readonly<Record<string, string>>>();
   const feedOf = new Map<string, string>();
   const ledDiodes: { path: string; diode: Diode }[] = [];
-  const drives: { bit: number; pin: { setMode(mode: PinMode): void } }[] = [];
+  const drives: {
+    bit: number;
+    port: string;
+    pin: DrivePin;
+  }[] = [];
   const loads: CurrentLoad[] = [];
   let stamped: Element[] = [];
   let capacitive = false;
   let single: ReturnType<typeof realize> | null = null;
   const pruned: string[] = [];
   const partNodes = new Map<string, readonly string[]>();
+  const stampedPorts = new Map<string, string>();
+  const owners = new Map<string, string>();
+  const ownedLoads = new Map<string, CurrentLoad>();
   for (const board of prepared) {
+    const owner = board.id || spec.owner || "";
     const realized = realize(
       board.stamp,
       board.feed,
       board.pin ?? spec.pin ?? AVR_PIN,
       {
+        ...(owner ? { owner } : {}),
         ...(many ? { pinId: (port: string) => `pin.${board.id}.${port}` } : {}),
         ...(!many && spec.keep && spec.keep.length > 0
           ? { keep: spec.keep }
@@ -894,6 +1269,8 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     if (!many) single = realized;
     if (realized.capacitive) capacitive = true;
     pruned.push(...realized.pruned);
+    for (const [full, node] of realized.ports) stampedPorts.set(full, node);
+    for (const [id, path] of realized.owners) owners.set(id, path);
     feedOf.set(board.id, realized.feedNode);
     boardNodes.set(board.id, realized.boardNode);
     const netlist = board.stamp.netlist === true;
@@ -905,6 +1282,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
       knee
     );
     loads.push(load);
+    if (owner) ownedLoads.set(owner, load);
     if (many) {
       boardLoads.set(board.id, load);
       boardDrives.set(board.id, realized.pins);
@@ -944,6 +1322,8 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
   pruned.push(...joined.pruned);
   if (joined.capacitive) capacitive = true;
   for (const [id, nodes] of joined.nodes) partNodes.set(id, nodes);
+  for (const [full, node] of joined.ports) stampedPorts.set(full, node);
+  for (const [id, path] of joined.owners) owners.set(id, path);
   stamped.push(...joined.elements);
   if (many) {
     stamped = [...stamped].sort((a, b) =>
@@ -1005,7 +1385,7 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     : [supply, load, ...motors, ...stamped, ...extras];
   const engine = new Engine(elements, {
     method: "be",
-    h: MASTER_S / substeps,
+    h: (spec.masterS ?? MASTER_S) / substeps,
     atol: 1e-14,
     rtol: 1e-12,
   });
@@ -1059,6 +1439,9 @@ function assembleRail(spec: RailCircuitSpec): Assembled {
     extraNodes,
     pruned,
     partNodes,
+    stampedPorts,
+    owners,
+    ownedLoads,
   };
 }
 

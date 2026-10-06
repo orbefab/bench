@@ -4,13 +4,17 @@
 import type { BehaviourImpl, FormId } from "@sfab-bench/contract";
 import { FORM_PARAMS } from "@sfab-bench/contract";
 import {
+  BridgeDriver,
   Capacitor,
   Comparator,
+  CurrentLoad,
+  DcWinding,
   Diode,
   type DiodeParams,
   LawTable,
   LdoRegulator,
   PmosChannel,
+  Potentiometer,
   PtcFuseElement,
   type PtcFuseParams,
   Resistor,
@@ -188,33 +192,135 @@ function stampComparator(part: AssignedPart): StampedElements {
   };
 }
 
-/** The trailing branch of the old chain. Any form it does not know is a diode. */
-export function stampDiode(part: AssignedPart): StampedElements {
+/** `dc-motor@1`: the winding. The run holds its shaft speed each master step. */
+function stampWinding(part: AssignedPart): StampedElements {
+  return {
+    elements: [
+      new DcWinding(
+        part.path,
+        need(part, "A"),
+        need(part, "B"),
+        needNum(part, "R"),
+        part.params.L ?? 0,
+        needNum(part, "K")
+      ),
+    ],
+    capacitive: false,
+  };
+}
+
+/**
+ * Knee of the control's quiescent draw, volts. Below it the draw falls
+ * with the supply, the way a board's own load does.
+ */
+export const CONTROL_KNEE_V = 1;
+
+/**
+ * `servo-control@1`: the averaged bridge on `M+`/`M-` and the quiescent
+ * draw on `V+`. The run sets the bridge ratio from the pulse and the
+ * latched sense ratio.
+ */
+function stampServoControl(part: AssignedPart): StampedElements {
+  const vp = need(part, "V+");
+  const gnd = need(part, "GND");
+  const quiescent = new CurrentLoad(`${part.path}#q`, vp, gnd, CONTROL_KNEE_V);
+  quiescent.amps = needNum(part, "quiescent");
+  return {
+    elements: [
+      new BridgeDriver(
+        part.path,
+        vp,
+        gnd,
+        need(part, "M+"),
+        need(part, "M-"),
+        need(part, "sense")
+      ),
+      quiescent,
+    ],
+    capacitive: false,
+  };
+}
+
+/** `potentiometer@1`: the track and the wiper. The run holds the wiper each master step. */
+function stampPotentiometer(part: AssignedPart): StampedElements {
+  return {
+    elements: [
+      new Potentiometer(
+        part.path,
+        need(part, "A"),
+        need(part, "W"),
+        need(part, "B"),
+        needNum(part, "R")
+      ),
+    ],
+    capacitive: false,
+  };
+}
+
+function diodeOf(part: AssignedPart): Diode {
   const params: DiodeParams = {
     Is: needNum(part, "Is"),
     N: needNum(part, "N"),
     Rs: part.params.Rs ?? 0,
     tempC: 25,
   };
-  const diode = new Diode(part.path, need(part, "A"), need(part, "K"), params);
+  return new Diode(part.path, need(part, "A"), need(part, "K"), params);
+}
+
+/** The trailing branch of the old chain. Any form it does not know is a diode. */
+export function stampDiode(part: AssignedPart): StampedElements {
+  return { elements: [diodeOf(part)], capacitive: false };
+}
+
+/** The same diode, its forward current recorded under the LED's path. */
+function stampLed(part: AssignedPart): StampedElements {
+  const diode = diodeOf(part);
   return {
     elements: [diode],
     capacitive: false,
-    ...(part.typeId === "led" ? { led: { path: part.path, diode } } : {}),
+    led: { path: part.path, diode },
   };
 }
 
-function circuit(id: string, stamp: FormAdapter["stamp"]): FormAdapter {
-  return { id, stamp, parse: parseCircuitParams };
+/** The stamped port list is the form's own (`FORM_PARAMS`), shared with the bind lint. */
+function circuit(
+  id: FormId,
+  stamp: FormAdapter["stamp"],
+  supply?: Pick<FormAdapter, "power" | "unpowered">
+): FormAdapter {
+  const ports = FORM_PARAMS[id].ports;
+  return {
+    id,
+    stamp,
+    parse: parseCircuitParams,
+    ...(ports ? { ports } : {}),
+    ...supply,
+  };
 }
 
 export const circuitAdapters: FormAdapter[] = [
   circuit("resistor@1", stampResistor),
   circuit("capacitor@1", stampCapacitor),
   circuit("diode@1", stampDiode),
+  circuit("led@1", stampLed),
   circuit("ptc-fuse@1", stampPtc),
   circuit("pmos-switch@1", stampPmos),
-  circuit("ldo-regulator@1", stampLdo),
-  circuit("comparator@1", stampComparator),
+  // Unpowered, the regulator's output is open: its reverse path is in the
+  // parts' omits.
+  circuit("ldo-regulator@1", stampLdo, {
+    power: { from: "IN", to: ["OUT"] },
+  }),
+  // Unpowered, both output rails are `VN`: the output sits at its
+  // negative rail whatever the inputs.
+  circuit("comparator@1", stampComparator, {
+    power: { from: "VP", to: ["OUT"] },
+    unpowered: (part) =>
+      part.nodes.VN === undefined
+        ? null
+        : { ...part, nodes: { ...part.nodes, VP: part.nodes.VN } },
+  }),
+  circuit("dc-motor@1", stampWinding),
+  circuit("servo-control@1", stampServoControl),
+  circuit("potentiometer@1", stampPotentiometer),
   { id: "table@1", stamp: stampTable },
 ];

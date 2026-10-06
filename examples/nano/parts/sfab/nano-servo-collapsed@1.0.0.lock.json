@@ -11,7 +11,7 @@
     {
       "id": "sfab/atmega328p@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/atmega328p@1.0.0.json",
-      "sha256": "6f4c69363ab62bd12f251f25da4826ba9d7c19bd58475ac8bf6b2509f278820b",
+      "sha256": "fee850fa2b568312ecd9fcb32df39d898d1bb999e2a1e67bc054014543e07125",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -46,14 +46,14 @@
     {
       "id": "sfab/led-red@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/led-red@1.0.0.json",
-      "sha256": "009dffe0e8b10c328b94459ec7eb1396ddb330fef5c95f92d7f74cf50981d9c2",
+      "sha256": "758d74b9a4750d4557d3727a359cbb8c605e565b5f47a3b13c03c0002e5deac6",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/nano-ch340@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/nano-ch340@1.0.0.json",
-      "sha256": "86d47e19a73218b9ba97e2e2851c7d039d5f94f1a9473213867370b7c79ee4d3",
+      "sha256": "4cc0c38e13a98d58c9de60030c48c617f7cd57d85720d4a1c517f9b929858802",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -81,42 +81,42 @@
     {
       "id": "sfab/resistor@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/resistor@1.0.0.json",
-      "sha256": "4b38e5fa1fd847a3e8d52bfa23d65699a13bc9a9d2c62b20cf901ee222d6361a",
+      "sha256": "024bdac8454537a929890377b64bf8da0e42a392822b93d70cbf2077d3c007db",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/sg90-control@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90-control@1.0.0.json",
-      "sha256": "854a15e984507289c9c11ce661075f22a4d6f439e356c381195233f4a619b332",
+      "sha256": "bd87d317a3f795d707a60e0c513a929c057d43ed418d45675fc3f5acf42e3796",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/sg90-gears@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90-gears@1.0.0.json",
-      "sha256": "6f52a68ecf7dfbfd1126883ded2e554ce99d9303e481ee5b4dd67e23d1dbd9ee",
+      "sha256": "01a96c75894ca0eeeb7049a85e7bf36d972930854ab985b28c6d5422b2cf53be",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/sg90-motor@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90-motor@1.0.0.json",
-      "sha256": "a8932c36ba1e6b817bf82b1ef89c64ae5a9915203fc40c36907798e7b401cae5",
+      "sha256": "d28543852f5612620444a51c0821f22233c84eaf91b918557fd6eb057f0215dd",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/sg90-pot@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90-pot@1.0.0.json",
-      "sha256": "b69c7da321d2c89e3eac63b307e5225eca40618b7ddf58b343f16c530382ffe0",
+      "sha256": "74a4252d50199b04f3c95a62380242072f8b4e94ca0d1630708d3f0579ae7d8e",
       "source": "catalog",
       "version": "1.0.0"
     },
     {
       "id": "sfab/sg90@1.0.0",
       "path": "../../apps/server/catalog/parts/sfab/sg90@1.0.0.json",
-      "sha256": "452781cba96e214ba8007a80413e90d7c0fb3e800438080f18f102788fb7fba6",
+      "sha256": "a98870801b4458a36d78f0d70943fb430713aaacf76fbd3531ed1e47edcf0cef",
       "source": "catalog",
       "version": "1.0.0"
     },
@@ -132,7 +132,13 @@
     {
       "id": "sfab/sg90-hinge@1.0.0",
       "path": "../../apps/server/catalog/snapshots/sfab/sg90-hinge@1.0.0.json",
-      "sha256": "d3c83493be3ab48f2eb89895795e4cd42d4e3d650155ad85a3c789d3aec927b5",
+      "sha256": "6ea741b4d601e75071b85703ac6519a9ba6f850736c03bec85cdc1f23bb313a0",
+      "source": "catalog"
+    },
+    {
+      "id": "sfab/sg90-servo@1.0.0",
+      "path": "../../apps/server/catalog/snapshots/sfab/sg90-servo@1.0.0.json",
+      "sha256": "fcdfd1a019ab26134b14e6e03c9ed1d00d016fcd75be4a44a47940520e05c8c4",
       "source": "catalog"
     }
   ],
@@ -140,7 +146,7 @@
     {
       "id": "arduino-nano",
       "path": "../../apps/server/catalog/types/arduino-nano.json",
-      "sha256": "7cccb410a7873cef899efe3f6fc6ac4063d5134733234764ef4824d139aeaf76",
+      "sha256": "b246ad776827840bcccde129a8ae6dd9d7f1d3a235cca35201e9ee7237c56084",
       "source": "catalog"
     },
     {
@@ -152,7 +158,7 @@
     {
       "id": "atmega328p",
       "path": "../../apps/server/catalog/types/atmega328p.json",
-      "sha256": "557592500146c6bb6c1296efcc81c224456b5cbc7a3e28284f539d040b35f5df",
+      "sha256": "5be01c47cb06fdedecf5b231c0d327290926e88dfe8a6f09ba05929eaeca3b3a",
       "source": "catalog"
     },
     {

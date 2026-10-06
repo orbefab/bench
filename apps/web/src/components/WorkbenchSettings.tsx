@@ -1,4 +1,4 @@
-import { Headset, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { QuestJoinPanel } from "@/components/QuestJoinPanel";
 import { AboutSection } from "@/components/settings/AboutSection";
@@ -6,7 +6,7 @@ import { AppearanceSection } from "@/components/settings/AppearanceSection";
 import { ProvidersSection } from "@/components/settings/ProvidersSection";
 import { ShortcutsSection } from "@/components/settings/ShortcutsSection";
 import { VoiceSection } from "@/components/settings/VoiceSection";
-import { Button } from "@/components/ui/button";
+import { VrSection } from "@/components/settings/VrSection";
 import {
   Dialog,
   DialogContent,
@@ -18,11 +18,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { OPEN_SETTINGS_EVENT } from "@/lib/command-palette";
+import { OPEN_QUEST_EVENT, OPEN_SETTINGS_EVENT } from "@/lib/command-palette";
 import { cn } from "@/lib/utils";
 
 type SettingsSectionId =
   | "appearance"
+  | "vr"
   | "voice"
   | "providers"
   | "shortcuts"
@@ -49,9 +50,18 @@ export function WorkbenchSettings({ host }: { host: boolean }) {
       setSection("appearance");
       setSettingsOpen(true);
     };
+    const onQuest = () => {
+      if (!host) return;
+      setPendingQuest(true);
+      setSettingsOpen(false);
+    };
     window.addEventListener(OPEN_SETTINGS_EVENT, onSettings);
-    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onSettings);
-  }, []);
+    window.addEventListener(OPEN_QUEST_EVENT, onQuest);
+    return () => {
+      window.removeEventListener(OPEN_SETTINGS_EVENT, onSettings);
+      window.removeEventListener(OPEN_QUEST_EVENT, onQuest);
+    };
+  }, [host]);
 
   const sections: {
     id: SettingsSectionId;
@@ -59,6 +69,7 @@ export function WorkbenchSettings({ host }: { host: boolean }) {
     hostOnly?: boolean;
   }[] = [
     { id: "appearance", label: "Appearance" },
+    { id: "vr", label: "VR" },
     { id: "voice", label: "Voice", hostOnly: true },
     { id: "providers", label: "Providers" },
     { id: "shortcuts", label: "Shortcuts" },
@@ -117,6 +128,16 @@ export function WorkbenchSettings({ host }: { host: boolean }) {
                     <SectionHeading>Appearance</SectionHeading>
                     <AppearanceSection />
                   </section>
+                  <section className={cn("max-sm:mt-6", pane("vr"))}>
+                    <SectionHeading>VR</SectionHeading>
+                    <VrSection
+                      host={host}
+                      onEnterQuest={() => {
+                        setPendingQuest(true);
+                        setSettingsOpen(false);
+                      }}
+                    />
+                  </section>
                   {host ? (
                     <section className={cn("max-sm:mt-6", pane("voice"))}>
                       <SectionHeading>Voice</SectionHeading>
@@ -137,23 +158,6 @@ export function WorkbenchSettings({ host }: { host: boolean }) {
                   </section>
                 </div>
               </div>
-              {host ? (
-                <div className="border-t border-border px-4 py-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-2"
-                    onClick={() => {
-                      setPendingQuest(true);
-                      setSettingsOpen(false);
-                    }}
-                  >
-                    <Headset />
-                    Enter Quest
-                  </Button>
-                </div>
-              ) : null}
             </DialogContent>
           </Dialog>
         </SidebarMenuItem>

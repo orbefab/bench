@@ -1,5 +1,11 @@
+import {
+  CHAT_EFFORT_LABEL,
+  CHAT_EFFORTS,
+  HARNESS_LABEL,
+  harnessSupportsEffort,
+  isChatEffort,
+} from "@sfab-bench/contract";
 import { ChevronDown } from "lucide-react";
-
 import { EFFORT_TRIGGER_TITLE } from "@/chat/model-picker";
 import {
   Select,
@@ -8,13 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  CHAT_EFFORT_LABEL,
-  CHAT_EFFORTS,
-  HARNESS_LABEL,
-  harnessSupportsEffort,
-  isChatEffort,
-} from "@/lib/harness";
 import { usePrefs } from "@/state/prefs";
 
 export function EffortSelect() {

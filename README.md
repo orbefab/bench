@@ -1,6 +1,7 @@
 # sfab-bench
 
-CAD on your Mac. Talk to it with the AI you already pay for.
+A robotics simulation platform on your Mac: parts, boards, firmware and
+physics in one world. Talk to it with the AI you already pay for.
 
 Open a folder, open a STEP, talk with Codex, Claude Code, Grok, or OpenCode
 already on the machine. This app does not take API keys for chat. Quest

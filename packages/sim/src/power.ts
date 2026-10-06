@@ -13,7 +13,7 @@
  * form.
  */
 
-import type { WorldPartMotion } from "@sfab-bench/contract";
+import type { ResetCause, WorldPartMotion } from "@sfab-bench/contract";
 
 export type { WorldPartMotion };
 
@@ -27,27 +27,34 @@ export const DISPLAY_MOVE_DEG = 0.5;
 export const DISPLAY_STALL_HOLD_MS = 20;
 
 /**
- * ATmega328P BODLEVEL 2.7 V typical, with 50 mV hysteresis.
- * Reset asserts below `BOD_ASSERT_V` and the delay starts above
- * `BOD_RELEASE_V`. `RESET_HOLD_MS` is tTOUT 65 ms plus 16K CK.
+ * The chip part's brownout band. Assert is the falling threshold,
+ * release is the rising one, and `holdMs` is how long reset stays
+ * after the rail has released (tTOUT plus the clock cycles).
  */
-export const BOD_ASSERT_V = 2.675;
-export const BOD_RELEASE_V = 2.725;
-export const RESET_HOLD_MS = 66;
-
-export type BrownoutPhase = "run" | "held" | "delay";
-
-export type BrownoutState = {
-  phase: BrownoutPhase;
-  /**
-   * Sim millisecond of the step whose rail rose above `BOD_RELEASE_V`.
-   * Null while the rail has not released.
-   */
-  releaseAtMs: number | null;
+export type ResetLimits = {
+  assertV: number;
+  releaseV: number;
+  holdMs: number;
 };
 
-export function runningBrownout(): BrownoutState {
-  return { phase: "run", releaseAtMs: null };
+export type ResetPhase = "run" | "held" | "delay";
+
+export type ResetState = {
+  phase: ResetPhase;
+  /**
+   * Sim millisecond of the step whose rail and RESET pin both released.
+   * Null while either still holds.
+   */
+  releaseAtMs: number | null;
+  /**
+   * What is holding the chip: `brownout` once the rail has sagged under
+   * assert during this hold, else `pin`. Null while running.
+   */
+  cause: ResetCause | null;
+};
+
+export function runningReset(): ResetState {
+  return { phase: "run", releaseAtMs: null, cause: null };
 }
 
 function clamp(value: number, lo: number, hi: number): number {
@@ -57,39 +64,52 @@ function clamp(value: number, lo: number, hi: number): number {
 }
 
 /**
- * One step of the brown-out state machine. `stepEndMs` is the sim time
- * this step is recorded at. `assertReset` is the falling edge.
- * `reboot` is the first instruction, `RESET_HOLD_MS` after release.
+ * One step of the reset state machine. `stepEndMs` is the sim time this
+ * step is recorded at. `resetPinLow` is the RESET pin below the chip's
+ * V_RST at any point of the step. Either source holds the chip, and the
+ * release waits for both. `assertReset` is the falling edge. `cause` is
+ * the hold's cause: the rail wins when both assert, and a sag inside a
+ * pin hold makes it a brownout. `reboot` is the first instruction,
+ * `limits.holdMs` after release; the hold it ends is `state.cause`.
+ * `limits` are that chip's params.
  */
-export function stepBrownout(
-  state: BrownoutState,
+export function stepReset(
+  state: ResetState,
   voltage: number,
-  stepEndMs: number
-): BrownoutState & { assertReset: boolean; reboot: boolean } {
+  stepEndMs: number,
+  limits: ResetLimits,
+  resetPinLow = false
+): ResetState & { assertReset: boolean; reboot: boolean } {
+  const sag = voltage < limits.assertV;
   if (state.phase === "run") {
-    if (voltage < BOD_ASSERT_V) {
+    if (sag || resetPinLow) {
       return {
         phase: "held",
         releaseAtMs: null,
+        cause: sag ? "brownout" : "pin",
         assertReset: true,
         reboot: false,
       };
     }
     return { ...state, assertReset: false, reboot: false };
   }
-  if (!(voltage > BOD_RELEASE_V)) {
+  const cause = sag ? "brownout" : state.cause;
+  if (!(voltage > limits.releaseV) || resetPinLow) {
     return {
       phase: "held",
       releaseAtMs: null,
+      cause,
       assertReset: false,
       reboot: false,
     };
   }
   const releaseAtMs = state.releaseAtMs ?? stepEndMs;
-  if (stepEndMs - releaseAtMs >= RESET_HOLD_MS) {
+  // A finer step sums fractional ms: the slack absorbs that sum.
+  if (stepEndMs - releaseAtMs >= limits.holdMs - 1e-9) {
     return {
       phase: "run",
       releaseAtMs: null,
+      cause: null,
       assertReset: false,
       reboot: true,
     };
@@ -97,6 +117,7 @@ export function stepBrownout(
   return {
     phase: "delay",
     releaseAtMs,
+    cause,
     assertReset: false,
     reboot: false,
   };
@@ -260,6 +281,10 @@ export function solveRail(input: {
     const { slope, intercept } = segmentAt(voltage);
     return intercept + slope * voltage;
   };
+  // The bracket for the piecewise search, not a physical limit. With a
+  // non-negative `fixed` (the board and quiescent currents) the draw is
+  // never negative, so the solution is at most vNom; four times it is
+  // margin.
   const cap = Math.max(input.vNom * 4, 1);
   const bounds = [0, cap];
   for (const term of terms) {

@@ -1,4 +1,4 @@
-import type { HarnessId } from "@/lib/harness";
+import type { HarnessId } from "@sfab-bench/contract";
 import { PROVIDER_MARK } from "@/lib/provider-marks";
 import { cn } from "@/lib/utils";
 

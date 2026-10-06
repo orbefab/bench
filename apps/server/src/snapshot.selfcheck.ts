@@ -7,6 +7,7 @@ import {
   cpSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -29,14 +30,14 @@ import {
   loadSnapshot,
   outsideEnvelope,
 } from "@sfab-bench/parts";
-import { captureCatalog, type FreeRunSpec, runClassScenes } from "./capture";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
+import { captureFromConfig, type FreeRunSpec, runClassScenes } from "./capture";
 import { closeRootWatches } from "./projects";
 import { boardStampOf } from "./world/circuit-stamp";
 import { attachWorld, stopWorld } from "./world/host";
 import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit } from "./world/rail-circuit";
 
 const SNAPSHOT_ID = "sfab/nano-power-input@1.0.0";
 const nanoDir = fileURLToPath(
@@ -75,11 +76,30 @@ function mustFail(snap: SnapshotFile, needle: string, label: string): void {
   expect(text.includes(needle), `${label} missed ${needle}: ${text}`);
 }
 
-const before = readFileSync(snapFile(), "utf8");
-const stats = await captureCatalog();
-const after = readFileSync(snapFile(), "utf8");
-expect(before === after, "capture did not reproduce the committed snapshot");
-console.log("capture reproducible: byte-identical");
+// The capture runs on a copy of the catalog, so a failed or killed run
+// cannot leave a committed snapshot half-written. Every entry it writes
+// must match the committed bytes.
+const captureDir = mkdtempSync(join(tmpdir(), "sfab-capture-"));
+let stats: Awaited<ReturnType<typeof captureFromConfig>>;
+let after: string;
+try {
+  cpSync(catalogRoot(), captureDir, { recursive: true });
+  stats = await captureFromConfig({ catalogDir: captureDir });
+  const snapshots = join("snapshots", "sfab");
+  const names = readdirSync(join(catalogRoot(), snapshots));
+  for (const name of names) {
+    const committed = readFileSync(
+      join(catalogRoot(), snapshots, name),
+      "utf8"
+    );
+    const fresh = readFileSync(join(captureDir, snapshots, name), "utf8");
+    expect(committed === fresh, `capture did not reproduce ${name}`);
+  }
+  after = readFileSync(snapFile(), "utf8");
+  console.log(`capture reproducible: ${names.length} snapshots byte-identical`);
+} finally {
+  rmSync(captureDir, { recursive: true, force: true });
+}
 
 const committed = JSON.parse(after) as SnapshotFile;
 const clean = lint(committed);
@@ -307,19 +327,19 @@ try {
     `path 2 ran ${highNano.variant} class ${highNano.class}`
   );
   expect(highNano.reason === "path rule nano", highNano.reason);
-  expect(high.snapshots.length === 0, "path 2 ran a snapshot");
+  expect(nanoSnapshots(high).length === 0, "path 2 ran a snapshot");
   expect(
     lowNano.class === 1 && lowNano.variant === "avr8js",
     `path 1 ran ${lowNano.variant} class ${lowNano.class}`
   );
   expect(lowNano.reason === "path rule nano", lowNano.reason);
   expect(
-    low.snapshots.length === 1 &&
-      low.snapshots[0]?.ref === SNAPSHOT_ID &&
-      low.snapshots[0]?.path === "nano.power",
+    nanoSnapshots(low).length === 1 &&
+      nanoSnapshots(low)[0]?.ref === SNAPSHOT_ID &&
+      nanoSnapshots(low)[0]?.path === "nano.power",
     `path 1 snapshot ${low.snapshots.map((row) => `${row.path} ${row.ref}`).join(",")}`
   );
-  expect(low.snapshots[0]?.quality === "Q1", "path 1 quality");
+  expect(nanoSnapshots(low)[0]?.quality === "Q1", "path 1 quality");
   const omits = low.notSimulated.find(
     (row) => row.path === "nano" && row.axis === "behaviour"
   );
@@ -389,8 +409,9 @@ expect(
   canonicalJson(first) === canonicalJson(second),
   "reports differ across loads"
 );
-expect(first.snapshots[0]?.quality === "Q1", "report quality");
-expect(Array.isArray(first.snapshots[0]?.error), "report error");
+const firstPower = first.snapshots.find((row) => row.ref === SNAPSHOT_ID);
+expect(firstPower?.quality === "Q1", "report quality");
+expect(Array.isArray(firstPower?.error), "report error");
 const reported = first.notSimulated.find(
   (row) => row.path === "nano" && row.axis === "behaviour"
 );
@@ -424,6 +445,13 @@ function open(project: string, world: string): RunReport {
     `${world} plan has no nano level for world_status`
   );
   return report;
+}
+
+/** The Nano's own snapshots; the SG90 beside it runs one too. */
+function nanoSnapshots(report: RunReport): RunReport["snapshots"] {
+  return report.snapshots.filter(
+    (row) => row.path === "nano" || row.path.startsWith("nano.")
+  );
 }
 
 function levelRow(report: RunReport, path: string) {

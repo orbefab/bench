@@ -1,0 +1,98 @@
+{
+  "axis": "behaviour",
+  "envelope": {
+    "bounds": {
+      "V+.current": [
+        -0.003122966,
+        0.658175692
+      ]
+    }
+  },
+  "error": [
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "free-run-max-abs",
+      "quantity": "shaft.angle",
+      "value": 0.00539279
+    },
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "free-run-rms",
+      "quantity": "shaft.angle",
+      "value": 0.001148799
+    },
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "free-run-max-abs",
+      "quantity": "V+.current",
+      "value": 0.013114437
+    },
+    {
+      "baseline": {
+        "level": "2",
+        "value": 0
+      },
+      "heldOut": "fixture",
+      "metric": "free-run-rms",
+      "quantity": "V+.current",
+      "value": 0.001011894
+    }
+  ],
+  "form": "position-servo@1",
+  "format": "sfab.snapshot@1",
+  "params": {
+    "K": 0.458,
+    "R": 7.1,
+    "eSat": 0.3,
+    "efficiency": 0.57,
+    "quiescent": 0.01
+  },
+  "part": "sfab/sg90@1.0.0",
+  "partType": "hobby-servo-3wire",
+  "ports": {
+    "inputs": [
+      "V+.voltage"
+    ],
+    "outputs": [
+      "shaft.angle",
+      "V+.current"
+    ]
+  },
+  "provenance": {
+    "bench": {
+      "avr8js": "0.21.1",
+      "mujoco": "3.14.0",
+      "version": "0.2.2"
+    },
+    "created": "2026-09-27T00:00:00.000Z",
+    "fixture": {
+      "hash": "df2d684f5916cb5437e3246dac29db74fd0bb5a187120f585881631e45450e27",
+      "ref": "arm/parts/sfab/arm-bench@1.0.0.json",
+      "seed": 1
+    },
+    "from": {
+      "hash": "d23aa87bc5973fdb1d777f45a1e5470adc94d2f843067cd252730a7072217a44",
+      "level": "2",
+      "part": "sfab/sg90@1.0.0"
+    },
+    "source": "captured",
+    "tool": {
+      "name": "sfab-bench-capture",
+      "version": "1"
+    },
+    "variant": "netlist"
+  },
+  "quality": "Q2a"
+}

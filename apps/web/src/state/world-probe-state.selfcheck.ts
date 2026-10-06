@@ -12,6 +12,7 @@ import {
 import {
   bindWorldSocket,
   noteLiveRecording,
+  resetTimeline,
   restoreTimeline,
   takeTimeline,
   worldTimelineSnapshot,
@@ -132,5 +133,11 @@ worldStore.getState().retargetDocument("parts/sfab/arm-scene@1.0.0.json");
 expect(probedPorts().length === 1, "the same document keeps its list");
 clearProbes();
 expect(probedPorts().length === 0, "clear empties the list");
+
+// The checks share one process: leave no recording, socket or document.
+resetTimeline();
+bindWorldSocket(null);
+bindSceneInvalidate(null);
+worldStore.getState().close();
 
 console.log("world-probe-state.selfcheck ok");

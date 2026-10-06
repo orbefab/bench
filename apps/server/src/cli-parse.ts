@@ -6,7 +6,8 @@ export type CliAction =
   | { kind: "help"; error?: string }
   | { kind: "dev" | "serve"; project?: string }
   | { kind: "run"; project: string; world: string; ms?: number }
-  | { kind: "convert"; world: string };
+  | { kind: "convert"; world: string }
+  | { kind: "repin"; write: boolean; roots: string[] };
 
 export function parseCli(argv: string[]): CliAction {
   const args = [...argv];
@@ -37,6 +38,23 @@ export function parseCli(argv: string[]): CliAction {
       };
     }
     return { kind: "convert", world: expandUserPath(world) };
+  }
+  if (head === "repin") {
+    const rest = args.slice(1);
+    const dry = rest.includes("--dry");
+    const roots = rest.filter((arg) => arg !== "--dry");
+    const flag = roots.find((arg) => arg.startsWith("-"));
+    if (flag) {
+      return {
+        kind: "help",
+        error: "usage: sfab-bench repin [--dry] [<dir>...]",
+      };
+    }
+    return {
+      kind: "repin",
+      write: !dry,
+      roots: roots.map((dir) => resolve(expandUserPath(dir))),
+    };
   }
   if (head === "run") {
     const project = args[1];

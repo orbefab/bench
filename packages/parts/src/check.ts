@@ -5,6 +5,8 @@ import {
   type BodyImpl,
   type Diagnostic,
   FORM_PARAMS,
+  isParamRef,
+  type LogicRatings,
   QUANTITY_DIM,
   type Quantity,
   RATING_FIELD_QUANTITY,
@@ -17,6 +19,12 @@ import {
 import { batteryFrom, ocvAt } from "./battery";
 import { boardHostOf } from "./board-host";
 import type { LiveInstance } from "./levels";
+import {
+  citedVcc,
+  isSupplyThreshold,
+  logicThresholds,
+  thresholdVolts,
+} from "./logic";
 import { mergeFormParams } from "./merge";
 import { collectPorts, type LiveNet, type LivePort, type Wire } from "./nets";
 import { resolve } from "./path";
@@ -92,6 +100,49 @@ function walkRating(
   }
 }
 
+/**
+ * A `[k, b]` threshold is two numbers, and the port's logic (type and part
+ * merged) cites the `vcc` the static check resolves it at.
+ */
+function supplyThresholdDiags(inst: LiveInstance): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const ports = new Set([
+    ...Object.keys(inst.type.ports),
+    ...Object.keys(inst.part.ratings ?? {}),
+  ]);
+  for (const port of ports) {
+    const logic: Record<string, unknown> = {
+      ...inst.type.ports[port]?.ratings?.logic,
+      ...inst.part.ratings?.[port]?.logic,
+    };
+    for (const key of ["vil", "vih"]) {
+      const value = logic[key];
+      if (!Array.isArray(value)) continue;
+      const pair =
+        value.length === 2 && value.every((n) => typeof n === "number");
+      const detail = !pair
+        ? `logic.${key} is not [k, b]`
+        : logic.vcc === undefined
+          ? `logic.${key} is [k, b] and logic has no vcc`
+          : null;
+      if (!detail) continue;
+      diags.push(
+        makeDiag({
+          severity: "error",
+          code: "rating",
+          path: inst.path,
+          port,
+          quantity: "Voltage",
+          left: JSON.stringify(value),
+          right: "vcc",
+          detail,
+        })
+      );
+    }
+  }
+  return diags;
+}
+
 function isTag(
   value: unknown
 ): value is { v: number; q: string; d: Record<string, number>; unit?: string } {
@@ -118,6 +169,7 @@ function checkTag(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: instancePath,
         port,
         quantity: expected,
@@ -132,6 +184,7 @@ function checkTag(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: instancePath,
         port,
         quantity: expected,
@@ -146,6 +199,7 @@ function checkTag(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: instancePath,
         port,
         quantity: expected,
@@ -180,6 +234,7 @@ function plausibilityDiags(inst: LiveInstance): Diagnostic[] {
     diags.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: inst.path,
         port,
         quantity,
@@ -226,10 +281,13 @@ function walkPlausible(
 ): void {
   for (const [key, value] of Object.entries(rating)) {
     if (key === "logic" && value && typeof value === "object") {
-      for (const [lk, lv] of Object.entries(value as Record<string, unknown>)) {
+      const logic = value as LogicRatings;
+      for (const [lk, lv] of Object.entries(logic)) {
         const quantity = RATING_FIELD_QUANTITY[lk];
         if (!quantity) continue;
-        const n = numberOf(lv);
+        const n = isSupplyThreshold(lv)
+          ? thresholdVolts(lv, citedVcc(logic))
+          : numberOf(lv);
         if (n !== null) check(port, `logic.${lk}`, quantity, n);
       }
       continue;
@@ -266,6 +324,7 @@ function wireDiags(instances: LiveInstance[], wires: Wire[]): Diagnostic[] {
       diags.push(
         makeDiag({
           severity: "error",
+          code: "wiring",
           path: pa.path,
           port: pa.port,
           quantity: pa.across,
@@ -285,6 +344,7 @@ function missingPort(
 ): Diagnostic {
   return makeDiag({
     severity: "error",
+    code: "broken-port",
     path: end.path,
     port: end.port,
     quantity: other?.across ?? "Port",
@@ -294,11 +354,16 @@ function missingPort(
   });
 }
 
+/** Volts at the cited `logic.vcc`; a `[k, b]` threshold resolves there. */
 function logicNumber(
   ratings: Ratings,
   key: "vil" | "vih" | "vol" | "voh"
 ): number | null {
-  const raw = ratings.logic?.[key];
+  const logic = ratings.logic;
+  if (key === "vil" || key === "vih") {
+    return logicThresholds(logic, citedVcc(logic))[key];
+  }
+  const raw = logic?.[key];
   if (raw === undefined) return null;
   return siValue(raw);
 }
@@ -337,6 +402,7 @@ function logicDiags(net: LiveNet): Diagnostic[] {
         diags.push(
           makeDiag({
             severity: "error",
+            code: "rating",
             path: receiver.path,
             port: receiver.port,
             quantity: "Voltage",
@@ -351,6 +417,7 @@ function logicDiags(net: LiveNet): Diagnostic[] {
         diags.push(
           makeDiag({
             severity: "error",
+            code: "rating",
             path: receiver.path,
             port: receiver.port,
             quantity: "Voltage",
@@ -365,6 +432,7 @@ function logicDiags(net: LiveNet): Diagnostic[] {
         diags.push(
           makeDiag({
             severity: "error",
+            code: "rating",
             path: receiver.path,
             port: receiver.port,
             quantity: "Voltage",
@@ -430,6 +498,7 @@ function supplyDiags(
       diags.push(
         makeDiag({
           severity: beyond ? "error" : "warning",
+          code: "rating",
           path: port.path,
           port: port.port,
           quantity: "Voltage",
@@ -463,6 +532,7 @@ function fileDiags(
         diags.push(
           makeDiag({
             severity: "error",
+            code: "missing-file",
             path: inst.path,
             port: "body",
             quantity: "Position",
@@ -480,6 +550,7 @@ function fileDiags(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "schema",
           path: inst.path,
           port: "body",
           quantity: "Mass",
@@ -496,6 +567,7 @@ function fileDiags(
           diags.push(
             makeDiag({
               severity: "error",
+              code: "missing-file",
               path: inst.path,
               port: "visual",
               quantity: "Position",
@@ -505,6 +577,36 @@ function fileDiags(
             })
           );
         }
+      }
+    }
+    if (visual?.kind === "form") {
+      const own = inst.axes.behaviour.impl as BehaviourImpl | null;
+      const formParams =
+        own?.kind === "form" ? mergeFormParams(own.params, inst.params) : {};
+      const rows = [
+        visual.params ?? {},
+        ...(visual.inner ?? []).map((row) => row.params ?? {}),
+      ].flatMap((params) => Object.entries(params));
+      for (const [name, value] of rows) {
+        if (
+          !isParamRef(value) ||
+          inst.params[value.$param] !== undefined ||
+          formParams[value.$param] !== undefined
+        ) {
+          continue;
+        }
+        diags.push(
+          makeDiag({
+            severity: "warning",
+            code: "bad-params",
+            path: inst.path,
+            port: "visual",
+            quantity: "Position",
+            left: name,
+            right: value.$param,
+            detail: `visual ${visual.form} param ${name} reads ${value.$param}, which the part does not set; the form draws its default`,
+          })
+        );
       }
     }
     const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
@@ -519,6 +621,7 @@ function fileDiags(
         diags.push(
           makeDiag({
             severity: "error",
+            code: "missing-file",
             path: boardHostOf(inst, byPath, ROOT_PATH).path,
             port: behaviour.imageParam,
             quantity: "Time",
@@ -543,7 +646,11 @@ export function checkWorld(
   const byPath = new Map(instances.map((inst) => [inst.path, inst]));
   const diags: Diagnostic[] = [];
   for (const inst of instances) {
-    diags.push(...tagDiags(inst), ...plausibilityDiags(inst));
+    diags.push(
+      ...tagDiags(inst),
+      ...supplyThresholdDiags(inst),
+      ...plausibilityDiags(inst)
+    );
   }
   diags.push(...wireDiags(instances, wires));
   for (const net of nets) {

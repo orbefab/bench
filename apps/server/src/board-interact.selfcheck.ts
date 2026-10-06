@@ -9,40 +9,35 @@
  * - `swap`: the firmware changes through a `set-param` on the board instance,
  *   the document reloads, and serial in reaches the new image.
  *
- * The digest hashes the same values as the replay golden, but it keeps the
- * board id and the diagnostic path: the ids must not change when a board
- * becomes a composite. Each row also lists the ids and the serial text, so the
- * fixture reads as proof that the interaction happened.
+ * Each run is a trace in `fixtures/traces/interact/` (see `trace.ts`): the
+ * recorded frames as channels, the events, the serial text, the state at each
+ * checkpoint, and the warnings. A world whose firmware swap reloads the
+ * document records twice, so it has a second trace for the first recording,
+ * `<world>.before-swap`. Board ids and diagnostic paths are kept: they must
+ * not change when a board becomes a composite.
  *
  * Worlds are written into a temporary copy of `examples/nano`. `--write`
- * rewrites the golden; do it only for a change that is meant to move behaviour.
+ * rewrites the traces; do it only for a change that is meant to move behaviour.
  */
 
 import { ok as expect } from "node:assert/strict";
-import { createHash } from "node:crypto";
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { EditOp, WorldState } from "@sfab-bench/contract";
+import type { EditOp } from "@sfab-bench/contract";
 import { EditSession } from "@sfab-bench/parts";
 
-import { canon } from "./board-digest";
+import { recordingTrace, stateSample } from "./board-trace";
 import { closeRootWatches } from "./projects";
 import { headlessSim } from "./run";
+import { checkTraceDir, type Discrete, type Trace } from "./trace";
 import { absolutePath, nodeStore } from "./world/node-store";
 import { catalogRoot } from "./world/plan";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
-const goldenPath = here("./board-interact.golden.json");
+const traceDir = here("../fixtures/traces/interact/");
 const nanoDir = here("../../../examples/nano/");
 const armDir = here("../../../examples/arm/");
 const echoDir = here("../fixtures/interaction/firmware/echo/");
@@ -77,16 +72,6 @@ const WORLDS: World[] = KINDS.flatMap((kind) =>
     }))
   )
 );
-
-type Row = {
-  world: string;
-  digest: string;
-  frames: number;
-  boards: string[];
-  resets: number;
-  reboots: number;
-  serial: Record<string, string>;
-};
 
 const NONE = (omit: string) => ({
   "0": {
@@ -211,64 +196,44 @@ function setFirmware(root: string, world: World, image: string) {
   if ("error" in applied) throw new Error(applied.error);
 }
 
-/** The state fields the replay golden hashes, with board ids and paths kept. */
-function stateView(state: WorldState) {
-  return {
-    simTime: state.simTime,
-    poses: state.poses,
-    joints: state.joints,
-    boards: state.boards,
-    parts: state.parts,
-    supplies: state.supplies,
-    diagnostics: (state.diagnostics ?? []).map((row) => ({
-      severity: row.severity,
-      code: row.code,
-      message: row.message,
-      path: row.path,
-    })),
-  };
-}
-
-async function play(root: string, world: World): Promise<Row> {
+/** One trace per recording: `<world>`, and `<world>.before-swap` for a swap. */
+async function play(root: string, world: World): Promise<Map<string, Trace>> {
   const sim = headlessSim();
-  const hash = createHash("sha256");
-  const serial: Record<string, string> = {};
-  let frames = 0;
-  let resets = 0;
-  let reboots = 0;
+  const traces = new Map<string, Trace>();
+  let serial: Record<string, string> = {};
+  let samples: Record<string, Record<string, Discrete>> = {};
   const id = world.kind.key;
   const target = {
     project: root,
     world: `parts/sfab/${world.name}@1.0.0.json`,
   };
 
-  const chunks = () => {
+  const checkpoint = (label: string) => {
     for (const chunk of sim.drainSerial()) {
       serial[chunk.board] = (serial[chunk.board] ?? "") + chunk.text;
-      hash.update(`s${canon(chunk)}\n`);
     }
-  };
-  const checkpoint = (label: string) => {
-    chunks();
     const state = sim.state();
     if (!state) throw new Error(`${world.name}: no state at ${label}`);
-    hash.update(`z${label}:${canon(stateView(state))}\n`);
+    samples[label] = stateSample(state);
   };
   /** The recording ends with the world that made it, so read it first. */
-  const epoch = (label: string) => {
+  const epoch = (name: string, label: string, last: boolean) => {
     checkpoint(label);
     const state = sim.state();
     const body = sim.record({ op: "read", from: 0, to: state?.simTime ?? 0 });
     if (body.op !== "read") throw new Error(`${world.name}: no recording`);
-    for (const frame of body.read.frames) {
-      frames += 1;
-      hash.update(`f${canon(frame)}\n`);
-    }
-    for (const event of body.read.events) {
-      if (event.kind === "reset") resets += 1;
-      if (event.kind === "reboot") reboots += 1;
-      hash.update(`e${canon(event)}\n`);
-    }
+    traces.set(
+      name,
+      recordingTrace({
+        source: target.world,
+        read: body.read,
+        serial,
+        samples,
+        warnings: last ? (sim.report()?.warnings ?? []) : [],
+      })
+    );
+    serial = {};
+    samples = {};
   };
   const step = (ms: number) => sim.step(ms);
 
@@ -278,7 +243,7 @@ async function play(root: string, world: World): Promise<Row> {
     await step(300);
     checkpoint("boot");
     if (world.script === "swap") {
-      epoch("before-swap");
+      epoch(`${world.name}.before-swap`, "before-swap", false);
       setFirmware(root, world, "firmware/echo/echo.hex");
       const again = await sim.reload();
       if (!again.ok) throw new Error(`${world.name}: reload failed`);
@@ -310,30 +275,15 @@ async function play(root: string, world: World): Promise<Row> {
       await step(500);
       checkpoint("reloaded");
     }
-    epoch("end");
-    const warnings = (sim.report()?.warnings ?? []).map((row) => ({
-      severity: row.severity,
-      code: row.code,
-      message: row.message,
-      path: row.path,
-    }));
-    hash.update(`w${canon(warnings)}\n`);
-    return {
-      world: world.name,
-      digest: hash.digest("hex"),
-      frames,
-      boards: Object.keys(sim.state()?.boards ?? {}).sort(),
-      resets,
-      reboots,
-      serial,
-    };
+    epoch(world.name, "end", true);
+    return traces;
   } finally {
     sim.dispose();
   }
 }
 
 const root = mkdtempSync(join(tmpdir(), "sfab-interact-"));
-const rows: Row[] = [];
+const traces = new Map<string, Trace>();
 try {
   cpSync(nanoDir, root, { recursive: true });
   mkdirSync(join(root, "firmware", "echo"), { recursive: true });
@@ -344,43 +294,22 @@ try {
     join(root, "firmware", "stall", "stall.hex")
   );
   for (const world of WORLDS) writeWorld(root, world);
-  for (const world of WORLDS) rows.push(await play(root, world));
+  for (const world of WORLDS) {
+    for (const [name, trace] of await play(root, world))
+      traces.set(name, trace);
+  }
 } finally {
   closeRootWatches();
   rmSync(root, { recursive: true, force: true });
 }
 
-if (write) {
-  writeFileSync(goldenPath, `${JSON.stringify(rows, null, 2)}\n`);
-  console.log(`board-interact: wrote ${rows.length} rows`);
-  for (const row of rows) {
-    console.log(
-      `  ${row.world} ${row.digest.slice(0, 12)} resets ${row.resets} reboots ${row.reboots} ${JSON.stringify(row.serial)}`
-    );
-  }
-} else {
-  const golden = JSON.parse(readFileSync(goldenPath, "utf8")) as Row[];
-  const byWorld = new Map(golden.map((row) => [row.world, row]));
-  const failures: string[] = [];
-  for (const row of rows) {
-    const want = byWorld.get(row.world);
-    if (!want) failures.push(`${row.world}: not in the golden`);
-    else if (want.digest !== row.digest) {
-      failures.push(
-        `${row.world}: digest ${row.digest.slice(0, 12)} != ${want.digest.slice(0, 12)} ` +
-          `(boards ${row.boards.join(",")}/${want.boards.join(",")}, ` +
-          `resets ${row.resets}/${want.resets}, reboots ${row.reboots}/${want.reboots}, ` +
-          `serial ${JSON.stringify(row.serial)}/${JSON.stringify(want.serial)})`
-      );
-    }
-    byWorld.delete(row.world);
-  }
-  for (const world of byWorld.keys()) failures.push(`${world}: not run`);
-  expect(
-    failures.length === 0,
-    `board interaction moved:\n${failures.join("\n")}`
-  );
-  console.log(
-    `board-interact: ${rows.length} scripted worlds match the golden (serial in, reloadBoard, set-param firmware, brownout reboot)`
-  );
-}
+const problems = checkTraceDir(traceDir, traces, write);
+expect(
+  problems.length === 0,
+  `board interaction moved:\n${problems.join("\n")}`
+);
+console.log(
+  write
+    ? `board-interact: wrote ${traces.size} traces for ${WORLDS.length} worlds`
+    : `board-interact: ${WORLDS.length} scripted worlds match their traces (serial in, reloadBoard, set-param firmware, brownout reboot)`
+);

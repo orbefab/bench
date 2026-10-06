@@ -20,6 +20,8 @@ import {
 } from "@sfab-bench/contract";
 
 import { batteryFrom } from "./battery";
+import { bindProblems } from "./bind";
+import { PIN_MAP_FIELD, pinMapRefusal, pinMapSource } from "./board-host";
 import { comparatorFrom } from "./comparator";
 import {
   assetDir,
@@ -35,6 +37,7 @@ import { ldoFrom } from "./ldo";
 import { declaredQuantity } from "./params";
 import { basename, join, relative, sep } from "./path";
 import { collectPartPorts, type PortLevel, type PortWorld } from "./ports";
+import { lintResolutions } from "./resolution";
 import {
   classesOf,
   contentHash,
@@ -148,6 +151,7 @@ export function loadPartById(
   if (!parsed) {
     return makeDiag({
       severity: "error",
+      code: "schema",
       path: id,
       port: "file",
       quantity: "Part",
@@ -161,6 +165,7 @@ export function loadPartById(
   if (!found) {
     return makeDiag({
       severity: "error",
+      code: "missing-file",
       path: id,
       port: "file",
       quantity: "Part",
@@ -173,6 +178,7 @@ export function loadPartById(
   if (raw.format !== PART_FORMAT) {
     return makeDiag({
       severity: "error",
+      code: "schema",
       path: id,
       port: "file",
       quantity: "format",
@@ -184,6 +190,7 @@ export function loadPartById(
   if (raw.id !== id) {
     return makeDiag({
       severity: "error",
+      code: "schema",
       path: id,
       port: "file",
       quantity: "Part",
@@ -252,6 +259,7 @@ function mergeOverlay(
   const bad = (left: string, detail: string) =>
     makeDiag({
       severity: "error",
+      code: "schema",
       path: id,
       port: "overlay",
       quantity: "Levels",
@@ -310,6 +318,7 @@ export function loadTypeById(
   if (!found) {
     return makeDiag({
       severity: "error",
+      code: "missing-file",
       path: id,
       port: "file",
       quantity: "PartType",
@@ -322,6 +331,7 @@ export function loadTypeById(
   if (raw.format !== PART_TYPE_FORMAT) {
     return makeDiag({
       severity: "error",
+      code: "schema",
       path: id,
       port: "file",
       quantity: "format",
@@ -333,6 +343,7 @@ export function loadTypeById(
   if (raw.id !== id) {
     return makeDiag({
       severity: "error",
+      code: "schema",
       path: id,
       port: "file",
       quantity: "PartType",
@@ -364,6 +375,7 @@ function embeddedType(part: PartFile): LoadedType | Diagnostic | null {
   if (raw.format !== PART_TYPE_FORMAT) {
     return makeDiag({
       severity: "error",
+      code: "schema",
       path: part.id,
       port: "type",
       quantity: "format",
@@ -415,6 +427,7 @@ export function loadLibrary(
     diagnostics.push(
       makeDiag({
         severity: "error",
+        code: "schema",
         path: worldName,
         port: "load",
         quantity: "Part",
@@ -453,6 +466,7 @@ export function loadLibrary(
       diagnostics.push(
         makeDiag({
           severity: "error",
+          code: "schema",
           path: worldName,
           port: imported.port,
           quantity: "Part",
@@ -496,6 +510,7 @@ export function loadLibrary(
         diagnostics.push(
           makeDiag({
             severity: "error",
+            code: "schema",
             path: next.inline.id,
             port: "file",
             quantity: "format",
@@ -518,7 +533,7 @@ export function loadLibrary(
       if (isDiag(found)) {
         // A missing child is an idle instance. Only a missing root part
         // refuses the library, because that is the open document.
-        if (next.root || !found.message.includes("not found")) {
+        if (next.root || found.code !== "missing-file") {
           diagnostics.push(found);
         }
         continue;
@@ -619,6 +634,7 @@ export function lintLibrary(lib: Library): Diagnostic[] {
       diags.push(
         makeDiag({
           severity: "error",
+          code: "missing-file",
           path: part.id,
           port: "type",
           quantity: "PartType",
@@ -635,6 +651,7 @@ export function lintLibrary(lib: Library): Diagnostic[] {
           diags.push(
             makeDiag({
               severity: "error",
+              code: "schema",
               path: part.id,
               port,
               quantity: "Port",
@@ -651,6 +668,7 @@ export function lintLibrary(lib: Library): Diagnostic[] {
         diags.push(
           makeDiag({
             severity: "error",
+            code: "schema",
             path: part.id,
             port: name,
             quantity: "Domain",
@@ -664,6 +682,7 @@ export function lintLibrary(lib: Library): Diagnostic[] {
         diags.push(
           makeDiag({
             severity: "error",
+            code: "schema",
             path: part.id,
             port: name,
             quantity: "Role",
@@ -681,6 +700,7 @@ export function lintLibrary(lib: Library): Diagnostic[] {
             diags.push(
               makeDiag({
                 severity: "error",
+                code: "schema",
                 path: part.id,
                 port,
                 quantity: "Port",
@@ -693,13 +713,22 @@ export function lintLibrary(lib: Library): Diagnostic[] {
         }
       }
     }
-    lintAxes(part, diags);
+    lintResolutions(part, type, diags);
+    lintAxes(part, type, diags);
   }
-  for (const loaded of lib.parts.values()) lintNetlist(lib, loaded.part, diags);
+  for (const loaded of lib.parts.values()) {
+    lintNetlist(lib, loaded.part, diags);
+    lintPinMap(lib, loaded.part, diags);
+  }
   return diags;
 }
 
-function lintAxes(part: PartFile, diags: Diagnostic[]): void {
+function lintAxes(
+  part: PartFile,
+  type: PartTypeFile,
+  diags: Diagnostic[]
+): void {
+  lintLevelPorts(part, diags);
   for (const axis of ["behaviour", "body", "visual"] as const) {
     const map = part.axes?.[axis];
     if (!map) continue;
@@ -710,6 +739,7 @@ function lintAxes(part: PartFile, diags: Diagnostic[]): void {
         diags.push(
           makeDiag({
             severity: "error",
+            code: "schema",
             path: part.id,
             port: axis,
             quantity: "Level",
@@ -721,7 +751,7 @@ function lintAxes(part: PartFile, diags: Diagnostic[]): void {
       }
       if (axis === "behaviour") {
         for (const [name, variant] of Object.entries(slot.variants)) {
-          lintBehaviour(part.id, name, variant as BehaviourImpl, diags);
+          lintBehaviour(part.id, name, variant as BehaviourImpl, type, diags);
         }
       }
       if (axis === "body") {
@@ -733,16 +763,63 @@ function lintAxes(part: PartFile, diags: Diagnostic[]): void {
   }
 }
 
+/**
+ * Every composite level of a part exposes the same ports, so a level change
+ * keeps the wires that reach it. The first composite variant, by class, is
+ * the reference.
+ */
+function lintLevelPorts(part: PartFile, diags: Diagnostic[]): void {
+  const map = part.axes?.behaviour;
+  if (!map) return;
+  let first: { at: string; ports: string[] } | null = null;
+  for (const cls of classesOf(map)) {
+    const slot = map[String(cls) as "0"];
+    if (!slot) continue;
+    for (const [name, variant] of Object.entries(slot.variants)) {
+      const impl = variant as BehaviourImpl;
+      if (impl.kind !== "composite") continue;
+      const at = `${cls}/${name}`;
+      const ports = Object.keys(impl.netlist.expose).sort();
+      if (!first) {
+        first = { at, ports };
+        continue;
+      }
+      const ref = first;
+      const lacks = ref.ports.filter((port) => !ports.includes(port));
+      const adds = ports.filter((port) => !ref.ports.includes(port));
+      if (lacks.length === 0 && adds.length === 0) continue;
+      const differ = [
+        ...(lacks.length > 0 ? [`lacks ${lacks.join(", ")}`] : []),
+        ...(adds.length > 0 ? [`adds ${adds.join(", ")}`] : []),
+      ].join("; ");
+      diags.push(
+        makeDiag({
+          severity: "warning",
+          code: "level-ports",
+          path: part.id,
+          port: "expose",
+          quantity: "Level",
+          left: at,
+          right: ref.at,
+          detail: `level ${at} exposes other ports than ${ref.at}: ${differ}`,
+        })
+      );
+    }
+  }
+}
+
 function lintBehaviour(
   partId: string,
   name: string,
   variant: BehaviourImpl,
+  type: PartTypeFile,
   diags: Diagnostic[]
 ): void {
   if (!Array.isArray(variant.omits)) {
     diags.push(
       makeDiag({
         severity: "error",
+        code: "schema",
         path: partId,
         port: name,
         quantity: "Level",
@@ -760,6 +837,7 @@ function lintBehaviour(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "schema",
           path: partId,
           port: name,
           quantity: "Level",
@@ -774,6 +852,7 @@ function lintBehaviour(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "schema",
         path: partId,
         port: name,
         quantity: "Form",
@@ -790,6 +869,7 @@ function lintBehaviour(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "schema",
         path: partId,
         port: name,
         quantity: "Form",
@@ -800,6 +880,25 @@ function lintBehaviour(
     );
     return;
   }
+  for (const row of bindProblems(
+    variant.form,
+    variant.bind ?? {},
+    type.ports,
+    type.id
+  )) {
+    diags.push(
+      makeDiag({
+        severity: "error",
+        code: "schema",
+        path: partId,
+        port: name,
+        quantity: "Form",
+        left: row.key,
+        right: row.value,
+        detail: row.reason,
+      })
+    );
+  }
   const optional = new Set(form.optional ?? []);
   const tables = new Set(form.tables ?? []);
   for (const key of form.tables ?? []) {
@@ -807,6 +906,7 @@ function lintBehaviour(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "bad-params",
           path: partId,
           port: name,
           quantity: "Form",
@@ -823,6 +923,7 @@ function lintBehaviour(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "bad-params",
           path: partId,
           port: name,
           quantity: String(form.params[key]),
@@ -846,6 +947,7 @@ function lintBehaviour(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "bad-params",
           path: partId,
           port: name,
           quantity: "Resistance",
@@ -862,6 +964,7 @@ function lintBehaviour(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "bad-params",
           path: partId,
           port: name,
           quantity: "Form",
@@ -878,6 +981,7 @@ function lintBehaviour(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "bad-params",
           path: partId,
           port: name,
           quantity: "Form",
@@ -894,6 +998,7 @@ function lintBehaviour(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "bad-params",
           path: partId,
           port: name,
           quantity: "Voltage",
@@ -909,6 +1014,7 @@ function lintBehaviour(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "bad-params",
           path: partId,
           port: name,
           quantity: "Form",
@@ -937,6 +1043,7 @@ function lintBody(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "schema",
         path: partId,
         port: name,
         quantity: "Form",
@@ -952,6 +1059,7 @@ function lintBody(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "bad-params",
         path: partId,
         port: name,
         quantity: "GearTrain",
@@ -1009,6 +1117,7 @@ function lintParamRefs(
         diags.push(
           makeDiag({
             severity: "error",
+            code: "bad-params",
             path: part.id,
             port: `${id}.${key}`,
             quantity: "Param",
@@ -1023,6 +1132,7 @@ function lintParamRefs(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "bad-params",
           path: part.id,
           port: `${id}.${key}`,
           quantity: "Param",
@@ -1030,6 +1140,59 @@ function lintParamRefs(
           right: "declared param",
           detail: `param ${key} forwards $param ${value.$param}, which ${part.id} does not declare (${child.part} needs to declare ${key})`,
         })
+      );
+    }
+  }
+}
+
+/**
+ * A firmware level of a part that also has a composite level runs as its
+ * own board, so it names the composite whose expose is its pin map
+ * (`pinMapFrom`). The reference must resolve, and its instance must run the
+ * same chip. A part with no composite level is a bare chip and names none.
+ */
+function lintPinMap(lib: Library, part: PartFile, diags: Diagnostic[]): void {
+  const behaviour = part.axes?.behaviour;
+  if (!behaviour) return;
+  const slots = classesOf(behaviour).flatMap((cls) => {
+    const slot = behaviour[String(cls) as "0"];
+    return slot ? Object.entries(slot.variants) : [];
+  });
+  for (const [name, impl] of slots) {
+    if (impl.kind !== "firmware") continue;
+    const ref = impl.pinMapFrom;
+    const fail = (detail: string) =>
+      diags.push(
+        makeDiag({
+          severity: "error",
+          code: "schema",
+          path: part.id,
+          port: name,
+          quantity: "Level",
+          left: ref ? `${ref.class}/${ref.variant}/${ref.instance}` : "missing",
+          right: PIN_MAP_FIELD,
+          detail,
+        })
+      );
+    const refusal = pinMapRefusal(part, impl);
+    if (refusal) {
+      fail(refusal);
+      continue;
+    }
+    const source = ref ? pinMapSource(part, ref) : null;
+    if (!ref || !source || "error" in source) continue;
+    const child = lib.parts.get(source.netlist.instances[ref.instance].part);
+    if (!child) continue;
+    const chips = classesOf(child.part.axes?.behaviour ?? {}).flatMap((cls) =>
+      Object.values(
+        child.part.axes?.behaviour?.[String(cls) as "0"]?.variants ?? {}
+      ).flatMap((variant) =>
+        variant.kind === "firmware" ? [variant.chip] : []
+      )
+    );
+    if (!chips.includes(impl.chip)) {
+      fail(
+        `pinMapFrom: ${ref.instance} runs chip ${chips.join(", ") || "none"}, not ${impl.chip}`
       );
     }
   }
@@ -1058,6 +1221,7 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
           diags.push(
             makeDiag({
               severity: "error",
+              code: "schema",
               path: part.id,
               port: outer,
               quantity: "Port",
@@ -1071,6 +1235,7 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
           diags.push(
             makeDiag({
               severity: "error",
+              code: "schema",
               path: part.id,
               port: outer,
               quantity: "Port",
@@ -1086,6 +1251,7 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
           diags.push(
             makeDiag({
               severity: "error",
+              code: "schema",
               path: part.id,
               port: outer,
               quantity: "Port",
@@ -1121,6 +1287,7 @@ function lintNetlist(lib: Library, part: PartFile, diags: Diagnostic[]): void {
             diags.push(
               makeDiag({
                 severity: "error",
+                code: "broken-port",
                 path: part.id,
                 port: end,
                 quantity: "Port",
@@ -1144,6 +1311,7 @@ export function shadowWarnings(lib: Library): Diagnostic[] {
     diags.push(
       makeDiag({
         severity: "warning",
+        code: "shadowed-part",
         path: loaded.part.id,
         port: "file",
         quantity: "Part",

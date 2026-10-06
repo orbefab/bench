@@ -40,6 +40,7 @@ import {
   TRACE_CASES,
   vSource,
 } from "@sfab-bench/engine-circuit";
+import { interp, spanError } from "./trace";
 import {
   nanoD13Deck,
   nanoTraceStimulus,
@@ -48,6 +49,8 @@ import {
 import { unoUsbTrace } from "./world/uno-reference";
 
 const timings = process.env.BENCH_TIMINGS === "1";
+// The fallback count is per process; other checks may share this one.
+const gminBefore = gminFallbackCalls;
 
 function benchUs(engine: Engine, warmup: number, samples: number): number {
   engine.operatingPoint();
@@ -71,43 +74,6 @@ const fixtureDir = fileURLToPath(
 
 function pct(frac: number): string {
   return `${(frac * 100).toFixed(4)}%`;
-}
-
-function interp(
-  time: readonly number[],
-  values: readonly number[],
-  t: number
-): number {
-  const n = time.length;
-  const t0 = time[0]!;
-  const tN = time[n - 1]!;
-  if (t <= t0) return values[0]!;
-  if (t >= tN) return values[n - 1]!;
-  let lo = 0;
-  let hi = n - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (time[mid]! <= t) lo = mid;
-    else hi = mid;
-  }
-  const a = time[lo]!;
-  const b = time[hi]!;
-  const u = b === a ? 0 : (t - a) / (b - a);
-  return values[lo]! * (1 - u) + values[hi]! * u;
-}
-
-/** Max |ours − ref| / span(ref). */
-function rangeError(ours: readonly number[], ref: readonly number[]): number {
-  let lo = Infinity;
-  let hi = -Infinity;
-  let worst = 0;
-  for (let i = 0; i < ref.length; i++) {
-    const y = ref[i]!;
-    if (y < lo) lo = y;
-    if (y > hi) hi = y;
-    worst = Math.max(worst, Math.abs(ours[i]! - y));
-  }
-  return worst / Math.max(hi - lo, 1e-12);
 }
 
 function loadCsv(name: string): { t: number[]; v: number[] } {
@@ -203,7 +169,7 @@ for (const spec of TRACES) {
       t
     )
   );
-  const err = rangeError(ours, trace.v);
+  const err = spanError(ours, trace.v);
   expect(err <= LINE, `${spec.id} ${pct(err)} of span exceeds 0.5%`);
   console.log(`circuit ${spec.id}: ${pct(err)} of span`);
 }
@@ -231,7 +197,7 @@ for (const kind of ["usb", "d13"] as const) {
         t
       )
     );
-    const err = rangeError(ours, trace.v);
+    const err = spanError(ours, trace.v);
     expect(
       err <= LINE,
       `circuit ${id} ${label} ${pct(err)} of span exceeds 0.5%`
@@ -617,8 +583,9 @@ for (const rail of POT_RAILS) {
   console.log(`circuit divider thevenin: ${r} ohm`);
 }
 
+const gminCalls = gminFallbackCalls - gminBefore;
 expect(
-  gminFallbackCalls === 0,
-  `gmin fallback ran ${gminFallbackCalls} times on the existing checks`
+  gminCalls === 0,
+  `gmin fallback ran ${gminCalls} times on the existing checks`
 );
-console.log(`gmin fallback calls ${gminFallbackCalls}`);
+console.log(`gmin fallback calls ${gminCalls}`);

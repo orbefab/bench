@@ -1,4 +1,4 @@
-/** USART0 TX retained per board. Older bytes drop off the front. */
+/** Console USART TX retained per board. Older bytes drop off the front. */
 export const SERIAL_CAP = 64 * 1024;
 
 export type SerialPage = {

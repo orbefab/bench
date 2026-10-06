@@ -27,6 +27,11 @@ export function analogRead(opts: {
   plan: RunPlan;
   boardId: string;
   channel: number;
+  /**
+   * Header name for this channel. Absent keeps `A` plus the channel index,
+   * which is the Nano's label for channels 0–7.
+   */
+  port?: string;
   mode: AnalogMode;
   pin: AvrPinParams;
   boardVolts: (boardId: string) => number;
@@ -34,7 +39,9 @@ export function analogRead(opts: {
   /** Solved node for this channel, when a stamped circuit has it. */
   stamped?: (channel: number) => AnalogRead | null;
 }): AnalogRead {
-  const start = `${opts.boardId}.A${opts.channel}`;
+  const start = opts.port
+    ? `${opts.boardId}.${opts.port}`
+    : `${opts.boardId}.A${opts.channel}`;
   const seen = new Set<string>();
   const stack = [start];
   let ground = false;

@@ -89,7 +89,7 @@
               "rangeMin": 0.02,
               "rangeMax": 4,
               "beamHalf": 0.1308996938995747,
-              "trigMin": 0.00001,
+              "trigMin": 1e-5,
               "echoDelay": 0.0002,
               "echoTimeout": 0.038,
               "working": 0.015,
@@ -124,12 +124,44 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.045, 0.02, 0.015],
             "omits": ["cans", "header", "crystal"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "pcb@1",
+            "size": [0.045, 0.02, 0.015],
+            "params": {
+              "color": "#1565c0",
+              "headers": 0
+            },
+            "inner": [
+              {
+                "form": "can@1",
+                "size": [0.016, 0.016, 0.012],
+                "at": [-0.013, 0, 0.0015],
+                "params": {
+                  "axis": "z",
+                  "color": "silver",
+                  "cap": "#2b2b2b"
+                }
+              },
+              {
+                "form": "can@1",
+                "size": [0.016, 0.016, 0.012],
+                "at": [0.013, 0, 0.0015],
+                "params": {
+                  "axis": "z",
+                  "color": "silver",
+                  "cap": "#2b2b2b"
+                }
+              }
+            ],
+            "omits": ["crystal", "header", "mesh grille"]
           }
         }
       }

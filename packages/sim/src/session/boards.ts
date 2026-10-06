@@ -1,6 +1,10 @@
 /** Boards: boot, load, reload, flush, fault, serial, the ADC attachment, brownout, and one CPU step. */
 
-import { arduinoPinBit, type WorldSender } from "@sfab-bench/contract";
+import {
+  onboardLedPath,
+  type ResetCause,
+  type WorldSender,
+} from "@sfab-bench/contract";
 import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   type AdcConversion,
@@ -9,13 +13,16 @@ import {
   FIRMWARE_RELOADED,
   parseIntelHex,
 } from "@sfab-bench/engine-mcu";
+import { logicLevel, logicThresholds } from "@sfab-bench/parts";
 import { analogRead } from "../analog-pin";
 import type { RunPlan } from "../plan";
-import { runningBrownout } from "../power";
+import { runningReset } from "../power";
+import type { ConversionEvent } from "../sim";
 import { applyGpioDrives, gpioInputNets, powerFeedsOf } from "../wiring";
 import { rearmRangers, rearmServos } from "./actuators";
-import { post, simMs, thrownMessage } from "./common";
+import { post, simMs, stepCount, stepEndMs, thrownMessage } from "./common";
 import {
+  boardMinVolts,
   boardVolts,
   latchedBoardNode,
   noteDegraded,
@@ -26,7 +33,7 @@ import { solveSupplies } from "./solve";
 import type { BoardSpec, SessionState } from "./state";
 
 export function boardInSoa(s: SessionState, board: AvrBoard): boolean {
-  if (!board.running || board.brownout || board.fault) return false;
+  if (!board.running || board.inReset || board.fault) return false;
   const spec = s.specs.find((item) => item.id === board.id);
   if (spec?.minOperatingVoltage == null) return false;
   const power = s.boardPower.get(board.id);
@@ -38,7 +45,9 @@ export function boardInSoa(s: SessionState, board: AvrBoard): boolean {
 function flushBoards(s: SessionState) {
   const chunks: { board: string; text: string }[] = [];
   for (const board of s.boards) {
+    // The recording noted this text at the end of each step.
     const text = board.takeTx();
+    s.txSeen.set(board.id, 0);
     if (text) chunks.push({ board: board.id, text });
     const stamp = `${board.rxQueued}:${board.rxAccepted}`;
     if (s.rxSent.get(board.id) === stamp) continue;
@@ -94,7 +103,9 @@ function boardSpecsOf(plan: RunPlan): BoardSpec[] {
     chip: board.chip,
     firmware: board.firmware,
     minOperatingVoltage: board.minOperatingVoltage,
-    ...(board.wire ? { wire: board.wire } : {}),
+    clock: board.clock,
+    wire: board.wire,
+    pinCount: board.pinOrder.length,
   }));
 }
 
@@ -126,6 +137,13 @@ function bootBoard(s: SessionState, spec: BoardSpec): AvrBoard {
     return board;
   }
   board.load(parsed.bytes);
+  // Named once, after a successful load. A missing image or a dead supply
+  // returns above and does not announce a gap the run never reached.
+  if (board.running) {
+    for (const gap of chip.gaps ?? []) {
+      noteDegraded(s, spec.id, gap.code, gap.message);
+    }
+  }
   return board;
 }
 
@@ -161,8 +179,10 @@ export function fillBoardPower(s: SessionState, plan: RunPlan) {
       draw: supplyId ? board.current : 0,
       brownoutVoltage: board.brownoutVoltage,
       assertVoltage: board.brownoutAssertVoltage,
+      releaseVoltage: board.brownoutReleaseVoltage,
+      holdMs: board.resetHoldMs,
       resets: 0,
-      brownout: runningBrownout(),
+      reset: runningReset(),
     });
   }
 }
@@ -181,7 +201,10 @@ export function applyInputNets(s: SessionState) {
 }
 
 export function bindInputNets(s: SessionState, plan: RunPlan) {
-  s.inputNets = gpioInputNets(plan);
+  // A pin with a circuit on its net reads the solved node (`samplePins`).
+  s.inputNets = gpioInputNets(plan).filter(
+    (net) => !stampedBitsOf(s, net.boardId).includes(net.bit)
+  );
   const refresh = () => applyInputNets(s);
   for (const board of s.boards) {
     board.onPinsChanged = s.inputNets.length > 0 ? refresh : null;
@@ -189,7 +212,48 @@ export function bindInputNets(s: SessionState, plan: RunPlan) {
   applyInputNets(s);
 }
 
-/** Onboard LED current. Present when this rail stamped `${board}.led`. */
+function circuitOf(s: SessionState, boardId: string) {
+  const supplyId = s.boardPower.get(boardId)?.supplyId;
+  return supplyId ? s.rails.get(supplyId)?.circuit : undefined;
+}
+
+function stampedBitsOf(s: SessionState, boardId: string): readonly number[] {
+  return circuitOf(s, boardId)?.driveBitsOf(boardId) ?? [];
+}
+
+/**
+ * Each stamped GPIO input reads its solved node against the port's
+ * thresholds, resolved at the latched board node. Called before the CPUs,
+ * so the read is the previous solve: the ADC's one-step lag. Between VIL
+ * and VIH the last level holds. A pin with no circuit keeps the wire walk.
+ */
+export function samplePins(s: SessionState) {
+  if (!s.runPlan) return;
+  for (const board of s.boards) {
+    const spec = s.runPlan.boards.find((item) => item.id === board.id);
+    const circuit = circuitOf(s, board.id);
+    if (!spec || !circuit) continue;
+    const vcc = s.latchedNode.get(board.id) ?? 0;
+    let latch = s.pinLatch.get(board.id);
+    if (!latch) {
+      latch = new Map<number, boolean>();
+      s.pinLatch.set(board.id, latch);
+    }
+    for (const row of circuit.pinVolts(board.id)) {
+      const logic = spec.pins[row.port]?.logic;
+      if (!logic) continue;
+      const level = logicLevel(
+        row.volts,
+        logicThresholds(logic, vcc),
+        latch.get(row.bit) ?? false
+      );
+      latch.set(row.bit, level);
+      board.setDriven(row.bit, level);
+    }
+  }
+}
+
+/** Onboard LED current. Present when this rail stamped `onboardLedPath(board)`. */
 export function ledCurrentOf(
   s: SessionState,
   boardId: string
@@ -198,7 +262,7 @@ export function ledCurrentOf(
   if (!supplyId) return undefined;
   const group = s.rails.get(supplyId);
   if (!group) return undefined;
-  const key = `${boardId}.led`;
+  const key = onboardLedPath(boardId);
   if (!group.circuit.ledPaths.includes(key)) return undefined;
   return group.circuit.leds[key] ?? 0;
 }
@@ -227,14 +291,14 @@ export function ledReading(
     leds: card.leds,
     ...(current === undefined
       ? {}
-      : { ledCurrent: card.leds[`${boardId}.led`] ?? 0 }),
+      : { ledCurrent: card.leds[onboardLedPath(boardId)] ?? 0 }),
   };
 }
 
 export function snapshotDriveModes(s: SessionState): void {
   s.driveAtStart.clear();
   for (const board of s.boards) {
-    board.pinChanges = [];
+    board.modeChanges = [];
     const supplyId = s.boardPower.get(board.id)?.supplyId;
     const circuit = supplyId ? s.rails.get(supplyId)?.circuit : undefined;
     if (!circuit || circuit.driveBits.length === 0) continue;
@@ -263,26 +327,18 @@ export function reloadBoard(s: SessionState, id: string) {
   rearmRangers(s, id, next);
   // The new image has not run, and this board's servos are idle. Publish
   // the rail those currents actually draw. A sag still under the assert
-  // threshold holds the new CPU in reset. A firmware reload is not a
-  // brown-out delay: once the rail is up, the image runs.
+  // threshold, or a low RESET, holds the new CPU in reset. A firmware
+  // reload is not a brown-out delay: once both are up, the image runs.
+  // A held reload is still a reload, and is recorded as one.
   solveSupplies(s);
-  const power = s.boardPower.get(id);
-  if (power?.supplyId && !next.fault) {
-    const voltage = brownoutOf(s, id);
-    if (voltage < power.assertVoltage) {
-      next.holdInReset();
-      power.brownout = { phase: "held", releaseAtMs: null };
-      applyInputNets(s);
-    } else {
-      power.brownout = runningBrownout();
-    }
-  }
+  const held = holdBeforeRun(s, next);
+  if (held) applyInputNets(s);
   s.rxSent.delete(id);
   s.faulted.delete(id);
   if (s.runPlan) bindInputNets(s, s.runPlan);
   const recorded = s.recorder?.manifest.boards.find((item) => item.id === id);
   if (recorded) recorded.sha256 = s.firmwareSha.get(id) ?? recorded.sha256;
-  if (next.running) {
+  if (next.running || held) {
     const ms = simMs(s);
     s.recorder?.noteEvent({ timeMs: ms, kind: "reload", board: id });
     s.recorder?.noteSerial(id, FIRMWARE_RELOADED, ms);
@@ -298,7 +354,7 @@ export function reloadBoard(s: SessionState, id: string) {
   }
   // The reload solved the rail without advancing time. The next CPU step
   // reads this node as the previous step.
-  stampNodes(s, simMs(s));
+  stampNodes(s, stepCount(s) / s.perMs);
   postState(s);
 }
 
@@ -343,7 +399,7 @@ export function serialIn(
 function noteAdc(s: SessionState, boardId: string, sample: AdcConversion) {
   s.adcSamples.push({
     board: boardId,
-    ms: simMs(s) + 1,
+    ms: stepEndMs(s),
     mux: sample.mux,
     ref: sample.ref,
     vRef: sample.vRef,
@@ -354,8 +410,37 @@ function noteAdc(s: SessionState, boardId: string, sample: AdcConversion) {
 }
 
 /**
+ * A conversion for `Sim.observe`, at the instant it started. The AVCC
+ * reference is the latched board node (`attachAnalog`), which is the
+ * board's power port; no other reference is on a port of the board.
+ */
+function noteConversion(
+  s: SessionState,
+  board: AvrBoard,
+  sample: AdcConversion
+) {
+  const startStep = s.startStep.get(board.id) ?? 0;
+  const spec = s.runPlan?.boards.find((item) => item.id === board.id);
+  const event: ConversionEvent = {
+    board: board.id,
+    mux: sample.mux,
+    ref: sample.ref,
+    vRef: sample.vRef,
+    referencePort: sample.ref === "avcc" && spec ? spec.voltagePin : null,
+    voltage: sample.voltage,
+    count: sample.count,
+    startStep,
+    cycle: sample.cycle,
+    ms: startStep / s.perMs + (sample.cycle * 1000) / board.hz,
+  };
+  for (const observer of s.observers) observer.conversion?.(event);
+}
+
+/**
  * AVCC is the latched board node. AREF is 0: the shipped boards have no
- * AREF port, and the pin circuit is omitted. Channels 0–7 read their net.
+ * AREF port, and the pin circuit is omitted. A planned board names each
+ * channel from its expose. A hand-built plan keeps `A` plus the index.
+ * Either way the channel's chip pin is the chip's ADC table entry.
  */
 function attachAnalog(s: SessionState, board: AvrBoard) {
   const spec = s.runPlan?.boards.find((item) => item.id === board.id);
@@ -366,12 +451,21 @@ function attachAnalog(s: SessionState, board: AvrBoard) {
     channel: (channel) => {
       const plan = s.runPlan;
       if (!plan) return { voltage: 0, rSource: spec.pin.rLeak };
-      const bit = channel < 6 ? arduinoPinBit(`A${channel}`) : undefined;
-      const mode = bit === undefined ? "analog" : board.driveMode(bit);
-      return analogRead({
+      const labels = spec.adcLabels;
+      const port = labels?.[channel];
+      // No label: the channel is not on this board. A missing map is the
+      // old A-index path, not an unexposed channel.
+      if (labels && port === undefined) {
+        return { voltage: 0, rSource: 0, mux: `adc${channel}` };
+      }
+      const chipPin = board.chip?.adcPins[channel];
+      const bit = chipPin ? spec.wire.indexOf(chipPin) : -1;
+      const mode = bit < 0 ? "analog" : board.driveMode(bit);
+      const read = analogRead({
         plan,
         boardId: board.id,
         channel,
+        ...(port ? { port } : {}),
         mode,
         pin: spec.pin,
         boardVolts: (boardId: string) => latchedBoardNode(s, boardId),
@@ -379,30 +473,68 @@ function attachAnalog(s: SessionState, board: AvrBoard) {
         stamped: (ch) => {
           const supplyId = s.boardPower.get(board.id)?.supplyId;
           const circuit = supplyId ? s.rails.get(supplyId)?.circuit : undefined;
-          return circuit?.probePort(`A${ch}`, board.id) ?? null;
+          return circuit?.probePort(port ?? `A${ch}`, board.id) ?? null;
         },
       });
+      return port ? { ...read, mux: port } : read;
     },
-    ...(s.adcTrace
-      ? { converted: (sample: AdcConversion) => noteAdc(s, board.id, sample) }
-      : {}),
+    converted: (sample: AdcConversion) => {
+      if (s.adcTrace) noteAdc(s, board.id, sample);
+      if (s.observers.size > 0) noteConversion(s, board, sample);
+    },
   });
 }
 
 /**
- * What `stepBrownout` sees: the board node at its lowest sub-step.
+ * What `stepReset` sees: the board node at its lowest sub-step.
  * With no Uno cable the board node is the supply terminal.
  */
 export function brownoutOf(s: SessionState, boardId: string): number {
+  return boardMinVolts(s, boardId);
+}
+
+/**
+ * Before a fresh image runs: a chip whose rail is under the brownout
+ * assert, or whose RESET is low, never fetches its first instruction. Reads
+ * the last solve. Returns what holds it, or null when it may run.
+ */
+export function holdBeforeRun(
+  s: SessionState,
+  board: AvrBoard
+): ResetCause | null {
+  const power = s.boardPower.get(board.id);
+  if (!power?.supplyId || board.fault || !board.running) return null;
+  const cause: ResetCause | null =
+    brownoutOf(s, board.id) < power.assertVoltage
+      ? "brownout"
+      : resetPinLowOf(s, board.id)
+        ? "pin"
+        : null;
+  if (!cause) {
+    power.reset = runningReset();
+    return null;
+  }
+  board.holdInReset();
+  power.reset = { phase: "held", releaseAtMs: null, cause };
+  return cause;
+}
+
+/** RESET went below the chip's V_RST at some point of the last solve. */
+export function resetPinLowOf(s: SessionState, boardId: string): boolean {
   const supplyId = s.boardPower.get(boardId)?.supplyId;
-  if (!supplyId) return 0;
-  return s.rails.get(supplyId)?.circuit.boardReading(boardId).min ?? 0;
+  if (!supplyId) return false;
+  const margin = s.rails
+    .get(supplyId)
+    ?.circuit.boardReading(boardId).resetMargin;
+  return margin != null && margin < 0;
 }
 
 export function stepBoard(s: SessionState, board: AvrBoard) {
   if (!board.running || board.fault) return;
+  // A CPU at cycle 0 has not run: this step is where its cycles count from.
+  if (board.cycles() === 0) s.startStep.set(board.id, stepCount(s));
   try {
-    board.stepMillis();
+    board.stepPart(s.perMs);
   } catch (err: unknown) {
     board.stop(thrownMessage(err));
   }

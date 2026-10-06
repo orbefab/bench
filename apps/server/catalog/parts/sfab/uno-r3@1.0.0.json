@@ -95,12 +95,13 @@
                 "A2": "mcu.PC2",
                 "A3": "mcu.PC3",
                 "A4": "mcu.PC4",
-                "A5": "mcu.PC5"
+                "A5": "mcu.PC5",
+                "RESET": "mcu.RESET"
               }
             },
             "omits": [
               "temperature",
-              "I/O pin impedance",
+              "I/O pin curves beyond linear roh/rol/rpu/rLeak, pin capacitance and clamp diodes",
               "ADC INL and DNL",
               "ADC noise",
               "ADC noise canceller",
@@ -164,12 +165,13 @@
                 "A2": "mcu.PC2",
                 "A3": "mcu.PC3",
                 "A4": "mcu.PC4",
-                "A5": "mcu.PC5"
+                "A5": "mcu.PC5",
+                "RESET": "mcu.RESET"
               }
             },
             "omits": [
               "temperature",
-              "I/O pin impedance",
+              "I/O pin curves beyond linear roh/rol/rpu/rLeak, pin capacitance and clamp diodes",
               "ADC INL and DNL",
               "ADC noise",
               "ADC noise canceller",
@@ -193,12 +195,22 @@
     },
     "visual": {
       "0": {
-        "default": "box",
+        "default": "form",
         "variants": {
           "box": {
             "kind": "box",
             "size": [0.0686, 0.0534, 0.012],
             "omits": ["headers", "silk", "USB connector shape"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "pcb@1",
+            "size": [0.0686, 0.0534, 0.012],
+            "params": {
+              "color": "#1d6fa5",
+              "usb": "-x"
+            },
+            "omits": ["silk", "barrel jack", "exact header positions"]
           }
         }
       }

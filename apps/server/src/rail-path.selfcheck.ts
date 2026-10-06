@@ -14,19 +14,21 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
-import { arduinoPinBit, type RecordingRead } from "@sfab-bench/contract";
+import type { RecordingRead } from "@sfab-bench/contract";
 import { AVR_PIN } from "@sfab-bench/engine-circuit";
 import { sha256Bytes } from "@sfab-bench/parts";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import {
+  createRailCircuit,
+  type RailCircuit,
+} from "@sfab-bench/sim/rail-circuit";
 import { Sim } from "@sfab-bench/sim/sim";
-
+import { powerIslands } from "@sfab-bench/sim/wiring";
 import { boardStampOf } from "./world/circuit-stamp";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { packageVersion } from "./world/package-version";
 import { planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
-import { powerIslands } from "./world/wiring";
 
 function benchSim(): Sim {
   return new Sim({
@@ -65,7 +67,7 @@ const emptyAxes = {
 };
 
 const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };
-const bit = arduinoPinBit("D13");
+const bit = stampOf("d13").pins.find((pin) => pin.port === "D13")?.bit;
 if (bit === undefined) throw new Error("D13");
 
 function stampOf(id: string) {
@@ -80,7 +82,7 @@ function read(circuit: RailCircuit): string {
     circuit.boardMinVoltage,
     circuit.ledCurrent,
     circuit.substeps,
-    circuit.resetVoltage,
+    circuit.boardReading("nano").resetMargin,
     circuit.lastPieceCount,
   ].join(",");
 }
@@ -108,7 +110,7 @@ function read(circuit: RailCircuit): string {
   });
   const step = (circuit: RailCircuit) => {
     circuit.setFixed(NANO_BOARD_A);
-    circuit.setD13("low");
+    circuit.setPin("D13", "low");
     circuit.solve();
     circuit.solve([
       { dt: 0.0005, drive: [{ bit, mode: "low" }] },

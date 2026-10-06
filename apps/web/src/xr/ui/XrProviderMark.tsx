@@ -1,6 +1,6 @@
 import { Svg } from "@react-three/uikit";
 
-import type { HarnessId } from "@/lib/harness";
+import type { HarnessId } from "@sfab-bench/contract";
 import { providerSvgContent } from "@/lib/provider-marks";
 
 export function XrProviderMark({

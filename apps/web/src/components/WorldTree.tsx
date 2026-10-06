@@ -1,5 +1,11 @@
 import { ROOT_PATH, type WorldViewNode } from "@sfab-bench/contract";
-import { CircleAlert } from "lucide-react";
+import {
+  ChevronRight,
+  CircleAlert,
+  ListTree,
+  Minus,
+  Search,
+} from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import {
@@ -10,11 +16,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
-  PartBreadcrumb,
-  PartParkDialog,
-  PartTabStrip,
-} from "@/components/WorldPartTabs";
-import {
   sendWorldCommand,
   sendWorldRedo,
   sendWorldUndo,
@@ -22,11 +23,12 @@ import {
 } from "@/hooks/useWorldRun";
 import {
   activeEscLayer,
-  compactChatSheetOpen,
   isEditableTarget,
   matchesShortcut,
+  popupChatOwnsEscape,
   probeEscLayers,
 } from "@/lib/shortcuts";
+import { cn } from "@/lib/utils";
 import {
   confirmActions,
   confirmBody,
@@ -34,10 +36,14 @@ import {
   confirmTitle,
 } from "@/lib/world-confirm";
 import { instanceEditTarget, wireEditTarget } from "@/lib/world-edit-target";
-import { historyButtons } from "@/lib/world-history";
 import { editorKeyAction } from "@/lib/world-keys";
 import { removeInstanceOp, renameInstanceOp, unwireOp } from "@/lib/world-ops";
-import { findViewNode, nextCollapse, treeRows } from "@/lib/world-tree";
+import {
+  filterTreeRows,
+  findViewNode,
+  nextCollapse,
+  treeRows,
+} from "@/lib/world-tree";
 import {
   instanceWarningMap,
   warnedPaths,
@@ -48,46 +54,6 @@ import { useWorld, worldStore } from "@/state/world";
 import { breakWorldEdit, commitEdit, worldEditStore } from "@/state/world-edit";
 import { escapeWorldTool, toggleWorldTool } from "@/state/world-tool";
 import { useTreeFold, writeTreeFold } from "@/state/world-tree-fold";
-
-export function WorldTopBar() {
-  const history = useWorld((s) => s.history);
-  const buttons = historyButtons(history);
-  const label = useWorld((s) => s.editLabel);
-  return (
-    <header className="flex shrink-0 flex-col border-b border-border">
-      <div className="flex h-9 items-center gap-2 px-3">
-        <PartTabStrip />
-        {label ? (
-          <span className="hidden max-w-40 truncate text-xs text-muted-foreground sm:inline">
-            {label}
-          </span>
-        ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          disabled={!buttons.canUndo}
-          onClick={() => sendWorldUndo()}
-        >
-          Undo
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          disabled={!buttons.canRedo}
-          onClick={() => sendWorldRedo()}
-        >
-          Redo
-        </Button>
-      </div>
-      <PartBreadcrumb />
-      <PartParkDialog />
-    </header>
-  );
-}
 
 export function WorldHotkeys() {
   const path = useWorld((s) => s.path);
@@ -152,7 +118,7 @@ export function WorldHotkeys() {
       }
       const layers = {
         ...probeEscLayers(document),
-        compactChat: compactChatSheetOpen(document),
+        popupChat: popupChatOwnsEscape(document),
       };
       if (activeEscLayer(layers)) return;
       if (escapeWorldTool()) event.preventDefault();
@@ -229,7 +195,22 @@ export function WorldConfirmDialog() {
   );
 }
 
-export function WorldTree() {
+const TREE_INDENT = 12;
+const TWISTIE = 16;
+
+function IndentGuides({ depth }: { depth: number }) {
+  if (depth === 0) return null;
+  return Array.from({ length: depth }, (_, level) => (
+    <span
+      key={level}
+      aria-hidden
+      className="pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-border"
+      style={{ left: level * TREE_INDENT + TWISTIE / 2 }}
+    />
+  ));
+}
+
+export function WorldTree({ floating = false }: { floating?: boolean }) {
   const tree = useWorld((s) => s.tree);
   const selection = useWorld((s) => s.selection);
   const wire = useWorld((s) => s.wire);
@@ -240,15 +221,23 @@ export function WorldTree() {
   const fold = useTreeFold();
   const collapsed = fold.collapsed;
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [closed, setClosed] = useState(false);
   const grouped = useMemo(
     () => instanceWarningMap(warningsFromRun(report, diagnostics)),
     [report, diagnostics]
   );
   const warnings = useMemo(() => warnedPaths(grouped), [grouped]);
-  const rows = useMemo(
-    () => (tree ? treeRows(tree.nodes, warnings, collapsed) : []),
-    [tree, warnings, collapsed]
-  );
+  const queryActive = floating && query.trim().length > 0;
+  const rows = useMemo(() => {
+    if (!tree) return [];
+    const source = treeRows(
+      tree.nodes,
+      warnings,
+      queryActive ? new Set<string>() : collapsed
+    );
+    return queryActive ? filterTreeRows(source, query) : source;
+  }, [tree, warnings, collapsed, query, queryActive]);
   useLayoutEffect(() => {
     if (!tree || !path) return;
     const target = wire ? wire.owner : (selection?.path ?? null);
@@ -275,103 +264,190 @@ export function WorldTree() {
     setRenaming(path);
   }, [renameTick]);
 
+  const toggleFold = (rowPath: string) => {
+    const next = new Set(collapsed);
+    if (next.has(rowPath)) next.delete(rowPath);
+    else next.add(rowPath);
+    writeTreeFold({ collapsed: next, seededPath: fold.seededPath });
+  };
+
+  if (floating && closed) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        className="pointer-events-auto size-9 self-start rounded-xl border-border bg-background shadow-lg"
+        aria-label="Show parts"
+        title="Show parts"
+        onClick={() => setClosed(false)}
+      >
+        <ListTree />
+      </Button>
+    );
+  }
+
+  const list =
+    rows.length === 0 ? (
+      <p
+        className={
+          floating
+            ? "px-2 py-1.5 text-sm text-muted-foreground"
+            : "px-3 py-2 text-xs text-muted-foreground"
+        }
+      >
+        {queryActive ? "No parts" : "Reading the world…"}
+      </p>
+    ) : (
+      rows.map((row) => {
+        const node = tree ? findViewNode(tree.nodes, row.path) : null;
+        const selected =
+          row.kind === "wire"
+            ? wire?.owner === row.path && wire.index === row.wireIndex
+            : selection?.path === row.path && !wire;
+        const warned = row.warning || row.collapsedWarning;
+        const why = row.warning
+          ? warningText(grouped.get(row.path) ?? [])
+          : row.collapsedWarning
+            ? "A part inside has a warning"
+            : "";
+        const canFold =
+          row.kind === "instance" &&
+          node !== null &&
+          (node.children.length > 0 || (node.wires?.length ?? 0) > 0);
+        const folded = !queryActive && collapsed.has(row.path);
+        return (
+          <div
+            key={row.key}
+            className={
+              floating
+                ? cn(
+                    "relative flex h-7 items-center gap-1 rounded-md pr-2 text-sm",
+                    selected
+                      ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                      : "hover:bg-sidebar-accent/60"
+                  )
+                : selected
+                  ? "flex items-center gap-1 bg-muted px-1 py-0.5"
+                  : "flex items-center gap-1 px-1 py-0.5 hover:bg-muted/60"
+            }
+            style={{
+              paddingLeft: floating
+                ? row.depth * TREE_INDENT
+                : 8 + row.depth * 12,
+            }}
+          >
+            {floating ? <IndentGuides depth={row.depth} /> : null}
+            {canFold ? (
+              <button
+                type="button"
+                className={
+                  floating
+                    ? "flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+                    : "w-3 shrink-0 text-[10px] text-muted-foreground"
+                }
+                aria-label={folded ? "Expand" : "Collapse"}
+                onClick={() => toggleFold(row.path)}
+              >
+                {floating ? (
+                  <ChevronRight
+                    className={cn(
+                      "size-2.5 transition-[rotate] duration-150",
+                      !folded && "rotate-90"
+                    )}
+                  />
+                ) : folded ? (
+                  "▸"
+                ) : (
+                  "▾"
+                )}
+              </button>
+            ) : (
+              <span className={floating ? "size-4 shrink-0" : "w-3 shrink-0"} />
+            )}
+            {renaming === row.path && row.kind === "instance" ? (
+              <RenameField node={node} onDone={() => setRenaming(null)} />
+            ) : (
+              <button
+                type="button"
+                className={
+                  floating
+                    ? "min-w-0 flex-1 truncate text-left"
+                    : "min-w-0 flex-1 truncate text-left text-[13px]"
+                }
+                onClick={() => {
+                  if (row.kind === "wire" && row.wireIndex !== undefined) {
+                    worldStore.getState().selectWire({
+                      owner: row.path,
+                      index: row.wireIndex,
+                    });
+                    return;
+                  }
+                  worldStore.getState().select({
+                    kind: "instance",
+                    path: row.path,
+                  });
+                }}
+                onDoubleClick={() => {
+                  if (row.kind !== "instance" || row.path === ROOT_PATH) return;
+                  setRenaming(row.path);
+                }}
+              >
+                {row.name}
+              </button>
+            )}
+            {warned ? (
+              <span title={why} className="shrink-0">
+                <CircleAlert
+                  className="size-3 text-amber-700 dark:text-amber-400"
+                  aria-label={why}
+                />
+              </span>
+            ) : null}
+          </div>
+        );
+      })
+    );
+
+  if (!floating) {
+    return (
+      <nav
+        aria-label="Part tree"
+        className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-card"
+      >
+        <div className="min-h-0 flex-1 overflow-auto py-1">{list}</div>
+      </nav>
+    );
+  }
+
   return (
     <nav
       aria-label="Part tree"
-      className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-card"
+      data-slot="world-tree"
+      className="pointer-events-auto flex max-h-[45%] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-lg"
     >
-      <div className="min-h-0 flex-1 overflow-auto py-1">
-        {rows.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-muted-foreground">
-            Reading the world…
-          </p>
-        ) : (
-          rows.map((row) => {
-            const node = tree ? findViewNode(tree.nodes, row.path) : null;
-            const selected =
-              row.kind === "wire"
-                ? wire?.owner === row.path && wire.index === row.wireIndex
-                : selection?.path === row.path && !wire;
-            const warned = row.warning || row.collapsedWarning;
-            const why = row.warning
-              ? warningText(grouped.get(row.path) ?? [])
-              : row.collapsedWarning
-                ? "A part inside has a warning"
-                : "";
-            const canFold =
-              row.kind === "instance" &&
-              node !== null &&
-              (node.children.length > 0 || (node.wires?.length ?? 0) > 0);
-            return (
-              <div
-                key={row.key}
-                className={
-                  selected
-                    ? "flex items-center gap-1 bg-muted px-1 py-0.5"
-                    : "flex items-center gap-1 px-1 py-0.5 hover:bg-muted/60"
-                }
-                style={{ paddingLeft: 8 + row.depth * 12 }}
-              >
-                {canFold ? (
-                  <button
-                    type="button"
-                    className="w-3 shrink-0 text-[10px] text-muted-foreground"
-                    aria-label={collapsed.has(row.path) ? "Expand" : "Collapse"}
-                    onClick={() => {
-                      const next = new Set(collapsed);
-                      if (next.has(row.path)) next.delete(row.path);
-                      else next.add(row.path);
-                      writeTreeFold({
-                        collapsed: next,
-                        seededPath: fold.seededPath,
-                      });
-                    }}
-                  >
-                    {collapsed.has(row.path) ? "▸" : "▾"}
-                  </button>
-                ) : (
-                  <span className="w-3 shrink-0" />
-                )}
-                {renaming === row.path && row.kind === "instance" ? (
-                  <RenameField node={node} onDone={() => setRenaming(null)} />
-                ) : (
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 truncate text-left text-[13px]"
-                    onClick={() => {
-                      if (row.kind === "wire" && row.wireIndex !== undefined) {
-                        worldStore.getState().selectWire({
-                          owner: row.path,
-                          index: row.wireIndex,
-                        });
-                        return;
-                      }
-                      worldStore.getState().select({
-                        kind: "instance",
-                        path: row.path,
-                      });
-                    }}
-                    onDoubleClick={() => {
-                      if (row.kind !== "instance" || row.path === ROOT_PATH)
-                        return;
-                      setRenaming(row.path);
-                    }}
-                  >
-                    {row.name}
-                  </button>
-                )}
-                {warned ? (
-                  <span title={why} className="shrink-0">
-                    <CircleAlert
-                      className="size-3 text-amber-700 dark:text-amber-400"
-                      aria-label={why}
-                    />
-                  </span>
-                ) : null}
-              </div>
-            );
-          })
-        )}
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-1.5 py-1.5">
+        <Search className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
+        <input
+          aria-label="Filter parts"
+          className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          placeholder="Filter..."
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Minimize parts"
+          title="Minimize"
+          onClick={() => setClosed(true)}
+        >
+          <Minus />
+        </Button>
+      </div>
+      <div role="tree" className="min-h-0 overflow-y-auto p-1">
+        {list}
       </div>
     </nav>
   );

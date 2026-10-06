@@ -24,12 +24,12 @@ import { compileWorld } from "@sfab-bench/engine-body";
 import { convertWorldFile, loadWorldV2, sha256Bytes } from "@sfab-bench/parts";
 import type { SerialChunk } from "@sfab-bench/sim/sim";
 import { Sim } from "@sfab-bench/sim/sim";
+import { viewIdsAreNodes, viewOf } from "@sfab-bench/sim/view";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { nodeStore } from "./world/node-store";
 import { packageVersion } from "./world/package-version";
 import { catalogRoot, planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
-import { viewIdsAreNodes, viewOf } from "./world/view";
 
 const repo = fileURLToPath(new URL("../../..", import.meta.url));
 const SPAN_MS = 3000;
@@ -212,10 +212,18 @@ for (const example of examples) {
       `${stem} levels diverged`
     );
     console.log(`round trip ${stem}: levels equal`);
-    const fields = differing(fromWorld, fromPart);
+    // A check is read for the part's id, so only the part has one, and a
+    // converted document is not the run it measured.
+    const fields = differing(fromWorld, fromPart).filter(
+      (field) => field !== "accuracy"
+    );
     expect(
-      fields.length === 2 && fields[0] === "lock" && fields[1] === "world",
-      `${stem} report fields ${fields.join(", ")}`
+      fields.length === 2 &&
+        fields[0] === "lock" &&
+        fields[1] === "world" &&
+        fromWorld.accuracy === undefined &&
+        fromPart.accuracy?.applies !== true,
+      `${stem} report fields ${fields.join(", ")}, accuracy ${JSON.stringify(fromPart.accuracy)}`
     );
     const legacy = await recorded(dir, example.world);
     const part = await recorded(dir, example.part);
@@ -418,7 +426,7 @@ function writeJson(file: string, value: unknown) {
     expect(
       warning?.path === "$root" &&
         warning.message ===
-          "play.timestep 0.002 s is not supported yet; the run steps 1 ms",
+          "play.timestep 0.002 s is not 1 ms divided by a whole number up to 1000; the run steps 1 ms",
       `timestep warning ${JSON.stringify(warning)}`
     );
     if (!warning) throw new Error("timestep warning missing");
@@ -787,6 +795,8 @@ for (const example of examples) {
     "packages/parts/src/convert.ts",
     "packages/parts/src/level-edit.ts",
     "packages/sim/src/capture.ts",
+    // `version: 2` there is a metric definition's version, not a world file.
+    "packages/sim/src/compare.ts",
   ]);
   const files: string[] = [];
   const visit = (dir: string) => {

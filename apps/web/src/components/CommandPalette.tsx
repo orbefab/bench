@@ -1,3 +1,4 @@
+import type { CatalogEntry } from "@sfab-bench/contract";
 import { Check, Search } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -14,23 +15,23 @@ import { useTheme } from "@/components/theme/theme-provider";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
+import { useSidebar } from "@/components/ui/sidebar";
 import { useProjectSession } from "@/hooks/useProjectSession";
 import {
   buildCommands,
   COMMAND_PALETTE_LIST_ID,
   clampActiveIndex,
+  OPEN_COMMAND_PALETTE_EVENT,
   type PaletteCommand,
   paletteOptionId,
   requestOpenSettings,
   visiblePalette,
   wrapActiveIndex,
 } from "@/lib/command-palette";
-import { isCompactChat } from "@/lib/layout";
 import { requestCloseFolder } from "@/lib/motion";
 import { folderName, shortPath } from "@/lib/project";
 import { isMacPlatform, matchesShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-import type { CatalogEntry } from "@/lib/viewer-snapshot";
 import { prefsStore, usePrefs } from "@/state/prefs";
 import { useViewer } from "@/state/viewer";
 import { useWorld } from "@/state/world";
@@ -44,11 +45,9 @@ function restoreFocus(el: HTMLElement | null) {
 
 export function CommandPalette({
   folder,
-  compactChat,
   catalogFiles,
 }: {
   folder: OpenFolderApi;
-  compactChat: boolean;
   catalogFiles: CatalogEntry[];
 }) {
   const [open, setOpen] = useState(false);
@@ -63,18 +62,18 @@ export function CommandPalette({
   const url = useViewer((s) => s.url);
   const worldPath = useWorld((s) => s.path);
   const currentPath = worldPath || url;
-  const { treeOpen, chatOpen, compactChatOpen } = usePrefs(
+  const { open: railOpen, toggleSidebar } = useSidebar();
+  const { chatOpen, chatDock } = usePrefs(
     useShallow((s) => ({
-      treeOpen: s.treeOpen,
       chatOpen: s.chatOpen,
-      compactChatOpen: s.compactChatOpen,
+      chatDock: s.chatDock,
     }))
   );
   const mac = isMacPlatform(
     typeof navigator === "undefined" ? "" : navigator.platform,
     typeof navigator === "undefined" ? "" : navigator.userAgent
   );
-  const chatVisible = compactChat ? compactChatOpen : chatOpen;
+  const chatVisible = chatDock === "docked" || chatOpen;
 
   const commands = useMemo(() => {
     if (!open) return EMPTY_COMMANDS;
@@ -83,7 +82,7 @@ export function CommandPalette({
       mac,
       canOpenFolder: folder.canRegister,
       hasProject: Boolean(currentPath),
-      filesOpen: treeOpen,
+      filesOpen: railOpen,
       chatOpen: chatVisible,
       files: catalogFiles.map((file) => ({
         name: folderName(file.path),
@@ -104,7 +103,7 @@ export function CommandPalette({
     folder.canRegister,
     folder.recents,
     project.path,
-    treeOpen,
+    railOpen,
     chatVisible,
     catalogFiles,
     currentPath,
@@ -132,18 +131,21 @@ export function CommandPalette({
   const execute = useCallback(
     (cmd: PaletteCommand) => {
       const s = prefsStore.getState();
-      const compact = isCompactChat(window.innerWidth, s.treeOpen);
       if (cmd.id === "action:open-folder") {
         void folder.requestOpen();
         return;
       }
       if (cmd.id === "action:toggle-files") {
-        s.setTreeOpen(!s.treeOpen);
+        toggleSidebar();
         return;
       }
       if (cmd.id === "action:toggle-chat") {
-        if (compact) s.setCompactChatOpen(!s.compactChatOpen);
-        else s.setChatOpen(!s.chatOpen);
+        if (s.chatDock === "docked") {
+          s.setChatDock("popup");
+          s.setChatOpen(false);
+          return;
+        }
+        s.setChatOpen(!s.chatOpen);
         return;
       }
       if (cmd.id === "action:settings") {
@@ -166,7 +168,7 @@ export function CommandPalette({
         setTheme(cmd.payload);
       }
     },
-    [folder, setDoc, setTheme]
+    [folder, setDoc, setTheme, toggleSidebar]
   );
 
   const run = useCallback(
@@ -212,6 +214,22 @@ export function CommandPalette({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [dialogOpen, finishClose, mac, open]);
+
+  useEffect(() => {
+    const onOpen = () => {
+      if (open || dialogOpen) return;
+      restoreRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      skipRestoreRef.current = false;
+      setQuery("");
+      setActiveIndex(0);
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpen);
+  }, [dialogOpen, open]);
 
   useEffect(() => {
     if (!open) return;

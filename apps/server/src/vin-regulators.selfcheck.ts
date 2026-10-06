@@ -16,7 +16,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { PartFile, RecordingRead, WorldState } from "@sfab-bench/contract";
+import {
+  onboardLedPath,
+  type PartFile,
+  type RecordingRead,
+  type WorldState,
+} from "@sfab-bench/contract";
 import {
   AVR_PIN,
   Comparator,
@@ -34,15 +39,19 @@ import {
   VSource,
 } from "@sfab-bench/engine-circuit";
 import { batteryFrom, ldoFrom } from "@sfab-bench/parts";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
+import {
+  powerFeedsOf,
+  powerIslands,
+  suppliesOnPort,
+} from "@sfab-bench/sim/wiring";
 import { levelCard } from "../../web/src/lib/level-card";
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { boardStampOf, realize } from "./world/circuit-stamp";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
 import { catalogRoot, planWorld } from "./world/plan";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit } from "./world/rail-circuit";
-import { powerFeedsOf, powerIslands, suppliesOnPort } from "./world/wiring";
 
 function partParams(id: string): LdoParams {
   const file = JSON.parse(
@@ -135,7 +144,7 @@ function nanoRail(volts: number) {
     pin: AVR_PIN,
   });
   circuit.setFixed(NANO_BOARD_A);
-  circuit.setD13("low");
+  circuit.setPin("D13", "low");
   for (let i = 0; i < 5; i++) circuit.solve();
   return circuit;
 }
@@ -146,10 +155,10 @@ function nanoRail(volts: number) {
   const want = ldoRegulated(ams, reg.voltage, pass);
   const d = Math.abs(reg.boardVoltage - want);
   expect(d <= 1e-6, `nano 9 V Δ ${d}`);
-  reg.setD13("high");
+  reg.setPin("D13", "high");
   reg.solve();
   const ledOn = reg.ledCurrent;
-  reg.setD13("low");
+  reg.setPin("D13", "low");
   reg.solve();
   const ledOff = reg.ledCurrent;
   expect(ledOn > 0.001 && ledOff < ledOn * 0.1, `D13 ${ledOn} / ${ledOff}`);
@@ -223,7 +232,7 @@ function nanoRail(volts: number) {
     battery: built.params,
   });
   circuit.setFixed(NANO_BOARD_A);
-  circuit.setD13("low");
+  circuit.setPin("D13", "low");
   const sample = (steps: number) => {
     for (let i = 0; i < steps; i++) circuit.solve();
     return { v: circuit.boardVoltage, soc: circuit.soc ?? Number.NaN };
@@ -427,7 +436,8 @@ async function runProject(
         (frame) => frame.boards[board]?.voltage ?? Number.NaN
       ),
       leds: read.frames.map(
-        (frame) => frame.boards[board]?.leds?.[`${board}.led`] ?? Number.NaN
+        (frame) =>
+          frame.boards[board]?.leds?.[onboardLedPath(board)] ?? Number.NaN
       ),
       resets: seen.state.boards[board]?.resets ?? 0,
       frames: read.frames,

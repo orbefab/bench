@@ -8,11 +8,13 @@ import { ok as expect } from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
-
+import { type RailMotor, solveRail } from "@sfab-bench/sim/power";
+import {
+  createRailCircuit,
+  type RailCircuit,
+} from "@sfab-bench/sim/rail-circuit";
 import { closeRootWatches } from "./projects";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
-import { type RailMotor, solveRail } from "./world/power";
-import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 
 const armDir = fileURLToPath(
   new URL("../../../examples/arm/", import.meta.url)

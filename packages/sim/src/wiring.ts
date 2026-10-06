@@ -1,14 +1,11 @@
-import { arduinoPinBit, type PowerFeeds } from "@sfab-bench/contract";
+import { type PowerFeeds, pinIndex } from "@sfab-bench/contract";
 import { splitPortRef, UnionFind } from "@sfab-bench/parts";
 
 import type { RunPin, RunPlan } from "./plan";
 
 export type { PowerFeeds };
 
-/**
- * A servo signal tied straight to one board GPIO pin. Direct pairs only:
- * a wire is `["uno.D9", "servo.signal"]`, not a net of several hops.
- */
+/** A servo signal and the board GPIO pin on its net. */
 export type ServoSignalDrive = {
   partId: string;
   boardId: string;
@@ -22,34 +19,19 @@ export type PowerWiring = Pick<
 >;
 
 /**
- * Each servo whose signal pin has a direct wire to a board digital GPIO.
- * Anything else is not driven: no wire, a supply pin, or a hop through
- * another part. A0–A5 count (D-018). The first matching pair wins.
+ * Each servo the plan bound to a board digital GPIO: the one such pin on
+ * its signal's net (`gpio-binding.ts`). A0–A5 count (D-018). No pin, or
+ * more than one, is not driven.
  */
 export function servoSignalDrives(plan: RunPlan): ServoSignalDrive[] {
   const drives: ServoSignalDrive[] = [];
   for (const part of plan.parts) {
-    if (part.drive.kind !== "servo") continue;
-    const signal = part.drive.pin;
-    let found: ServoSignalDrive | null = null;
-    for (const wire of plan.wires) {
-      const left = splitPortRef(wire[0]);
-      const right = splitPortRef(wire[1]);
-      if (!left || !right) continue;
-      const other =
-        left.inst === part.id && left.port === signal
-          ? right
-          : right.inst === part.id && right.port === signal
-            ? left
-            : null;
-      if (!other) continue;
-      const board = plan.boards.find((item) => item.id === other.inst);
-      const spec = board?.pins[other.port];
-      if (!board || !spec?.digital) continue;
-      found = { partId: part.id, boardId: board.id, pin: other.port };
-      break;
-    }
-    if (found) drives.push(found);
+    if (part.drive.kind !== "servo" || !part.drive.gpio) continue;
+    drives.push({
+      partId: part.id,
+      boardId: part.drive.gpio.boardId,
+      pin: part.drive.gpio.pin,
+    });
   }
   return drives;
 }
@@ -80,12 +62,7 @@ function endpointPin(plan: PowerWiring, endpoint: string): RunPin | null {
   const part = plan.parts.find((item) => item.id === split.inst);
   if (part) return part.pins[split.port] ?? null;
   const ranger = plan.rangers?.find((item) => item.id === split.inst);
-  if (ranger && split.port === "VCC") {
-    return { kind: "power", output: false, digital: false, pwm: false };
-  }
-  if (ranger && split.port === "GND") {
-    return { kind: "ground", output: false, digital: false, pwm: false };
-  }
+  if (ranger) return ranger.pins[split.port] ?? null;
   const supply = plan.supplies.find((item) => item.id === split.inst);
   if (supply) return supply.pins[split.port] ?? null;
   return null;
@@ -103,7 +80,7 @@ export function gpioInputNets(plan: RunPlan): GpioInputNet[] {
   for (const board of plan.boards) {
     for (const pin of Object.keys(board.pins)) {
       if (!board.pins[pin]?.digital) continue;
-      const bit = arduinoPinBit(pin);
+      const bit = pinIndex(board.pinOrder, pin);
       if (bit === undefined) continue;
       gpio.set(`${board.id}.${pin}`, { boardId: board.id, bit });
     }
@@ -149,7 +126,12 @@ export function gpioInputNets(plan: RunPlan): GpioInputNet[] {
   return out;
 }
 
-/** Every wire, both ways. With `kind`, only wires whose two ends are that kind. */
+/**
+ * Every wire, both ways. With `kind`, only wires on a net of that kind: a
+ * wire is dropped when either end is a pin of another kind. An end with
+ * no run pin (a composite shell's port, which a net's wires may start
+ * from) passes, so a ground net still joins through it.
+ */
 export function wireGraph(
   plan: PowerWiring,
   kind?: RunPin["kind"]
@@ -163,8 +145,7 @@ export function wireGraph(
   for (const wire of plan.wires) {
     if (
       kind &&
-      (endpointPin(plan, wire[0])?.kind !== kind ||
-        endpointPin(plan, wire[1])?.kind !== kind)
+      (otherKind(plan, wire[0], kind) || otherKind(plan, wire[1], kind))
     ) {
       continue;
     }
@@ -172,6 +153,15 @@ export function wireGraph(
     link(wire[1], wire[0]);
   }
   return map;
+}
+
+function otherKind(
+  plan: PowerWiring,
+  endpoint: string,
+  kind: RunPin["kind"]
+): boolean {
+  const pin = endpointPin(plan, endpoint);
+  return pin !== null && pin.kind !== kind;
 }
 
 function reachedFrom(
@@ -231,8 +221,11 @@ export function powerFeedsOf(plan: RunPlan): PowerFeeds {
       feed = supplyOn(plan, reachedFrom(`${board.id}.${pin}`, adjacent));
       if (feed) break;
     }
-    if (!feed) {
-      feed = supplyOn(plan, reachedFrom(`${board.id}.VIN`, adjacent));
+    if (!feed && board.regulatorPin) {
+      feed = supplyOn(
+        plan,
+        reachedFrom(`${board.id}.${board.regulatorPin}`, adjacent)
+      );
     }
     boards[board.id] = feed;
   }
@@ -250,7 +243,13 @@ export function powerFeedsOf(plan: RunPlan): PowerFeeds {
     parts[part.id] = feed ?? regulatedSupply(plan, boards, reached);
   }
   for (const ranger of plan.rangers ?? []) {
-    const hit = reachedFrom(`${ranger.id}.VCC`, adjacent);
+    const hit = new Set<string>();
+    for (const [pin, spec] of Object.entries(ranger.pins)) {
+      if (spec.kind !== "power") continue;
+      for (const node of reachedFrom(`${ranger.id}.${pin}`, adjacent)) {
+        hit.add(node);
+      }
+    }
     parts[ranger.id] =
       supplyOn(plan, hit) ?? regulatedSupply(plan, boards, hit);
   }

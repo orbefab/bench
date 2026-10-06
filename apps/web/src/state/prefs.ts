@@ -1,10 +1,3 @@
-import { useStore as useZustandStore } from "zustand";
-import {
-  createJSONStorage,
-  persist,
-  type StateStorage,
-} from "zustand/middleware";
-import { createStore } from "zustand/vanilla";
 import {
   type ChatEffort,
   DEFAULT_CHAT_EFFORT,
@@ -13,7 +6,15 @@ import {
   type HarnessId,
   isChatEffort,
   isHarnessId,
-} from "@/lib/harness";
+} from "@sfab-bench/contract";
+import { useStore as useZustandStore } from "zustand";
+import {
+  createJSONStorage,
+  persist,
+  type StateStorage,
+} from "zustand/middleware";
+import { createStore } from "zustand/vanilla";
+import { type ChatDock, chatDockMode } from "@/lib/chat-dock";
 import { CHAT_DEFAULT_WIDTH, clampStoredChatWidth } from "@/lib/layout";
 
 const DESKTOP_PREFS_KEY = "sfab-bench.desktop";
@@ -23,28 +24,30 @@ const PERSIST_VERSION = 0;
 
 /**
  * Written under `sfab-bench.desktop` as `{ state, version }`.
- * Order is the JSON key order `partialize` has always emitted.
+ * Order is the JSON key order `partialize` emits.
+ * `treeOpen` used to follow `chatOpen`. Old blobs may still have it;
+ * keys outside this list are ignored, and the sidebar starts collapsed.
  */
 const PERSISTED_PREF_KEYS = [
   "chatOpen",
-  "treeOpen",
   "partsOpen",
   "axesVisible",
   "chatWidth",
   "chatHarness",
   "chatModel",
   "chatEffort",
+  "chatDock",
 ] as const;
 
 type DesktopPrefs = {
   chatOpen: boolean;
-  treeOpen: boolean;
   partsOpen: boolean;
   axesVisible: boolean;
   chatWidth: number;
   chatHarness: HarnessId;
   chatModel: string;
   chatEffort: ChatEffort;
+  chatDock: ChatDock;
 };
 
 type StoredPrefs = Partial<DesktopPrefs> & { recentFiles?: unknown };
@@ -102,7 +105,6 @@ function validatedDesktopPrefs(stored: StoredPrefs | undefined): DesktopPrefs {
     : DEFAULT_HARNESS;
   return {
     chatOpen: stored?.chatOpen ?? true,
-    treeOpen: stored?.treeOpen ?? true,
     partsOpen: stored?.partsOpen ?? true,
     axesVisible: stored?.axesVisible ?? true,
     chatWidth:
@@ -117,6 +119,7 @@ function validatedDesktopPrefs(stored: StoredPrefs | undefined): DesktopPrefs {
     chatEffort: isChatEffort(stored?.chatEffort ?? "")
       ? stored!.chatEffort!
       : DEFAULT_CHAT_EFFORT,
+    chatDock: chatDockMode(stored?.chatDock),
   };
 }
 
@@ -153,7 +156,8 @@ function settledDesktopPrefs(raw: string | null): DesktopPrefs {
     ) {
       return validated;
     }
-    return { ...validated, ...pickPersisted(stored) };
+    const next = { ...validated, ...pickPersisted(stored) };
+    return { ...next, chatDock: chatDockMode(next.chatDock) };
   } catch {
     return validatedDesktopPrefs(undefined);
   }
@@ -165,19 +169,16 @@ const seededPrefs = settledDesktopPrefs(desktopBlob);
 export type PrefsState = DesktopPrefs & {
   /** Not persisted. The server sends the folder's list. */
   recentFiles: string[];
-  /** Compact-sheet open state. Not persisted — must not rewrite `chatOpen`. */
-  compactChatOpen: boolean;
   setRecentFiles: (paths: string[]) => void;
-  setTreeOpen: (open: Setter) => void;
   setPartsOpen: (open: Setter) => void;
   setChatOpen: (open: Setter) => void;
-  setCompactChatOpen: (open: Setter) => void;
   setChatWidth: (width: number) => void;
   setChatHarness: (harness: HarnessId) => void;
   setChatModel: (model: string) => void;
   setChatSelection: (harness: HarnessId, model: string) => void;
   setChatEffort: (effort: ChatEffort) => void;
   setAxesVisible: (open: Setter) => void;
+  setChatDock: (mode: ChatDock) => void;
 };
 
 export const prefsStore = createStore<PrefsState>()(
@@ -185,7 +186,6 @@ export const prefsStore = createStore<PrefsState>()(
     (set, get) => ({
       ...seededPrefs,
       recentFiles: [],
-      compactChatOpen: false,
       setRecentFiles: (paths) => {
         const recentFiles = paths
           .filter((p): p is string => typeof p === "string" && p.length > 0)
@@ -199,14 +199,10 @@ export const prefsStore = createStore<PrefsState>()(
         }
         set({ recentFiles });
       },
-      setTreeOpen: (open) =>
-        set((s) => ({ treeOpen: resolve(s.treeOpen, open) })),
       setPartsOpen: (open) =>
         set((s) => ({ partsOpen: resolve(s.partsOpen, open) })),
       setChatOpen: (open) =>
         set((s) => ({ chatOpen: resolve(s.chatOpen, open) })),
-      setCompactChatOpen: (open) =>
-        set((s) => ({ compactChatOpen: resolve(s.compactChatOpen, open) })),
       setChatWidth: (width) => {
         const chatWidth = clampStoredChatWidth(width);
         if (get().chatWidth !== chatWidth) set({ chatWidth });
@@ -233,6 +229,10 @@ export const prefsStore = createStore<PrefsState>()(
       },
       setAxesVisible: (open) =>
         set((s) => ({ axesVisible: resolve(s.axesVisible, open) })),
+      setChatDock: (mode) => {
+        const chatDock = chatDockMode(mode);
+        if (get().chatDock !== chatDock) set({ chatDock });
+      },
     }),
     {
       name: DESKTOP_PREFS_KEY,
@@ -247,18 +247,20 @@ export const prefsStore = createStore<PrefsState>()(
       }),
       partialize: (s): DesktopPrefs => ({
         chatOpen: s.chatOpen,
-        treeOpen: s.treeOpen,
         partsOpen: s.partsOpen,
         axesVisible: s.axesVisible,
         chatWidth: s.chatWidth,
         chatHarness: s.chatHarness,
         chatModel: s.chatModel,
         chatEffort: s.chatEffort,
+        chatDock: s.chatDock,
       }),
       merge: (persisted, current) => {
-        const stored = persisted as StoredPrefs | undefined;
+        const stored = persisted as
+          | (StoredPrefs & { treeOpen?: unknown })
+          | undefined;
         if (!stored) return current;
-        const { recentFiles: _ignored, ...rest } = stored;
+        const { recentFiles: _files, treeOpen: _tree, ...rest } = stored;
         return { ...current, ...rest, recentFiles: current.recentFiles };
       },
     }

@@ -31,16 +31,25 @@ function catalogPart(id: string): PartFile {
 
 const nano = catalogPart("sfab/nano-power-input@1.0.0");
 const catalogRecipe = captureRecipeFor(nano, "behaviour", source);
-expect(catalogRecipe, "catalog-only part has a recipe");
-deepStrictEqual(catalogRecipe?.variant, "netlist");
-deepStrictEqual(catalogRecipe?.instance, "power");
+expect(
+  catalogRecipe && !("scene" in catalogRecipe),
+  "catalog-only part has a table recipe"
+);
+deepStrictEqual(catalogRecipe.variant, "netlist");
+deepStrictEqual(catalogRecipe.instance, "power");
 deepStrictEqual(captureRecipeFor(nano, "body", source), null);
 
 const sg90 = catalogPart("sfab/sg90@1.0.0");
 const hinge = captureRecipeFor(sg90, "body", source);
 expect(hinge, "the hinge entry is the body recipe of its part");
 deepStrictEqual((hinge as { form?: string }).form, "hinge@1");
-deepStrictEqual(captureRecipeFor(sg90, "behaviour", source), null);
+const group = captureRecipeFor(sg90, "behaviour", source);
+expect(
+  group && "scene" in group,
+  "the group entry is the behaviour recipe of its part"
+);
+deepStrictEqual(group.form, "position-servo@1");
+deepStrictEqual(captureLevelFor(sg90, "behaviour", group), { level: "1" });
 
 const led = catalogPart("sfab/led-module-red@1.0.0");
 expect(captureRecipeFor(led, "behaviour", source), "led module recipe");
@@ -65,7 +74,8 @@ const own: CaptureRecipe = {
 };
 const shadow: PartFile = { ...nano, capture: { behaviour: own } };
 const winner = captureRecipeFor(shadow, "behaviour", source);
-deepStrictEqual(winner?.fitV, 0.01);
+expect(winner && !("scene" in winner), "the part's own table recipe wins");
+deepStrictEqual(winner.fitV, 0.01);
 deepStrictEqual(winner?.id, nano.id);
 deepStrictEqual(winner?.part, nano.id);
 

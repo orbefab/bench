@@ -36,11 +36,12 @@ import {
 } from "@sfab-bench/parts";
 
 import {
-  type CaptureRecipeSource,
   captureLevelFor,
+  captureProblem,
   captureRecipeFor,
 } from "./capture-recipe";
-import { chipFactsOf } from "./chip-host";
+import { type CaptureSource, captureSource } from "./capture-source";
+import { chipFactsOf, missingChipFacts } from "./chip-host";
 import { formAdapter } from "./forms";
 
 const IDENTITY: Pose = {
@@ -138,11 +139,7 @@ export function runTree(input: {
     return located(id).place;
   };
 
-  const recipes = {
-    catalogDir: input.catalogDir,
-    store: input.store,
-    join: input.join,
-  };
+  const recipes = captureSource(input.catalogDir, input.projectDir, input);
   const nodes = new Map<string, WorldViewNode>();
   for (const inst of input.resolved) {
     const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
@@ -160,6 +157,7 @@ export function runTree(input: {
       pose: poseOf(inst.pose),
       ports: portsOf(inst, world, dependents(inst.part.id)),
       params: { ...inst.params },
+      ...(inst.forwards ? { forwards: { ...inst.forwards } } : {}),
       ...(netlist ? { wires: netlist.wires.map(([a, b]) => ({ a, b })) } : {}),
       levels: levelAxes(inst.part, chosenOf(inst), inst.declaredOnly, {
         added: place?.added,
@@ -172,6 +170,7 @@ export function runTree(input: {
             }
           : {}),
         capture: { typeId: inst.type.id, source: recipes },
+        partFile,
       }),
       ...originFields(place),
       children: [],
@@ -355,6 +354,7 @@ function envNode(
     levels: part
       ? levelAxes(part, defaultsOf(part), part.declaredOnly === true, {
           added: place?.added,
+          partFile,
         })
       : [],
     ...originFields(place),
@@ -435,7 +435,9 @@ function levelAxes(
     /** Set on a project part: does this snapshot file sit in the project's `snapshots/`? */
     inProject?: (ref: string) => boolean;
     /** Absent on a node that is never captured (ground, target). */
-    capture?: { typeId: string; source: CaptureRecipeSource };
+    capture?: { typeId: string; source: CaptureSource };
+    /** Looks up a composite's parts, so a declared-only one is seen. */
+    partFile?: (partId: string) => PartFile | null;
   }
 ): WorldViewLevelAxis[] {
   const axes: WorldViewLevelAxis[] = [];
@@ -448,7 +450,7 @@ function levelAxes(
       if (!slot) continue;
       for (const variant of Object.keys(slot.variants)) {
         const impl = slot.variants[variant];
-        const check = runnableOf(axis, impl, declaredOnly);
+        const check = runnableOf(axis, impl, declaredOnly, origin.partFile);
         options.push({
           class: cls,
           variant,
@@ -511,11 +513,14 @@ function sourceOf(
   };
 }
 
-/** The same lookup and `into` rule the capture job uses. */
+/**
+ * The same lookup, `into` rule and source check the capture job runs, on
+ * the same capture source.
+ */
 function captureOf(
   part: PartFile,
   axis: CaptureAxisName,
-  input: { typeId: string; source: CaptureRecipeSource }
+  input: { typeId: string; source: CaptureSource }
 ): WorldViewCapture {
   const recipe = captureRecipeFor(part, axis, input.source);
   if (!recipe) {
@@ -523,12 +528,13 @@ function captureOf(
   }
   const level = captureLevelFor(part, axis, recipe);
   if ("error" in level) return { ready: false, reason: level.error };
+  const problem = captureProblem(recipe, input.source);
+  if (problem) return { ready: false, reason: problem };
   return { ready: true };
 }
 
 const SCENE_FORMS = new Set([
-  "dc-motor@1",
-  "ranger@1",
+  "position-servo@1",
   "multibody@1",
   "ground-plane@1",
   "target@1",
@@ -537,7 +543,8 @@ const SCENE_FORMS = new Set([
 function runnableOf(
   axis: AxisName,
   impl: unknown,
-  declaredOnly: boolean
+  declaredOnly: boolean,
+  partFile?: (partId: string) => PartFile | null
 ): { runnable: boolean; reason?: string } {
   if (axis === "behaviour" && declaredOnly) {
     return { runnable: false, reason: "declared-only" };
@@ -545,21 +552,40 @@ function runnableOf(
   if (!impl || typeof impl !== "object") {
     return { runnable: false, reason: "no level authored" };
   }
-  if (axis === "behaviour") return behaviourRunnable(impl as BehaviourImpl);
+  if (axis === "behaviour") {
+    return behaviourRunnable(impl as BehaviourImpl, partFile);
+  }
   if (axis === "visual") return visualRunnable(impl as VisualImpl);
   return bodyRunnable(impl as BodyImpl);
 }
 
-function behaviourRunnable(impl: BehaviourImpl): {
+function behaviourRunnable(
+  impl: BehaviourImpl,
+  partFile?: (partId: string) => PartFile | null
+): {
   runnable: boolean;
   reason?: string;
 } {
-  if (impl.kind === "composite" || impl.kind === "snapshot") {
+  if (impl.kind === "composite") {
+    // A declared-only part has no runtime, so a composite that names one
+    // runs without it.
+    const declared = Object.entries(impl.netlist.instances)
+      .filter(([, inst]) => partFile?.(inst.part)?.declaredOnly === true)
+      .map(([name]) => name)
+      .sort();
+    if (declared.length > 0) {
+      return {
+        runnable: false,
+        reason: `declared-only parts: ${declared.join(", ")}`,
+      };
+    }
     return { runnable: true };
   }
+  if (impl.kind === "snapshot") return { runnable: true };
   if (impl.kind === "firmware") {
     if (!chipFactsOf(impl)) {
-      return { runnable: false, reason: `unknown chip ${impl.chip}` };
+      const missing = missingChipFacts(impl).join(", ");
+      return { runnable: false, reason: `chip ${impl.chip} lacks ${missing}` };
     }
     return { runnable: true };
   }
@@ -604,6 +630,7 @@ function visualRunnable(impl: VisualImpl): {
   if (
     impl.kind === "mesh" ||
     impl.kind === "box" ||
+    impl.kind === "form" ||
     impl.kind === "children" ||
     impl.kind === "none"
   ) {

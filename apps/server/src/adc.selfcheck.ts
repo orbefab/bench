@@ -120,6 +120,15 @@ async function runWorld(
   if (!planned.ok) {
     throw new Error(planned.errors.map((item) => item.message).join("; "));
   }
+  const degraded = (planned.plan.degraded ?? []).map(
+    (row) => `${row.path}: ${row.message}`
+  );
+  if (world !== "parts/sfab/nano-vcc-class1@1.0.0.json") {
+    expect(
+      degraded.length === 0,
+      `${world} plans whole: ${degraded.join("; ")}`
+    );
+  }
   const seen: { state: WorldState | null; failed: string | null } = {
     state: null,
     failed: null,

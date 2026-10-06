@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  arduinoPinBit,
+  pinIndex,
   type RecordingRead,
   type SnapshotFile,
   type WorldState,
@@ -38,6 +38,8 @@ import {
   sortValue,
   tableLawOf,
 } from "@sfab-bench/parts";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
 import { type CaptureFile, captureFromConfig } from "./capture";
 import { closeRootWatches } from "./projects";
 import { boardStampOf, realize } from "./world/circuit-stamp";
@@ -49,8 +51,6 @@ import {
 } from "./world/host";
 import { nodeStore } from "./world/node-store";
 import { catalogRoot, planWorld } from "./world/plan";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit } from "./world/rail-circuit";
 
 const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
   boardId: "nano",
@@ -59,6 +59,8 @@ const nanoDir = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
 );
 const BAND = 0.005;
+// The fallback count is per process; other checks may share this one.
+const gminBefore = gminFallbackCalls;
 
 function ledDeck(board: number): number {
   const diode = new Diode("led", "a", "0", LED_RED);
@@ -121,7 +123,7 @@ function ledDeck(board: number): number {
     feed: "header",
   });
   rail.setFixed(NANO_BOARD_A);
-  rail.setD13("high");
+  rail.setPin("D13", "high");
   for (let i = 0; i < 40; i++) rail.solve();
   const alias = rail.leds["nano.led"];
   expect(alias !== undefined, "header rail has no nano.led");
@@ -162,7 +164,7 @@ function ledDeck(board: number): number {
     boxes.some((box) => box.id === "led"),
     "led box missing"
   );
-  const bit = arduinoPinBit("D9");
+  const bit = pinIndex(board.pinOrder, "D9");
   expect(bit !== undefined, "D9 has no bit");
   const rail = createRailCircuit({
     vNom: 5,
@@ -290,7 +292,7 @@ async function runLed(
     const board1 = planned1.plan.boards.find((item) => item.id === "nano");
     expect(board1?.stamp?.netlist === true, "class 1 lost the board netlist");
     if (!board1?.stamp) throw new Error("class 1 lost the board netlist");
-    const bit = arduinoPinBit("D9");
+    const bit = pinIndex(board1.pinOrder, "D9");
     expect(bit !== undefined, "D9 has no bit");
     const snap = createRailCircuit({
       vNom: 5,
@@ -449,11 +451,12 @@ function servoPulseUs(angle: number): number {
       JSON.stringify(power)
     );
     writeFileSync(join(dir, "nano-1n4148@1.0.0.json"), JSON.stringify(part));
+    const gminCalls = gminFallbackCalls - gminBefore;
     expect(
-      gminFallbackCalls === 0,
-      `gmin fallback ran ${gminFallbackCalls} times before the open diode`
+      gminCalls === 0,
+      `gmin fallback ran ${gminCalls} times before the open diode`
     );
-    console.log(`gmin fallback calls ${gminFallbackCalls}`);
+    console.log(`gmin fallback calls ${gminCalls}`);
     const stamp = boardStampOf(id, "circuits", {
       boardId: "nano",
       libraryDir: root,
@@ -516,7 +519,7 @@ function servoPulseUs(angle: number): number {
     const out = join(root, "snap.json");
     await captureFromConfig({
       config,
-      libraryDir: root,
+      projectDir: root,
       outFile: out,
       freeRun: false,
     });

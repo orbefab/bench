@@ -19,14 +19,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  arduinoPinBit,
   emptySnapshot,
   type LockFile,
+  pinBitSet,
   type RecordingRead,
   type RunReport,
   type WorldSender,
 } from "@sfab-bench/contract";
-import { loadWorldV2, writeLock } from "@sfab-bench/parts";
+import {
+  type LevelTable,
+  loadWorldV2,
+  lockAfterLevels,
+  replaceLevels,
+  writeLock,
+} from "@sfab-bench/parts";
+import { noLoadSpeedRad } from "@sfab-bench/sim/power";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
 import {
@@ -36,16 +44,9 @@ import {
   stopWorld,
   type WorldHandle,
 } from "./world/host";
-import {
-  type LevelTable,
-  lockAfterLevels,
-  replaceLevels,
-} from "./world/level-edit";
 import { maxBoardDelta } from "./world/nano-reference";
 import { nodeStore } from "./world/node-store";
 import { catalogRoot } from "./world/plan";
-import { noLoadSpeedRad } from "./world/power";
-import { NANO_BOARD_A } from "./world/power-path";
 import { worldTools } from "./world-tools";
 
 const sender: WorldSender = { kind: "loopback", label: "Mac" };
@@ -69,12 +70,11 @@ const fixtureDir = fileURLToPath(
 function driveSamples(
   read: RecordingRead
 ): { fraction: number; d13: "high" | "low" | "input" }[] {
-  const bit = 1 << (arduinoPinBit("D13") ?? 13);
   return read.frames.map((frame) => {
     const pulse = frame.parts.servo?.pulseUs ?? 0;
     const pins = frame.boards.nano?.pins;
-    const driving = pins ? (pins.ddr & bit) !== 0 : false;
-    const high = pins ? (pins.level & bit) !== 0 : false;
+    const driving = pins ? pinBitSet(pins.ddr, 13) : false;
+    const high = pins ? pinBitSet(pins.level, 13) : false;
     const fraction =
       pulse > 0 ? Math.min(1, Math.max(0, (pulse - 1000) / 1000)) : 0;
     return {
@@ -276,7 +276,7 @@ function brownoutCount(run: GaugeRun): number {
   let frames = 0;
   for (const frame of run.read.frames) {
     const board = frame.boards.nano;
-    if (board?.brownout || board?.brownoutAny) frames += 1;
+    if (board?.inReset || board?.inResetAny) frames += 1;
   }
   let marks = 0;
   for (const event of run.read.events) {

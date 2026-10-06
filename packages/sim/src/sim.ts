@@ -9,10 +9,7 @@
  * stay direct so the millisecond loop does not grow a wrapper.
  */
 import {
-  ATMEGA328P_BROWNOUT_V,
-  arduinoPinBit,
-  atmega328pSoaWarning,
-  DEFAULT_TIMESTEP_S,
+  boardPinState,
   type Diagnostic,
   type JointLimitKind,
   pastLimitAmount,
@@ -24,9 +21,12 @@ import {
   type RecordingRead,
   type RunReport,
   type SeamEnergy,
+  stepsPerMs,
   type TimelineMarker,
   type TimelineTrack,
   type WorldError,
+  type WorldGhostSpec,
+  type WorldGhostState,
   type WorldPartMotion,
   type WorldPartState,
   type WorldPinState,
@@ -44,7 +44,9 @@ import type { PinMode } from "@sfab-bench/engine-circuit";
 import {
   type AdcConversion,
   AvrBoard,
+  BROWNOUT_RESET,
   type CpuResetRegs,
+  EXTERNAL_RESET,
   FIRMWARE_RELOADED,
   parseIntelHex,
 } from "@sfab-bench/engine-mcu";
@@ -58,12 +60,12 @@ import { analogRead } from "./analog-pin";
 import type { PlanEnv } from "./env";
 import { planWorld, type RunBoard, type RunPlan } from "./plan";
 import {
-  type BrownoutState,
   DISPLAY_STALL_DEG_PER_SEC,
   displayMotion,
   type MotorLaw,
-  runningBrownout,
-  stepBrownout,
+  type ResetState,
+  runningReset,
+  stepReset,
 } from "./power";
 import { railAttachment } from "./power-path";
 import { probeTracks } from "./probe";
@@ -89,9 +91,12 @@ import {
   bindInputNets,
   brownoutOf,
   fillBoardPower,
+  holdBeforeRun,
   loadBoards,
   postState,
   reloadBoard,
+  resetPinLowOf,
+  samplePins,
   serialIn,
   snapshotDriveModes,
   stepBoard,
@@ -101,18 +106,33 @@ import {
   noteCommand,
   post,
   simMs,
+  stepCount,
+  stepEndMs,
   thrownMessage,
 } from "./session/common";
+import {
+  type GhostReading,
+  ghostPairs,
+  ghostPlanEnv,
+  ghostRunsSnapshot,
+  ghostState,
+  ghostWorldText,
+  measurePairs,
+} from "./session/ghost";
+import { type PortReading, portReading } from "./session/ports";
 import { bindPower, latchSupplyNodes, stampNodes } from "./session/rails";
 import {
   answerRecord,
+  foldStep,
   openRecorder,
   record,
   recordStep,
   sample,
+  samplePoses,
 } from "./session/recorder";
 import { solveSupplies } from "./session/solve";
 import { createState, type HeldFailure } from "./session/state";
+import { bodySceneOf } from "./shafts";
 import { targetPosition } from "./targets";
 import {
   applyGpioDrives,
@@ -150,15 +170,17 @@ export type SimHost = {
 
 /**
  * One world, off the API thread. The host starts one of these per open
- * document. Sim time advances only in here: `step(n)` is exactly n steps
- * of 1 ms, and `play` batches steps so sim time tracks wall time at 1×.
+ * document. Sim time advances only in here: `step(n)` is exactly n
+ * milliseconds (n·perMs master steps), and `play` batches milliseconds so
+ * sim time tracks wall time at 1×.
  */
 
 const TICK_MS = 16;
 const STATE_EVERY_MS = 1000 / 30;
 const MAX_STEPS_PER_TICK = 100;
 // Lockstep AVR runs about 4x real time, so one step call stays in seconds.
-const MAX_STEP_N = 60_000;
+// A longer headless run steps in calls of at most this many.
+export const MAX_STEP_N = 60_000;
 
 export type RecordQuery =
   | { op: "info" }
@@ -224,6 +246,38 @@ export type AdcTrace = {
   samples: AdcSampleStamp[];
 };
 
+/**
+ * A conversion seen through `Sim.observe`, at the instant it started: the
+ * reader's held sample and its latched reference. `startStep` (the master
+ * step in which the board's current CPU ran its first cycle) and `cycle`
+ * (that CPU's own count) name the instant exactly; `ms` is the same
+ * instant in simulated milliseconds, for display and ordering.
+ */
+export type ConversionEvent = {
+  board: string;
+  mux: string;
+  ref: string;
+  vRef: number;
+  /** The board port `vRef` was read on. Null for an internal reference. */
+  referencePort: string | null;
+  voltage: number;
+  count: number;
+  startStep: number;
+  cycle: number;
+  ms: number;
+};
+
+/**
+ * Listens to a run as it advances. `step` is called at the end of every
+ * master step, after that step's rail solve and body step, with the count
+ * of master steps since load. `conversion` is called when a board's ADC
+ * starts a conversion. A listener reads; it must not change the run.
+ */
+export type SimObserver = {
+  step?(n: number, perMs: number): void;
+  conversion?(event: ConversionEvent): void;
+};
+
 export type ToWorker =
   | {
       type: "load";
@@ -239,8 +293,11 @@ export type ToWorker =
        * Test only. Absent, the worker records no ADC trace.
        */
       adcTrace?: boolean;
+      /** The snapshot ghost to run beside the world. Absent is none. */
+      ghost?: WorldGhostSpec | null;
     }
-  | { type: "reload"; generation: number }
+  /** `ghost` absent keeps the ghost the run has; null turns it off. */
+  | { type: "reload"; generation: number; ghost?: WorldGhostSpec | null }
   | { type: "play"; generation: number; by?: WorldSender }
   | { type: "pause"; generation: number; by?: WorldSender }
   | {
@@ -329,6 +386,7 @@ export type LoadInput = {
   generation?: number;
   fuseStart?: "cold" | "tripped";
   adcTrace?: boolean;
+  ghost?: WorldGhostSpec | null;
 };
 
 export type LoadResult =
@@ -346,8 +404,28 @@ function failureText(held: HeldFailure): string {
   return text || "world failed";
 }
 
+type Ghost = {
+  reading: GhostReading;
+  run: ReturnType<typeof createSession> | null;
+};
+
 function createSession(host: SimHost) {
-  const s = createState(host);
+  let ghostSpec: WorldGhostSpec | null = null;
+  let ghost: Ghost | null = null;
+  // Each state this run posts carries the ghost's poses and the joint gap.
+  const s = createState({
+    ...host,
+    post(message) {
+      if (message.type !== "state" || !ghost) {
+        host.post(message);
+        return;
+      }
+      host.post({
+        ...message,
+        state: { ...message.state, ghost: ghostState(ghost.reading) },
+      });
+    },
+  });
 
   function countsOf(compiled: CompiledWorld): WorldModelCounts {
     return {
@@ -364,12 +442,14 @@ function createSession(host: SimHost) {
   }
 
   /**
-   * One millisecond. Boards that are already running execute first, so this
+   * One master step. Boards that are already running execute first, so this
    * step's pulses are the command. The rail is solved from that command and
-   * the joint velocity. A rail below 2.675 V asserts reset on this step.
-   * The torque still matches the current charged for the step; the pins
-   * are Hi-Z for the recording. After the rail rises above 2.725 V the
-   * CPU stays in reset for 66 ms, then the first instruction runs.
+   * the joint velocity. A rail below the chip's assert voltage asserts
+   * reset on this step. The motors that chip drives open at the sub-step
+   * the rail crosses, so the torque and the current charged are the share
+   * of the step before it; the pins are Hi-Z for the recording. After the rail rises
+   * above the chip's release voltage the CPU stays in reset for the chip's
+   * hold, then the first instruction runs.
    */
   function advanceOne() {
     if (!s.sim) return;
@@ -379,36 +459,57 @@ function createSession(host: SimHost) {
     }
     latchSupplyNodes(s);
     snapshotDriveModes(s);
+    samplePins(s);
     const already = new Set<string>();
     for (const board of s.boards) {
       const power = s.boardPower.get(board.id);
-      if (!power?.supplyId || power.brownout.phase !== "run") continue;
+      if (!power?.supplyId || power.reset.phase !== "run") continue;
       stepBoard(s, board);
       already.add(board.id);
     }
     latchServos(s);
     solveSupplies(s);
-    const stepEndMs = simMs(s) + 1;
+    const endMs = stepEndMs(s);
     for (const board of s.boards) {
       const power = s.boardPower.get(board.id);
       if (!power?.supplyId || board.fault) continue;
       const voltage = brownoutOf(s, board.id);
-      const stepped = stepBrownout(power.brownout, voltage, stepEndMs);
-      power.brownout = {
+      const stepped = stepReset(
+        power.reset,
+        voltage,
+        endMs,
+        {
+          assertV: power.assertVoltage,
+          releaseV: power.releaseVoltage,
+          holdMs: power.holdMs,
+        },
+        resetPinLowOf(s, board.id)
+      );
+      const ended = power.reset.cause;
+      power.reset = {
         phase: stepped.phase,
         releaseAtMs: stepped.releaseAtMs,
+        cause: stepped.cause,
       };
       if (stepped.assertReset) {
         board.holdInReset();
         applyInputNets(s);
-        s.pendingNotes.push({ kind: "reset", board: board.id });
+        s.pendingNotes.push(
+          stepped.cause === "pin"
+            ? { kind: "reset", board: board.id, cause: "pin" }
+            : { kind: "reset", board: board.id }
+        );
         continue;
       }
       if (!stepped.reboot) continue;
-      if (!board.reboot()) continue;
+      if (!board.reboot(ended === "pin" ? EXTERNAL_RESET : BROWNOUT_RESET))
+        continue;
       applyInputNets(s);
       const regs = board.peekRegs();
-      const pins = board.peekPins();
+      const pins = boardPinState(
+        board.peekPins(),
+        s.specs.find((item) => item.id === board.id)?.pinCount ?? 0
+      );
       power.resets += 1;
       s.pendingNotes.push({ kind: "reboot", board: board.id });
       if (regs) {
@@ -424,10 +525,13 @@ function createSession(host: SimHost) {
       rearmRangers(s, board.id, board);
     }
     latchSupplyNodes(s);
+    // A board that rebooted cleared its input levels. Read them again
+    // from the solve that just ended, at the node latched from it.
+    samplePins(s);
     for (const board of s.boards) {
       if (already.has(board.id)) continue;
       const power = s.boardPower.get(board.id);
-      if (!power || power.brownout.phase !== "run") continue;
+      if (!power || power.reset.phase !== "run") continue;
       stepBoard(s, board);
     }
     // A reboot this step may have produced the first pulses. Latch them
@@ -441,11 +545,133 @@ function createSession(host: SimHost) {
     s.sim.mj.mj_step(s.sim.model, s.sim.data);
     noteMotorSeams(s);
     classifyLoads(s);
-    recordStep(s);
-    stampNodes(s, simMs(s));
+    // The recorder keys on whole milliseconds: a finer step records once,
+    // at the step that ends the millisecond, and folds the extremes of the
+    // steps before it into the frame's window.
+    if (stepCount(s) % s.perMs === 0) recordStep(s);
+    else foldStep(s);
+    stampNodes(s, stepCount(s) / s.perMs);
+    if (s.observers.size > 0) {
+      const n = stepCount(s);
+      for (const observer of s.observers) observer.step?.(n, s.perMs);
+    }
+  }
+
+  /** One simulated millisecond: `perMs` master steps. */
+  function advanceMs() {
+    for (let k = 0; k < s.perMs; k++) advanceOne();
+    stepGhost();
+  }
+
+  /** The ghost's same millisecond, then the gap at its end. */
+  function stepGhost() {
+    const run = ghost?.run;
+    if (!ghost || !run || !s.sim) return;
+    const inner = run.inner.s;
+    try {
+      run.inner.advanceMs();
+    } catch (err: unknown) {
+      dropGhost(`the ghost run stopped: ${thrownMessage(err)}`);
+      return;
+    }
+    if (!inner.sim) return;
+    measurePairs(
+      ghost.reading.pairs,
+      s.sim.data.qpos as Float64Array,
+      inner.sim.data.qpos as Float64Array
+    );
+  }
+
+  function dropGhost(error: string) {
+    if (!ghost) return;
+    ghost.reading.error = error;
+    ghost.run?.dispose();
+    ghost.run = null;
+  }
+
+  function closeGhost() {
+    ghost?.run?.dispose();
+    ghost = null;
+  }
+
+  /**
+   * Build the ghost beside a run that just built. It reads the world file
+   * with the spec's level written in, and runs only if that path's
+   * behaviour then comes from a snapshot. A ghost that fails leaves the
+   * run alone and says why.
+   */
+  async function buildGhost(root: string) {
+    closeGhost();
+    const spec = ghostSpec;
+    if (!spec || !s.layout) return;
+    const reading: GhostReading = { spec, poses: () => null, pairs: [] };
+    const held: Ghost = { reading, run: null };
+    ghost = held;
+    const env = s.host.plan;
+    const rel = s.worldRel.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+    const worldAbs = env.resolve(root, rel);
+    let text: string;
+    try {
+      text = env.readText(worldAbs);
+    } catch {
+      reading.error = "the ghost cannot read the world file";
+      return;
+    }
+    const edited = ghostWorldText(text, spec);
+    if ("error" in edited) {
+      reading.error = `the ghost's level: ${edited.error}`;
+      return;
+    }
+    const run = createSession({
+      ...host,
+      keepSerial: false,
+      plan: ghostPlanEnv(env, worldAbs, edited.text),
+      // The ghost's events are not the run's. Its failure is the result.
+      post: () => {},
+    });
+    const loaded = await run.load({
+      project: s.project,
+      world: s.worldRel,
+      generation: 0,
+      fuseStart: s.fuseStart,
+    });
+    // A newer build replaced this ghost while it loaded.
+    if (ghost !== held) {
+      run.dispose();
+      return;
+    }
+    if (!loaded.ok) {
+      run.dispose();
+      reading.error = `the ghost did not build: ${failureText(loaded)}`;
+      return;
+    }
+    const runs = ghostRunsSnapshot(run.report(), spec.path);
+    const layout = run.inner.s.layout;
+    if ("error" in runs || !layout) {
+      run.dispose();
+      reading.error = "error" in runs ? runs.error : "the ghost has no joints";
+      return;
+    }
+    reading.ref = runs.ref;
+    reading.impl = runs.impl;
+    reading.pairs = ghostPairs(s.layout.joints, layout.joints);
+    reading.poses = () => samplePoses(run.inner.s);
+    held.run = run;
+  }
+
+  /** Inputs the run takes from outside reach the ghost too. */
+  function toGhost(fn: (inner: typeof s) => void) {
+    const run = ghost?.run;
+    if (!run) return;
+    try {
+      fn(run.inner.s);
+    } catch (err: unknown) {
+      dropGhost(`the ghost run stopped: ${thrownMessage(err)}`);
+    }
   }
 
   function dispose() {
+    closeGhost();
     s.serialChunks.length = 0;
     s.seams.reset();
     s.playing = false;
@@ -456,6 +682,8 @@ function createSession(host: SimHost) {
     s.pendingNotes.length = 0;
     s.boards = [];
     s.loads = [];
+    s.controls = [];
+    s.shafts = [];
     s.rangers = [];
     s.inputNets = [];
     s.runPlan = null;
@@ -464,9 +692,10 @@ function createSession(host: SimHost) {
     s.partFeeds = {};
     s.supplyLive = {};
     s.latchedNode = new Map();
-    s.latchedTerminal = new Map();
+    s.latchedRail = new Map();
     s.adcNodes = [];
     s.adcSamples = [];
+    s.startStep = new Map();
     s.rails = new Map();
     s.driveAtStart.clear();
     s.stepPulses.clear();
@@ -531,7 +760,7 @@ function createSession(host: SimHost) {
       return false;
     }
     const bytesReader = s.host.readerFor(root, s.worldRel);
-    const compiled = await compileWorld(planned.plan, bytesReader);
+    const compiled = await compileWorld(bodySceneOf(planned.plan), bytesReader);
     if (!compiled.ok) {
       fail(s, compiled.errors);
       return false;
@@ -539,6 +768,7 @@ function createSession(host: SimHost) {
     const data = new compiled.mj.MjData(compiled.model);
     compiled.mj.mj_forward(compiled.model, data);
     s.sim = { ...compiled, data };
+    s.perMs = stepsPerMs(compiled.model.opt.timestep) ?? 1;
     s.files = bytesReader;
     s.playing = false;
     // Feeds are known before boot: an unwired board does not run.
@@ -550,6 +780,7 @@ function createSession(host: SimHost) {
     s.reportPending = s.runReport !== null;
     s.envelopeWarned.clear();
     s.batteryWarned.clear();
+    s.pinLatch.clear();
     fillBoardPower(s, s.runPlan);
     loadBoards(s, s.runPlan);
     bindPower(s, s.runPlan);
@@ -557,8 +788,25 @@ function createSession(host: SimHost) {
     bindRangers(s, s.runPlan);
     // The ranger's idle current is on the node the first CPU step reads.
     solveSupplies(s);
-    latchSupplyNodes(s);
+    // A chip that powers up into a sagging rail or a low RESET never runs
+    // its first instruction, so the t=0 frame already shows it in reset.
+    // The reset event lands on the first recorded step.
+    const holds: typeof s.pendingNotes = [];
+    for (const board of s.boards) {
+      const cause = holdBeforeRun(s, board);
+      if (!cause) continue;
+      holds.push(
+        cause === "pin"
+          ? { kind: "reset", board: board.id, cause }
+          : { kind: "reset", board: board.id }
+      );
+    }
+    if (holds.length > 0) applyInputNets(s);
     openRecorder(s);
+    s.pendingNotes.push(...holds);
+    latchSupplyNodes(s);
+    samplePins(s);
+    await buildGhost(root);
     post(s, {
       type: "ready",
       generation: s.generation,
@@ -591,7 +839,7 @@ function createSession(host: SimHost) {
         steps = MAX_STEPS_PER_TICK;
         s.stepDebt = 0;
       }
-      for (let i = 0; i < steps; i++) advanceOne();
+      for (let i = 0; i < steps; i++) advanceMs();
       s.sinceState += elapsed;
       if (s.sinceState >= STATE_EVERY_MS) {
         s.sinceState = 0;
@@ -641,7 +889,7 @@ function createSession(host: SimHost) {
         fail(
           s,
           [],
-          `step(${String(n)}) is not a whole number of steps from 0 to ${MAX_STEP_N}.`
+          `step(${String(n)}) is not a whole number of milliseconds from 0 to ${MAX_STEP_N}.`
         );
         if (request !== undefined) postState(s, request);
         return;
@@ -649,7 +897,7 @@ function createSession(host: SimHost) {
       // One turn: stop the clock, then advance exactly n milliseconds.
       if (pauseBy) noteCommand(s, "pause", pauseBy);
       stopClock();
-      for (let i = 0; i < n; i++) advanceOne();
+      for (let i = 0; i < n; i++) advanceMs();
       postState(s, request);
     } catch (err: unknown) {
       stopClock();
@@ -678,6 +926,7 @@ function createSession(host: SimHost) {
     s.worldRel = input.world;
     s.fuseStart = input.fuseStart === "tripped" ? "tripped" : "cold";
     s.adcTrace = input.adcTrace === true;
+    ghostSpec = input.ghost ?? null;
     if (await build()) return { ok: true };
     return heldResult();
   }
@@ -727,11 +976,13 @@ function createSession(host: SimHost) {
         generation: message.generation,
         fuseStart: message.fuseStart,
         adcTrace: message.adcTrace,
+        ghost: message.ghost,
       });
       return;
     }
     s.generation = message.generation;
     if (message.type === "reload") {
+      if (message.ghost !== undefined) ghostSpec = message.ghost;
       await reload();
       return;
     }
@@ -739,13 +990,18 @@ function createSession(host: SimHost) {
     else if (message.type === "pause") pause(message.by);
     else if (message.type === "step")
       step(message.n, message.pauseBy, message.request);
-    else if (message.type === "setTarget")
+    else if (message.type === "setTarget") {
       setTarget(s, message.partId, message.radians);
-    else if (message.type === "moveTarget")
+      toGhost((inner) => setTarget(inner, message.partId, message.radians));
+    } else if (message.type === "moveTarget") {
       moveTarget(s, message.id, message.position);
-    else if (message.type === "reloadBoard") reloadBoard(s, message.board);
-    else if (message.type === "serialIn") {
+      toGhost((inner) => moveTarget(inner, message.id, message.position));
+    } else if (message.type === "reloadBoard") {
+      reloadBoard(s, message.board);
+      toGhost((inner) => reloadBoard(inner, message.board));
+    } else if (message.type === "serialIn") {
       serialIn(s, message.board, message.text, message.by);
+      toGhost((inner) => serialIn(inner, message.board, message.text));
     } else if (message.type === "fault") s.throwOnStep = true;
   }
 
@@ -805,18 +1061,33 @@ function createSession(host: SimHost) {
     reload,
     step: runSteps,
     state: () => sample(s),
-    serialIn: (id: string, text: string, by?: WorldSender) =>
-      serialIn(s, id, text, by),
+    serialIn: (id: string, text: string, by?: WorldSender) => {
+      serialIn(s, id, text, by);
+      toGhost((inner) => serialIn(inner, id, text));
+    },
     drainSerial,
     seams: seamRows,
     report: () => s.runReport,
     record: (query: RecordQuery) => record(s, query),
-    setTarget: (partId: string, radians: number) =>
-      setTarget(s, partId, radians),
+    setTarget: (partId: string, radians: number) => {
+      setTarget(s, partId, radians);
+      toGhost((inner) => setTarget(inner, partId, radians));
+    },
     play,
     pause,
     dispose: close,
     branchReading,
+    portReading: (path: string, port: string) => portReading(s, path, port),
+    observe(observer: SimObserver): () => void {
+      s.observers.add(observer);
+      return () => {
+        s.observers.delete(observer);
+      };
+    },
+    /** The ghost's last frame, or null when there is no ghost. */
+    ghost: () => (ghost ? ghostState(ghost.reading) : null),
+    /** For a ghost run inside this module only. */
+    inner: { s, advanceMs },
   };
 }
 
@@ -836,7 +1107,7 @@ export class Sim {
   reload(): Promise<LoadResult> {
     return this.session.reload();
   }
-  /** Advance exactly `n` master steps, then resolve. */
+  /** Advance exactly `n` simulated milliseconds (`n·perMs` master steps), then resolve. */
   async step(n: number): Promise<void> {
     this.session.step(n);
   }
@@ -871,6 +1142,25 @@ export class Sim {
   }
   dispose(): void {
     this.session.dispose();
+  }
+  /**
+   * The instance at `path` read at its own port after the last solve:
+   * volts and amperes on a rail, the driven joint's angle on a port on a
+   * rotational net. Null when neither reads.
+   */
+  portReading(path: string, port: string): PortReading | null {
+    return this.session.portReading(path, port);
+  }
+  /**
+   * Call `observer` at every master step and conversion until the
+   * returned function is called. Listeners outlive a reload.
+   */
+  observe(observer: SimObserver): () => void {
+    return this.session.observe(observer);
+  }
+  /** The snapshot ghost's frame. Null when the run has none. */
+  ghost(): WorldGhostState | null {
+    return this.session.ghost();
   }
   /**
    * Branch current and node voltages for a part stamped on a rail.

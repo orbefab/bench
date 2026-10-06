@@ -8,8 +8,9 @@ import {
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import {
+  documentAssetDir,
   extractUrdfJointsAndMeshes,
-  partDocumentProject,
+  joinRel,
   resolveUrdfMesh,
 } from "@sfab-bench/contract";
 
@@ -61,24 +62,6 @@ export function readInside(rootReal: string, rel: string): Uint8Array | null {
   }
 }
 
-export function parentRel(rel: string): string {
-  const clean = rel.replace(/\\/g, "/");
-  const slash = clean.lastIndexOf("/");
-  return slash === -1 ? "" : clean.slice(0, slash);
-}
-
-/** Join two relative paths. `..` is rejected rather than normalised away. */
-export function joinRel(dir: string, rel: string): string | null {
-  const parts: string[] = [];
-  for (const part of `${dir}/${rel}`.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") return null;
-    parts.push(part);
-  }
-  if (parts.length === 0) return null;
-  return parts.join("/");
-}
-
 /**
  * Bytes relative to the world file. The document's URDF and firmware paths
  * are written that way; mesh paths are relative to the URDF, and the model
@@ -87,17 +70,6 @@ export function joinRel(dir: string, rel: string): string | null {
 export type WorldBytes = {
   read(relativeToWorld: string): Uint8Array | null;
 };
-
-/**
- * Project directory for URDF and firmware paths. A root part lives
- * under `parts/<pub>/`; those paths stay relative to the project.
- */
-export function documentAssetDir(rel: string): string {
-  const clean = rel.replace(/\\/g, "/").replace(/^\/+/, "");
-  const project = partDocumentProject(clean);
-  if (project !== null) return project;
-  return parentRel(clean);
-}
 
 /** Lock beside the document, not beside the project directory. */
 export function documentLockRel(rel: string): string {

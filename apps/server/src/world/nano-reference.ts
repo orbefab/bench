@@ -28,14 +28,14 @@ import {
   TheveninLimit,
   vSource,
 } from "@sfab-bench/engine-circuit";
-import { boardStampOf, realize } from "./circuit-stamp";
 import {
   BOARD_LOAD_KNEE_V,
   NANO_BOARD_A,
   UNO_BOARD_NODE,
   UNO_TERM_NODE,
-} from "./power-path";
-import { createRailCircuit } from "./rail-circuit";
+} from "@sfab-bench/sim/power-path";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
+import { boardStampOf, realize } from "./circuit-stamp";
 
 const NANO_STAMP = boardStampOf("sfab/nano-ch340@1.0.0", "circuits", {
   boardId: "nano",
@@ -386,7 +386,7 @@ export function maxBoardDelta(
     const mode = sample.d13;
     neu.setFixed(spec.fixed);
     ref.setFixed(spec.fixed);
-    neu.setD13(mode);
+    neu.setPin("D13", mode);
     ref.setD13(mode);
     const connected = sample.fraction > 0;
     neu.setMotor(0, sample.fraction, 0, connected);

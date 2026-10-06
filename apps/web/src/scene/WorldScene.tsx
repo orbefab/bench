@@ -2,6 +2,9 @@ import { Html } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
+  composePose,
+  type Pose,
+  ROOT_PATH,
   WORLD_TARGET_ROBOT,
   type WorldPose,
   type WorldPrimitive,
@@ -28,6 +31,7 @@ import {
   releaseMeshes,
 } from "@/lib/world-assets";
 import { isClick, objectFromPose, poseDelta } from "@/lib/world-drag";
+import { ghostRobots } from "@/lib/world-ghost";
 import { moveTarget } from "@/lib/world-move";
 import { type PortBody, ROBOT_HALF } from "@/lib/world-ports";
 import {
@@ -59,6 +63,7 @@ import { resetTimeline, worldViewPoses } from "@/state/world-timeline";
 import { worldToolStore } from "@/state/world-tool";
 import { tapEmpty } from "@/state/world-tool-tap";
 import { useXrTheme } from "@/xr/ui/theme";
+import { FormVisual } from "./FormVisual";
 
 const ROBOT_COLORS = [0xc4b8a5, 0x8fa3b0, 0xb7a0c4, 0xa3b59a, 0xc4a090];
 const GROUND = 4;
@@ -296,6 +301,113 @@ function linkKey(robotId: string, link: string) {
   return `${robotId}/${link}`;
 }
 
+const noRaycast = () => {};
+
+/**
+ * The snapshot ghost's robots: the same links, translucent, posed from
+ * the ghost run. A robot shows only once it has moved apart from its
+ * ghost. Never picked, never highlighted, hidden while scrubbing.
+ */
+function GhostRobots({
+  robots,
+}: {
+  robots: [string, Map<string, LoadedVisual[]>][];
+}) {
+  const frames = useRef(new Map<string, THREE.Group>());
+  const links = useRef(new Map<string, THREE.Group>());
+  const material = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x7cc4f0,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+        // Pulled toward the camera, so where it lies on the run it tints
+        // the run instead of flickering through it.
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -4,
+        side: THREE.DoubleSide,
+      }),
+    []
+  );
+  useEffect(() => () => material.dispose(), [material]);
+  useFrame(() => {
+    const ghost = worldViewPoses() ? undefined : worldLiveState()?.ghost;
+    const shown = ghostRobots(ghost);
+    for (const [robotId, frame] of frames.current) {
+      frame.visible = shown.has(robotId);
+    }
+    if (!ghost || "error" in ghost) return;
+    for (const robotId of shown) {
+      for (const [name, pose] of Object.entries(ghost.poses[robotId] ?? {})) {
+        const group = links.current.get(linkKey(robotId, name));
+        if (!group) continue;
+        group.position.set(pose.p[0], pose.p[1], pose.p[2]);
+        group.quaternion.set(pose.q[1], pose.q[2], pose.q[3], pose.q[0]);
+      }
+    }
+  });
+  return (
+    <group name="ghost">
+      {robots.map(([robotId, robotLinks]) => (
+        <group
+          key={robotId}
+          visible={false}
+          ref={(node) => {
+            if (node) {
+              node.traverse((child) => {
+                child.raycast = noRaycast;
+              });
+              frames.current.set(robotId, node);
+            } else frames.current.delete(robotId);
+          }}
+        >
+          {[...robotLinks.entries()].map(([name, visuals]) => (
+            <group
+              key={name}
+              renderOrder={1}
+              ref={(node) => {
+                const key = linkKey(robotId, name);
+                if (node) links.current.set(key, node);
+                else links.current.delete(key);
+              }}
+            >
+              {visuals.map((visual, visualIndex) => (
+                <VisualOrigin
+                  key={`${visual.link}:${visualIndex}`}
+                  xyz={visual.xyz}
+                  rpy={visual.rpy}
+                >
+                  {visual.mesh?.kind === "stl" ? (
+                    <mesh
+                      geometry={visual.mesh.geometry}
+                      material={material}
+                      scale={visual.scale}
+                      raycast={noRaycast}
+                    />
+                  ) : visual.mesh?.kind === "obj" ? (
+                    <ObjVisual
+                      object={visual.mesh.object}
+                      material={material}
+                      scale={visual.scale}
+                    />
+                  ) : visual.primitive ? (
+                    <PrimitiveMesh
+                      primitive={visual.primitive}
+                      material={material}
+                    />
+                  ) : null}
+                </VisualOrigin>
+              ))}
+            </group>
+          ))}
+        </group>
+      ))}
+    </group>
+  );
+}
+
 function selectionKey(selection: NonNullable<WorldSelection>): string {
   if (selection.link) return `link:${selection.path}/${selection.link}`;
   return `instance:${selection.path}`;
@@ -310,17 +422,26 @@ function linkMaterial(color: number): THREE.MeshStandardMaterial {
   });
 }
 
+const ORIGIN: Pose = { position: [0, 0, 0], rotation: [1, 0, 0, 0] };
+
+/**
+ * A callout sits on its node in the document frame: the node's pose taken
+ * through every group above it, as the run places parts. The root's pose
+ * places nothing.
+ */
 function calloutNodes(
   nodes: readonly WorldViewNode[],
   warnings: ReturnType<typeof warningsFromRun>,
-  into: { id: string; pose: WorldViewNode["pose"]; text: string }[] = []
+  into: { id: string; pose: WorldViewNode["pose"]; text: string }[] = [],
+  frame: Pose = ORIGIN
 ) {
   for (const node of nodes) {
+    const pose = node.id === ROOT_PATH ? ORIGIN : composePose(frame, node.pose);
     const rows = warnings.get(node.id);
     if (rows && rows.length > 0) {
-      into.push({ id: node.id, pose: node.pose, text: warningText(rows) });
+      into.push({ id: node.id, pose, text: warningText(rows) });
     }
-    calloutNodes(node.children, warnings, into);
+    calloutNodes(node.children, warnings, into, pose);
   }
   return into;
 }
@@ -752,6 +873,7 @@ export function WorldScene({
             })}
           </RobotFrame>
         ))}
+        <GhostRobots robots={robots} />
         {primitives.map((primitive) =>
           primitive.pose ? (
             <Body key={primitive.id} pose={primitive.pose}>
@@ -801,9 +923,11 @@ export function WorldScene({
                   else pickRoots.current.delete(key);
                 }}
               >
-                <mesh material={material}>
-                  <boxGeometry args={board.size as WorldVec3} />
-                </mesh>
+                <FormVisual
+                  size={board.size}
+                  form={board.form}
+                  material={material}
+                />
                 <BoardLabel
                   text={board.id}
                   color={theme.text}
@@ -828,9 +952,11 @@ export function WorldScene({
                   else pickRoots.current.delete(key);
                 }}
               >
-                <mesh material={material}>
-                  <boxGeometry args={box.size} />
-                </mesh>
+                <FormVisual
+                  size={box.size}
+                  form={box.form}
+                  material={material}
+                />
                 <BoardLabel
                   text={box.id}
                   color={theme.text}

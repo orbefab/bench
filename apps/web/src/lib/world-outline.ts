@@ -1,8 +1,4 @@
-import {
-  ATMEGA328P_BROWNOUT_V,
-  type UrdfInfo,
-  type WorldViewFeeds,
-} from "@sfab-bench/contract";
+import type { ChipClock, UrdfInfo, WorldViewFeeds } from "@sfab-bench/contract";
 
 export type WorldOutlineJoint = {
   name: string;
@@ -28,7 +24,24 @@ export type WorldOutlineBoard = {
   chip: string;
   firmware: string;
   source?: string;
+  /** Volts. Absent when the view did not carry one. */
   brownoutVoltage?: number;
+  /**
+   * Exposed GPIO names, in pin-word order. Absent on a hand-built
+   * outline; empty when the view sent none.
+   */
+  pins?: readonly string[];
+  /**
+   * Volts. The chip's SOA floor. Absent when the view did not carry one,
+   * null when the chip publishes none.
+   */
+  minOperatingVoltage?: number | null;
+  /** The onboard LED's pin. Absent or null when the view names none. */
+  ledPin?: string | null;
+  /** The chip's name and clock. Absent or null when the view names none. */
+  clock?: ChipClock | null;
+  /** The board's power pin. Absent on a hand-built outline. */
+  voltagePin?: string;
 };
 
 export type WorldOutlineWire = {
@@ -78,6 +91,11 @@ export type WorldOutlineInput = {
     firmware: string;
     source?: string;
     brownoutVoltage?: number;
+    pins?: readonly string[];
+    minOperatingVoltage?: number | null;
+    ledPin?: string | null;
+    clock?: ChipClock | null;
+    voltagePin?: string;
   }[];
   parts?: readonly {
     id: string;
@@ -220,7 +238,16 @@ export function buildWorldOutline(
       chip: board.chip,
       firmware: board.firmware,
       ...(board.source ? { source: board.source } : {}),
-      brownoutVoltage: board.brownoutVoltage ?? ATMEGA328P_BROWNOUT_V,
+      ...(board.brownoutVoltage !== undefined
+        ? { brownoutVoltage: board.brownoutVoltage }
+        : {}),
+      pins: board.pins ?? [],
+      ...(board.minOperatingVoltage !== undefined
+        ? { minOperatingVoltage: board.minOperatingVoltage }
+        : {}),
+      ...(board.ledPin !== undefined ? { ledPin: board.ledPin } : {}),
+      ...(board.clock !== undefined ? { clock: board.clock } : {}),
+      ...(board.voltagePin ? { voltagePin: board.voltagePin } : {}),
     })),
     supplies: supplyFeeds(world),
     targets: (world.targets ?? []).map((target) => target.id),

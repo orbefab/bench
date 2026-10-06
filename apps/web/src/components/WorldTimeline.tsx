@@ -40,7 +40,13 @@ import { goLive, scrubTo, useWorldTimeline } from "@/state/world-timeline";
  * Desktop scrub strip. Dragging moves this client's playhead only.
  * The shared run keeps its own sim time (D-015). Hidden in XR (D-008).
  */
-export function WorldTimeline({ docked = false }: { docked?: boolean }) {
+export function WorldTimeline({
+  docked = false,
+  framed = false,
+}: {
+  docked?: boolean;
+  framed?: boolean;
+}) {
   const { recording, data, playhead, previous } = useWorldTimeline();
   const probes = useProbes();
   const selection = useWorld((s) => s.selection);
@@ -91,7 +97,9 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
     </Button>
   );
   const shell = docked
-    ? "flex shrink-0 flex-col gap-1 border-t border-border bg-card px-2 py-1.5"
+    ? framed
+      ? "mx-3 mb-3 flex shrink-0 flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 shadow-lg"
+      : "flex shrink-0 flex-col gap-1 border-t border-border bg-card px-2 py-1.5"
     : "pointer-events-auto absolute inset-x-3 bottom-3 z-20 flex flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 shadow-lg";
   const rowClass = docked
     ? "flex items-center gap-2"
@@ -325,7 +333,13 @@ function ProbeRowView({
   return (
     <>
       {row.tracks.map((track) => {
-        const range = seriesRange([track.v], minSpan(track.unit));
+        // A solved pin draws its frame's lowest and highest step around
+        // the mean: a PWM node's ripple band.
+        const band = track.lo !== undefined && track.hi !== undefined;
+        const range = seriesRange(
+          band ? [track.v, track.lo ?? [], track.hi ?? []] : [track.v],
+          minSpan(track.unit)
+        );
         return (
           <div key={track.id} className="flex items-center gap-2 text-[11px]">
             <span className="w-44 shrink-0 truncate">
@@ -339,6 +353,26 @@ function ProbeRowView({
               aria-label={probeTrackLabel(track, rootName)}
               {...scrubHandlers(from, to)}
             >
+              {range && band ? (
+                <>
+                  <Spark
+                    track={track}
+                    from={from}
+                    to={to}
+                    field="lo"
+                    range={range}
+                    className="stroke-sky-500/40"
+                  />
+                  <Spark
+                    track={track}
+                    from={from}
+                    to={to}
+                    field="hi"
+                    range={range}
+                    className="stroke-sky-500/40"
+                  />
+                </>
+              ) : null}
               {range ? (
                 <Spark
                   track={track}
@@ -373,7 +407,7 @@ function Spark({
   track: TimelineTrack;
   from: number;
   to: number;
-  field: "v" | "lo";
+  field: "v" | "lo" | "hi";
   range: { min: number; max: number };
   className: string;
 }) {

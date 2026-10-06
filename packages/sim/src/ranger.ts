@@ -9,6 +9,8 @@
 import type { Pose } from "@sfab-bench/contract";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 
+import type { RunPin } from "./plan";
+
 /** Include geom group 0 only: targets and static primitives. */
 export const RANGER_GEOM_GROUP = [1, 0, 0, 0, 0, 0];
 
@@ -16,6 +18,8 @@ export const RANGER_GEOM_GROUP = [1, 0, 0, 0, 0, 0];
  * One centre ray, then five radial steps out to the half-angle and eight
  * azimuths. The outer ring sits on the cone, and two of the azimuths are
  * horizontal, so a sideways pole is within one radial step of the edge.
+ * The grid is a sampling choice, not a datasheet number: the HC-SR04 sheet
+ * gives the cone, not a ray count.
  */
 const RADIAL_STEPS = 5;
 const AZIMUTHS = 8;
@@ -48,11 +52,23 @@ export type RunRanger = {
   model: string;
   pose: Pose;
   law: RangerLaw;
-  /** Board pin that drives Trig. Null when Trig is unwired. */
+  pins: Record<string, RunPin>;
+  /**
+   * The type's trigger (logic in) and echo (logic out) ports. Null when
+   * the type declares none.
+   */
+  ports: { trig: string | null; echo: string | null };
+  /**
+   * Board pin that drives the trigger: the one digital board pin on the
+   * trigger's net. Null when there is none, or more than one.
+   */
   trig: { boardId: string; bit: number } | null;
-  /** Board pin Echo drives. Null when Echo is unwired. */
+  /** Board pin the echo drives, by the same rule. */
   echo: { boardId: string; bit: number } | null;
 };
+
+/** A ranger as its form places it, before the plan binds its pins. */
+export type PlacedRanger = Omit<RunRanger, "trig" | "echo">;
 
 export type RangerRay = {
   mj_ray(
@@ -169,7 +185,7 @@ export function castRanger(
 /**
  * One sensor during a run. `token` drops a scheduled edge after a reboot
  * replaces the CPU. `drew` stays set until the rail is solved, so a
- * measurement that starts and ends inside one millisecond still draws
+ * measurement that starts and ends inside one master step still draws
  * the working current.
  */
 export class RangerRuntime {
@@ -177,6 +193,8 @@ export class RangerRuntime {
   readonly directions: Vec3[];
   board: AvrBoard | null = null;
   supplyId: string | null = null;
+  /** The board whose power pin the ranger's power port reaches, when exactly one does. */
+  powerBoard: string | null = null;
   distanceM: number | null = null;
   echoS: number | null = null;
   hit = false;
@@ -193,7 +211,7 @@ export class RangerRuntime {
     this.directions = rangerDirections(spec.law.beamHalf);
   }
 
-  /** Volts on the node that feeds VCC, from the latch. */
+  /** Volts on the node that feeds the power port, from the latch. */
   volts: () => number = () => 0;
   physics: () => RangerPhysics | null = () => null;
 
@@ -204,7 +222,7 @@ export class RangerRuntime {
 
   /**
    * Amperes for the rail solve, then clear the one-step latch.
-   * Unpowered is 0. A measurement in this millisecond draws `working`.
+   * Unpowered is 0. A measurement in this master step draws `working`.
    */
   takeDraw(): number {
     const draw = !this.powered()

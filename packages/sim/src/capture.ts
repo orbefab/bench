@@ -14,11 +14,17 @@ import {
   type TableLaw,
   type WorldState,
 } from "@sfab-bench/contract";
-import { tableVoltage } from "@sfab-bench/engine-circuit";
+import {
+  Diode,
+  type DiodeParams,
+  Engine,
+  ISource,
+  tableVoltage,
+  thermalVoltage,
+} from "@sfab-bench/engine-circuit";
 import {
   contentHash,
   lintSnapshot,
-  loadPartById,
   type Store,
   sortValue,
 } from "@sfab-bench/parts";
@@ -27,12 +33,17 @@ import {
   writeHingeSnapshot,
 } from "./body/hinge-capture";
 import { branchDc } from "./branch-dc";
+import { acrossFor, captureProblem, currentSweep } from "./capture-recipe";
+import { stampSignature } from "./capture-signature";
 import {
-  assemblyStampOf,
-  type BoardStamp,
-  describeNetlist,
-} from "./circuit-stamp";
+  type CaptureSource,
+  captureSource,
+  readFixtureFile,
+} from "./capture-source";
+import { assemblyStampOf, type BoardStamp } from "./circuit-stamp";
 import type { StampEnv } from "./env";
+import { type GroupCaptureEntry, writeGroupSnapshot } from "./group-capture";
+import { frozenStore, type RunFiles } from "./run-context";
 
 export type FreeCase = {
   firmware: string;
@@ -48,7 +59,10 @@ export type CaptureFile<E = CaptureEntry> = {
   entries: E[];
 };
 
-export type AnyCaptureEntry = CaptureEntry | HingeCaptureEntry;
+export type AnyCaptureEntry =
+  | CaptureEntry
+  | HingeCaptureEntry
+  | GroupCaptureEntry;
 
 export type FreeRunSpec = {
   project: string;
@@ -86,6 +100,8 @@ export type CaptureEntry = {
     current?: number[];
   };
   envelope: { marginA?: number };
+  /** Write this two-port law, fitted to the sweep, instead of a table. */
+  fit?: "diode@1";
   /** Level id that takes the new variant. Absent: the level that holds a snapshot. */
   into?: string;
   freeRun?: FreeRunSpec;
@@ -137,6 +153,11 @@ export type CaptureEnv = {
     ms: number
   ): Promise<{ state: WorldState; read: RecordingRead }>;
   bench(): { version: string; mujoco: string; avr8js: string };
+  /**
+   * The files a run reads. A group capture's reducer reads its source
+   * side planned from a frozen context of them (`run-context.ts`).
+   */
+  files: RunFiles;
 };
 
 export type CaptureRun = {
@@ -144,7 +165,11 @@ export type CaptureRun = {
   fixtureFile?: string;
   config?: CaptureFile<AnyCaptureEntry> | AnyCaptureEntry;
   catalogDir?: string;
-  libraryDir?: string;
+  /**
+   * The project the capture reads its source from, before the catalog:
+   * parts, types and fixtures. Absent, the catalog alone.
+   */
+  projectDir?: string;
   /** Where to write. Absent, the fixture id names the catalog snapshot. */
   outFile?: string;
   /** Default true when `config.cases` has scenes. */
@@ -214,6 +239,20 @@ export async function captureFromConfig(
   return ran;
 }
 
+/** A snapshot capture that is not a table writes no table stats. */
+function emptyStats(): CaptureStats {
+  return {
+    staticMaxAbsMv: 0,
+    lineMaxAbsMv: 0,
+    knots: 0,
+    tripA: 0,
+    envelopeMaxA: 0,
+    cases: [],
+    moveUsPerMs: { class1: 0, class2: 0 },
+    json: "",
+  };
+}
+
 function readCaptureFile(
   catalog: string,
   inline: CaptureRun["config"],
@@ -240,12 +279,37 @@ async function captureEntry(
   env: CaptureEnv,
   stampEnv: StampEnv
 ): Promise<CaptureStats> {
+  const projected = captureSource(catalog, opts.projectDir, env);
+  const source = opts.fixtureFile
+    ? withFixture(projected, opts.fixtureFile)
+    : projected;
+  const problem = captureProblem(config, source);
+  if (problem) throw new Error(problem);
+  if ("scene" in config) {
+    const group = progressOf(opts, 1);
+    group.check();
+    await writeGroupSnapshot(
+      {
+        catalog,
+        source,
+        entry: config,
+        created: file.created,
+        tool: file.tool,
+        bench: benchVersions(env),
+        ...(opts.outFile ? { outFile: opts.outFile } : {}),
+      },
+      env
+    );
+    await group.step("group snapshot");
+    return emptyStats();
+  }
   if ("form" in config) {
     const hinge = progressOf(opts, 1);
     hinge.check();
     await writeHingeSnapshot(
       {
         catalog,
+        source,
         entry: config,
         created: file.created,
         tool: file.tool,
@@ -255,31 +319,22 @@ async function captureEntry(
       env
     );
     await hinge.step("hinge snapshot");
-    return {
-      staticMaxAbsMv: 0,
-      lineMaxAbsMv: 0,
-      knots: 0,
-      tripA: 0,
-      envelopeMaxA: 0,
-      cases: [],
-      moveUsPerMs: { class1: 0, class2: 0 },
-      json: "",
-    };
+    return emptyStats();
   }
-  const across = acrossOf(config, catalog, env, opts.libraryDir);
-  const stampOpts = {
-    catalogDir: catalog,
-    boardId: config.instance,
-    ...(opts.libraryDir ? { libraryDir: opts.libraryDir } : {}),
-  };
+  const across = acrossFor(config, typeOfPart(config.part, source));
+  if (typeof across === "string") throw new Error(across);
+  // The fitters read the source variant's realization from frozen copies.
   const stamp = assemblyStampOf(
     config.part,
     config.variant,
     {
-      ...stampOpts,
+      catalogDir: catalog,
+      worldDir: source.worldDir,
+      assetRoot: source.worldDir,
+      boardId: config.instance,
       across,
     },
-    stampEnv
+    { ...stampEnv, store: frozenStore(env.files) }
   );
   for (const name of [across[0], across[1], config.through]) {
     if (!stamp.portNodes[name]) {
@@ -288,14 +343,10 @@ async function captureEntry(
   }
   const dc = (amps: number) => branchDc(stamp, across[0], across[1], amps);
   const fixture = config.sweep.fixture
-    ? readFixture(
-        opts.fixtureFile ??
-          env.join(catalog, "fixtures", `${config.sweep.fixture}.fixture.json`),
-        env
-      )
+    ? fixtureOf(source, config.sweep.fixture)
     : null;
   const sweep = fixture
-    ? sweepsOf(fixture, config)
+    ? { current: sweepOf(fixture, config) }
     : { current: config.sweep.current ?? [] };
   const tripA = sweep.current[sweep.current.length - 1] ?? 0;
   const envelopeMaxA = sweep.current[sweep.current.length - 1];
@@ -305,6 +356,9 @@ async function captureEntry(
     );
   }
   const atTyp = sweep.current.map((amps) => dc(amps));
+  monotone(config.part, sweep.current, atTyp);
+  const fitted =
+    config.fit === "diode@1" ? fitDiode(sweep.current, atTyp) : null;
   const lineMaxAbsMv = lineError(sweep.current, atTyp) * 1000;
   const knots = fitKnots(sweep.current, atTyp, config.fitV);
   const law: TableLaw = {
@@ -313,14 +367,17 @@ async function captureEntry(
     iAxis: knots,
     vAxis: knots.map((amps) => round9(dc(amps))),
   };
-  let staticMax = 0;
-  for (const amps of sweep.current) {
-    const err = Math.abs(dc(amps) - tableVoltage(law, amps));
-    if (err > staticMax) staticMax = err;
-  }
+  const staticMax = maxBetween(sweep.current, (amps) =>
+    Math.abs(
+      dc(amps) - (fitted ? diodeDc(fitted, amps) : tableVoltage(law, amps))
+    )
+  );
 
-  const partType = partTypeOf(config.part, catalog, env, opts.libraryDir);
-  const hash = contentHash(describeNetlist(stamp, 0, "header"));
+  const type = typeOfPart(config.part, source);
+  const hash = stampSignature(stamp, {
+    level: config.baseline.level,
+    variant: config.variant,
+  });
   const bench = benchVersions(env);
   const scenes = Object.entries(config.cases ?? {}).map(([name, row]) => ({
     name,
@@ -339,10 +396,11 @@ async function captureEntry(
     fixtureRef: config.sweep.fixture ?? config.id,
     config,
     file,
-    partType,
+    partType: type.id,
     hash,
     bench,
     envelopeMaxA,
+    ...(fitted ? { fitted } : {}),
   };
   if (!runFree) {
     const quantity = `${across[0]}.voltage`;
@@ -361,7 +419,7 @@ async function captureEntry(
         : "none-available",
       quality: "Q1",
     });
-    const lint = lintBoard(base, partType, catalog, env);
+    const lint = lintBoard(base, type);
     if (lint.diagnostics.length > 0) {
       throw new Error(
         `snapshot lint ${lint.quality}: ${lint.diagnostics.map((d) => d.message).join("; ")}`
@@ -424,7 +482,7 @@ async function captureEntry(
     ],
     quality: "Q2a",
   });
-  const lint = lintBoard(done, partType, catalog, env);
+  const lint = lintBoard(done, type);
   if (lint.diagnostics.length > 0 || lint.quality !== "Q2a") {
     const text = lint.diagnostics.map((diag) => diag.message).join("; ");
     throw new Error(`snapshot lint ${lint.quality}: ${text}`);
@@ -454,37 +512,23 @@ function snapshotPath(catalog: string, id: string, env: CaptureEnv): string {
   return env.join(catalog, "snapshots", publisher, `${name}@${version}.json`);
 }
 
-function partTypeOf(
-  partId: string,
-  catalog: string,
-  env: CaptureEnv,
-  libraryDir?: string
-): string {
-  const worldDir = env.join(catalog, ".board-stamp-world");
-  const loaded = loadPartById(
-    worldDir,
-    {
-      store: env.store,
-      catalogDir: catalog,
-      assetRoot: catalog,
-      ...(libraryDir ? { libraryDir } : {}),
-    },
-    partId
-  );
-  if (!("part" in loaded)) throw new Error(loaded.message);
-  const type = loaded.part.type;
-  return typeof type === "string" ? type : type.id;
+/** The part's type as the source reads it: the project's, else the catalog's. */
+function typeOfPart(partId: string, source: CaptureSource): PartTypeFile {
+  const found = source.part(partId);
+  if (!found) throw new Error(`${partId} did not load`);
+  const type = source.typeOf(found.part);
+  if (!type) throw new Error(`${partId} type did not load`);
+  return type;
 }
-
-function lintBoard(
-  snap: SnapshotFile,
-  partType: string,
-  catalog: string,
-  env: CaptureEnv
-) {
-  const type = JSON.parse(
-    env.readText(env.join(catalog, "types", `${partType}.json`))
-  ) as PartTypeFile;
+/** The source with one fixture file in place of the one it would read. */
+function withFixture(source: CaptureSource, file: string): CaptureSource {
+  return {
+    ...source,
+    fixture: () => file,
+    readFixture: (id) => readFixtureFile(source.store, file, id),
+  };
+}
+function lintBoard(snap: SnapshotFile, type: PartTypeFile) {
   return lintSnapshot(snap, { plausible: type.plausible, ports: type.ports });
 }
 
@@ -500,6 +544,8 @@ function snapshotOf(input: {
   envelopeMaxA: number;
   error: SnapshotFile["error"];
   quality: SnapshotFile["quality"];
+  /** A `diode@1` fitted to the sweep, written in place of the table. */
+  fitted?: FittedDiode;
 }): SnapshotFile {
   const port = input.law.across[0];
   const inputs = [`${port}.current`];
@@ -514,14 +560,23 @@ function snapshotOf(input: {
     partType: input.partType,
     part: input.config.part,
     axis: "behaviour",
-    form: "table@1",
     ports: { inputs, outputs: [`${port}.voltage`] },
-    params: {
-      across: [...input.law.across],
-      iSense: input.law.iSense,
-      iAxis: [...input.law.iAxis],
-      vAxis: [...input.law.vAxis],
-    },
+    ...(input.fitted
+      ? {
+          form: "diode@1" as const,
+          // `across` is the swept pair; the stale check stamps it again.
+          params: { ...input.fitted, across: [...input.law.across] },
+          bind: { A: input.law.across[0], K: input.law.across[1] },
+        }
+      : {
+          form: "table@1" as const,
+          params: {
+            across: [...input.law.across],
+            iSense: input.law.iSense,
+            iAxis: [...input.law.iAxis],
+            vAxis: [...input.law.vAxis],
+          },
+        }),
     envelope: { bounds },
     error: input.error,
     quality: input.quality,
@@ -556,48 +611,16 @@ function writeSnapshot(
   return json;
 }
 
-function readFixture(file: string, env: CaptureEnv): FixtureFile {
-  const fixture = JSON.parse(env.readText(file)) as FixtureFile;
-  if (fixture.format !== FIXTURE_FORMAT) {
-    throw new Error(`fixture format ${fixture.format}`);
-  }
+function fixtureOf(source: CaptureSource, id: string): FixtureFile {
+  const fixture = source.readFixture(id);
+  if (typeof fixture === "string") throw new Error(fixture);
   return fixture;
 }
 
-function sweepsOf(
-  fixture: FixtureFile,
-  entry: CaptureEntry
-): { current: number[] } {
-  const current = fixture.sweeps.find(
-    (row) =>
-      row.port === (entry.sweep.currentPort ?? entry.through) &&
-      row.quantity === entry.sweep.currentQuantity
-  );
-  if (!current) {
-    throw new Error(`${entry.part} fixture has no current sweep`);
-  }
-  return { current: current.values };
-}
-
-function acrossOf(
-  entry: CaptureEntry,
-  catalog: string,
-  env: CaptureEnv,
-  libraryDir?: string
-): [string, string] {
-  if (entry.across && entry.across.length === 2) return entry.across;
-  const typeId = partTypeOf(entry.part, catalog, env, libraryDir);
-  const type = JSON.parse(
-    env.readText(env.join(catalog, "types", `${typeId}.json`))
-  ) as PartTypeFile;
-  const exposed = Object.entries(type.ports)
-    .filter(([, decl]) => decl.role !== "ground")
-    .map(([name]) => name);
-  throw new Error(
-    exposed.length >= 2
-      ? `${entry.part} has ${exposed.join(" and ")} exposed and no across`
-      : `${entry.part} capture entry has no across`
-  );
+function sweepOf(fixture: FixtureFile, entry: CaptureEntry): number[] {
+  const current = currentSweep(fixture, entry);
+  if (typeof current === "string") throw new Error(current);
+  return current;
 }
 
 function benchVersions(env: CaptureEnv): {
@@ -631,6 +654,180 @@ function lineError(current: number[], volts: number[]): number {
     if (err > max) max = err;
   }
   return max;
+}
+
+type FittedDiode = Pick<DiodeParams, "Is" | "N" | "Rs">;
+
+/** A two-port DC sweep moves one way: a passive branch never folds back. */
+function monotone(part: string, current: number[], volts: number[]): void {
+  let up = false;
+  let down = false;
+  for (let k = 1; k < volts.length; k++) {
+    const step = (volts[k] ?? 0) - (volts[k - 1] ?? 0);
+    if (step > 0) up = true;
+    if (step < 0) down = true;
+    if (up && down) {
+      throw new Error(
+        `${part}: the drop turns back between ${current[k - 1]} A and ${current[k]} A`
+      );
+    }
+  }
+}
+
+/**
+ * `diode@1` from a forward sweep: `V = N·Vt·ln(I/Is) + Rs·I` is linear in
+ * `N·Vt`, `−N·Vt·ln Is` and `Rs`, so least squares over the points above
+ * 0 A. The `+1` inside the log is below 1e-10 of `I/Is` there.
+ */
+function fitDiode(current: number[], volts: number[]): FittedDiode {
+  const rows = current
+    .map((amps, k) => [amps, volts[k] ?? Number.NaN] as const)
+    .filter(([amps]) => amps > 0);
+  if (rows.length < 3) {
+    throw new Error("a diode fit needs three sweep points above 0 A");
+  }
+  const scale = Math.max(...rows.map(([amps]) => amps));
+  const ata = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  const atb = [0, 0, 0];
+  for (const [amps, v] of rows) {
+    const f = [Math.log(amps), 1, amps / scale];
+    for (let i = 0; i < 3; i++) {
+      atb[i] = (atb[i] ?? 0) + (f[i] ?? 0) * v;
+      for (let j = 0; j < 3; j++) {
+        const row = ata[i] as number[];
+        row[j] = (row[j] ?? 0) + (f[i] ?? 0) * (f[j] ?? 0);
+      }
+    }
+  }
+  const [a, b, rScaled] = solve3(ata, atb);
+  const Rs = rScaled / scale;
+  // A junction's N is about 1 or more. Far below that the sweep has no
+  // knee (a resistor fits with N near 0), and the law would claim blocking.
+  if (!(a / thermalVoltage(25) >= 0.5) || !(Rs >= 0)) {
+    throw new Error(`the sweep is not a forward diode (N·Vt ${a}, Rs ${Rs})`);
+  }
+  const fit = {
+    Is: round12(Math.exp(-b / a)),
+    N: round12(a / thermalVoltage(25)),
+    Rs: round12(Rs),
+  };
+  return fit;
+}
+
+function solve3(m: number[][], v: number[]): [number, number, number] {
+  const a = m.map((row, i) => [...row, v[i] ?? 0]);
+  for (let c = 0; c < 3; c++) {
+    let pivot = c;
+    for (let r = c + 1; r < 3; r++) {
+      if (Math.abs(a[r]?.[c] ?? 0) > Math.abs(a[pivot]?.[c] ?? 0)) pivot = r;
+    }
+    [a[c], a[pivot]] = [a[pivot] as number[], a[c] as number[]];
+    const top = a[c] as number[];
+    for (let r = c + 1; r < 3; r++) {
+      const row = a[r] as number[];
+      const k = (row[c] ?? 0) / (top[c] ?? 1);
+      for (let j = c; j < 4; j++) row[j] = (row[j] ?? 0) - k * (top[j] ?? 0);
+    }
+  }
+  const x = [0, 0, 0];
+  for (let r = 2; r >= 0; r--) {
+    const row = a[r] as number[];
+    let sum = row[3] ?? 0;
+    for (let j = r + 1; j < 3; j++) sum -= (row[j] ?? 0) * (x[j] ?? 0);
+    x[r] = sum / (row[r] ?? 1);
+  }
+  return [x[0] ?? 0, x[1] ?? 0, x[2] ?? 0];
+}
+
+/** The fitted law's drop, solved by the same engine the run uses. */
+function diodeDc(fit: FittedDiode, amps: number): number {
+  const engine = new Engine(
+    [
+      new Diode("d", "a", "0", { ...fit, tempC: 25 }),
+      new ISource("is", "0", "a", { kind: "dc", value: amps }),
+    ],
+    { method: "be", h: 1e-3, atol: 1e-14, rtol: 1e-12 }
+  );
+  engine.operatingPoint();
+  return engine.voltage("a");
+}
+
+function round12(n: number): number {
+  return Number(n.toPrecision(12));
+}
+
+/**
+ * The largest `err` over the sweep: what a `static-max-abs` row states. The
+ * knots are sweep points, so the error that matters is between them. Each
+ * interval is sampled at 32 steps, plus a halving ladder when it starts at
+ * 0 A, where a diode knee sits; every local peak among the samples is then
+ * refined between its neighbours. A peak narrower than the sample spacing can
+ * still be missed; snapshot-holdout.selfcheck re-checks on its own grid.
+ */
+function maxBetween(
+  current: readonly number[],
+  err: (amps: number) => number
+): number {
+  let worst = 0;
+  for (let k = 0; k + 1 < current.length; k++) {
+    const lo = current[k] ?? 0;
+    const hi = current[k + 1] ?? 0;
+    const points = new Set([lo, hi]);
+    for (let j = 1; j < 32; j++) points.add(lo + ((hi - lo) * j) / 32);
+    if (lo === 0) for (let j = 1; j <= 12; j++) points.add(hi / 2 ** j);
+    // From 0 A the search stays above the ladder's last point: below a few
+    // nA the class-2 solve has no answer to compare (C1).
+    const floor = lo === 0 ? hi / 2 ** 12 : lo;
+    const sorted = [...points].sort((a, b) => a - b);
+    const errs = sorted.map(err);
+    for (let i = 0; i < errs.length; i++) {
+      const here = errs[i] ?? 0;
+      worst = Math.max(worst, here);
+      if (here < (errs[i - 1] ?? 0) || here < (errs[i + 1] ?? 0)) continue;
+      const around = goldenMax(
+        err,
+        Math.max(sorted[Math.max(i - 1, 0)] ?? lo, floor),
+        sorted[Math.min(i + 1, sorted.length - 1)] ?? hi
+      );
+      worst = Math.max(worst, around);
+    }
+  }
+  return worst;
+}
+
+/**
+ * The maximum of `f` on `[a, b]` by golden-section search, when `f` has one
+ * peak there. With more than one it returns one of them, not necessarily the
+ * largest.
+ */
+function goldenMax(f: (x: number) => number, a: number, b: number): number {
+  const r = (Math.sqrt(5) - 1) / 2;
+  let lo = a;
+  let hi = b;
+  let c = hi - r * (hi - lo);
+  let d = lo + r * (hi - lo);
+  let fc = f(c);
+  let fd = f(d);
+  for (let i = 0; i < 40; i++) {
+    if (fc > fd) {
+      hi = d;
+      d = c;
+      fd = fc;
+      c = hi - r * (hi - lo);
+      fc = f(c);
+    } else {
+      lo = c;
+      c = d;
+      fc = fd;
+      d = lo + r * (hi - lo);
+      fd = f(d);
+    }
+  }
+  return Math.max(fc, fd);
 }
 
 function fitKnots(current: number[], volts: number[], fitV: number): number[] {

@@ -829,14 +829,15 @@ function currentRow(ctx: StampCtx, iCol: number, value: number): void {
 export type Braking = "clip" | "return";
 
 /**
- * Averaged H-bridge and `dc-motor@1` winding, one branch.
+ * Averaged H-bridge and winding fused in one branch: the `position-servo@1`
+ * law on the rail.
  * `V_motor = s·V_rail`. The rail draws `s·I` while motoring.
  * With `clip` (the default, ADR 0010) a negative `s·I` does not return.
  * `L = 0` is the algebraic law. ω is an input, held across electrical sub-steps.
  * Quiescent current is a `CurrentLoad` on the rail, not part of this branch.
  */
 export class BridgeMotor implements Element {
-  readonly form = "dc-motor@1";
+  readonly form = "position-servo@1";
   readonly nonlinear: boolean;
   rail = -1;
   ibr = -1;

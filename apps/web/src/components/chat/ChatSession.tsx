@@ -10,6 +10,7 @@ import { firstUserLine } from "@/chat/history";
 import { isTurnErrorPart } from "@/chat/persist-thread";
 import { useBenchChat } from "@/chat/useBenchChat";
 import {
+  type ChatComposerLayout,
   type GalleryChatHandle,
   GalleryChatInput,
   type GalleryPromptMessage,
@@ -114,6 +115,8 @@ export function ChatSession({
   stopTurnRef,
   captureDraftRef,
   composerRef,
+  layout = "stacked",
+  hideEmpty = false,
 }: {
   threadId: string;
   initialMessages: GalleryChatMessage[];
@@ -131,6 +134,8 @@ export function ChatSession({
   stopTurnRef: RefObject<(() => void) | null>;
   captureDraftRef: RefObject<(() => void) | null>;
   composerRef: RefObject<GalleryChatHandle | null>;
+  layout?: ChatComposerLayout;
+  hideEmpty?: boolean;
 }) {
   const progress = useViewer((s) => s.progress);
   const url = useViewer((s) => s.url);
@@ -218,6 +223,7 @@ export function ChatSession({
     });
   }, [messages, busy, pendingAsk, liveError, tailErrorId, onMeta]);
 
+  const showTranscript = !hideEmpty || messages.length > 0;
   return (
     <>
       {liveError && errorText ? (
@@ -246,52 +252,58 @@ export function ChatSession({
           )}
         </div>
       ) : null}
-      <MessageScrollerProvider autoScroll>
-        <MessageScroller className="min-h-0 flex-1">
-          <MessageScrollerViewport>
-            <MessageScrollerContent className="px-3 py-3">
-              {messages.length === 0 ? (
-                <Empty className="h-full border-0">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <MessageCircleDashedIcon />
-                    </EmptyMedia>
-                    <EmptyTitle>How can I help?</EmptyTitle>
-                    <EmptyDescription>
-                      Ask for a CAD change. Try “What am I looking at?” then a
-                      size change.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                messages.map((message) => (
-                  <MessageScrollerItem
-                    key={message.id}
-                    messageId={message.id}
-                    scrollAnchor={message.role === "user"}
-                    className={
-                      streamingMessageId === message.id
-                        ? "[content-visibility:visible]"
-                        : undefined
-                    }
-                  >
-                    <ChatMessageRow
-                      isStreaming={streamingMessageId === message.id}
-                      message={message as GalleryChatMessage}
-                      onRetry={
-                        tailErrorId === message.id ? retryFailedTurn : undefined
+      {showTranscript ? (
+        <MessageScrollerProvider autoScroll>
+          <MessageScroller className="min-h-0 flex-1">
+            <MessageScrollerViewport>
+              <MessageScrollerContent className="px-3 py-3">
+                {messages.length === 0 ? (
+                  <Empty className="h-full border-0">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <MessageCircleDashedIcon />
+                      </EmptyMedia>
+                      <EmptyTitle>How can I help?</EmptyTitle>
+                      <EmptyDescription>
+                        Ask for a CAD change. Try “What am I looking at?” then a
+                        size change.
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  messages.map((message) => (
+                    <MessageScrollerItem
+                      key={message.id}
+                      messageId={message.id}
+                      scrollAnchor={message.role === "user"}
+                      className={
+                        streamingMessageId === message.id
+                          ? "[content-visibility:visible]"
+                          : undefined
                       }
-                    />
-                  </MessageScrollerItem>
-                ))
-              )}
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-          {pendingAsk ? null : <MessageScrollerButton />}
-        </MessageScroller>
-      </MessageScrollerProvider>
+                    >
+                      <ChatMessageRow
+                        isStreaming={streamingMessageId === message.id}
+                        message={message as GalleryChatMessage}
+                        onRetry={
+                          tailErrorId === message.id
+                            ? retryFailedTurn
+                            : undefined
+                        }
+                      />
+                    </MessageScrollerItem>
+                  ))
+                )}
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+            {pendingAsk ? null : <MessageScrollerButton />}
+          </MessageScroller>
+        </MessageScrollerProvider>
+      ) : null}
       <GalleryChatInput
         canStop={pendingViewer !== null}
+        elevated={hideEmpty && messages.length === 0}
+        layout={layout}
         loadingModel={loadingModel}
         modelLoaded={Boolean(url) && progress === null}
         onAnswerAskUser={answerAskUser}

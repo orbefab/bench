@@ -111,4 +111,26 @@ expect(
 );
 expect(documentWarnings(map).length === 1, "an empty path is document-level");
 
+// A capture freshness could not check marks its path, with the reason.
+const REASON =
+  "the group reaches sfab/x@1.0.0, whose snapshot files its signature does not cover";
+const unchecked = warningsByPath({
+  snapshots: [
+    { path: "nano.power", unchecked: REASON },
+    { path: "nano.led", unchecked: null },
+  ],
+});
+const power = unchecked.get("nano.power") ?? [];
+expect(
+  power.length === 1 &&
+    power[0]?.code === "unchecked-capture" &&
+    power[0].message.includes(REASON),
+  `unchecked capture ${JSON.stringify(power)}`
+);
+expect(
+  warnedPaths(unchecked).has("nano.power") &&
+    !warnedPaths(unchecked).has("nano.led"),
+  "a checked capture is not marked"
+);
+
 console.log("world-warnings.selfcheck ok");

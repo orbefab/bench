@@ -311,7 +311,7 @@ try {
   );
   expect(gap?.path === "board", `no-image diagnostic path ${gap?.path}`);
   expect(
-    !(bare.plan.degraded ?? []).some((row) => row.code === "unresolved"),
+    !(bare.plan.degraded ?? []).some((row) => row.code === "bad-params"),
     "an optional forward reports nothing"
   );
   console.log(

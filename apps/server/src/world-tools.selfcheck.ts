@@ -29,6 +29,8 @@ function msOf(simTime: number): number {
   return Math.round(simTime * 1000);
 }
 
+// ±4 µs is ADR 0009's measured band for an unmodified Servo.h sweep on
+// avr8js (every completed pulse within it of 647, 1472 and 1781 µs).
 function hasWidth(widths: number[], target: number): boolean {
   return widths.some((width) => Math.abs(width - target) <= 4);
 }
@@ -120,6 +122,12 @@ unpowered.wires = unpowered.wires.filter(
 );
 writeDraft(root, "unpowered.world.json", unpowered);
 
+// A second board pin on the servo's signal net: the pulse is not bound, and
+// the part's degraded row is on read_world's warnings.
+const unbound = structuredClone(arm);
+unbound.wires = [...unbound.wires, ["uno.D10", "servo.signal"]];
+writeDraft(root, "unbound.world.json", unbound);
+
 const events: WorldServerMessage[] = [];
 const held: WorldHandle[] = [];
 
@@ -152,12 +160,14 @@ function call(
   return Promise.resolve(execute(input as never, {} as never));
 }
 
+// Other checks share this process; count workers from here.
+const workersBefore = worldWorkerCount();
+
 try {
   expect(
     typeof worldTools.world_status.execute === "function",
     "world_status runs on the server"
   );
-  expect(worldWorkerCount() === 0, "a worker was already up");
   const closed = await call(worldTools.world_status, {
     world: "parts/sfab/arm-bench@1.0.0.json",
   });
@@ -173,7 +183,7 @@ try {
     errorOf(closedRead) === "no project open",
     `closed read ${JSON.stringify(closedRead)}`
   );
-  expect(worldWorkerCount() === 0, "no project started a worker");
+  expect(worldWorkerCount() === workersBefore, "no project started a worker");
 
   await runViewerContext(
     {
@@ -223,7 +233,10 @@ try {
           `track ${track}: ${JSON.stringify(bad)}`
         );
       }
-      expect(worldWorkerCount() === 0, "an unknown track started a worker");
+      expect(
+        worldWorkerCount() === workersBefore,
+        "an unknown track started a worker"
+      );
       expect(
         !worldDocumentOpen(root, "parts/sfab/arm-bench@1.0.0.json"),
         "an unknown track opened the arm"
@@ -244,7 +257,7 @@ try {
           `ms out of range ${JSON.stringify(bad)}`
         );
       }
-      expect(worldWorkerCount() === 0, "an error started a worker");
+      expect(worldWorkerCount() === workersBefore, "an error started a worker");
       expect(
         !worldDocumentOpen(root, "parts/sfab/arm-bench@1.0.0.json"),
         "an error opened the arm"
@@ -376,6 +389,34 @@ try {
         Array.isArray(recorded.warnings) && recorded.warnings.length === 0,
         `recording warnings ${JSON.stringify(recorded.warnings)}`
       );
+      // A supply track returns the field it names, and nothing more.
+      for (const field of ["voltage", "minVoltage"]) {
+        const only = await call(worldTools.read_recording, {
+          world: "parts/sfab/arm-bench@1.0.0.json",
+          from: 0,
+          to: 0.5,
+          tracks: [`supply:${supply.id}.${field}`],
+          maxFrames: 20,
+        });
+        expect(!errorOf(only), `supply ${field} ${JSON.stringify(only)}`);
+        const rows =
+          isRecord(only) && Array.isArray(only.frames)
+            ? only.frames.flatMap((frame) =>
+                isRecord(frame) && isRecord(frame.supplies)
+                  ? Object.values(frame.supplies)
+                  : []
+              )
+            : [];
+        expect(rows.length > 0, `supply ${field}: no rows`);
+        for (const row of rows) {
+          expect(
+            isRecord(row) &&
+              Object.keys(row).join() === field &&
+              typeof row[field] === "number",
+            `supply ${field} track kept ${JSON.stringify(row)}`
+          );
+        }
+      }
       const manifest = recorded.manifest;
       expect(isRecord(manifest), "recording has no manifest");
       if (isRecord(manifest)) {
@@ -749,6 +790,22 @@ try {
         ),
         `unpowered diagnostics ${JSON.stringify(notes)}`
       );
+
+      const split = await call(worldTools.world_status, {
+        world: "unbound.world.json",
+      });
+      expect(!errorOf(split), `unbound ${JSON.stringify(split)}`);
+      const splitWarnings =
+        isRecord(split) && Array.isArray(split.warnings) ? split.warnings : [];
+      expect(
+        splitWarnings.some(
+          (line) =>
+            typeof line === "string" &&
+            line.startsWith("servo: ") &&
+            line.includes("signal reaches 2 board pins")
+        ),
+        `unbound warnings ${JSON.stringify(splitWarnings)}`
+      );
     }
   );
 } finally {
@@ -757,9 +814,10 @@ try {
   await stopWorld(root, "parts/sfab/arm-stall@1.0.0.json");
   await stopWorld(root, "two.world.json");
   await stopWorld(root, "unpowered.world.json");
+  await stopWorld(root, "unbound.world.json");
   closeRootWatches();
   rmSync(root, { recursive: true, force: true });
 }
 
-expect(worldWorkerCount() === 0, "a world worker was left behind");
+expect(worldWorkerCount() === workersBefore, "a world worker was left behind");
 console.log("world-tools.selfcheck ok");

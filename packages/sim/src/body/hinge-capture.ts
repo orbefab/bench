@@ -5,7 +5,6 @@
  */
 import type { MainModule, MjData, MjModel } from "@mujoco/mujoco";
 import {
-  FIXTURE_FORMAT,
   type FixtureFile,
   type GearTrain,
   type PartFile,
@@ -16,8 +15,9 @@ import {
 
 import { collapse, gearTrainXml, hingeXml } from "@sfab-bench/engine-body";
 import { contentHash, lintSnapshot, sortValue } from "@sfab-bench/parts";
-
 import type { CaptureEnv } from "../capture";
+import { hingeSignature } from "../capture-signature";
+import type { CaptureSource } from "../capture-source";
 
 const STEP_S = 0.001;
 
@@ -35,6 +35,8 @@ export type HingeCaptureEntry = {
 
 export type HingeCaptureInput = {
   catalog: string;
+  /** Where the part, its type and the fixture are read. */
+  source: CaptureSource;
   entry: HingeCaptureEntry;
   created: string;
   tool: { name: string; version: string };
@@ -57,19 +59,24 @@ export async function writeHingeSnapshot(
   input: HingeCaptureInput,
   env: CaptureEnv
 ): Promise<void> {
-  const part = readPart(input.catalog, input.entry.part, env);
+  const part = input.source.part(input.entry.part)?.part;
+  if (!part) throw new Error(`${input.entry.part} did not load`);
   const train = gearTrainOf(part, input.entry.sourceLevel);
-  const typeId = typeof part.type === "string" ? part.type : part.type.id;
-  const type = readType(input.catalog, typeId, env);
-  const fixturePath = env.join(
-    input.catalog,
-    "fixtures",
-    `${input.entry.fixture}.fixture.json`
-  );
-  const fixture = JSON.parse(env.readText(fixturePath)) as FixtureFile;
-  if (fixture.format !== FIXTURE_FORMAT) {
-    throw new Error(`${input.entry.fixture} is not ${FIXTURE_FORMAT}`);
+  const source = {
+    level: input.entry.sourceLevel,
+    variant: part.axes?.body?.[input.entry.sourceLevel]?.default ?? "",
+  };
+  const fromHash = hingeSignature(part, source);
+  if (!fromHash) {
+    throw new Error(
+      `${part.id} class ${source.level} body is not a gear train`
+    );
   }
+  const type = input.source.typeOf(part);
+  if (!type) throw new Error(`${part.id} type did not load`);
+  const typeId = type.id;
+  const fixture = input.source.readFixture(input.entry.fixture);
+  if (typeof fixture === "string") throw new Error(fixture);
   const hinge = collapse(train);
   const cases = casesOf(fixture);
   const mj = await mujoco();
@@ -195,8 +202,9 @@ export async function writeHingeSnapshot(
       from: {
         part: part.id,
         level: input.entry.sourceLevel,
-        hash: contentHash(train),
+        hash: fromHash,
       },
+      variant: source.variant,
       fixture: {
         ref: input.entry.fixture,
         hash: contentHash(fixture),
@@ -232,6 +240,26 @@ function gearTrainOf(
     throw new Error(`${part.id} class ${level} body is not a gear train`);
   }
   return impl;
+}
+
+/**
+ * Why this part and type cannot take a hinge capture, or null: the type
+ * names its rotational output and the part rates that shaft's speed and
+ * torque (the fixture must reach both).
+ */
+export function hingeProblem(
+  part: PartFile,
+  type: PartTypeFile
+): string | null {
+  const shaft = Object.values(type.ports).some(
+    (decl) => decl.domain === "rotational" && decl.direction === "out"
+  );
+  if (!shaft) return `${type.id} has no rotational output`;
+  const ratings = part.ratings?.shaft;
+  if (!pair(ratings?.speed) || !pair(ratings?.torque)) {
+    return `${part.id} shaft has no speed and torque ratings`;
+  }
+  return null;
 }
 
 function shaftName(type: PartTypeFile): string {
@@ -414,27 +442,6 @@ function pair(value: unknown): [number, number] | null {
 
 function round9(n: number): number {
   return Math.round(n * 1e9) / 1e9;
-}
-
-function readPart(catalog: string, id: string, env: CaptureEnv): PartFile {
-  return JSON.parse(env.readText(partPath(catalog, id, env))) as PartFile;
-}
-
-function readType(catalog: string, id: string, env: CaptureEnv): PartTypeFile {
-  return JSON.parse(
-    env.readText(env.join(catalog, "types", `${id}.json`))
-  ) as PartTypeFile;
-}
-
-function partPath(catalog: string, id: string, env: CaptureEnv): string {
-  const slash = id.indexOf("/");
-  const at = id.lastIndexOf("@");
-  return env.join(
-    catalog,
-    "parts",
-    id.slice(0, slash),
-    `${id.slice(slash + 1, at)}@${id.slice(at + 1)}.json`
-  );
 }
 
 function snapshotPath(catalog: string, id: string, env: CaptureEnv): string {

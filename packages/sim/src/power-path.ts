@@ -15,7 +15,11 @@
  * on the constants. A value marked assumed is not in those documents.
  */
 
-import { type DiodeParams, thermalVoltage } from "@sfab-bench/engine-circuit";
+import {
+  type DiodeParams,
+  type LdoParams,
+  thermalVoltage,
+} from "@sfab-bench/engine-circuit";
 
 /** Supply side of F1. The rail's Thevenin terminal when the path is on. */
 export const UNO_TERM_NODE = "term";
@@ -87,6 +91,19 @@ export const UNO_PC2_ESR = PC2_TAN_DELTA / (2 * Math.PI * 120 * UNO_PC2_C);
  * or the bill. Assumed 0, so each one is an ideal capacitor.
  */
 export const UNO_DECOUPLE_C = 100e-9;
+/**
+ * U2, the LP2985-3.3 on +5V (`sfab/lp2985-3v3@1.0.0`, TI SLVS216). It
+ * feeds the VIN comparator's 3.3 V reference and draws its 65 µA ground
+ * current from the board node whatever the feed. Its output carries
+ * nothing else on this path.
+ */
+export const UNO_U2_LDO: LdoParams = {
+  vOut: 3.3,
+  dropout: [[0.15, 0.28]],
+  iGround: 6.5e-5,
+  iLimit: 0.4,
+  rOut: 0,
+};
 
 /**
  * Where the supply attaches. `usb` is VBUS. `header` is the 5V node.

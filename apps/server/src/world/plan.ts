@@ -32,6 +32,10 @@ export type {
 };
 export { WORLD_V1_MESSAGE };
 
-export function planWorld(project: string, worldRel: string): PlanResult {
-  return simPlanWorld(project, worldRel, nodePlanEnv);
+export function planWorld(
+  project: string,
+  worldRel: string,
+  options: { context?: boolean } = {}
+): PlanResult {
+  return simPlanWorld(project, worldRel, nodePlanEnv, options);
 }

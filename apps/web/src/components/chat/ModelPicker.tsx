@@ -1,7 +1,15 @@
+import {
+  CHAT_EFFORT_LABEL,
+  CHAT_EFFORTS,
+  HARNESS_IDS,
+  HARNESS_LABEL,
+  type HarnessId,
+  harnessSupportsEffort,
+} from "@sfab-bench/contract";
 import { ChevronDown, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
 import {
+  EFFORT_TRIGGER_TITLE,
   groupPickerModels,
   harnessStatusTitle,
   isModelFavorite,
@@ -26,7 +34,6 @@ import {
 } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { useHarnesses } from "@/hooks/useHarnesses";
-import { HARNESS_IDS, HARNESS_LABEL, type HarnessId } from "@/lib/harness";
 import { cn } from "@/lib/utils";
 import { usePrefs } from "@/state/prefs";
 
@@ -78,7 +85,51 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
-export function ModelPicker({ catalog }: { catalog: HarnessCatalog }) {
+function EffortChoices() {
+  const harness = usePrefs((s) => s.chatHarness);
+  const effort = usePrefs((s) => s.chatEffort);
+  const setChatEffort = usePrefs((s) => s.setChatEffort);
+  if (!harnessSupportsEffort(harness)) {
+    return (
+      <div className="border-t border-border px-2 py-1.5 text-xs text-muted-foreground">
+        Effort isn&apos;t available for {HARNESS_LABEL[harness]}
+      </div>
+    );
+  }
+  return (
+    <div
+      aria-label="Reasoning effort"
+      className="flex flex-wrap items-center gap-1 border-t border-border px-1 pt-1"
+      role="group"
+      title={EFFORT_TRIGGER_TITLE}
+    >
+      {CHAT_EFFORTS.map((value) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={effort === value}
+          className={cn(
+            "rounded-sm px-1.5 py-1 text-[11px]",
+            effort === value
+              ? "bg-accent font-medium text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent"
+          )}
+          onClick={() => setChatEffort(value)}
+        >
+          {CHAT_EFFORT_LABEL[value]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function ModelPicker({
+  catalog,
+  compact = false,
+}: {
+  catalog: HarnessCatalog;
+  compact?: boolean;
+}) {
   const chatHarness = usePrefs((s) => s.chatHarness);
   const chatModel = usePrefs((s) => s.chatModel);
   const setChatSelection = usePrefs((s) => s.setChatSelection);
@@ -147,157 +198,180 @@ export function ModelPicker({ catalog }: { catalog: HarnessCatalog }) {
           <Button
             type="button"
             variant="ghost"
-            size="sm"
-            className="h-7 max-w-[5.5rem] min-w-0 shrink gap-1.5 px-1.5 text-xs font-normal text-muted-foreground @[360px]/chat:max-w-32"
+            size={compact ? "icon-sm" : "sm"}
+            className={
+              compact
+                ? undefined
+                : "h-7 max-w-[5.5rem] min-w-0 shrink gap-1.5 px-1.5 text-xs font-normal text-muted-foreground @[360px]/chat:max-w-32"
+            }
             title={triggerLabel}
             aria-label={triggerLabel}
           />
         }
       >
         <ProviderMark id={chatHarness} />
-        <span className="min-w-0 truncate">{triggerName}</span>
-        <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+        {compact ? null : (
+          <>
+            <span className="min-w-0 truncate">{triggerName}</span>
+            <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+          </>
+        )}
       </PopoverTrigger>
       <PopoverContent
         align="start"
         side="top"
         data-model-picker-content
-        className="flex h-72 w-80 gap-1 overflow-hidden overscroll-contain p-1"
+        className={cn(
+          "flex w-80 overflow-hidden overscroll-contain p-1",
+          compact ? "h-80 flex-col" : "h-72 gap-1"
+        )}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex w-10 shrink-0 flex-col gap-0.5 border-r border-border pr-1">
-          {HARNESS_IDS.map((id) => {
-            const info = harnesses.find((h) => h.id === id);
-            const railTitle = info
-              ? harnessStatusTitle(HARNESS_LABEL[id], info.status)
-              : HARNESS_LABEL[id];
-            return (
-              <Button
-                key={id}
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                title={railTitle}
-                aria-label={railTitle}
-                className={cn("relative size-9", rail === id && "bg-accent")}
-                onClick={() => {
-                  setRail(id);
-                  setQuery("");
-                }}
-              >
-                <ProviderMark id={id} className="size-5" />
-                {info ? <StatusDot status={info.status} /> : null}
-              </Button>
-            );
-          })}
-        </div>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overscroll-contain">
-          <Input
-            className="mb-1 h-7 text-xs"
-            placeholder="Search models…"
-            aria-label="Search models"
-            value={query}
-            onChange={(ev) => setQuery(ev.target.value)}
-          />
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {catalogPending ? (
-              <ModelListSkeleton />
-            ) : error ? (
-              <div className="flex flex-col gap-1.5 px-2 py-1.5">
-                <div className="text-xs text-muted-foreground">
-                  Couldn’t load models
-                </div>
+        <div
+          className={cn(
+            "flex min-h-0 min-w-0 gap-1",
+            compact ? "flex-1" : "contents"
+          )}
+        >
+          <div className="flex w-10 shrink-0 flex-col gap-0.5 border-r border-border pr-1">
+            {HARNESS_IDS.map((id) => {
+              const info = harnesses.find((h) => h.id === id);
+              const railTitle = info
+                ? harnessStatusTitle(HARNESS_LABEL[id], info.status)
+                : HARNESS_LABEL[id];
+              return (
                 <Button
+                  key={id}
                   type="button"
                   variant="ghost"
-                  size="sm"
-                  className="h-7 self-start px-2 text-xs"
-                  onClick={() => refresh("retry")}
+                  size="icon-sm"
+                  title={railTitle}
+                  aria-label={railTitle}
+                  className={cn("relative size-9", rail === id && "bg-accent")}
+                  onClick={() => {
+                    setRail(id);
+                    setQuery("");
+                  }}
                 >
-                  Check again
+                  <ProviderMark id={id} className="size-5" />
+                  {info ? <StatusDot status={info.status} /> : null}
                 </Button>
-              </div>
-            ) : notReady && active ? (
-              <div className="px-2 py-1.5">
-                <ProviderLoginHint
-                  info={active}
-                  onCheckAgain={() => refresh("retry")}
-                />
-              </div>
-            ) : groups.length === 0 ? (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                No matches
-              </div>
-            ) : (
-              <ul>
-                {groups.map(({ group, models }) => (
-                  <li key={group} className="mb-1">
-                    {group ? (
-                      <div
-                        className={cn(
-                          "px-2 py-1 text-[10px] font-medium tracking-wide text-muted-foreground",
-                          group === "Favorites" ? undefined : "uppercase"
-                        )}
-                      >
-                        {group}
-                      </div>
-                    ) : null}
-                    {models.map((m) => {
-                      const selected =
-                        rail === chatHarness && m.slug === chatModel;
-                      const favorite = isModelFavorite(favorites, rail, m.slug);
-                      return (
+              );
+            })}
+          </div>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overscroll-contain">
+            <Input
+              className="mb-1 h-7 text-xs"
+              placeholder="Search models…"
+              aria-label="Search models"
+              value={query}
+              onChange={(ev) => setQuery(ev.target.value)}
+            />
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              {catalogPending ? (
+                <ModelListSkeleton />
+              ) : error ? (
+                <div className="flex flex-col gap-1.5 px-2 py-1.5">
+                  <div className="text-xs text-muted-foreground">
+                    Couldn’t load models
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 self-start px-2 text-xs"
+                    onClick={() => refresh("retry")}
+                  >
+                    Check again
+                  </Button>
+                </div>
+              ) : notReady && active ? (
+                <div className="px-2 py-1.5">
+                  <ProviderLoginHint
+                    info={active}
+                    onCheckAgain={() => refresh("retry")}
+                  />
+                </div>
+              ) : groups.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  No matches
+                </div>
+              ) : (
+                <ul>
+                  {groups.map(({ group, models }) => (
+                    <li key={group} className="mb-1">
+                      {group ? (
                         <div
-                          key={m.slug}
                           className={cn(
-                            "flex w-full items-center rounded-sm",
-                            selected
-                              ? "bg-accent font-medium text-accent-foreground"
-                              : "text-muted-foreground hover:bg-accent"
+                            "px-2 py-1 text-[10px] font-medium tracking-wide text-muted-foreground",
+                            group === "Favorites" ? undefined : "uppercase"
                           )}
                         >
-                          <PopoverClose
-                            className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-xs"
-                            onClick={() => setChatSelection(rail, m.slug)}
-                          >
-                            {modelDisplayName(m)}
-                          </PopoverClose>
-                          <button
-                            type="button"
-                            className="mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-                            aria-label={
-                              favorite
-                                ? "Remove from favorites"
-                                : "Add to favorites"
-                            }
-                            aria-pressed={favorite}
-                            title={
-                              favorite
-                                ? "Remove from favorites"
-                                : "Add to favorites"
-                            }
-                            onClick={(ev) => {
-                              ev.preventDefault();
-                              ev.stopPropagation();
-                              star(m.slug);
-                            }}
-                          >
-                            <Star
-                              className={cn(
-                                "size-3",
-                                favorite && "fill-current text-foreground"
-                              )}
-                            />
-                          </button>
+                          {group}
                         </div>
-                      );
-                    })}
-                  </li>
-                ))}
-              </ul>
-            )}
+                      ) : null}
+                      {models.map((m) => {
+                        const selected =
+                          rail === chatHarness && m.slug === chatModel;
+                        const favorite = isModelFavorite(
+                          favorites,
+                          rail,
+                          m.slug
+                        );
+                        return (
+                          <div
+                            key={m.slug}
+                            className={cn(
+                              "flex w-full items-center rounded-sm",
+                              selected
+                                ? "bg-accent font-medium text-accent-foreground"
+                                : "text-muted-foreground hover:bg-accent"
+                            )}
+                          >
+                            <PopoverClose
+                              className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-xs"
+                              onClick={() => setChatSelection(rail, m.slug)}
+                            >
+                              {modelDisplayName(m)}
+                            </PopoverClose>
+                            <button
+                              type="button"
+                              className="mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                              aria-label={
+                                favorite
+                                  ? "Remove from favorites"
+                                  : "Add to favorites"
+                              }
+                              aria-pressed={favorite}
+                              title={
+                                favorite
+                                  ? "Remove from favorites"
+                                  : "Add to favorites"
+                              }
+                              onClick={(ev) => {
+                                ev.preventDefault();
+                                ev.stopPropagation();
+                                star(m.slug);
+                              }}
+                            >
+                              <Star
+                                className={cn(
+                                  "size-3",
+                                  favorite && "fill-current text-foreground"
+                                )}
+                              />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         </div>
+        {compact ? <EffortChoices /> : null}
       </PopoverContent>
     </Popover>
   );

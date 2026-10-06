@@ -153,8 +153,9 @@ export async function readRecording(
 
 /**
  * Test only. Board nodes and ADC samples for a run opened with `adcTrace`.
- * A sample's `ms` is the step it completed in. Its reference is the board
- * node stamped at `ms - 1`, except a CPU that booted in that same quantum.
+ * A sample's `ms` is the end of the step it completed in, fractional at a
+ * step finer than 1 ms. Its reference is the board node stamped one step
+ * earlier (`ms - 1` at 1 ms), except a CPU that booted in that same quantum.
  * Without the option the worker answers "ADC trace is off".
  */
 export async function readAdcTrace(

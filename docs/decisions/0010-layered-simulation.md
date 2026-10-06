@@ -103,9 +103,11 @@ types, parts, World v2, snapshots, fixtures, lockfile, run report) are in
 
 ### Reinforcement learning
 
-Bench is a Gymnasium-style environment: seeded `reset`, `step`, fast
+Bench is to be a Gymnasium-style environment: seeded `reset`, `step`, fast
 checkpoint and restore, headless faster than real time, many worlds in
-parallel. Training runs outside Bench (D-019).
+parallel. Training runs outside Bench (D-019). Not built yet: today
+`bench run` runs one world headless for a fixed span, with no reset,
+observe or act.
 
 ### First deep part
 
@@ -137,7 +139,7 @@ One line each. The layered-sim packet has the full text and alternatives.
 - **D-016.** The live floor is lumped circuits, instruction-level chips and rigid bodies; deeper physics is offline.
 - **D-017.** Levels change only at reset.
 - **D-018.** The runtime links only MIT, Apache-2.0, BSD or ISC code; ngspice is a separate process.
-- **D-019.** Bench is a Gymnasium-style RL environment; training runs elsewhere.
+- **D-019.** Bench is to be a Gymnasium-style RL environment (not built yet); training runs elsewhere.
 - **D-020.** The order of deep parts is pin circuits, then the Uno power path.
 - **D-021, D-022, D-024.** workspace/process decisions (the E10 bench rig), not product.
 - **D-023.** Types v1: the body owns joint friction, damping and armature; `supply.voltage` is the setpoint; a bare level rule sets all three axes; the lockfile pins types; port templates; plausible ranges per quantity.
@@ -165,9 +167,13 @@ run, Bench never compiles firmware, and avr8js is the board.
 
 - One idea covers a resistor, a servo, a robot and a fleet: a part with
   levels, and a snapshot that makes it cheap.
-- The rail, the motor and the pins solve together, so sag, stall and
-  brownout come from circuits, not rules. The experiments match ngspice
-  and the closed forms to well under 1%.
+- The rail, the motor and the pins solve together, so sag and stall come
+  from the circuit: the motor is a lumped law in it (winding resistance
+  and back-EMF), and brownout is a threshold on the solved board node.
+  The lowest level is lumped devices (R, C, L, a Shockley diode, and
+  behavioural regulator, fuse, switch and comparator), not transistors.
+  The experiments match ngspice on the same netlists, and the closed
+  forms, to well under 1%. Nothing is checked against hardware yet (E10).
 - Runs are reproducible and say what they leave out, so a snapshot can be
   scored against its deeper level.
 - Formats map to open standards, and the runtime stays permissive.
@@ -189,18 +195,24 @@ run, Bench never compiles firmware, and avr8js is the board.
 - Digital nets skip the circuit; averaged PWM is a cheaper level; a chip
   whose firmware is not under test runs scripted pins at ~46× real time
   (E6).
-- A stiff motor on a light joint uses implicit damping in MuJoCo, and the
-  run report carries a passivity sum at each circuit/body cut.
+- A stiff motor on a light joint is to use implicit damping in MuJoCo
+  (proposed, `formats.md` §10). The run report carries a seam ledger at
+  each circuit/body cut: energy in joules, flagged when its residual grows
+  (`formats.md` §8).
 
 ## Implementation notes
 
-- The engine, the pin harness and the coupling exist as experiment code
-  (E1, E2, E3). They are ported as new modules under `apps/server/src/world/`
-  (`circuit/`, `parts/`, `rail-circuit.ts`, `power-path.ts`), and the
-  worker calls them.
-- Order of what was built: the Uno power path came before pin circuits.
-  The loader, the circuit engine, and the motor and rail stamps are in
-  the run. Pin circuits are not.
+- The engine, the pin harness and the coupling began as experiment code
+  (E1, E2, E3). They now live in `packages/engine-circuit` (the MNA engine,
+  `avr-pin@1` and the other elements), `packages/parts` (the loader and
+  levels) and `packages/sim` (`circuit-stamp.ts`, `rail-circuit.ts`,
+  `power-path.ts` and the step loop). `apps/server/src/world/worker.ts` is
+  a thin Node host ([ADR 0012](0012-layers-and-plugin-seams.md)).
+- Order of what was built: the Uno power path came before pin circuits,
+  the reverse of D-020's plan. Both are in the run now: the loader, the
+  circuit engine, the motor and rail stamps, and stamped pins, with the
+  ADC reading the solved node. Digital inputs do not yet read a voltage
+  threshold.
 - Tests: each circuit against a stored ngspice trace; the SG90 against
   today's closed form; bit-identical recordings from the same seed.
 

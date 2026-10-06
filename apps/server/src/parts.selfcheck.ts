@@ -25,6 +25,7 @@ import {
   writeLock,
 } from "@sfab-bench/parts";
 import { nodeStore } from "./world/node-store";
+import { planWorld } from "./world/plan";
 
 const serverDir = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -162,6 +163,45 @@ line(
     motor12.diagnostics.filter((d) => d.severity === "warning").length === 1,
   `broken motor12 is a warning only (errors=${motor12.diagnostics.filter((d) => d.severity === "error").length})`
 );
+// The winding stamps A and B; the part binds them to its V+ and GND, so
+// the run's one reason is the shaft, not a port the type lacks.
+const motor12Plan = planWorld(
+  path.join(fixtures, "broken/motor12"),
+  "world.json"
+);
+const motor12Rows = motor12Plan.ok
+  ? (motor12Plan.plan.degraded ?? []).map((row) => row.message)
+  : [];
+line(
+  motor12Rows.length === 1 &&
+    motor12Rows[0]?.includes("shaft is on no net") === true,
+  `broken motor12 stamps its winding: ${JSON.stringify(motor12Rows)}`
+);
+{
+  // A bind key the form does not stamp is a lint error on the part.
+  const dir = mkdtempSync(path.join(tmpdir(), "sfab-motor-bind-"));
+  try {
+    cpSync(path.join(fixtures, "broken/motor12"), dir, { recursive: true });
+    const motor = readJson<PartFile>(
+      path.join(catalogDir, "parts/sfab/motor-12v@1.0.0.json")
+    );
+    const law = motor.axes?.behaviour?.["1"]?.variants.law;
+    if (law?.kind !== "form") throw new Error("motor-12v has no form law");
+    law.bind = { Z: "V+", B: "GND" };
+    writeFileSync(
+      path.join(dir, "parts/sfab/motor-12v@1.0.0.json"),
+      JSON.stringify(motor)
+    );
+    const bad = loadWorldV2(path.join(dir, "world.json"), opts);
+    const said = bad.diagnostics.filter((d) => d.severity === "error");
+    line(
+      said.some((d) => d.message.includes("dc-motor@1 stamps no port Z")),
+      `a part bind key the form does not stamp is an error: ${said.map((d) => d.message).join(" | ")}`
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 broken(
   "unit-swap",
   "error",
@@ -246,7 +286,7 @@ const rootBeh = fleet?.levels.find(
   (level) => level.path === "$root" && level.axis === "behaviour"
 );
 line(
-  reasons.default === 10 &&
+  reasons.default === 11 &&
     reasons.type === 2 &&
     reasons.path === 2 &&
     // Each rig's Uno power group stays class 2, and its leaves fall back.
@@ -254,8 +294,10 @@ line(
     reasons.parent === 2 &&
     // Each Uno now holds a chip child (`mcu`): two more fallback rows and one
     // more row with no level per rig, all from the board's new structure.
-    reasons.fallback === 108 &&
-    reasons.none === 14 &&
+    // rig2's class-2 SG90 children have levels: their 12 rows are one
+    // default and ten fallbacks, and the gears child has no behaviour.
+    reasons.fallback === 118 &&
+    reasons.none === 3 &&
     rig1?.class === 0 &&
     rig1.reason === "type rule hobby-servo-3wire" &&
     rig2?.class === 2 &&

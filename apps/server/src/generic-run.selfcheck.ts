@@ -26,20 +26,27 @@ import {
   Resistor,
   TheveninLimit,
 } from "@sfab-bench/engine-circuit";
+import { BOARD_LOAD_KNEE_V, NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import {
+  createRailCircuit,
+  type RailCircuit,
+} from "@sfab-bench/sim/rail-circuit";
+import { headlessSim } from "./run";
 import {
   type BoardStamp,
   type boardStampOf,
   realize,
 } from "./world/circuit-stamp";
 import { catalogRoot, planWorld } from "./world/plan";
-import { BOARD_LOAD_KNEE_V, NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
 
 const law = { k: 0.458, resistance: 7.1, quiescent: 0.01 };
 const usb = { voltage: 5, rSeries: 0.5, currentLimit: 0.9 };
 const SETTLE = 80;
 const nanoExample = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
+);
+const armExample = fileURLToPath(
+  new URL("../../../examples/arm/", import.meta.url)
 );
 
 function writeJson(file: string, value: unknown): void {
@@ -59,10 +66,15 @@ function copyVcc(dir: string): void {
   );
 }
 
+type Pose = {
+  position: [number, number, number];
+  rotation: [number, number, number, number];
+};
+
 function sceneWorld(
   instances: Record<
     string,
-    { part: string; params?: Record<string, string | number> }
+    { part: string; params?: Record<string, string | number>; pose?: Pose }
   >,
   wires: [string, string][],
   levels: {
@@ -208,7 +220,7 @@ function nodeAt(
     feed: "usb",
   });
   circuit.setFixed(NANO_BOARD_A + law.quiescent);
-  circuit.setD13("input");
+  circuit.setPin("D13", "input");
   circuit.setMotor(0, fraction, 0, connected);
   for (let i = 0; i < SETTLE; i++) circuit.solve();
   return circuit.boardVoltage;
@@ -392,6 +404,34 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
   }
 }
 
+// A type rule that names no type is a bad level rule, not a missing file.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-unknown-type-"));
+  try {
+    nestedNano(dir);
+    const file = join(dir, "nested.world.json");
+    writeFileSync(
+      file,
+      readFileSync(file, "utf8").replace('"arduino-nano"', '"arduino-nanoo"')
+    );
+    const planned = planWorld(dir, "nested.world.json");
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((item) => item.message).join("; "));
+    }
+    const row = planned.plan.degraded?.find(
+      (item) => item.path === "run.levels.types"
+    );
+    expect(
+      row?.code === "bad-params" &&
+        row.message === "type rule names unknown type arduino-nanoo",
+      `unknown type row: ${row?.code} ${row?.message}`
+    );
+    console.log(`unknown type: ${row.code} ${row.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 {
   const dir = mkdtempSync(join(tmpdir(), "sfab-sg90-class2-"));
   try {
@@ -440,8 +480,9 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
       motor,
       `no servo.motor diagnostic: ${rows.map((item) => item.message).join("; ")}`
     );
+    // The children run, but this servo's shaft is on no joint.
     expect(
-      motor.message.includes("no runtime for a declared-only part"),
+      motor.message === "dc-motor@1: its shaft reaches no joint",
       motor.message
     );
     expect(
@@ -649,10 +690,16 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     const planned = planWorld(dir, "chip.world.json");
     expect(planned.ok, "unknown chip did not run");
     if (!planned.ok) throw new Error("unreachable");
-    const chip = (planned.plan.degraded ?? []).find((item) =>
-      item.message.includes('unknown chip "no-such"')
+    const chip = (planned.plan.degraded ?? []).find(
+      (item) => item.path === "board" && item.code === "unsupported"
     );
     expect(chip, "no unknown-chip diagnostic");
+    expect(
+      chip.message.startsWith(
+        'chip "no-such" lacks railVoltage, resetFraction'
+      ),
+      chip.message
+    );
     console.log(`degraded ${chip.path}: ${chip.message}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -992,6 +1039,324 @@ function sameNet(wires: [string, string][], a: string, b: string): boolean {
     );
     console.log("loose part: r is on nano");
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// The run places an instance by its pose taken through every posed group
+// above it: a group moved or turned carries its parts.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-nested-pose-"));
+  try {
+    copyVcc(dir);
+    const groupPose = (x: number): Pose => ({
+      position: [x, 0, 0],
+      rotation: [1, 0, 0, 0],
+    });
+    const rig = (x: number) => ({
+      format: "sfab.part@1",
+      id: `sfab/rig-${x}@1.0.0`,
+      type: "assembly",
+      axes: {
+        behaviour: {
+          "2": {
+            default: "netlist",
+            variants: {
+              netlist: {
+                kind: "composite",
+                omits: ["test group"],
+                netlist: {
+                  instances: {
+                    nano: {
+                      part: "sfab/nano-ch340@1.0.0",
+                      pose: groupPose(0.08),
+                      params: {
+                        firmware: "firmware/vcc/vcc.hex",
+                        source: "firmware/vcc/vcc.ino",
+                      },
+                    },
+                    usb: { part: "sfab/usb-port-500ma@1.0.0" },
+                  },
+                  wires: [
+                    ["usb.5V", "nano.5V"],
+                    ["usb.GND", "nano.GND"],
+                  ],
+                  expose: {},
+                },
+              },
+            },
+          },
+        },
+        body: noneAxis("none"),
+        visual: noneAxis("none"),
+      },
+    });
+    for (const x of [0, 1]) {
+      writeJson(join(dir, "parts", "sfab", `rig-${x}@1.0.0.json`), rig(x));
+      writeJson(
+        join(dir, `rig-${x}.world.json`),
+        sceneWorld(
+          { rig: { part: `sfab/rig-${x}@1.0.0`, pose: groupPose(x) } },
+          [],
+          { default: 1 }
+        )
+      );
+    }
+    const flat = planWorld(dir, "rig-0.world.json");
+    if (!flat.ok) {
+      throw new Error(flat.errors.map((item) => item.message).join("; "));
+    }
+    expect(
+      flat.plan.boards.some((board) => board.id === "rig.nano"),
+      "the group at the origin did not run its nano"
+    );
+    const near = (got: readonly number[] | undefined, want: number[]) =>
+      got !== undefined &&
+      want.every(
+        (value, i) => Math.abs((got[i] ?? Number.NaN) - value) < 1e-12
+      );
+    const moved = planWorld(dir, "rig-1.world.json");
+    if (!moved.ok) {
+      throw new Error(moved.errors.map((item) => item.message).join("; "));
+    }
+    const movedNano = moved.plan.boards.find(
+      (board) => board.id === "rig.nano"
+    );
+    expect(
+      near(movedNano?.pose.position, [1.08, 0, 0]),
+      `rig at x 1 put rig.nano at ${JSON.stringify(movedNano?.pose)}`
+    );
+    // A quarter turn about z takes the nano's 0.08 m along x onto y.
+    const c = Math.SQRT1_2;
+    writeJson(
+      join(dir, "turned.world.json"),
+      sceneWorld(
+        {
+          rig: {
+            part: "sfab/rig-0@1.0.0",
+            pose: { position: [1, 0, 0], rotation: [c, 0, 0, c] },
+          },
+        },
+        [],
+        { default: 1 }
+      )
+    );
+    const turned = planWorld(dir, "turned.world.json");
+    if (!turned.ok) {
+      throw new Error(turned.errors.map((item) => item.message).join("; "));
+    }
+    const turnedNano = turned.plan.boards.find(
+      (board) => board.id === "rig.nano"
+    );
+    expect(
+      near(turnedNano?.pose.position, [1, 0.08, 0]) &&
+        near(turnedNano?.pose.rotation, [c, 0, 0, c]),
+      `turned rig put rig.nano at ${JSON.stringify(turnedNano?.pose)}`
+    );
+    console.log(
+      "nested pose: rig at x 1 puts rig.nano at x 1.08; a quarter turn about z puts it at y 0.08, turned"
+    );
+
+    // -q is the same rotation as q, so the group is still at the origin.
+    writeJson(
+      join(dir, "flipped.world.json"),
+      sceneWorld(
+        {
+          rig: {
+            part: "sfab/rig-0@1.0.0",
+            pose: { position: [0, 0, 0], rotation: [-1, 0, 0, 0] },
+          },
+        },
+        [],
+        { default: 1 }
+      )
+    );
+    const flipped = planWorld(dir, "flipped.world.json");
+    expect(
+      flipped.ok,
+      `a group at the origin as -q was refused: ${flipped.ok ? "" : flipped.errors.map((item) => item.message).join("; ")}`
+    );
+
+    // The world root is placed once and the editor may move it: its pose
+    // places nothing, and the parts below it keep their own poses.
+    const scene = sceneWorld({ rig: { part: "sfab/rig-0@1.0.0" } }, [], {
+      default: 1,
+    }) as { root: Record<string, unknown> };
+    scene.root.pose = groupPose(1);
+    writeJson(join(dir, "root-pose.world.json"), scene);
+    const rooted = planWorld(dir, "root-pose.world.json");
+    if (!rooted.ok) {
+      throw new Error(rooted.errors.map((item) => item.message).join("; "));
+    }
+    const rootedNano = rooted.plan.boards.find(
+      (board) => board.id === "rig.nano"
+    );
+    const flatNano = flat.plan.boards.find((board) => board.id === "rig.nano");
+    expect(
+      JSON.stringify(rootedNano) === JSON.stringify(flatNano),
+      "a posed world root moved rig.nano"
+    );
+    console.log("nested pose: a posed world root runs, rig.nano stays put");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// position-servo@1 is the whole servo as one law; its loop reads the type's
+// logic input. A motor type has none, so the law is refused there.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-bare-motor-"));
+  try {
+    writeJson(join(dir, "parts", "sfab", "bare-motor@1.0.0.json"), {
+      format: "sfab.part@1",
+      id: "sfab/bare-motor@1.0.0",
+      type: "brushed-dc-motor",
+      axes: {
+        behaviour: {
+          "1": {
+            default: "law",
+            variants: {
+              law: {
+                kind: "form",
+                form: "position-servo@1",
+                params: {
+                  K: 0.05,
+                  R: 2,
+                  efficiency: 0.7,
+                  eSat: 0.2,
+                  quiescent: 0.02,
+                },
+                omits: ["test motor"],
+              },
+            },
+          },
+        },
+        body: {
+          "1": {
+            default: "lumped",
+            variants: {
+              lumped: {
+                kind: "lumped",
+                mass: 0.05,
+                com: [0, 0, 0],
+                inertia: [1e-6, 1e-6, 1e-6, 0, 0, 0],
+                joint: { armature: 1e-5, frictionloss: 0, damping: 1e-4 },
+                omits: ["test body"],
+              },
+            },
+          },
+        },
+        visual: noneAxis("none"),
+      },
+    });
+    writeJson(
+      join(dir, "motor.world.json"),
+      sceneWorld(
+        {
+          bench: { part: "sfab/bench-supply@1.0.0" },
+          motor: { part: "sfab/bare-motor@1.0.0" },
+        },
+        [
+          ["bench.5V", "motor.V+"],
+          ["bench.GND", "motor.GND"],
+        ],
+        { default: 1 }
+      )
+    );
+    const planned = planWorld(dir, "motor.world.json");
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((item) => item.message).join("; "));
+    }
+    expect(
+      !planned.plan.parts.some((part) => part.id === "motor"),
+      "a bare motor ran as a servo"
+    );
+    const row = planned.plan.degraded?.find((item) => item.path === "motor");
+    expect(
+      row?.message.includes("no logic input"),
+      `bare motor row: ${row?.message}`
+    );
+    console.log(`bare motor: ${row?.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Two supplies whose grounds meet are one rail. A part reads the node of
+// the board its V+ is on, not the first board's or the one that drives
+// its signal.
+{
+  const dir = mkdtempSync(join(tmpdir(), "sfab-shared-rail-"));
+  const sim = headlessSim();
+  try {
+    copyVcc(dir);
+    cpSync(join(armExample, "robot"), join(dir, "robot"), { recursive: true });
+    cpSync(
+      join(armExample, "parts", "sfab", "arm@1.0.0.json"),
+      join(dir, "parts", "sfab", "arm@1.0.0.json")
+    );
+    writeJson(
+      join(dir, "shared.world.json"),
+      sceneWorld(
+        {
+          usbLeft: { part: "sfab/usb-port-500ma@1.0.0" },
+          usbRight: { part: "sfab/usb-port-500ma@1.0.0" },
+          left: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+          right: { part: "sfab/nano-ch340@1.0.0", params: nanoParams },
+          arm: { part: "sfab/arm@1.0.0" },
+          servo: { part: "sfab/sg90@1.0.0" },
+          sensor: { part: "sfab/hc-sr04@1.0.0" },
+        },
+        [
+          ["servo.shaft", "arm.shoulder"],
+          ["servo.mount", "arm.base"],
+          ["usbLeft.5V", "left.5V"],
+          ["usbLeft.GND", "left.GND"],
+          ["usbRight.5V", "right.5V"],
+          ["usbRight.GND", "right.GND"],
+          ["left.GND", "right.GND"],
+          ["right.5V", "servo.V+"],
+          ["right.GND", "servo.GND"],
+          ["left.D9", "servo.signal"],
+          ["right.5V", "sensor.VCC"],
+          ["right.GND", "sensor.GND"],
+          ["left.D7", "sensor.Trig"],
+          ["left.D8", "sensor.Echo"],
+        ],
+        // Class 2 adds the S4 diode on right's USB path, so the nodes part.
+        { default: 1, paths: { right: { behaviour: 2 } } }
+      )
+    );
+    const loaded = await sim.load({
+      project: dir,
+      world: "shared.world.json",
+      generation: 1,
+    });
+    if (!loaded.ok) {
+      throw new Error(loaded.errors.map((item) => item.message).join("; "));
+    }
+    await sim.step(50);
+    const state = sim.state();
+    if (!state) throw new Error("no state");
+    const left = state.boards.left?.voltage ?? 0;
+    const right = state.boards.right?.voltage ?? 0;
+    expect(Math.abs(left - right) > 1e-4, `left ${left} V right ${right} V`);
+    const sensor = state.parts?.sensor?.voltage ?? 0;
+    expect(sensor === right, `sensor reads ${sensor} V, right is ${right} V`);
+    const body = sim.record({ op: "read", from: 0, to: state.simTime });
+    if (body.op !== "read") throw new Error("no recording");
+    const frame = body.read.frames.at(-1);
+    const servo = frame?.parts.servo?.voltage ?? 0;
+    const rightRec = frame?.boards.right?.voltage ?? 0;
+    expect(
+      servo === rightRec,
+      `recorded servo ${servo} V, right ${rightRec} V`
+    );
+    console.log(
+      `shared rail: sensor and servo read right ${right.toFixed(4)} V, left is ${left.toFixed(4)} V`
+    );
+  } finally {
+    sim.dispose();
     rmSync(dir, { recursive: true, force: true });
   }
 }

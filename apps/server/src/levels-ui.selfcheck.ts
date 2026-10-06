@@ -20,8 +20,13 @@ import {
   type WorldServerMessage,
   type WorldViewNode,
 } from "@sfab-bench/contract";
-import { contentHash } from "@sfab-bench/parts";
-import { levelCard, reasonWords } from "../../web/src/lib/level-card";
+import { contentHash, replaceLevels } from "@sfab-bench/parts";
+import { viewOf } from "@sfab-bench/sim/view";
+import {
+  levelCard,
+  rangeLine,
+  reasonWords,
+} from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
 import { runViewerContext } from "./viewer-context";
 import {
@@ -30,9 +35,7 @@ import {
   type WorldHandle,
   worldWorkerCount,
 } from "./world/host";
-import { replaceLevels } from "./world/level-edit";
 import { planWorld } from "./world/plan";
-import { viewOf } from "./world/view";
 import { worldTools } from "./world-tools";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -116,6 +119,41 @@ expect(
   class1Power?.provenance ===
     "captured, from sfab/nano-power-input@1.0.0 class 2, fixture sfab/nano-power-input, tool sfab-bench-capture 1",
   `provenance ${class1Power?.provenance}`
+);
+expect(
+  class1Power?.range.join(" | ") === "VBUS current 0 to 900 mA" &&
+    class1Power.stale === false &&
+    class1Power.unchecked === null &&
+    class1Power.warnings.length === 0,
+  `run card range ${class1Power?.range.join(" | ")} stale ${class1Power?.stale} unchecked ${class1Power?.unchecked}`
+);
+// A row freshness could not check carries its reason to the card.
+const UNCHECKED =
+  "the group reaches sfab/x@1.0.0, whose snapshot files its signature does not cover";
+const uncheckedReport = structuredClone(class1.report);
+const uncheckedRow = uncheckedReport?.snapshots.find(
+  (row) => row.path === "nano.power"
+);
+if (uncheckedRow) uncheckedRow.unchecked = UNCHECKED;
+const uncheckedPower = levelCard(uncheckedReport, "nano")?.nested.find(
+  (row) => row.path === "nano.power"
+);
+expect(
+  uncheckedPower?.unchecked === UNCHECKED && uncheckedPower.stale === false,
+  `unchecked card ${uncheckedPower?.unchecked}`
+);
+expect(
+  rangeLine("shaft.speed", [-10.472, 10.472]) ===
+    "shaft speed -10.5 to 10.5 rad/s" &&
+    rangeLine("V+.current", [-0.003122868, 0.658181563]) ===
+      "V+ current -3.12 to 658 mA",
+  "run card range lines"
+);
+expect(
+  rangeLine("VBUS.current", [0, 0.1]) === "VBUS current 0 to 100 mA" &&
+    rangeLine("shaft.torque", [-0.176, 0.176]) ===
+      "shaft torque -0.176 to 0.176 N·m",
+  "whole numbers keep their zeros"
 );
 expect(
   class1Nano?.omits.some((line) =>
@@ -229,6 +267,19 @@ console.log(`parts: ${modulePart?.id} · ${modulePart?.model}`);
   );
   const power = nodeAt(nanoView, "nano.power");
   deepStrictEqual(axisOf(power, "behaviour")?.capture, { ready: true });
+  // The SG90's class 2 is its gear train, motor, pot and control, and
+  // each of them has a level.
+  const servoOptions = (
+    axisOf(nodeAt(nanoView, "servo"), "behaviour")?.options ?? []
+  ).map(
+    (opt) => `${opt.class}:${opt.variant}:${opt.runnable}:${opt.reason ?? ""}`
+  );
+  deepStrictEqual(servoOptions, [
+    "0:slew:false:no runtime for form slew@1",
+    "1:datasheet:true:",
+    "1:group:true:",
+    "2:netlist:true:",
+  ]);
   expect(
     axisOf(power, "visual")?.capture === undefined,
     "a visual axis never captures"
@@ -404,8 +455,10 @@ expect(
   vccServo?.size[0] === 0.023 &&
     vccServo.size[1] === 0.0122 &&
     vccServo.size[2] === 0.029 &&
-    vccServoVisual?.reason === "placeholder mesh; drawn as the class-0 box",
-  "an sg90 placeholder mesh is drawn as the class-0 box"
+    vccServo.form?.form === "case@1" &&
+    vccServo.form.inner?.length === 6 &&
+    vccServoVisual?.line === "visual 1 · form",
+  `an sg90 is drawn as its case form, in the same box: ${JSON.stringify(vccServoVisual)}`
 );
 const robotIds = new Set(vccView.robots.map((robot) => robot.id));
 expect(

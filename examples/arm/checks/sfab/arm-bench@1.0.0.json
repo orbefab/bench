@@ -1,0 +1,358 @@
+{
+  "format": "sfab.assembly-check@2",
+  "document": "parts/sfab/arm-bench@1.0.0.json",
+  "fixture": {
+    "ms": 3000,
+    "hash": "df2d684f5916cb5437e3246dac29db74fd0bb5a187120f585881631e45450e27",
+    "lock": "7d20197bc725c3f70a918853cd3d5df332fc1f27f23369645c7dc423f254214f"
+  },
+  "detailed": {
+    "default": 2
+  },
+  "snapshot": {
+    "default": 2,
+    "paths": {
+      "servo": {
+        "behaviour": {
+          "class": 1,
+          "variant": "group"
+        },
+        "body": 2
+      },
+      "uno.power": {
+        "behaviour": 1
+      }
+    }
+  },
+  "children": [
+    {
+      "path": "servo",
+      "axis": "behaviour",
+      "ref": "sfab/sg90-servo@1.0.0",
+      "hash": "fcdfd1a019ab26134b14e6e03c9ed1d00d016fcd75be4a44a47940520e05c8c4",
+      "fromHash": "d23aa87bc5973fdb1d777f45a1e5470adc94d2f843067cd252730a7072217a44"
+    },
+    {
+      "path": "uno.power",
+      "axis": "behaviour",
+      "ref": "sfab/uno-power-input@1.0.0",
+      "hash": "e2192dad68ca6e4f5cd626297f86ae291099e153d7e0da34ed9752853221e3b4",
+      "fromHash": "a04c7ac1ad244c8106449bd8841c29b8f53af5e5e0744b32e912c1bb4bd34590"
+    }
+  ],
+  "context": "0a7905a7c72b645b0282b8782d97705d633254555593db4cbf89cf717eb23afa",
+  "quantities": [
+    "servo.shaft.angle",
+    "servo.V+.current",
+    "uno.5V.voltage",
+    "uno.VBUS.voltage"
+  ],
+  "observations": [
+    {
+      "quantity": "servo.shaft.angle",
+      "cadence": "frame",
+      "phase": "body",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "servo.shaft.angle",
+      "cadence": "step",
+      "phase": "body",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "servo.V+.current",
+      "cadence": "frame",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "servo.V+.current",
+      "cadence": "step",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "uno.5V.voltage",
+      "cadence": "frame",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "uno.5V.voltage",
+      "cadence": "step",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "uno.VBUS.voltage",
+      "cadence": "frame",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    },
+    {
+      "quantity": "uno.VBUS.voltage",
+      "cadence": "step",
+      "phase": "rail",
+      "reference": {
+        "kind": "absolute"
+      }
+    }
+  ],
+  "identity": "25a751bee370837733670cc7a1d5ccca3702255dd996cde4983348b69c3fe588",
+  "policy": "919ddf8c21da4dd910aef5ccce7a5ef96f3662b5b0746b8a8c19eb22c449c0f7",
+  "rows": [
+    {
+      "quantity": "servo.shaft.angle",
+      "metrics": [
+        {
+          "metric": "frame-max",
+          "value": 0.005388937957,
+          "pairs": 301,
+          "at": {
+            "ms": 1220,
+            "detailed": 1.623692831,
+            "snapshot": 1.618303893
+          },
+          "unmatched": 0
+        },
+        {
+          "metric": "frame-rms",
+          "value": 0.001148149144,
+          "pairs": 301,
+          "unmatched": 0
+        },
+        {
+          "metric": "step-max",
+          "value": 0.005436726271,
+          "pairs": 3001,
+          "at": {
+            "ms": 1224,
+            "detailed": 1.629387769,
+            "snapshot": 1.623951042
+          },
+          "unmatched": 0
+        },
+        {
+          "metric": "step-rms",
+          "value": 0.001149827248,
+          "pairs": 3001,
+          "unmatched": 0
+        }
+      ],
+      "criteria": [
+        {
+          "kind": "precision",
+          "from": "sfab/sg90@1.0.0 shaft",
+          "threshold": 0.01692668455597949,
+          "reference": {
+            "kind": "absolute"
+          },
+          "conditions": [
+            {
+              "kind": "steady@1",
+              "window": 0.06
+            }
+          ],
+          "source": {
+            "title": "TowerPro SG90 datasheet: dead band width 10 us; PWM period 20 ms",
+            "ref": "The dead band in angle is 10 us times the pulse-to-angle gain. This bench maps 544 to 2400 us onto pi rad (Arduino Servo.h MIN_PULSE_WIDTH and MAX_PULSE_WIDTH, packages/sim/src/servo.ts), so 10 us is pi * 10 / 1856 rad. The datasheet's own 1 to 2 ms over half a turn would give pi / 100 rad; the stricter value is kept. The settle window W is three pulse periods, 3 * 20 ms."
+          },
+          "metrics": [
+            {
+              "metric": "settled-max",
+              "value": 0.001394080567,
+              "pairs": 2010,
+              "at": {
+                "ms": 1359,
+                "detailed": 1.564150938,
+                "snapshot": 1.565545019
+              }
+            },
+            {
+              "metric": "settled-rms",
+              "value": 0.0003580618807,
+              "pairs": 2010
+            }
+          ],
+          "coverage": {
+            "qualified": 2010,
+            "ms": 2010,
+            "excluded": {
+              "start or end of run": 120,
+              "moving": 871
+            }
+          },
+          "verdict": "within"
+        }
+      ],
+      "inDomain": false
+    },
+    {
+      "quantity": "servo.V+.current",
+      "metrics": [
+        {
+          "metric": "frame-max",
+          "value": 0.01311073258,
+          "pairs": 301,
+          "at": {
+            "ms": 2070,
+            "detailed": 0.08373229086,
+            "snapshot": 0.07062155827
+          },
+          "unmatched": 0
+        },
+        {
+          "metric": "frame-rms",
+          "value": 0.001011569533,
+          "pairs": 301,
+          "unmatched": 0
+        },
+        {
+          "metric": "step-max",
+          "value": 0.02001575555,
+          "pairs": 3001,
+          "at": {
+            "ms": 1164,
+            "detailed": 0.08949933949,
+            "snapshot": 0.06948358393
+          },
+          "unmatched": 0
+        },
+        {
+          "metric": "step-rms",
+          "value": 0.001343812453,
+          "pairs": 3001,
+          "unmatched": 0
+        }
+      ],
+      "criteria": [],
+      "verdict": "none",
+      "reason": "no resolution",
+      "inDomain": false
+    },
+    {
+      "quantity": "uno.5V.voltage",
+      "metrics": [
+        {
+          "metric": "frame-max",
+          "value": 0.009433668247,
+          "pairs": 301,
+          "at": {
+            "ms": 2070,
+            "detailed": 4.904925025,
+            "snapshot": 4.914358694
+          },
+          "unmatched": 0
+        },
+        {
+          "metric": "frame-rms",
+          "value": 0.0007324082791,
+          "pairs": 301,
+          "unmatched": 0
+        },
+        {
+          "metric": "step-max",
+          "value": 0.01434094895,
+          "pairs": 3001,
+          "at": {
+            "ms": 1164,
+            "detailed": 4.900825706,
+            "snapshot": 4.915166655
+          },
+          "unmatched": 0
+        },
+        {
+          "metric": "step-rms",
+          "value": 0.0009708500518,
+          "pairs": 3001,
+          "unmatched": 0
+        }
+      ],
+      "criteria": [],
+      "verdict": "none",
+      "reason": "no resolution",
+      "inDomain": false
+    },
+    {
+      "quantity": "uno.VBUS.voltage",
+      "metrics": [
+        {
+          "metric": "frame-max",
+          "value": 0.006643428343,
+          "pairs": 301,
+          "at": {
+            "ms": 2070,
+            "detailed": 4.933045793,
+            "snapshot": 4.939689221
+          },
+          "unmatched": 0
+        },
+        {
+          "metric": "frame-rms",
+          "value": 0.0005157804783,
+          "pairs": 301,
+          "unmatched": 0
+        },
+        {
+          "metric": "step-max",
+          "value": 0.01009925982,
+          "pairs": 3001,
+          "at": {
+            "ms": 1164,
+            "detailed": 4.930158948,
+            "snapshot": 4.940258208
+          },
+          "unmatched": 0
+        },
+        {
+          "metric": "step-rms",
+          "value": 0.0006836972195,
+          "pairs": 3001,
+          "unmatched": 0
+        }
+      ],
+      "criteria": [],
+      "verdict": "none",
+      "reason": "no resolution",
+      "inDomain": false
+    }
+  ],
+  "domain": {
+    "detailed": {
+      "envelope": [],
+      "stale": [],
+      "unchecked": [],
+      "degraded": []
+    },
+    "snapshot": {
+      "envelope": [
+        {
+          "path": "uno.power",
+          "ref": "sfab/uno-power-input@1.0.0",
+          "port": "VBUS",
+          "quantity": "Current",
+          "range": "0..0.5"
+        }
+      ],
+      "stale": [],
+      "unchecked": [],
+      "degraded": []
+    }
+  },
+  "inDomain": false
+}

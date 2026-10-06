@@ -11,14 +11,32 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  atmega328pSoaWarning,
+  type RecordingRead,
+  soaWarning,
   type WorldServerMessage,
   type WorldState,
 } from "@sfab-bench/contract";
 
 import { BROWNOUT_RESET } from "@sfab-bench/engine-mcu";
-
+import {
+  displayMotion,
+  noLoadSpeedRad,
+  runningReset,
+  servoElectrical,
+  solveRail,
+  stallCurrent,
+  stallTorque,
+  stepReset,
+} from "@sfab-bench/sim/power";
+import { viewOf } from "@sfab-bench/sim/view";
+import { powerFeedsOf } from "@sfab-bench/sim/wiring";
 import { closeRootWatches } from "./projects";
+import {
+  BOD_ASSERT_V,
+  BOD_RELEASE_V,
+  BROWNOUT_LIMITS,
+  RESET_HOLD_MS,
+} from "./world/chip-brownout";
 import {
   attachWorld,
   brownoutBootSnapshot,
@@ -26,22 +44,7 @@ import {
   stopWorld,
 } from "./world/host";
 import { planWorld } from "./world/plan";
-import {
-  BOD_ASSERT_V,
-  BOD_RELEASE_V,
-  displayMotion,
-  noLoadSpeedRad,
-  RESET_HOLD_MS,
-  runningBrownout,
-  servoElectrical,
-  solveRail,
-  stallCurrent,
-  stallTorque,
-  stepBrownout,
-} from "./world/power";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
-import { viewOf } from "./world/view";
-import { powerFeedsOf } from "./world/wiring";
 
 /**
  * Power budget on sim time. Samples are the state posted for that sim
@@ -221,31 +224,31 @@ expect(
   "20 ms of stall shows stall"
 );
 
-const reset = runningBrownout();
-const held = stepBrownout(reset, BOD_ASSERT_V - 0.001, 10);
+const reset = runningReset();
+const held = stepReset(reset, BOD_ASSERT_V - 0.001, 10, BROWNOUT_LIMITS);
 expect(held.assertReset && held.phase === "held", "2.674 V asserts");
 expect(
-  !stepBrownout(reset, BOD_ASSERT_V, 10).assertReset,
+  !stepReset(reset, BOD_ASSERT_V, 10, BROWNOUT_LIMITS).assertReset,
   "2.675 V does not assert"
 );
-const waiting = stepBrownout(held, BOD_RELEASE_V, 11);
+const waiting = stepReset(held, BOD_RELEASE_V, 11, BROWNOUT_LIMITS);
 expect(
   waiting.phase === "held" && waiting.releaseAtMs === null,
   "2.725 V stays held"
 );
-const released = stepBrownout(held, BOD_RELEASE_V + 0.001, 12);
+const released = stepReset(held, BOD_RELEASE_V + 0.001, 12, BROWNOUT_LIMITS);
 expect(
   released.phase === "delay" && released.releaseAtMs === 12,
   "2.726 V starts the delay"
 );
-const early = stepBrownout(released, 5, 12 + RESET_HOLD_MS - 1);
+const early = stepReset(released, 5, 12 + RESET_HOLD_MS - 1, BROWNOUT_LIMITS);
 expect(!early.reboot && early.phase === "delay", "65 ms is still in reset");
-const booted = stepBrownout(released, 5, 12 + RESET_HOLD_MS);
+const booted = stepReset(released, 5, 12 + RESET_HOLD_MS, BROWNOUT_LIMITS);
 expect(
   booted.reboot && booted.phase === "run",
   "66 ms is the first instruction"
 );
-const dipped = stepBrownout(released, BOD_ASSERT_V - 0.001, 20);
+const dipped = stepReset(released, BOD_ASSERT_V - 0.001, 20, BROWNOUT_LIMITS);
 expect(
   dipped.phase === "held" && dipped.releaseAtMs === null && !dipped.assertReset,
   "a dip during the delay restarts the hold"
@@ -253,20 +256,28 @@ expect(
 console.log("brownout: assert 2.675 V, release 2.725 V, hold 66 ms");
 
 const brownoutV = 2.7;
-const inBand = atmega328pSoaWarning(3.2, brownoutV);
+const floorV = 3.78;
+const atmega328p = { label: "ATmega328P", hz: 16_000_000 };
+const inBand = soaWarning(3.2, brownoutV, floorV, atmega328p);
 expect(
   inBand?.code === "below-16mhz-soa" &&
     inBand.message ===
       "supply 3.20 V is below the 3.78 V the ATmega328P needs at 16 MHz; real boards may misbehave",
   `soa message ${inBand?.message}`
 );
-expect(atmega328pSoaWarning(3.78, brownoutV) === null, "3.78 V is in spec");
-expect(atmega328pSoaWarning(5, brownoutV) === null, "5 V is in spec");
 expect(
-  atmega328pSoaWarning(2.7, brownoutV) === null,
+  soaWarning(3.78, brownoutV, floorV, atmega328p) === null,
+  "3.78 V is in spec"
+);
+expect(soaWarning(5, brownoutV, floorV, atmega328p) === null, "5 V is in spec");
+expect(
+  soaWarning(2.7, brownoutV, floorV, atmega328p) === null,
   "brownout edge is not SOA"
 );
-expect(atmega328pSoaWarning(2.5, brownoutV) === null, "brownout is not SOA");
+expect(
+  soaWarning(2.5, brownoutV, floorV, atmega328p) === null,
+  "brownout is not SOA"
+);
 console.log("soa: 3.20 V warns, 2.70 V and 3.78 V do not");
 
 expect(
@@ -367,7 +378,7 @@ async function sample(
   totalMs: number,
   stepMs: number,
   boards: readonly string[],
-  beforeStop?: () => void
+  beforeStop?: () => void | Promise<void>
 ): Promise<Row[]> {
   const trace = openTrace(project, worldRel);
   const attached = await trace.attached;
@@ -382,7 +393,7 @@ async function sample(
         serial[board] = serialText(trace.events, board);
       rows.push({ state, serial });
     }
-    beforeStop?.();
+    await beforeStop?.();
     return rows;
   } finally {
     attached.detach();
@@ -441,18 +452,26 @@ for (const row of holdRows) {
   );
   expect(voltage >= 4.5, `hold rail ${voltage} V at ${row.state.simTime}`);
   expect(board?.resets === 0, `hold resets ${board?.resets}`);
-  expect(board?.brownout !== true, "hold board browned out");
+  expect(board?.inReset !== true, "hold board browned out");
   expect(board?.running === true, "hold board stopped");
 }
 console.log(`hold minimum voltage ${holdMin.toFixed(3)} V`);
 
+let stallFrames: RecordingRead["frames"] = [];
 const stallRows = await sample(
   armDir,
   "parts/sfab/arm-stall@1.0.0.json",
   2000,
   1,
   ["uno"],
-  () => {
+  async () => {
+    const read = await readRecording(
+      armDir,
+      "parts/sfab/arm-stall@1.0.0.json",
+      { from: 0, to: 2 }
+    );
+    if ("error" in read) throw new Error(read.error);
+    stallFrames = read.frames;
     const snap = brownoutBootSnapshot(
       armDir,
       "parts/sfab/arm-stall@1.0.0.json",
@@ -469,11 +488,11 @@ const stallRows = await sample(
       `reset regs ${JSON.stringify(snap.regs)}`
     );
     expect(
-      snap.regs.UCSR0A === 0x20 && snap.regs.UCSR0C === 0x06,
-      `usart ${snap.regs.UCSR0A.toString(16)} ${snap.regs.UCSR0C.toString(16)}`
+      snap.regs.UCSRnA === 0x20 && snap.regs.UCSRnC === 0x06,
+      `usart ${snap.regs.UCSRnA.toString(16)} ${snap.regs.UCSRnC.toString(16)}`
     );
     expect(
-      snap.pins.ddr === 0 && snap.pins.level === 0,
+      snap.pins.ddr[0] === 0 && snap.pins.level[0] === 0,
       `pins before the first instruction ddr ${snap.pins.ddr} level ${snap.pins.level}`
     );
     console.log(
@@ -482,15 +501,16 @@ const stallRows = await sample(
   }
 );
 const benchOf = (row: Row) => row.state.boards.uno;
-const sagAt = stallRows.find(
-  (row) => (benchOf(row)?.voltage ?? 5) < BOD_ASSERT_V
+// The rail dips under assert inside the step that resets, then recovers
+// once the servo opens, so the dip is the recorded frame minimum, not a
+// step-end voltage.
+const sagAt = stallFrames.find(
+  (frame) => (frame.boards.uno?.minVoltage ?? 5) < BOD_ASSERT_V
 );
-const resetAt = stallRows.find(
-  (row) => row.state.boards.uno?.brownout === true
-);
+const resetAt = stallRows.find((row) => row.state.boards.uno?.inReset === true);
 const recoveryAt = stallRows.find(
   (row) =>
-    row.state.boards.uno?.brownout === true &&
+    row.state.boards.uno?.inReset === true &&
     (row.state.boards.uno.resets ?? 0) === 0 &&
     (benchOf(row)?.voltage ?? 0) > BOD_RELEASE_V
 );
@@ -505,6 +525,10 @@ const shoulder = jointLimitRad(
   "shoulder"
 );
 let benchMin = Infinity;
+for (const frame of stallFrames) {
+  const low = frame.boards.uno?.minVoltage ?? 5;
+  if (low < benchMin) benchMin = low;
+}
 let armPeak = 0;
 let armAt = 0;
 let angleLo = Number.POSITIVE_INFINITY;
@@ -516,7 +540,6 @@ for (const row of stallRows) {
     terminal === voltage,
     `bench terminal ${terminal} V is not the board node ${voltage} V`
   );
-  if (voltage < benchMin) benchMin = voltage;
   const angle = row.state.joints.arm?.shoulder ?? startAngle;
   if (angle < angleLo) angleLo = angle;
   if (angle > angleHi) angleHi = angle;
@@ -528,15 +551,16 @@ for (const row of stallRows) {
 }
 // Each assert step's torque leaves a velocity that coasts while the
 // winding is open, so the shoulder walks a few degrees. It does not
-// reach the stop. 5.74° at 2 s on this fit.
+// reach the stop. 2.64° at 2 s on this fit.
 const limitDeg = (shoulder.upper * 180) / Math.PI;
 expect(
   angleLo >= shoulder.lower && angleHi < shoulder.upper,
   `shoulder ${angleLo.toFixed(4)}..${angleHi.toFixed(4)} rad reached the stop ${shoulder.lower}..${shoulder.upper}`
 );
-// The capacitors hold the board node during the brownout.
+// The servo opens at the sub-step the node crosses assert, so the rail
+// undershoots it by about one 0.1 ms sub-step of slew.
 expect(
-  Math.abs(benchMin - 2.099) <= 0.02,
+  Math.abs(benchMin - 2.557) <= 0.02,
   `bench rail minimum ${benchMin.toFixed(3)} V`
 );
 console.log(
@@ -553,9 +577,9 @@ for (const row of stallRows) {
   if (row.state.simTime >= rebootAt.state.simTime) break;
   const pins = row.state.boards.uno?.pins;
   expect(
-    row.state.boards.uno?.brownout === true &&
-      pins?.ddr === 0 &&
-      pins.level === 0,
+    row.state.boards.uno?.inReset === true &&
+      pins?.ddr[0] === 0 &&
+      pins.level[0] === 0,
     `driven during reset at ${row.state.simTime}`
   );
 }
@@ -577,7 +601,7 @@ console.log(
   `milestone-1 arm-stall before: brownout 0.060 s, reset 0.130 s, bench minimum 1.704 V, shoulder peak 6.359°`
 );
 console.log(
-  `milestone-1 arm-stall after: brownout ${sagAt?.state.simTime.toFixed(3)} s, ` +
+  `milestone-1 arm-stall after: brownout ${sagAt?.t.toFixed(3)} s, ` +
     `reset ${resetAt.state.simTime.toFixed(3)} s, ` +
     `reboot ${rebootAt.state.simTime.toFixed(3)} s, ` +
     `bench minimum ${benchMin.toFixed(3)} V, ` +
@@ -609,10 +633,7 @@ try {
   for (const row of usbRows) {
     const voltage = row.state.boards.uno?.voltage ?? Number.NaN;
     if (voltage < usbMin) usbMin = voltage;
-    expect(
-      row.state.boards.uno?.brownout !== true,
-      "usb stall reset the board"
-    );
+    expect(row.state.boards.uno?.inReset !== true, "usb stall reset the board");
     expect(
       (row.state.boards.uno?.resets ?? 0) === 0,
       "usb stall counted a reset"
@@ -620,8 +641,11 @@ try {
   }
   // The board card is the 5V node. One stalled SG90 on the USB cable
   // sits at 4.494 V: the terminal is 5 − I·0.5 Ω, and the fuse plus the
-  // switch drop about I·(0.15 + 0.06) Ω. Still above brownout.
-  expect(Math.abs(usbMin - 4.494279) <= 1e-4, `usb stall minimum ${usbMin} V`);
+  // switch drop about I·(0.15 + 0.06) Ω. Still above brownout. U2's
+  // 65 µA ground current moved it +0.15 mV from 4.494279 V: the servo's
+  // speed history differs, and at the 353 ms minimum it draws 0.28 mA
+  // less (M2c).
+  expect(Math.abs(usbMin - 4.494432) <= 1e-4, `usb stall minimum ${usbMin} V`);
   const blocked = usbRows.filter((row) => row.state.simTime >= 1.5);
   expect(blocked.length > 100, "usb stall tail");
   expect(
@@ -758,7 +782,7 @@ try {
     const voltage = row.state.boards.hold?.voltage ?? Number.NaN;
     if (voltage < holdMin) holdMin = voltage;
     const board = row.state.boards.hold;
-    expect(board?.resets === 0 && board.brownout !== true, "split hold reset");
+    expect(board?.resets === 0 && board.inReset !== true, "split hold reset");
   }
   // A step from rest is the ω = 0 stall point on the USB cable, 4.509 V
   // at the board node. The class-1 terminal is about 4.64 V; the fuse and
@@ -768,8 +792,10 @@ try {
   const stallSide = split.find(
     (row) => (row.state.boards.stall?.resets ?? 0) >= 1
   );
+  // The node dips under assert inside the step and recovers once the
+  // servo opens, so the step-end voltage does not show it; the reset cause does.
   const stallSag = split.find(
-    (row) => (row.state.boards.stall?.voltage ?? 5) < BOD_ASSERT_V
+    (row) => row.state.boards.stall?.resetCause === "brownout"
   );
   expect(stallSag, "stall supply never sagged");
   expect(stallSide, "stall board never reset");
@@ -791,7 +817,7 @@ try {
   // The stall servo's current pulls that rail through brownout, so the
   // hold board resets even though its own servo is not stalled.
   const sharedSag = shared.find(
-    (row) => (row.state.boards.hold?.voltage ?? 5) < BOD_ASSERT_V
+    (row) => row.state.boards.hold?.resetCause === "brownout"
   );
   const holdReset = shared.find(
     (row) => (row.state.boards.hold?.resets ?? 0) >= 1
@@ -821,7 +847,7 @@ try {
       for (let ms = 1; ms <= 2000; ms++) {
         attached.step(1);
         const state = await trace.at(ms / 1000);
-        if (state.boards.uno?.brownout === true) {
+        if (state.boards.uno?.inReset === true) {
           browned = state;
           break;
         }
@@ -831,9 +857,9 @@ try {
       const brownedRail = browned.supplies?.bench;
       const brownedPart = browned.parts?.servo;
       expect(
-        browned.boards.uno?.brownout === true &&
-          (brownedRail?.voltage ?? 5) < BOD_ASSERT_V,
-        `brownout sample ${browned.boards.uno?.brownout} ${brownedRail?.voltage} V ${brownedPart?.state} ${brownedPart?.current} A`
+        browned.boards.uno?.inReset === true &&
+          browned.boards.uno.resetCause === "brownout",
+        `brownout sample ${browned.boards.uno?.inReset} ${brownedRail?.voltage} V ${brownedPart?.state} ${brownedPart?.current} A`
       );
       const hexPath = join(reloadRoot, "firmware/stall/stall.hex");
       const from = trace.events.length;
@@ -864,11 +890,11 @@ try {
         `rail ${rail.voltage} V at ${rail.current} A, draw ${draw} A`
       );
       expect(
-        board?.brownout === false && board.running === true,
-        `running ${board?.running} brownout ${board?.brownout} at ${rail.voltage} V`
+        board?.inReset === false && board.running === true,
+        `running ${board?.running} brownout ${board?.inReset} at ${rail.voltage} V`
       );
       console.log(
-        `hex reload during brownout: ${rail.voltage.toFixed(2)} V, ${rail.current} A, running ${board?.running}, brownout ${board?.brownout}`
+        `hex reload during brownout: ${rail.voltage.toFixed(2)} V, ${rail.current} A, running ${board?.running}, brownout ${board?.inReset}`
       );
     } finally {
       attached.detach();
@@ -915,9 +941,11 @@ try {
       const state = await trace.at(0.02);
       const voltage = state.supplies?.usb?.voltage ?? Number.NaN;
       const warning = state.boards.uno?.warnings?.[0];
-      expect(Math.abs(voltage - 3.2) < 1e-9, `soa rail ${voltage}`);
+      // 5 − 36 Ω × 50 mA was 3.2 V; U2's 65 µA ground current takes
+      // another 2.34 mV off the weak supply (M2c).
+      expect(Math.abs(voltage - 3.19766) < 1e-6, `soa rail ${voltage}`);
       expect(state.boards.uno?.running === true, "soa board stopped");
-      expect(state.boards.uno?.brownout !== true, "soa board browned out");
+      expect(state.boards.uno?.inReset !== true, "soa board browned out");
       expect(
         warning?.code === "below-16mhz-soa" &&
           warning.message.includes("3.20 V"),

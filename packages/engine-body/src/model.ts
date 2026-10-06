@@ -35,13 +35,22 @@ export type BodyScene = {
     targets: WorldTarget[];
   };
   robots: { id: string; urdf: string; pose: WorldPose }[];
+  /**
+   * Actuated joints. Each one with `drives` gets a torque actuator named
+   * `id`. `motor` replaces the joint's armature, friction and damping;
+   * absent keeps the URDF's.
+   */
   parts: {
     id: string;
     drives?: { robot: string; joint: string };
     motor?: BodyMotor;
     torqueNm?: number;
   }[];
-  rangers?: { length: number };
+  /**
+   * A part in the run casts rays. Rays test group 0, so only targets and
+   * static primitives stay there.
+   */
+  rays?: boolean;
 };
 
 const TIMESTEP_S = 0.001;
@@ -432,6 +441,9 @@ function applyLimitSolref(
   const stride = model.njnt > 0 ? solref.length / model.njnt : 0;
   if (stride < 2) return;
   const jointType = mj.mjtObj.mjOBJ_JOINT.value;
+  // Fixed at the 1 ms step, not the run's: a finer step must not stiffen an
+  // authored limit, or the law would change with the step. Every allowed
+  // step is at most 1 ms, so this stays at least twice it.
   const minTimeconst = 2 * TIMESTEP_S;
   for (let joint = 0; joint < model.njnt; joint++) {
     const lower = limits[joint * 2] ?? 0;
@@ -568,7 +580,7 @@ export async function compileWorld(
     });
 
     for (const part of worldDoc.parts) {
-      if (!part.drives || !part.motor) continue;
+      if (!part.drives) continue;
       const defaults = mj.mjs_getSpecDefault(scene);
       if (!defaults) throw new Error("MuJoCo spec has no default");
       const actuator = mj.mjs_addActuator(world, defaults);
@@ -612,10 +624,10 @@ export async function compileWorld(
     applyServoTorqueClamp(mj, model, worldDoc);
     applyServoDynamics(mj, model, worldDoc);
     applyLimitSolref(mj, model, urdfLimitSolref(worldDoc, files));
-    // Rays test group 0. With a ranger in the run, only targets and
+    // Rays test group 0. With a part that casts rays, only targets and
     // static primitives stay there. Robots and the ground move to
-    // group 1. A world with no ranger keeps every geom in the default group.
-    if ((worldDoc.rangers?.length ?? 0) > 0) {
+    // group 1. A world with none keeps every geom in the default group.
+    if (worldDoc.rays === true) {
       const geomModel = model;
       const groups = geomModel.geom_group as Uint8Array;
       for (let i = 0; i < geomModel.ngeom; i++) groups[i] = 1;

@@ -8,8 +8,22 @@ import { RangerRuntime } from "../ranger";
 import { blankTrack, trackServo } from "../servo";
 import { targetPosition } from "../targets";
 import { fail, simMs } from "./common";
-import { latchedSupplyNode } from "./rails";
+import {
+  latchedBoardNode,
+  latchedSupplyNode,
+  loadBoard,
+  partVolts,
+  powerBoardOf,
+} from "./rails";
 import { scalar } from "./recorder";
+import {
+  applyShaftTorque,
+  classifyShafts,
+  latchControls,
+  noteShaftSeams,
+  rearmControls,
+  setControlTarget,
+} from "./shafts";
 import { warnEnvelope } from "./solve";
 import type { Load, ServoDrive, SessionState } from "./state";
 
@@ -24,6 +38,7 @@ export function rearmServos(s: SessionState, boardId: string, board: AvrBoard) {
     load.sample = null;
     load.stallMs = 0;
   }
+  rearmControls(s, boardId, board);
 }
 
 function jointNow(
@@ -63,8 +78,13 @@ export function bindRangers(s: SessionState, plan: RunPlan) {
   s.rangers = (plan.rangers ?? []).map((spec) => {
     const ranger = new RangerRuntime(spec);
     ranger.supplyId = s.partFeeds[spec.id] ?? null;
-    ranger.volts = () =>
-      ranger.supplyId ? latchedSupplyNode(s, ranger.supplyId) : 0;
+    ranger.powerBoard = powerBoardOf(plan, spec);
+    ranger.volts = () => {
+      if (!ranger.supplyId) return 0;
+      return ranger.powerBoard
+        ? latchedBoardNode(s, ranger.powerBoard)
+        : latchedSupplyNode(s, ranger.supplyId);
+    };
     ranger.physics = () =>
       s.sim ? { mj: s.sim.mj, model: s.sim.model, data: s.sim.data } : null;
     return ranger;
@@ -107,7 +127,7 @@ export function latchServos(s: SessionState) {
     const drive = load.drive;
     if (!drive?.board) continue;
     const cpu = drive.board;
-    const driven = Boolean(cpu.running && !cpu.brownout);
+    const driven = Boolean(cpu.running && !cpu.inReset);
     const taken = driven ? s.stepPulses.get(cpu.id) : undefined;
     const widths = taken
       ? taken
@@ -122,6 +142,7 @@ export function latchServos(s: SessionState) {
     });
     drive.track = stepped.track;
   }
+  latchControls(s, simTime);
 }
 
 /** Motor torque from the rail solved for the latched command. */
@@ -133,9 +154,10 @@ export function applyTorque(s: SessionState) {
     if (!drive || !sample) continue;
     const cpu = drive.board;
     const powered = load.supplyId !== null;
-    const held = cpu !== null && (!cpu.running || cpu.brownout);
-    // The sample is the current already charged to the rail, including
-    // the step that asserts reset. A board already in reset was latched
+    const held = cpu !== null && (!cpu.running || cpu.inReset);
+    // The winding is the current already charged to the rail. On the step
+    // that asserts reset it is the share before the brownout opened the
+    // motor (`RailCircuit.armTrips`). A board already in reset was latched
     // limp, so its sample carries no torque.
     const limp = !powered || sample.limp;
     let torque = 0;
@@ -150,6 +172,7 @@ export function applyTorque(s: SessionState) {
     s.sim.data.actuator(load.partId).ctrl = torque;
     if (held) drive.track = blankTrack();
   }
+  applyShaftTorque(s);
 }
 
 /** Display state from the sample that solved the rail and the joint after the step. */
@@ -167,7 +190,10 @@ export function classifyLoads(s: SessionState) {
     const stallOmega = (DISPLAY_STALL_DEG_PER_SEC * Math.PI) / 180;
     const stalling =
       !sample.limp && sample.saturated && Math.abs(omega) < stallOmega;
-    load.stallMs = stalling ? load.stallMs + 1 : 0;
+    // Counted in steps so a sum of fractional steps lands on whole ms.
+    load.stallMs = stalling
+      ? Math.round(load.stallMs * s.perMs + 1) / s.perMs
+      : 0;
     load.state = displayMotion({
       limp: sample.limp,
       saturated: sample.saturated,
@@ -176,7 +202,9 @@ export function classifyLoads(s: SessionState) {
       stallForMs: load.stallMs,
     });
     noteBodyEnvelope(s, load.partId, omega);
+    noteBehaviourEnvelope(s, load);
   }
+  classifyShafts(s);
 }
 
 /** Joint speed and applied torque against a body snapshot's shaft bounds. */
@@ -199,6 +227,27 @@ function noteBodyEnvelope(
   warnEnvelope(
     s,
     partId,
+    snap.ref,
+    { bounds: snap.bounds, current: [0, 0] },
+    observed
+  );
+}
+
+/** The part's own current and voltage against its behaviour snapshot's bounds. */
+function noteBehaviourEnvelope(s: SessionState, load: Load): void {
+  const snap = s.runPlan?.parts.find(
+    (part) => part.id === load.partId
+  )?.behaviourSnapshot;
+  if (!snap || !load.supplyId) return;
+  const volts = partVolts(s, load.supplyId, loadBoard(load));
+  const observed: Record<string, number> = {};
+  for (const key of Object.keys(snap.bounds)) {
+    if (key.endsWith(".current")) observed[key] = load.current;
+    else if (key.endsWith(".voltage")) observed[key] = volts;
+  }
+  warnEnvelope(
+    s,
+    load.partId,
     snap.ref,
     { bounds: snap.bounds, current: [0, 0] },
     observed
@@ -236,6 +285,7 @@ export function noteMotorSeams(s: SessionState): void {
     });
     noted = true;
   }
+  if (noteShaftSeams(s, dt)) noted = true;
   if (!noted) return;
   const closed = s.seams.endStep();
   if (!closed.closed || !s.runReport) return;
@@ -260,9 +310,14 @@ export function setTarget(s: SessionState, partId: string, radians: number) {
     fail(s, [], `no actuator for part "${partId}".`);
     return;
   }
+  const degrees = (radians * 180) / Math.PI;
   const drive = s.loads.find((item) => item.partId === partId)?.drive;
-  if (!drive || drive.board) return;
-  drive.manualDeg = (radians * 180) / Math.PI;
+  if (!drive) {
+    setControlTarget(s, partId, degrees);
+    return;
+  }
+  if (drive.board) return;
+  drive.manualDeg = degrees;
 }
 
 /**

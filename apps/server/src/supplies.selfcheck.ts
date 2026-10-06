@@ -23,11 +23,11 @@ import {
   TheveninLimit,
 } from "@sfab-bench/engine-circuit";
 import { type BatteryParams, batteryFrom, ocvAt } from "@sfab-bench/parts";
+import { NANO_BOARD_A } from "@sfab-bench/sim/power-path";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
+import { RunRecorder } from "@sfab-bench/sim/record";
 import { boardStampOf } from "./world/circuit-stamp";
 import { catalogRoot, planWorld } from "./world/plan";
-import { NANO_BOARD_A } from "./world/power-path";
-import { createRailCircuit } from "./world/rail-circuit";
-import { RunRecorder } from "./world/record";
 
 const MASTER_S = 0.001;
 const LOAD_A = 0.2;
@@ -204,7 +204,7 @@ function nanoLine(): string {
     feed: "header",
   });
   rail.setFixed(NANO_BOARD_A);
-  rail.setD13("high");
+  rail.setPin("D13", "high");
   for (let k = 0; k < 1000; k++) rail.solve();
   const v1 = rail.boardVoltage;
   const i1 = rail.ledCurrent;

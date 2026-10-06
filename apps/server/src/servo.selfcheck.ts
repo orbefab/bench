@@ -12,12 +12,8 @@ import { fileURLToPath } from "node:url";
 
 import type { WorldServerMessage, WorldState } from "@sfab-bench/contract";
 import { compileWorld, JOINT_LIMIT_SOLREF } from "@sfab-bench/engine-body";
-
-import { closeRootWatches } from "./projects";
-import { projectReal, readerFor } from "./world/files";
-import { attachWorld, stopWorld } from "./world/host";
-import { planWorld } from "./world/plan";
-import { readDraft, writeDraft } from "./world/selfcheck-draft";
+import type { LiveNet, LivePort } from "@sfab-bench/parts";
+import { gpioIndex } from "@sfab-bench/sim";
 import {
   blankTrack,
   commandDegFromPulse,
@@ -27,8 +23,13 @@ import {
   SERVO_US_MIN,
   SIGNAL_GAP_MS,
   trackServo,
-} from "./world/servo";
-import { servoSignalDrives } from "./world/wiring";
+} from "@sfab-bench/sim/servo";
+import { servoSignalDrives } from "@sfab-bench/sim/wiring";
+import { closeRootWatches } from "./projects";
+import { projectReal, readerFor } from "./world/files";
+import { attachWorld, stopWorld } from "./world/host";
+import { planWorld } from "./world/plan";
+import { readDraft, writeDraft } from "./world/selfcheck-draft";
 
 /**
  * Servo drive on sim time. `step(1)` is one millisecond. Samples are the
@@ -79,39 +80,54 @@ expect(
   `fixture drive ${JSON.stringify(drives)}`
 );
 
-const unwired = structuredClone(hold);
-unwired.wires = unwired.wires.filter((wire) => !wire.includes("servo.signal"));
-expect(
-  servoSignalDrives(unwired).length === 0,
-  "an unwired signal is not driven"
-);
-
-const hopped = structuredClone(hold);
-hopped.wires = hopped.wires.map((wire) => {
-  const ends = [wire[0], wire[1]].sort().join("|");
-  return ends === "servo.signal|uno.D9"
-    ? (["servo.signal", "led.signal"] as [string, string])
-    : wire;
+// The binding reads the resolved net of the signal port (gpio-binding.ts).
+const portOf = (full: string): LivePort => {
+  const dot = full.lastIndexOf(".");
+  return {
+    full,
+    path: full.slice(0, dot),
+    port: full.slice(dot + 1),
+    domain: "electrical",
+    ratings: {},
+    across: "V",
+  };
+};
+const netOf = (...ends: string[]): LiveNet => ({
+  id: ends.join("|"),
+  domain: "electrical",
+  ports: ends.map(portOf),
+  level: "",
+  reason: "",
 });
-hopped.wires.push(["led.signal", "uno.D9"]);
+const bound = (nets: LiveNet[], path = "servo") =>
+  gpioIndex(nets, hold.boards)(path, "signal");
+expect(bound([]).pin === null, "an unwired signal is not driven");
 expect(
-  servoSignalDrives(hopped).length === 0,
-  "a hop through another pin is not a direct drive"
+  bound([netOf("servo.signal", "led.signal", "uno.D9")]).pin?.pin === "D9",
+  "a junction on the signal's net is the same node"
 );
-
-const analog = structuredClone(hold);
-analog.wires = analog.wires.map((wire) => {
-  const ends = [wire[0], wire[1]].sort().join("|");
-  return ends === "servo.signal|uno.D9"
-    ? (["uno.A0", "servo.signal"] as [string, string])
-    : wire;
-});
-const a0 = servoSignalDrives(analog);
 expect(
-  a0.length === 1 && a0[0]?.boardId === "uno" && a0[0].pin === "A0",
-  `A0 drive ${JSON.stringify(a0)}`
+  bound([netOf("servo.signal", "r.A"), netOf("r.B", "uno.D9")]).pin === null,
+  "a hop through another part is another net, not a drive"
 );
-console.log("wiring: servo → uno.D9, unwired and hopped stay idle, A0 drives");
+expect(bound([netOf("uno.A0", "servo.signal")]).pin?.pin === "A0", "A0 drives");
+const shell = bound(
+  [netOf("uno.D9", "shell.signal", "shell.inner.signal")],
+  "shell.inner"
+);
+expect(
+  shell.pin?.pin === "D9",
+  "a shell's exposed port is the inner port's net"
+);
+const both = bound([netOf("servo.signal", "uno.D9", "uno.D10")]);
+expect(
+  both.pin === null &&
+    /reaches 2 board pins \(uno\.D9, uno\.D10\)/.test(both.detail ?? ""),
+  `two board pins on one net are not bound: ${both.detail}`
+);
+console.log(
+  "wiring: servo → uno.D9; unwired, a part hop and two board pins stay idle; a junction, a shell and A0 drive"
+);
 
 function closeTo(actual: number | null, expected: number, label: string) {
   expect(

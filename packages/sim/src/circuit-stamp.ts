@@ -3,9 +3,9 @@
  * same step: its children are parts, and `buildNets` names the nodes.
  */
 import {
-  arduinoPinBit,
   type BehaviourImpl,
   type LevelClass,
+  onboardLedPath,
   PART_FORMAT,
   PART_TYPE_FORMAT,
   type PartFile,
@@ -13,13 +13,10 @@ import {
   ROOT_PATH,
 } from "@sfab-bench/contract";
 import {
-  AVR_PIN,
   type AvrPinParams,
-  Capacitor,
-  Diode,
+  type Diode,
   type Element,
   Pin,
-  Resistor,
 } from "@sfab-bench/engine-circuit";
 import {
   buildNets,
@@ -31,19 +28,28 @@ import {
   type LiveInstance,
   type LiveNet,
   type LoadedPart,
+  type LoadedSnapshot,
   type LoadedType,
   ldoFrom,
   lintLibrary,
   loadPartById,
-  loadSnapshot,
   loadTypeById,
   netlistOf,
   resolveLevels,
+  resolveSnapshots,
   type SnapshotEnvelope,
+  siValue,
   type TableLaw,
   tableLawOf,
 } from "@sfab-bench/parts";
-import { boardHostOf, chipFactsOf } from "./chip-host";
+import {
+  boardGpio,
+  boardHostOf,
+  boardResetPort,
+  chipExposure,
+  chipFactsOf,
+  missingChipFacts,
+} from "./chip-host";
 import type { StampEnv } from "./env";
 import { formAdapter, stampDiode } from "./forms";
 import type { RailFeed } from "./power-path";
@@ -52,10 +58,14 @@ export const CIRCUIT_FORMS = [
   "resistor@1",
   "capacitor@1",
   "diode@1",
+  "led@1",
   "ptc-fuse@1",
   "pmos-switch@1",
   "ldo-regulator@1",
   "comparator@1",
+  "dc-motor@1",
+  "servo-control@1",
+  "potentiometer@1",
 ] as const;
 export type CircuitForm = (typeof CIRCUIT_FORMS)[number];
 
@@ -72,6 +82,17 @@ export type StampedTable = {
 
 export type StampedForm = CircuitForm | "table@1";
 
+/**
+ * A behaviour snapshot that runs as a circuit form: its ref, its envelope,
+ * and the form's port → the part's port, so the run can read the part at
+ * its own ports.
+ */
+export type StampedWatch = {
+  ref: string;
+  bounds: Record<string, [number, number]>;
+  ports: Record<string, string>;
+};
+
 export type CircuitInst = {
   path: string;
   form: StampedForm;
@@ -80,6 +101,7 @@ export type CircuitInst = {
   /** Port name → `path.port`. */
   ports: Record<string, string>;
   table?: StampedTable;
+  watch?: StampedWatch;
   /** `ldo-regulator@1` law. The dropout table is not in `params`. */
   ldo?: LdoParams;
 };
@@ -92,6 +114,7 @@ export type AssignedPart = {
   /** Port name → node. Ground is `"0"`. */
   nodes: Record<string, string>;
   table?: StampedTable;
+  watch?: StampedWatch;
   ldo?: LdoParams;
 };
 
@@ -108,9 +131,16 @@ export type BoardStamp = {
   boardNode: string;
   /** Null when the type has no USB connector port on a net. */
   vbusNode: string | null;
+  /** The regulator input's node. Null when the board has none on a net. */
+  regulatorNode: string | null;
   resetNode: string | null;
-  /** `${boardId}.led` when that part is an LED. The rail copies it onto `ledCurrent`. */
+  /** `onboardLedPath(boardId)` when that part runs `led@1`. The rail copies it onto `ledCurrent`. */
   ledAlias: string | null;
+  /**
+   * The pin that drives `ledAlias`: on the LED's net, or one resistor
+   * away (`D13` on the Nano, `RXLED` on the Pro Micro). Null otherwise.
+   */
+  ledPin: string | null;
   /** V_RST / VCC for this chip. Null when the chip is unknown here. */
   resetFraction: number | null;
   /** Board port → node. Absent when that port is not on a net. */
@@ -121,7 +151,7 @@ export type BoardStamp = {
 
 export type RealizedCircuit = {
   elements: Element[];
-  pins: { bit: number; pin: Pin }[];
+  pins: { bit: number; port: string; pin: Pin }[];
   leds: { path: string; diode: Diode }[];
   feedNode: string;
   boardNode: string;
@@ -130,6 +160,14 @@ export type RealizedCircuit = {
   capacitive: boolean;
   /** Parts the plan placed that this feed did not keep. */
   pruned: string[];
+  /** `path.port` → node, for the parts kept. */
+  ports: Map<string, string>;
+  /**
+   * Element id → the instance path it belongs to: each kept part's
+   * elements to the part, the pins to the board (`owner`). Ownership is
+   * this map, never read back from an element id.
+   */
+  owners: Map<string, string>;
 };
 
 type NetPorts = {
@@ -185,6 +223,29 @@ export function railPowerPorts(
   return names;
 }
 
+/**
+ * The regulator input: the one power input left once the rail (and, for a
+ * capture, its across pair) is taken out. The Nano and Uno call it `VIN`, the
+ * Pro Micro `RAW`, the power-input module `VIN`. USB connector ports and
+ * internal ports are not candidates. Null when none, or more than one, is left.
+ */
+export function regulatorInputPort(
+  ports: Record<string, PortDecl>,
+  taken: readonly string[]
+): string | null {
+  const left = Object.entries(ports)
+    .filter(
+      ([name, decl]) =>
+        !decl.internal &&
+        !decl.connector &&
+        decl.role === "power" &&
+        decl.direction === "in" &&
+        !taken.includes(name)
+    )
+    .map(([name]) => name);
+  return left.length === 1 ? (left[0] ?? null) : null;
+}
+
 /** Ground ports a wire can land on. Sorted, so the choice is stable. */
 export function groundPorts(ports: Record<string, PortDecl>): string[] {
   return Object.entries(ports)
@@ -210,6 +271,27 @@ export function connectorPort(
  * port on the feeding supply's GND net. Other nodes take the first
  * sorted port name on that net.
  */
+function ledPinOf(
+  led: AssignedPart,
+  pins: readonly StampedPin[],
+  parts: readonly AssignedPart[],
+  rails: ReadonlySet<string>
+): string | null {
+  // Walk only from the LED's signal end, so a pull-up or pull-down on the
+  // rail it shares does not name an unrelated pin.
+  const ends = Object.values(led.nodes).filter((node) => !rails.has(node));
+  const direct = pins.find((pin) => ends.includes(pin.node));
+  if (direct) return direct.port;
+  const far = new Set<string>();
+  for (const part of parts) {
+    if (part.form !== "resistor@1") continue;
+    const nodes = Object.values(part.nodes);
+    if (!nodes.some((node) => ends.includes(node))) continue;
+    for (const node of nodes) if (!rails.has(node)) far.add(node);
+  }
+  return pins.find((pin) => far.has(pin.node))?.port ?? null;
+}
+
 export function stampBoard(input: {
   boardId: string;
   netlist: boolean;
@@ -223,8 +305,15 @@ export function stampBoard(input: {
   resetPort: string | null;
   /** Internal port with `connector: "usb"`. Null when the type has none. */
   usbPort: string | null;
+  /** The regulator input (`regulatorInputPort`). Null when the type has none. */
+  regulatorPort: string | null;
   /** V_RST / VCC. Null when this stamp has no reset threshold. */
   resetFraction: number | null;
+  /**
+   * Exposed GPIO header names, in pin-state order. A port that is not
+   * in this list is not a chip pin. Absent stamps no GPIO.
+   */
+  pins?: readonly string[];
   parts: readonly CircuitInst[];
   /**
    * Parts on this supply that share no net with the board. They still
@@ -268,6 +357,7 @@ export function stampBoard(input: {
       ])
     ),
     ...(part.table ? { table: part.table } : {}),
+    ...(part.watch ? { watch: part.watch } : {}),
     ...(part.ldo ? { ldo: part.ldo } : {}),
   }));
   assigned.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -293,11 +383,13 @@ export function stampBoard(input: {
     return nodeByFull.get(full) ?? null;
   };
 
+  const order = input.pins ?? [];
   const pins: StampedPin[] = [];
   for (const [port, decl] of Object.entries(input.ports)) {
-    if (decl.internal) continue;
-    const bit = arduinoPinBit(port);
-    if (bit === undefined) continue;
+    // An internal port the drive order names (the Pro Micro RX and TX
+    // LEDs) still gets a pin element.
+    const bit = order.indexOf(port);
+    if (bit < 0) continue;
     const full = boardFull(port);
     const net = netContaining(input.nets, full);
     if (!net) continue;
@@ -317,16 +409,21 @@ export function stampBoard(input: {
     const node = named(port);
     if (node) portNodes[port] = node;
   }
-  const ledAlias =
-    assigned.find(
-      (part) => part.path === `${input.boardId}.led` && part.typeId === "led"
-    )?.path ?? null;
+  const led = assigned.find(
+    (part) =>
+      part.path === onboardLedPath(input.boardId) && part.form === "led@1"
+  );
+  const ledAlias = led?.path ?? null;
   return {
     netlist: input.netlist,
     boardNode,
     vbusNode: input.usbPort ? named(input.usbPort) : null,
+    regulatorNode: input.regulatorPort ? named(input.regulatorPort) : null,
     resetNode: input.resetPort ? named(input.resetPort) : null,
     ledAlias,
+    ledPin: led
+      ? ledPinOf(led, pins, assigned, new Set(["0", boardNode]))
+      : null,
     resetFraction: input.resetFraction,
     portNodes,
     parts: assigned,
@@ -362,44 +459,65 @@ export function touches(
 }
 
 /**
- * Forms that exist to regulate VIN. With VIN open they are not stamped:
- * their bias would move the USB branch the snapshot was captured from.
+ * A part whose form draws its supply from a port (`power.from`) runs its
+ * law only when that port's node is powered: a non-ground anchor, or
+ * reached from one through other parts. A part with a supply passes power
+ * from that port to the ones it feeds (`power.to`) only; any other part
+ * passes it between all of its ports. Ground never carries power. An
+ * unmet part becomes its form's unpowered contribution, or goes.
  */
-const VIN_ISLAND = new Set(["ldo-regulator@1", "comparator@1"]);
-
-/**
- * VIN open: drop the regulator island, and hold a P-channel gate that
- * lost its driver at ground. That is the comparator output sitting low,
- * and it leaves the USB elements where the snapshot captured them.
- */
-function dropOpenVin(
+function resolvePower(
   parts: readonly AssignedPart[],
-  vin: string | undefined,
   anchors: ReadonlySet<string>
 ): AssignedPart[] {
-  if (!vin || anchors.has(vin)) return [...parts];
-  const kept = parts.filter((part) => {
-    if (VIN_ISLAND.has(part.form)) return false;
-    return !Object.values(part.nodes).includes(vin);
-  });
-  return kept.map((part) => {
-    if (part.form !== "pmos-switch@1") return part;
-    const gate = part.nodes.G;
-    if (!gate || gate === "0" || anchors.has(gate)) return part;
-    const driven = kept.some(
-      (other) =>
-        other.path !== part.path && Object.values(other.nodes).includes(gate)
-    );
-    if (driven) return part;
-    return { ...part, nodes: { ...part.nodes, G: "0" } };
-  });
+  const powered = new Set([...anchors].filter((node) => node !== "0"));
+  const fromOf = (part: AssignedPart) => {
+    const power = formAdapter(part.form)?.power;
+    return power ? (part.nodes[power.from] ?? null) : undefined;
+  };
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const part of parts) {
+      const power = formAdapter(part.form)?.power;
+      const from = fromOf(part);
+      let reach: (string | undefined)[];
+      if (power) {
+        if (!from || !powered.has(from)) continue;
+        reach = power.to.map((port) => part.nodes[port]);
+      } else {
+        reach = Object.values(part.nodes);
+        if (!reach.some((node) => node && powered.has(node))) continue;
+      }
+      for (const node of reach) {
+        if (!node || node === "0" || powered.has(node)) continue;
+        powered.add(node);
+        grew = true;
+      }
+    }
+  }
+  const out: AssignedPart[] = [];
+  for (const part of parts) {
+    const from = fromOf(part);
+    if (from === undefined || (from !== null && powered.has(from))) {
+      out.push(part);
+      continue;
+    }
+    const rest = formAdapter(part.form)?.unpowered?.(part) ?? null;
+    if (rest) out.push(rest);
+  }
+  return out;
 }
 
 /**
- * Drop a part that has a node nothing else drives. A USB feed anchors
+ * Drop a part that has a node nothing else drives (a form's supplied
+ * output is driven by the part itself). A USB feed anchors
  * `VBUS`, so the Schottky stays. A header feed anchors `5V` only, so
- * that diode's open anode drops it. A VIN feed anchors `VIN`. No extra
- * conductance is added.
+ * that diode's open anode drops it. A regulator-input feed anchors that
+ * input (`VIN`, or the Pro Micro's `RAW`). No extra conductance is added.
+ * Before that, a part whose supply port is unpowered runs as its form's
+ * unpowered contribution (`resolvePower`): with VIN open, the VIN
+ * regulator goes and a comparator fed from 5V still drives its output.
  */
 export function realize(
   stamp: BoardStamp,
@@ -410,35 +528,38 @@ export function realize(
     keep?: readonly string[];
     /** Pin element id. Absent is `pin.${port}`, one board on the rail. */
     pinId?: (port: string) => string;
+    /** The board's instance path: it owns the pins. Absent leaves them unowned. */
+    owner?: string;
   }
 ): RealizedCircuit {
+  const regulatorNode = stamp.regulatorNode ?? undefined;
   const feedNode =
     feed === "usb" && stamp.vbusNode
       ? stamp.vbusNode
-      : feed === "vin" && stamp.portNodes.VIN
-        ? stamp.portNodes.VIN
+      : feed === "vin" && regulatorNode
+        ? regulatorNode
         : stamp.boardNode;
   const anchors = new Set<string>(["0", feedNode, stamp.boardNode]);
   for (const node of opts?.keep ?? []) anchors.add(node);
   const withPins = opts?.pins !== false;
   for (const pin of stamp.pins) anchors.add(pin.node);
-  const alive = prune(
-    dropOpenVin(stamp.parts, stamp.portNodes.VIN, anchors),
-    anchors
-  );
+  const alive = prune(resolvePower(stamp.parts, anchors), anchors);
   const made: Element[] = [];
   const leds: { path: string; diode: Diode }[] = [];
+  const owners = new Map<string, string>();
   let capacitive = false;
   for (const part of alive) {
     const built = elementOf(part, alive);
     if (built.capacitive) capacitive = true;
     made.push(...built.elements);
+    for (const el of built.elements) owners.set(el.id, part.path);
     if (built.led) leds.push(built.led);
   }
   made.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const pins = withPins
     ? stamp.pins.map((row) => ({
         bit: row.bit,
+        port: row.port,
         pin: new Pin(
           opts?.pinId?.(row.port) ?? `pin.${row.port}`,
           row.node,
@@ -451,8 +572,14 @@ export function realize(
       }))
     : [];
   const aliveIds = new Set(alive.map((part) => part.path));
+  const pinElements = pins.flatMap((row) => row.pin.elements());
+  if (opts?.owner) {
+    for (const el of pinElements) owners.set(el.id, opts.owner);
+  }
   return {
-    elements: [...made, ...pins.flatMap((row) => row.pin.elements())],
+    ports: portsOf(alive),
+    owners,
+    elements: [...made, ...pinElements],
     pins,
     leds,
     feedNode,
@@ -487,6 +614,7 @@ export function assignNodes(
     params: part.params,
     nodes,
     ...(part.table ? { table: part.table } : {}),
+    ...(part.watch ? { watch: part.watch } : {}),
     ...(part.ldo ? { ldo: part.ldo } : {}),
   };
 }
@@ -503,16 +631,22 @@ export function connectParts(
   pruned: string[];
   capacitive: boolean;
   nodes: Map<string, readonly string[]>;
+  /** `path.port` → node, for the parts kept. */
+  ports: Map<string, string>;
+  /** Element id → the part path it belongs to. */
+  owners: Map<string, string>;
 } {
-  const alive = prune(parts, anchors);
+  const alive = prune(resolvePower(parts, anchors), anchors);
   const kept = new Set(alive.map((part) => part.path));
   const nodes = new Map<string, readonly string[]>();
+  const owners = new Map<string, string>();
   const made: Element[] = [];
   let capacitive = false;
   for (const part of alive) {
     const built = elementOf(part, alive);
     if (built.capacitive) capacitive = true;
     made.push(...built.elements);
+    for (const el of built.elements) owners.set(el.id, part.path);
     nodes.set(part.path, Object.values(part.nodes));
   }
   return {
@@ -522,7 +656,19 @@ export function connectParts(
       .map((part) => part.path),
     capacitive,
     nodes,
+    ports: portsOf(alive),
+    owners,
   };
+}
+
+function portsOf(parts: readonly AssignedPart[]): Map<string, string> {
+  const ports = new Map<string, string>();
+  for (const part of parts) {
+    for (const [port, node] of Object.entries(part.nodes)) {
+      ports.set(`${part.path}.${port}`, node);
+    }
+  }
+  return ports;
 }
 
 function prune(
@@ -542,8 +688,13 @@ function prune(
       }
     }
     for (const part of alive) {
-      const open = Object.values(part.nodes).some(
-        (node) => !anchors.has(node) && (count.get(node) ?? 0) < 2
+      // A port the part drives from its own supply is not open.
+      const drives = formAdapter(part.form)?.power?.to ?? [];
+      const open = Object.entries(part.nodes).some(
+        ([port, node]) =>
+          !drives.includes(port) &&
+          !anchors.has(node) &&
+          (count.get(node) ?? 0) < 2
       );
       if (!open) continue;
       alive = alive.filter((item) => item.path !== part.path);
@@ -617,13 +768,14 @@ function childIds(part: PartFile): string[] {
 }
 
 /**
- * The class whose `variant` is a firmware board or a circuit composite.
- * Throws when the variant is missing or is neither.
+ * The class whose `variant` is a circuit composite.
+ * A firmware-only variant throws here: GPIO for that level is planned
+ * from the board, and this stamp only walks a composite's chip child.
  */
 function variantSlot(
   part: PartFile,
   variant: string
-): { key: (typeof CLASS_KEYS)[number]; kind: "firmware" | "composite" } {
+): { key: (typeof CLASS_KEYS)[number] } {
   const behaviour = part.axes?.behaviour;
   if (!behaviour) throw new Error(`${part.id} has no behaviour`);
   let saw = false;
@@ -631,61 +783,49 @@ function variantSlot(
     const impl = behaviour[key]?.variants[variant];
     if (!impl) continue;
     saw = true;
-    if (impl.kind === "composite") return { key, kind: "composite" };
+    if (impl.kind === "composite") return { key };
   }
   if (!saw) throw new Error(`${part.id} has no variant ${variant}`);
   throw new Error(`${part.id} variant ${variant} is not a circuit assembly`);
 }
 
-/** A `table@1` behaviour, stamped on its `across` ports. */
-function snapshotInstOf(
-  inst: LiveInstance,
-  catalogDir: string,
-  worldDir: string,
-  files: StampEnv
-): CircuitInst | null {
-  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
-  if (behaviour?.kind !== "snapshot") return null;
-  const found = loadSnapshot(
-    files.absolutePath(worldDir),
-    {
-      store: files.store,
-      catalogDir: files.absolutePath(catalogDir),
-      assetRoot: files.absolutePath(catalogDir),
-    },
-    behaviour.ref,
-    inst.type
-  );
-  if (!found.loaded) {
-    const text = found.diagnostics.map((diag) => diag.message).join("; ");
-    throw new Error(
-      text || `${inst.path} snapshot ${behaviour.ref} did not load`
-    );
-  }
-  const law = tableLawOf(found.loaded.file);
-  const envelope = envelopeOf(found.loaded.file);
-  if (!law || !envelope || found.loaded.file.form !== "table@1") {
-    throw new Error(`${inst.path} snapshot ${behaviour.ref} is not table@1`);
-  }
-  const ports: Record<string, string> = {};
-  for (const name of law.across) ports[name] = `${inst.path}.${name}`;
-  return {
-    path: inst.path,
-    form: "table@1",
-    typeId: inst.type.id,
-    params: {},
-    ports,
-    table: { ref: behaviour.ref, law, envelope },
-  };
+/** The behaviour an instance runs, when it has one. */
+function selectedBehaviour(inst: {
+  axes: { behaviour: { impl: unknown } };
+}): BehaviourImpl | null {
+  const behaviour = inst.axes.behaviour.impl;
+  if (!behaviour || typeof behaviour !== "object") return null;
+  return behaviour as BehaviourImpl;
 }
 
-function circuitInstOf(inst: {
-  path: string;
-  params: Record<string, number | string | boolean>;
-  type: { id: string; ports: Record<string, PortDecl> };
-  axes: { behaviour: { impl: unknown } };
-}): CircuitInst | null {
-  const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+/** The form's ports the part lacks, after the form's `bind`. */
+export function formPortGap(
+  inst: LiveInstance,
+  ports: readonly string[]
+): string[] {
+  const behaviour = selectedBehaviour(inst);
+  const bind = behaviour?.kind === "form" ? behaviour.bind : undefined;
+  return ports.filter((name) => !inst.type.ports[bind?.[name] ?? name]);
+}
+
+/** Why a form cannot stamp: the ports it stamps that the part lacks. */
+export function formGapSentence(inst: LiveInstance): string | null {
+  const behaviour = selectedBehaviour(inst);
+  if (behaviour?.kind !== "form") return null;
+  const stamped = formAdapter(behaviour.form)?.ports;
+  const gap = stamped ? formPortGap(inst, stamped) : [];
+  if (gap.length === 0) return null;
+  return `form ${behaviour.form} stamps ports ${stamped?.join(", ")}, and ${inst.type.id} lacks ${gap.join(", ")}`;
+}
+
+/**
+ * A circuit form, stamped on the form's ports. Each is keyed by the form's
+ * port; the value is the part's own port (after `bind`), where the wires
+ * land. Null when the behaviour is no circuit form, its params do not
+ * parse, or the part lacks a port the form stamps.
+ */
+export function circuitInstOf(inst: LiveInstance): CircuitInst | null {
+  const behaviour = selectedBehaviour(inst);
   if (
     !behaviour ||
     behaviour.kind !== "form" ||
@@ -695,10 +835,19 @@ function circuitInstOf(inst: {
   }
   const params = circuitNumbers(behaviour, inst.params);
   if (!params) return null;
+  const stamped = formAdapter(behaviour.form)?.ports;
+  if (stamped && formPortGap(inst, stamped).length > 0) return null;
   const ports: Record<string, string> = {};
-  for (const [name, decl] of Object.entries(inst.type.ports)) {
-    if (decl.internal) continue;
-    ports[name] = `${inst.path}.${name}`;
+  if (behaviour.bind && stamped) {
+    for (const name of stamped) {
+      ports[name] = `${inst.path}.${behaviour.bind[name] ?? name}`;
+    }
+  } else {
+    for (const [name, decl] of Object.entries(inst.type.ports)) {
+      if (decl.internal) continue;
+      if (stamped && !stamped.includes(name)) continue;
+      ports[name] = `${inst.path}.${name}`;
+    }
   }
   const ldo = ldoLaw(behaviour, inst.params);
   if (ldo === null) return null;
@@ -710,6 +859,74 @@ function circuitInstOf(inst: {
     ports,
     ...(ldo ? { ldo } : {}),
   };
+}
+
+/**
+ * A `table@1` snapshot, stamped on its `across` ports. A string is why it
+ * cannot run.
+ */
+export function tableInstOf(
+  inst: LiveInstance,
+  snapshot: LoadedSnapshot
+): CircuitInst | string {
+  const ref = snapshot.id;
+  const law = tableLawOf(snapshot.file);
+  const envelope = envelopeOf(snapshot.file);
+  if (snapshot.file.form !== "table@1") {
+    return `snapshot ${ref} is ${snapshot.file.form}, not table@1`;
+  }
+  if (!law || !envelope) {
+    return `snapshot ${ref} has no table law or envelope`;
+  }
+  const missing = law.across.filter((name) => !inst.type.ports[name]);
+  if (missing.length > 0) {
+    return `snapshot ${ref} across port ${missing.join(", ")} is not on ${inst.type.id}`;
+  }
+  const ports: Record<string, string> = {};
+  for (const name of law.across) ports[name] = `${inst.path}.${name}`;
+  return {
+    path: inst.path,
+    form: "table@1",
+    typeId: inst.type.id,
+    params: {},
+    ports,
+    table: { ref, law, envelope },
+  };
+}
+
+/** A circuit part that runs a snapshot keeps its bounds, by its own ports. */
+export function withWatch(
+  circuit: CircuitInst,
+  snapshot: LoadedSnapshot | undefined
+): CircuitInst {
+  if (!snapshot) return circuit;
+  const ports: Record<string, string> = {};
+  for (const [name, full] of Object.entries(circuit.ports)) {
+    ports[name] = full.slice(circuit.path.length + 1);
+  }
+  return {
+    ...circuit,
+    watch: {
+      ref: snapshot.id,
+      bounds: boundPairs(snapshot.file.envelope.bounds),
+      ports,
+    },
+  };
+}
+
+/** Envelope bounds as SI `[lo, hi]` pairs. */
+export function boundPairs(
+  bounds: Record<string, unknown>
+): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  for (const [key, range] of Object.entries(bounds)) {
+    if (!Array.isArray(range) || range.length < 2) continue;
+    const lo = range[0];
+    const hi = range[1];
+    if (typeof lo !== "number" || typeof hi !== "number") continue;
+    out[key] = [siValue(lo), siValue(hi)];
+  }
+  return out;
 }
 
 /**
@@ -873,6 +1090,17 @@ function stampOf(
     throw new Error(errors.map((diag) => diag.message).join("; "));
   }
   const { instances } = resolveLevels(lib, compileRules(lib.run));
+  // The world load's snapshot resolution, so a snapshot runs nested the
+  // way it runs on its own. A stamp has no instance to idle: it fails.
+  const resolution = resolveSnapshots(lib, libOpts, instances);
+  const unresolved = resolution.diagnostics.filter(
+    (diag) => diag.severity === "error"
+  );
+  if (unresolved.length > 0) {
+    throw new Error(
+      unresolved.map((diag) => `${diag.path}: ${diag.message}`).join("; ")
+    );
+  }
   const board = instances.find((inst) => inst.path === boardId);
   if (!board || !netlistOf(board)) {
     throw new Error(
@@ -890,25 +1118,38 @@ function stampOf(
       (inst.axes.behaviour.impl as BehaviourImpl | null)?.kind === "firmware" &&
       boardHostOf(inst, byPath, ROOT_PATH) === board
   );
-  const isFirmware = slot.kind === "firmware" || chip !== undefined;
+  const isFirmware = chip !== undefined;
   if (firmwareOnly && !isFirmware) {
     throw new Error(`${partId} variant ${variant} is not a firmware board`);
   }
   const circuitParts: CircuitInst[] = [];
   for (const inst of instances) {
-    const row =
-      circuitInstOf(inst) ?? snapshotInstOf(inst, catalogDir, worldDir, files);
+    const ran = resolution.runs.find(
+      (run) => run.path === inst.path && run.axis === "behaviour"
+    );
+    const snapshot = ran
+      ? resolution.snapshots.find((row) => row.id === ran.ref)
+      : undefined;
+    const circuit = circuitInstOf(inst);
+    // A snapshot of another form already resolved to that form above.
+    const table =
+      !circuit && snapshot?.file.form === "table@1"
+        ? tableInstOf(inst, snapshot)
+        : null;
+    if (typeof table === "string") throw new Error(`${inst.path}: ${table}`);
+    const row = circuit ? withWatch(circuit, snapshot) : table;
     if (row) circuitParts.push(row);
   }
   const built = buildNets(instances, undefined);
-  if (slot.kind === "composite") {
-    for (const inst of instances) {
-      if (inst.path === ROOT_PATH || inst.path === boardId) continue;
-      const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
-      if (behaviour?.kind === "composite" || inst === chip) continue;
-      if (circuitParts.some((part) => part.path === inst.path)) continue;
-      throw new Error(`${partId}: ${inst.path} is not a circuit leaf`);
-    }
+  for (const inst of instances) {
+    if (inst.path === ROOT_PATH || inst.path === boardId) continue;
+    const behaviour = inst.axes.behaviour.impl as BehaviourImpl | null;
+    if (behaviour?.kind === "composite" || inst === chip) continue;
+    if (circuitParts.some((part) => part.path === inst.path)) continue;
+    const gap = formGapSentence(inst);
+    throw new Error(
+      `${partId}: ${inst.path} is not a circuit leaf${gap ? `: ${gap}` : ""}`
+    );
   }
   const behaviour = (chip ?? board).axes.behaviour.impl as BehaviourImpl | null;
   const facts = behaviour?.kind === "firmware" ? chipFactsOf(behaviour) : null;
@@ -917,7 +1158,13 @@ function stampOf(
   let powerPort: string | undefined;
   let resetFraction: number | null = null;
   if (isFirmware) {
-    if (!facts) throw new Error(`${partId} has no chip rail`);
+    if (!facts) {
+      const missing =
+        behaviour?.kind === "firmware"
+          ? missingChipFacts(behaviour).join(", ")
+          : "a firmware chip";
+      throw new Error(`${partId} lacks ${missing}`);
+    }
     powerPort = railPowerPorts(board.type.ports, facts.railVoltage)[0];
     resetFraction = facts.resetFraction;
     if (!powerPort) throw new Error(`${partId} has no power port`);
@@ -934,7 +1181,19 @@ function stampOf(
     powerPort = across[0];
   }
   const resetPort =
-    behaviour?.kind === "firmware" ? (behaviour.resetPort ?? null) : null;
+    behaviour?.kind === "firmware"
+      ? boardResetPort(
+          behaviour.resetPort,
+          chip ?? board,
+          board,
+          chip ? chipExposure(chip, board) : new Map()
+        )
+      : null;
+  const chipBehaviour = chip?.axes.behaviour.impl as BehaviourImpl | null;
+  const gpio =
+    chip && chipBehaviour?.kind === "firmware"
+      ? boardGpio(chipBehaviour.chip, chip, board)
+      : [];
   const stamp = stampBoard({
     boardId,
     netlist: isFirmware,
@@ -943,47 +1202,17 @@ function stampOf(
     powerPort,
     resetPort,
     usbPort: connectorPort(board.type.ports, "usb"),
+    regulatorPort: regulatorInputPort(
+      board.type.ports,
+      isFirmware ? [powerPort] : (opts.across ?? [])
+    ),
     resetFraction,
+    pins: gpio.map((pin) => pin.name),
     parts: circuitParts,
     nets: liveNets(built.nets),
   });
   if (!stamp) throw new Error(`${partId} variant ${variant} stamped nothing`);
   return stamp;
-}
-
-/** Flattened front end. Capacitors are included; they are open at DC. */
-export function describeNetlist(
-  stamp: BoardStamp,
-  rSeries: number,
-  feed: RailFeed
-): unknown {
-  const realized = realize(stamp, feed, AVR_PIN);
-  return {
-    rSeries,
-    feed: realized.feedNode,
-    board: realized.boardNode,
-    elements: realized.elements.map((el) => describeElement(el)),
-  };
-}
-
-function describeElement(el: Element): unknown {
-  if (el instanceof Resistor) {
-    return { id: el.id, form: el.form, R: el.R, nodes: [...el.nodes()] };
-  }
-  if (el instanceof Capacitor) {
-    return { id: el.id, form: el.form, C: el.C, nodes: [...el.nodes()] };
-  }
-  if (el instanceof Diode) {
-    return {
-      id: el.id,
-      form: el.form,
-      Is: el.params.Is,
-      N: el.params.N,
-      Rs: el.params.Rs,
-      nodes: [...el.nodes()],
-    };
-  }
-  return { id: el.id, form: el.form, nodes: [...el.nodes()] };
 }
 
 export function liveNets(nets: readonly LiveNet[]): NetPorts[] {

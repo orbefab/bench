@@ -94,6 +94,7 @@ export function verifyLock(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "lock",
         path: lib.worldName,
         port: "lock",
         quantity: "format",
@@ -107,6 +108,7 @@ export function verifyLock(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "lock",
         path: lib.worldName,
         port: "lock",
         quantity: "world",
@@ -158,6 +160,7 @@ function compareRows(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "lock",
           path: id,
           port: "file",
           quantity: "sha256",
@@ -172,6 +175,7 @@ function compareRows(
       diags.push(
         makeDiag({
           severity: "error",
+          code: "lock",
           path: id,
           port: "file",
           quantity: "sha256",
@@ -187,6 +191,7 @@ function compareRows(
     diags.push(
       makeDiag({
         severity: "error",
+        code: "lock",
         path: id,
         port: "file",
         quantity: "sha256",

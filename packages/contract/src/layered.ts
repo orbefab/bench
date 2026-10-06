@@ -143,11 +143,24 @@ export type Range = [SiNumber, SiNumber];
 export type Vec3 = [number, number, number];
 export type Sym6 = [number, number, number, number, number, number];
 
+/**
+ * An input threshold. A number is volts. `[k, b]` is `k·vcc + b` volts, for
+ * a datasheet row that states it against the supply (the 328P's
+ * `0.6·VCC`).
+ */
+export type LogicThreshold = SiNumber | readonly [number, number];
+
+/**
+ * `vcc`: the supply the absolute values here were cited at. The static
+ * check resolves a `[k, b]` threshold at it; a run resolves it at the
+ * solved board node. Required when either threshold is `[k, b]`.
+ */
 export type LogicRatings = {
-  vil?: SiNumber;
-  vih?: SiNumber;
+  vil?: LogicThreshold;
+  vih?: LogicThreshold;
   vol?: SiNumber;
   voh?: SiNumber;
+  vcc?: SiNumber;
 };
 
 export type Ratings = {
@@ -177,10 +190,190 @@ export const RATING_FIELD_QUANTITY: Record<string, Quantity> = {
   vih: "Voltage",
   vol: "Voltage",
   voh: "Voltage",
+  vcc: "Voltage",
 };
 
 export type PortRole = "power" | "ground" | "logic" | "analog";
 export type PortDirection = "in" | "out" | "inout" | "passive";
+
+/** A port field a run observes, and the quantity it is in. */
+export const RESOLVED_FIELD_QUANTITY = {
+  voltage: "Voltage",
+  current: "Current",
+  angle: "Angle",
+} as const satisfies Record<string, Quantity>;
+
+export type ResolvedField = keyof typeof RESOLVED_FIELD_QUANTITY;
+
+/**
+ * `n` to 3 significant digits, in the field's SI unit when it is a
+ * resolved field; a dash when there is no number.
+ */
+export function resolvedAmount(n: number, field: string | null): string {
+  if (!Number.isFinite(n)) return "—";
+  const digits = String(Number(n.toPrecision(3)));
+  const quantity =
+    field && field in RESOLVED_FIELD_QUANTITY
+      ? RESOLVED_FIELD_QUANTITY[field as ResolvedField]
+      : null;
+  return quantity ? `${digits} ${SI_UNIT[quantity]}` : digits;
+}
+
+/**
+ * What a resolution's value is measured against.
+ *
+ * - `absolute`: the value is in the field's own SI unit.
+ * - `ratio-to`: the value is dimensionless, and the observed field is
+ *   divided by `quantity` (`PORT.field`, the same quantity) on the same
+ *   part, observed at the same instant.
+ */
+export type ResolutionReference =
+  | { kind: "absolute" }
+  | { kind: "ratio-to"; quantity: string };
+
+/**
+ * When a pair is judged.
+ *
+ * - `within-ratings`: only while the part, on the source side, is inside
+ *   its declared operating ratings (its type merged with the part's own).
+ * - `steady@1`: only while the source side's field moved no more than the
+ *   resolution's value over the whole window `[t − window, t + window]`,
+ *   which lies inside the run. `window` is seconds.
+ */
+export type ResolutionCondition =
+  | { kind: "within-ratings" }
+  | { kind: "steady@1"; window: SiNumber };
+
+/**
+ * Cited data: the smallest difference in `field` this part can tell apart
+ * at this port (run 7, `docs/formats.md`). A comparison judges its gap
+ * against it.
+ *
+ * - `precision`: the part's own stated precision, under its conditions
+ *   (a servo's dead band on its shaft).
+ * - `reader`: the part reads this field at this port, and the datasheet
+ *   gives its step (an ADC's). It is judged at the reader's conversions.
+ */
+export type Resolution = {
+  field: ResolvedField;
+  kind: "precision" | "reader";
+  value: SiNumber;
+  reference: ResolutionReference;
+  conditions?: ResolutionCondition[];
+  source: Citation;
+};
+
+/** A named metric as an assembly check stores it. */
+export type AssemblyMetricRow = {
+  metric: string;
+  value: number;
+  pairs: number;
+  /** The pair that set a `-max` metric. */
+  at?: { ms: number; detailed: number; snapshot: number };
+};
+
+export type AssemblyVerdict =
+  | { verdict: "within" }
+  | { verdict: "over"; by: number }
+  | { verdict: "none"; reason: string };
+
+/** One resolution judged on one quantity of an assembly check. */
+export type AssemblyCriterionRow = {
+  kind: Resolution["kind"];
+  /** The part or type id that states it, and the port. */
+  from: string;
+  threshold: number;
+  reference: ResolutionReference;
+  conditions: ResolutionCondition[];
+  source: Citation;
+  metrics: AssemblyMetricRow[];
+  coverage: {
+    qualified: number;
+    /** Qualified master steps as simulated milliseconds. */
+    ms?: number;
+    excluded: Record<string, number>;
+  };
+} & AssemblyVerdict;
+
+export type AssemblyQuantityRow = {
+  quantity: string;
+  metrics: (AssemblyMetricRow & { unmatched: number })[];
+  criteria: AssemblyCriterionRow[];
+  /** Present when no criterion covers the quantity. */
+  verdict?: "none";
+  reason?: string;
+  inDomain: boolean;
+};
+
+/** What a run says about its own validity, with no observed numbers. */
+export type AssemblyValidity = {
+  envelope: {
+    path: string;
+    ref: string;
+    port: string;
+    quantity: string;
+    range: string;
+  }[];
+  stale: { path: string; ref: string }[];
+  unchecked: { path: string; ref: string; reason: string }[];
+  degraded: { path: string; code: string; port: string }[];
+};
+
+/**
+ * One assembly run twice on its own fixture, detailed and with its
+ * snapshot children (`docs/formats.md` › Assembly check). It lives at
+ * `checks/<publisher>/<name>@<version>.json` for the document's part id.
+ */
+export type AssemblyCheckFile = {
+  format: typeof ASSEMBLY_CHECK_FORMAT;
+  document: string;
+  fixture: { ms: number; hash: string; lock: string };
+  detailed: { default: LevelSpec; paths?: Record<string, LevelSpec> };
+  snapshot: { default: LevelSpec; paths?: Record<string, LevelSpec> };
+  children: {
+    path: string;
+    axis: string;
+    ref: string;
+    hash: string;
+    fromHash: string;
+  }[];
+  /** The snapshot side's run: the run a stored verdict belongs to. */
+  context: string;
+  quantities: string[];
+  observations: unknown[];
+  identity: string;
+  policy: string;
+  rows: AssemblyQuantityRow[];
+  domain: { detailed: AssemblyValidity; snapshot: AssemblyValidity };
+  inDomain: boolean;
+};
+
+/**
+ * One quantity of the assembly check whose context is this run, as the
+ * card shows it: the gap, and per criterion the threshold and verdict.
+ */
+export type AccuracyRow = {
+  quantity: string;
+  path: string;
+  port: string;
+  field: string;
+  /** The largest gap over every master step, and its RMS. */
+  gap: { max: number; rms: number };
+  /** Empty when no resolution covers the quantity: a gap, no verdict. */
+  criteria: ({
+    kind: Resolution["kind"];
+    from: string;
+    threshold: number;
+    /** The `PORT.field` a ratio-to resolution divides by. */
+    ratioTo?: string;
+    /** `steady@1`'s window, seconds. */
+    window?: number;
+    /** The judged metric and its value; no value when nothing qualified. */
+    metric: string;
+    value?: number;
+    coverage: AssemblyCriterionRow["coverage"];
+  } & AssemblyVerdict)[];
+};
 
 export type PortDecl = {
   domain: Domain;
@@ -200,6 +393,8 @@ export type PortDecl = {
    * the same connector. Absent, the feed is the header.
    */
   connector?: string;
+  /** Cited resolutions at this port, one per field and kind. */
+  resolution?: Resolution[];
 };
 
 /**
@@ -216,6 +411,7 @@ export type PortTemplate = {
   adc?: boolean | number[];
   frame?: string;
   ratings?: Ratings;
+  resolution?: Resolution[];
 };
 
 export type BusDecl = {
@@ -239,6 +435,35 @@ export function partDocumentProject(path: string): string | null {
   return match[1] ?? "";
 }
 
+/** Join two relative paths. `..` is rejected rather than normalised away. */
+export function joinRel(dir: string, rel: string): string | null {
+  const parts: string[] = [];
+  for (const part of `${dir}/${rel}`.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") return null;
+    parts.push(part);
+  }
+  if (parts.length === 0) return null;
+  return parts.join("/");
+}
+
+export function parentRel(rel: string): string {
+  const clean = rel.replace(/\\/g, "/");
+  const slash = clean.lastIndexOf("/");
+  return slash === -1 ? "" : clean.slice(0, slash);
+}
+
+/**
+ * Project directory for URDF and firmware paths. A root part lives
+ * under `parts/<pub>/`; those paths stay relative to the project.
+ */
+export function documentAssetDir(rel: string): string {
+  const clean = rel.replace(/\\/g, "/").replace(/^\/+/, "");
+  const project = partDocumentProject(clean);
+  if (project !== null) return project;
+  return parentRel(clean);
+}
+
 /** A legacy world import. */
 const WORLD_DOCUMENT_RE = /\.world\.json$/i;
 
@@ -257,6 +482,7 @@ export function isRunDocumentPath(path: string): boolean {
 export const LOCK_FORMAT = "sfab.lock@1" as const;
 export const RUN_REPORT_FORMAT = "sfab.run-report@1" as const;
 export const SNAPSHOT_FORMAT = "sfab.snapshot@1" as const;
+export const ASSEMBLY_CHECK_FORMAT = "sfab.assembly-check@2" as const;
 export const FIXTURE_FORMAT = "sfab.fixture@1" as const;
 export const LEVEL_OVERLAY_FORMAT = "sfab.level-overlay@1" as const;
 
@@ -284,12 +510,20 @@ export type Params = Record<string, number | string | boolean>;
 
 /**
  * A netlist child's param that reads the parent instance's param of that
- * name. The loader resolves it before the child is visited, so nothing
- * downstream of `resolveLevels` ever sees one. `optional` leaves the child
- * param out, with no report, when the parent has none: a board that runs
- * bare forwards its firmware this way.
+ * name. The loader resolves it to a scalar before the child is visited.
+ * The view records which parent instance and param it came from
+ * (`ParamForward`). `optional` leaves the child param out, with no report,
+ * when the parent has none: a board that runs bare forwards its firmware
+ * this way.
  */
 export type ParamRef = { $param: string; optional?: true };
+
+/**
+ * A resolved `$param`. The child param's value is the parent's scalar.
+ * `from` is the parent instance path (`nano`, `fleet.nano`). `param` is
+ * the parent param name.
+ */
+export type ParamForward = { from: string; param: string };
 
 /** `Params` as a netlist child may write them: values, or references. */
 export type NetlistParams = Record<string, Params[string] | ParamRef>;
@@ -344,7 +578,10 @@ export type Netlist = {
 
 export type FormId =
   | "slew@1"
+  | "position-servo@1"
   | "dc-motor@1"
+  | "servo-control@1"
+  | "potentiometer@1"
   | "thevenin-limit@1"
   | "ideal-voltage@1"
   | "battery@1"
@@ -353,6 +590,7 @@ export type FormId =
   | "resistor@1"
   | "capacitor@1"
   | "diode@1"
+  | "led@1"
   | "ptc-fuse@1"
   | "pmos-switch@1"
   | "logic-in@1"
@@ -372,6 +610,12 @@ export type FormDef = {
   optional?: readonly string[];
   /** Param names that hold a table, not one SI number. */
   tables?: readonly string[];
+  /**
+   * The ports the form stamps, by its own names; a `bind` maps them onto
+   * the part's ports. Absent, the form stamps every port the part type
+   * declares and reads no `bind`.
+   */
+  ports?: readonly string[];
 };
 
 /**
@@ -380,7 +624,7 @@ export type FormDef = {
  */
 export const FORM_PARAMS: Record<FormId, FormDef> = {
   "slew@1": { params: { omega: "AngularVelocity" } },
-  "dc-motor@1": {
+  "position-servo@1": {
     params: {
       K: "TorquePerCurrent",
       R: "Resistance",
@@ -390,6 +634,24 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
       quiescent: "Current",
     },
     optional: ["L"],
+  },
+  "dc-motor@1": {
+    params: {
+      K: "TorquePerCurrent",
+      R: "Resistance",
+      L: "Inductance",
+      efficiency: "Dimensionless",
+    },
+    optional: ["L"],
+    ports: ["A", "B"],
+  },
+  "servo-control@1": {
+    params: { eSat: "Angle", quiescent: "Current", travel: "Angle" },
+    ports: ["V+", "GND", "M+", "M-", "sense"],
+  },
+  "potentiometer@1": {
+    params: { R: "Resistance", travel: "Angle" },
+    ports: ["A", "W", "B"],
   },
   "thevenin-limit@1": {
     params: { V: "Voltage", Rs: "Resistance", Ilimit: "Current" },
@@ -427,6 +689,13 @@ export const FORM_PARAMS: Record<FormId, FormDef> = {
   "diode@1": {
     params: { Is: "Current", N: "Dimensionless", Rs: "Resistance" },
     optional: ["Rs"],
+    ports: ["A", "K"],
+  },
+  /** A diode that emits light: the `diode@1` law, its current recorded as the LED's. */
+  "led@1": {
+    params: { Is: "Current", N: "Dimensionless", Rs: "Resistance" },
+    optional: ["Rs"],
+    ports: ["A", "K"],
   },
   "ptc-fuse@1": {
     params: {
@@ -488,8 +757,24 @@ export const SUPPLY_FORMS = [
   "battery@1",
 ] as const;
 
+/** A composite behaviour level of the same part, and its chip child. */
+export type PinMapRef = {
+  class: LevelClass;
+  variant: string;
+  instance: string;
+};
+
 export type BehaviourImpl = { omits: string[] } & (
-  | { kind: "form"; form: FormId; params: Record<string, FormParam> }
+  | {
+      kind: "form";
+      form: FormId;
+      params: Record<string, FormParam>;
+      /**
+       * The form's port → this part's port, when the names differ (a
+       * snapshot in another form). Absent: the form's ports are the part's.
+       */
+      bind?: Record<string, string>;
+    }
   | { kind: "snapshot"; ref: string }
   | { kind: "composite"; netlist: Netlist }
   | {
@@ -501,9 +786,20 @@ export type BehaviourImpl = { omits: string[] } & (
       /** Logic port the chip uses as reset. Absent, the rail has no reset node. */
       resetPort?: string;
       /**
+       * The board's pin map, for a firmware level of a part that also has a
+       * composite level: that composite's `expose` onto its chip child
+       * `instance` names the header. A part with a composite level must set
+       * it. Absent on a bare chip, whose ports are its pins.
+       */
+      pinMapFrom?: PinMapRef;
+      /**
        * The chip's electrical facts, as data on the chip part. The run reads
-       * them from the firmware variant it resolved. A firmware variant with
-       * no `railVoltage` or `resetFraction` is an unknown chip.
+       * them from the firmware variant it resolved. The variant's `params`
+       * carry the brownout levels (`brownoutVoltage`,
+       * `brownoutAssertVoltage`, `brownoutReleaseVoltage`), `resetHoldS`,
+       * and the pin drive (`roh`, `rol`, `rpu`, `rLeak`). A variant that
+       * lacks any of these, or `railVoltage` or `resetFraction`, does not
+       * run: the board sits idle with an `unsupported` row naming them.
        * `railVoltage`: volts, picks the board's power input.
        * `resetFraction`: V_RST / VCC.
        * `minOperatingVoltage`: volts. A running chip above its brownout level
@@ -560,9 +856,35 @@ export type BodyImpl = { omits: string[] } & (
   | { kind: "none" }
 );
 
+/** A visual form param: a scalar, or one of the part's own params by name. */
+export type VisualParam = number | string | boolean | ParamRef;
+
+/** A form a composite draws inside its own box, centred at `at`. */
+export type VisualInner = {
+  form: string;
+  size: Vec3;
+  at: Vec3;
+  params?: Record<string, VisualParam>;
+};
+
 export type VisualImpl = { omits: string[] } & (
   | { kind: "mesh"; files: string[]; placeholder?: boolean }
   | { kind: "box"; size: Vec3 }
+  /**
+   * A procedural visual: the client's builder for `form` draws it in the
+   * box `size` (small features such as tabs and leads may stand out of
+   * it), from `params`. A client with no builder for the form draws the
+   * box. The run places and picks it as a box. `inner` is what a
+   * composite draws inside itself, whatever level its children run at:
+   * each sits at `at` in this box's frame.
+   */
+  | {
+      kind: "form";
+      form: string;
+      size: Vec3;
+      params?: Record<string, VisualParam>;
+      inner?: VisualInner[];
+    }
   | { kind: "children" }
   | { kind: "none" }
 );
@@ -581,6 +903,22 @@ export type Citation = { title: string; ref: string };
  * engine's historical 1 ms step.
  */
 export const DEFAULT_TIMESTEP_S = 0.001;
+
+/** Most master steps in one millisecond: the finest step is 1 µs. */
+export const MAX_STEPS_PER_MS = 1000;
+
+/**
+ * Master steps per millisecond for a step of `seconds`, or null when the
+ * step is not 1 ms divided by a whole number up to `MAX_STEPS_PER_MS`.
+ * Every millisecond is then a step boundary, which the recorder's frame
+ * grid and the integer-millisecond clock rely on.
+ */
+export function stepsPerMs(seconds: number): number | null {
+  if (!(seconds > 0)) return null;
+  const k = Math.round(DEFAULT_TIMESTEP_S / seconds);
+  if (k < 1 || k > MAX_STEPS_PER_MS) return null;
+  return Math.abs(k * seconds - DEFAULT_TIMESTEP_S) <= 1e-12 ? k : null;
+}
 
 /** Instance path of the document opened as the root part. */
 export const ROOT_PATH = "$root";
@@ -649,6 +987,11 @@ export type CaptureRecipe =
         current?: number[];
       };
       envelope: { marginA?: number };
+      /**
+       * Write this two-port law, fitted to the sweep, instead of a table.
+       * Its ports bind to `across` in order.
+       */
+      fit?: "diode@1";
       /** Level id that takes the new variant. Absent: the level that already holds a snapshot. */
       into?: string;
     }
@@ -659,7 +1002,28 @@ export type CaptureRecipe =
       heldOut: "fixture";
       sourceLevel: "0" | "1" | "2" | "3";
       into?: string;
-    };
+    }
+  | GroupCaptureRecipe;
+
+/**
+ * A behaviour snapshot in `form`, reduced from the composite at
+ * `sourceLevel`. Both levels run on one scene world and are compared at
+ * the instance's own ports.
+ */
+export type GroupCaptureRecipe = {
+  form: Exclude<FormId, "hinge@1" | "table@1">;
+  sourceLevel: "0" | "1" | "2" | "3";
+  baseline: { level: string; value: number };
+  heldOut: "fixture";
+  /** A world in the bench's `examples/<project>` holding the part at `instance`. */
+  scene: { project: string; world: string; instance: string; ms: number };
+  /** `play.levels.paths[instance]` on the deep side and the snapshot side. */
+  deep: LevelSpec;
+  snap: LevelSpec;
+  /** Volts a resistive draw inside the group is counted at. */
+  vNominal: number;
+  into?: string;
+};
 
 export type PartFile = {
   format: typeof PART_FORMAT;
@@ -669,6 +1033,11 @@ export type PartFile = {
   declaredOnly?: boolean;
   sources?: Citation[];
   ratings?: Record<string, Ratings>;
+  /**
+   * Cited resolutions by port. One for a field and kind the type also
+   * states replaces the type's.
+   */
+  resolution?: Record<string, Resolution[]>;
   /** Capture recipes for a project part. A catalog entry is the fallback. */
   capture?: { behaviour?: CaptureRecipe; body?: CaptureRecipe };
   /** Present on a root document. Ignored when this part is nested. */
@@ -779,13 +1148,49 @@ export type LevelOverlayFile = {
   };
 };
 
+/**
+ * Every code a diagnostic carries. The list is closed: a new kind of
+ * failure adds its code here, and readers key on the code, never on the
+ * message text. docs/formats.md § Diagnostic codes says what each means.
+ */
+export const DIAG_CODES = [
+  // A file or its contents.
+  "schema",
+  "missing-file",
+  "mesh-format",
+  "bad-params",
+  "lock",
+  "snapshot",
+  "stale-capture",
+  "unchecked-capture",
+  "shadowed-part",
+  "level-ports",
+  // Wiring and ratings.
+  "broken-port",
+  "wiring",
+  "rating",
+  // A part that runs at a lower level, or not at all.
+  "idle",
+  "unpowered",
+  "unsupported",
+  "no-runtime",
+  // The run.
+  "timestep-unsupported",
+  "battery",
+  "envelope",
+  "over-budget",
+  "seam-residual-growing",
+  "below-16mhz-soa",
+  // A chip feature the emulator names and does not emulate.
+  "timer4",
+  "usb-cdc",
+] as const;
+export type DiagCode = (typeof DIAG_CODES)[number];
+
 export type Diagnostic = {
   severity: "warning" | "error" | "degraded";
-  /**
-   * Set on a degraded part, and on a seam residual that is growing.
-   * The run continues.
-   */
-  code?: string;
+  /** What went wrong. Readers key on this, never on `message`. */
+  code: DiagCode;
   path: string;
   port: string;
   quantity: string;
@@ -813,7 +1218,7 @@ export type EditRefusal = {
 /** A wire joining a port to itself, or ports of two domains. */
 export type EditRefusalCode = "wire-self" | "wire-domain";
 
-/** Circuit-to-body cut of a `dc-motor@1` servo. */
+/** Circuit-to-body cut of a `position-servo@1` servo or a `dc-motor@1` shaft. */
 export type SeamKind = "motor";
 
 /**
@@ -888,13 +1293,23 @@ export type RunReport = {
       fixture?: string;
       tool?: { name: string; version: string };
     };
+    /**
+     * The snapshot's valid range: its envelope bounds, by `PORT.field`.
+     * Absent when the row was not loaded from a snapshot file or states none.
+     */
+    bounds?: Record<string, Range>;
     /** Envelope warnings for this instance. Absent when the row has none. */
     envelope?: string[];
     /**
-     * The capture's `from.hash` no longer matches the part at `from.level`.
-     * Absent when the capture is fresh or the hash was not checked.
+     * The capture's `from.hash` no longer matches its source. Absent when
+     * the capture is fresh or was not checked.
      */
     stale?: true;
+    /**
+     * Why the capture's source could not be checked. A row with a
+     * `from.hash` and neither `stale` nor `unchecked` is fresh.
+     */
+    unchecked?: string;
   }[];
   snapshotQuality: string;
   notSimulated: {
@@ -911,6 +1326,24 @@ export type RunReport = {
    * report without one stays byte-identical.
    */
   seams?: SeamEnergy[];
+  /**
+   * The document's assembly check. Absent when it has none, so a report
+   * without one stays byte-identical.
+   */
+  accuracy?: {
+    /** Project-relative record file. */
+    record: string;
+    /** This run is the run the record's snapshot side measured. */
+    applies: boolean;
+    /** The record's run stayed in every snapshot's domain. */
+    inDomain: boolean;
+    /** Why it did not, one line per row of the record's `domain`. */
+    domain: string[];
+    /** The replacements it compares, as `path ref`. */
+    snapshots: string[];
+    /** Empty unless it applies. */
+    rows: AccuracyRow[];
+  };
 };
 
 export type SnapshotQuality = "Q0" | "Q1" | "Q2a" | "Q2b" | "Q3";
@@ -923,19 +1356,16 @@ export type SnapshotFile = {
   form: FormId;
   ports: { inputs: string[]; outputs: string[] };
   /**
+   * The form's port → the part's port, for a form whose port names are not
+   * the part's (a `diode@1` law on a module's `IN` and `GND`).
+   */
+  bind?: Record<string, string>;
+  /**
    * Numbers, port names, and short lists. `across` is two port names.
    * `iSense` is 1 (current into the first port) or -1 (current out of it).
    */
   params: Record<string, number | string | (number | string)[]>;
-  envelope: {
-    bounds: Record<string, Range>;
-    data?: {
-      kind: "mahalanobis";
-      mean: number[];
-      cov: number[][];
-      limit: number;
-    };
-  };
+  envelope: { bounds: Record<string, Range> };
   error:
     | "none-available"
     | {

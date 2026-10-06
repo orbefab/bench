@@ -1,5 +1,5 @@
 export { type BatteryParams, batteryFrom, ocvAt } from "./battery";
-export { boardHostOf, chipExposure } from "./board-host";
+export { boardHostOf, chipExposure, pinMapRefused } from "./board-host";
 export { nextCaptureRef } from "./capture-edit";
 export { comparatorFrom } from "./comparator";
 export { type ConvertedDocument, convertWorldFile } from "./convert";
@@ -83,10 +83,19 @@ export {
   verifyLock,
   writeLock,
 } from "./lock";
+export {
+  citedVcc,
+  isSupplyThreshold,
+  type LogicThresholds,
+  logicLevel,
+  logicThresholds,
+  thresholdVolts,
+} from "./logic";
 export { mergeFormParams } from "./merge";
 export {
   buildNets,
   collectPorts,
+  instanceRatings,
   type LiveNet,
   type LivePort,
   netlistOf,
@@ -115,6 +124,11 @@ export {
   type SkippedFile,
 } from "./rename";
 export { buildReport } from "./report";
+export {
+  lintResolutions,
+  portResolutions,
+  splitPortField,
+} from "./resolution";
 export { sha256Bytes, sha256Hex } from "./sha256";
 export {
   type AxisRequest,
@@ -145,7 +159,17 @@ export {
   type TableLaw,
   tableLawOf,
 } from "./snapshot-law";
-export { FIXTURE_SUPPLY, lintSnapshot } from "./snapshot-lint";
-export { type LoadedSnapshot, loadSnapshot } from "./snapshot-load";
+export { FIXTURE_SUPPLY, lintSnapshot, parseSnapshot } from "./snapshot-lint";
+export {
+  type LoadedSnapshot,
+  loadSnapshot,
+  type SnapshotOwner,
+} from "./snapshot-load";
+export {
+  resolveSnapshots,
+  type SnapshotRan,
+  type SnapshotResolution,
+  type SnapshotRun,
+} from "./snapshot-resolve";
 export type { Store } from "./store";
 export { UnionFind } from "./union-find";

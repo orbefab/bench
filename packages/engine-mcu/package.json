@@ -2,20 +2,23 @@
   "name": "@sfab-bench/engine-mcu",
   "version": "0.2.2",
   "private": true,
-  "description": "ATmega328P engine. No file access.",
+  "description": "AVR engine (ATmega328P, ATmega32U4). No file access.",
   "homepage": "https://bench.sfab.ai",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "test": "node ../../scripts/checks.mjs test/board.selfcheck.ts test/chips.selfcheck.ts test/pin-mode.selfcheck.ts"
   },
   "dependencies": {
     "@sfab-bench/contract": "workspace:*",
     "avr8js": "0.21.1"
   },
   "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.2"
   }
 }

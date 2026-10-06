@@ -12,12 +12,12 @@ import { fileURLToPath } from "node:url";
 
 import type { RecordingRead } from "@sfab-bench/contract";
 import { sha256Bytes } from "@sfab-bench/parts";
+import { createRailCircuit } from "@sfab-bench/sim/rail-circuit";
 import { Sim } from "@sfab-bench/sim/sim";
 import { projectReal, readerFor, readInside } from "./world/files";
 import { packageVersion } from "./world/package-version";
 import { planWorld } from "./world/plan";
 import { nodePlanEnv } from "./world/plan-host";
-import { createRailCircuit } from "./world/rail-circuit";
 
 const nanoExample = fileURLToPath(
   new URL("../../../examples/nano/", import.meta.url)
@@ -64,11 +64,41 @@ function writeScene(
   );
 }
 
+/** A part with no body and no visual, under the project's `parts/`. */
+function writePart(
+  dir: string,
+  part: { id: string; type: string; behaviour: Record<string, unknown> }
+): void {
+  const none = {
+    "0": {
+      default: "none",
+      variants: { none: { kind: "none", omits: ["none"] } },
+    },
+  };
+  const [publisher, file] = part.id.split("/");
+  mkdirSync(join(dir, "parts", publisher ?? ""), { recursive: true });
+  writeFileSync(
+    join(dir, "parts", publisher ?? "", `${file}.json`),
+    JSON.stringify({
+      format: "sfab.part@1",
+      id: part.id,
+      type: part.type,
+      foreign: false,
+      axes: { behaviour: part.behaviour, body: none, visual: none },
+    })
+  );
+}
+
 async function runWorld(
   dir: string,
   world: string,
   ms: number
-): Promise<{ serial: string; leds: number[]; degraded: string[] }> {
+): Promise<{
+  serial: string;
+  leds: number[];
+  degraded: string[];
+  codes: Map<string, string>;
+}> {
   const sim = new Sim({
     post() {},
     now: () => performance.now(),
@@ -96,6 +126,9 @@ async function runWorld(
     const degraded = (state?.diagnostics ?? []).map(
       (row) => `degraded ${row.path}: ${row.message}`
     );
+    const codes = new Map(
+      (state?.diagnostics ?? []).map((row) => [row.path, row.code])
+    );
     await sim.step(ms);
     const settled = sim.state();
     if (!settled) throw new Error("no state");
@@ -109,7 +142,7 @@ async function runWorld(
       .drainSerial()
       .map((chunk) => (chunk.board === "good" ? chunk.text : ""))
       .join("");
-    return { serial, leds, degraded };
+    return { serial, leds, degraded, codes };
   } finally {
     sim.dispose();
   }
@@ -126,7 +159,7 @@ try {
   if (broken.ok) throw new Error("unreachable");
   expect(
     broken.errors[0]?.message ===
-      "World file is not JSON. Hint: a world is <name>.world.json.",
+      "World file is not JSON. Hint: a world is a root part, parts/<publisher>/<name>@<version>.json.",
     broken.errors.map((item) => item.message).join("; ")
   );
   console.log(broken.errors[0]?.message);
@@ -144,6 +177,9 @@ try {
       `"servo": { "part": "sfab/sg90@1.0.0" }`,
       `"badlint": { "part": "sfab/bad-rating@1.0.0" }`,
       `"ghost": { "part": "sfab/no-such@1.0.0" }`,
+      `"nobo": { "part": "sfab/no-brownout@1.0.0", "params": { "firmware": "firmware/blink/blink.hex" } }`,
+      `"nor": { "part": "sfab/no-r@1.0.0" }`,
+      `"levels": { "part": "sfab/odd-levels@1.0.0" }`,
     ].join(", "),
     [
       goodWires,
@@ -195,6 +231,70 @@ try {
       },
     })
   );
+  writePart(dir, {
+    id: "sfab/no-brownout@1.0.0",
+    type: "arduino-nano",
+    behaviour: {
+      "1": {
+        default: "avr",
+        variants: {
+          avr: {
+            kind: "firmware",
+            chip: "atmega328p",
+            imageParam: "firmware",
+            resetPort: "RESET",
+            railVoltage: 5,
+            resetFraction: 0.9,
+            params: { quiescent: 0.01, rpu: 35000 },
+            omits: ["test"],
+          },
+        },
+      },
+    },
+  });
+  writePart(dir, {
+    id: "sfab/no-r@1.0.0",
+    type: "resistor",
+    behaviour: {
+      "1": {
+        default: "ohmic",
+        variants: {
+          ohmic: {
+            kind: "form",
+            form: "resistor@1",
+            params: {},
+            omits: ["tolerance"],
+          },
+        },
+      },
+    },
+  });
+  const divider = (expose: Record<string, string>) => ({
+    kind: "composite",
+    omits: ["test"],
+    netlist: {
+      instances: {
+        r1: { part: "sfab/resistor@1.0.0" },
+        r2: { part: "sfab/resistor@1.0.0" },
+      },
+      wires: [["r1.B", "r2.A"]],
+      expose,
+    },
+  });
+  writePart(dir, {
+    id: "sfab/odd-levels@1.0.0",
+    type: "potentiometer",
+    behaviour: {
+      "1": {
+        default: "one",
+        variants: { one: divider({ A: "r1.A", B: "r2.B" }) },
+      },
+      "2": {
+        default: "two",
+        variants: { two: divider({ A: "r1.A", W: "r2.A" }) },
+      },
+    },
+  });
   writeScene(
     dir,
     "healthy-scene",
@@ -229,6 +329,34 @@ try {
     "D13 did not blink off"
   );
   for (const line of full.degraded) console.log(line);
+  // Each row keeps the code of what went wrong; nothing reads the message.
+  const want: Record<string, string> = {
+    badhex: "missing-file",
+    ghost: "missing-file",
+    pack: "bad-params",
+    nor: "bad-params",
+    nobo: "unsupported",
+  };
+  for (const [path, code] of Object.entries(want)) {
+    expect(
+      full.codes.get(path) === code,
+      `${path} code ${full.codes.get(path)}, want ${code}`
+    );
+  }
+  const nobo = (planned.plan.degraded ?? []).find((row) => row.path === "nobo");
+  expect(
+    nobo?.message ===
+      'chip "atmega328p" lacks brownoutVoltage, brownoutAssertVoltage, brownoutReleaseVoltage, resetHoldS, roh, rol, rLeak',
+    `nobo: ${nobo?.message}`
+  );
+  const ports = (planned.plan.report?.warnings ?? []).filter(
+    (row) => row.code === "level-ports"
+  );
+  expect(
+    ports.length === 1 && ports[0]?.path === "sfab/odd-levels@1.0.0",
+    `level-ports ${ports.map((row) => row.message).join("; ")}`
+  );
+  console.log(`warning ${ports[0]?.message}`);
   console.log(
     `healthy nano: serial and D13 byte-identical to the world without the broken parts, ${full.leds.length} frames`
   );

@@ -85,9 +85,10 @@ try {
       board?.resetPort === "RESET",
       `class ${level} Nano resetPort is ${board?.resetPort}`
     );
+    // RESET is wired to GND, so the reset node is ground itself.
     expect(
-      board?.stamp?.resetNode,
-      `class ${level} Nano stamp has no reset node`
+      board?.stamp?.resetNode === "0",
+      `class ${level} Nano reset node is ${board?.stamp?.resetNode}, not ground`
     );
     // The chip part's brownout params are the board's, at both classes.
     expect(

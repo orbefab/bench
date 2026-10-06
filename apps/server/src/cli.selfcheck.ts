@@ -54,6 +54,21 @@ expect(
   "run without a world is help"
 );
 
+const repinDry = parseCli(["repin", "--dry", "/tmp/proj"]);
+expect(
+  repinDry.kind === "repin" &&
+    !repinDry.write &&
+    repinDry.roots.length === 1 &&
+    repinDry.roots[0] === resolve("/tmp/proj"),
+  "repin --dry <dir>"
+);
+const repinAll = parseCli(["repin"]);
+expect(
+  repinAll.kind === "repin" && repinAll.write && repinAll.roots.length === 0,
+  "repin with no folder writes over the default roots"
+);
+expect(parseCli(["repin", "--x"]).kind === "help", "repin rejects a flag");
+
 const bin = readFileSync(
   new URL("../bin/sfab-bench.mjs", import.meta.url),
   "utf8"

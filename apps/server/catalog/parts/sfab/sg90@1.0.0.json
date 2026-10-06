@@ -18,9 +18,24 @@
     },
     {
       "title": "Rigid-gear collapse of that train",
-      "ref": "Rotor cup is an estimate: copper 8960 kg/m³, diameter 6 mm, length 8 mm, wall 0.6 mm, plus the 9-tooth pinion. Gears are POM disks at 1410 kg/m³, face width 1.5 mm, tooth-zone fill 1/2. Modules 0.20, 0.25, 0.30 and 0.40 mm, so each large gear is about 10 mm across. Bores 0.5 mm on the pinion, 0.75 mm on the idlers, 2.4 mm on the output. Damping is 70% on the rotor and 30% on the output. Friction is split 50/50. Idlers carry neither. Gear data stays on this servo until the class-2 children run; the gears child takes this body over then."
+      "ref": "Rotor cup is an estimate: copper 8960 kg/m³, diameter 6 mm, length 8 mm, wall 0.6 mm, plus the 9-tooth pinion. Gears are POM disks at 1410 kg/m³, face width 1.5 mm, tooth-zone fill 1/2. Modules 0.20, 0.25, 0.30 and 0.40 mm, so each large gear is about 10 mm across. Bores 0.5 mm on the pinion, 0.75 mm on the idlers, 2.4 mm on the output. Damping is 70% on the rotor and 30% on the output. Friction is split 50/50. Idlers carry neither. The gears child carries the same train as its body, so the class-2 children and this body class run the same collapse."
     }
   ],
+  "resolution": {
+    "shaft": [
+      {
+        "field": "angle",
+        "kind": "precision",
+        "value": 0.01692668455597949,
+        "reference": { "kind": "absolute" },
+        "conditions": [{ "kind": "steady@1", "window": 0.06 }],
+        "source": {
+          "title": "TowerPro SG90 datasheet: dead band width 10 us; PWM period 20 ms",
+          "ref": "The dead band in angle is 10 us times the pulse-to-angle gain. This bench maps 544 to 2400 us onto pi rad (Arduino Servo.h MIN_PULSE_WIDTH and MAX_PULSE_WIDTH, packages/sim/src/servo.ts), so 10 us is pi * 10 / 1856 rad. The datasheet's own 1 to 2 ms over half a turn would give pi / 100 rad; the stricter value is kept. The settle window W is three pulse periods, 3 * 20 ms."
+        }
+      }
+    ]
+  },
   "ratings": {
     "V+": {
       "voltage": [4.8, 6],
@@ -63,11 +78,11 @@
         }
       },
       "1": {
-        "default": "datasheet",
+        "default": "group",
         "variants": {
           "datasheet": {
             "kind": "form",
-            "form": "dc-motor@1",
+            "form": "position-servo@1",
             "params": {
               "K": 0.458,
               "R": 7.1,
@@ -76,6 +91,16 @@
               "quiescent": 0.01
             },
             "omits": ["gear backlash", "motor inductance", "winding heat"]
+          },
+          "group": {
+            "kind": "snapshot",
+            "ref": "sfab/sg90-servo@1.0.0",
+            "omits": [
+              "gear backlash",
+              "motor inductance",
+              "winding heat",
+              "wiper sense lag"
+            ]
           }
         }
       },
@@ -133,13 +158,17 @@
             "kind": "lumped",
             "mass": 0.009,
             "com": [0, 0, 0],
-            "inertia": [7.4238e-7, 0.0000010275, 5.0838e-7, 0, 0, 0],
+            "inertia": [7.4238e-7, 1.0275e-6, 5.0838e-7, 0, 0, 0],
             "joint": {
-              "armature": 0.00005,
+              "armature": 5e-5,
               "frictionloss": 0.002,
               "damping": 0.0025
             },
-            "omits": ["gear-stage bodies", "case flex"]
+            "omits": [
+              "gear-stage bodies",
+              "case flex",
+              "reflected armature: 5e-5 is fitted to the datasheet speed, 7.4× below the class-2 collapse; a bench measurement decides"
+            ]
           },
           "collapsed": {
             "kind": "snapshot",
@@ -163,7 +192,7 @@
                 "mass": 0.0007333759612329867,
                 "inertia": 5.387068780247043e-9,
                 "damping": 2.5726492761638665e-8,
-                "frictionloss": 0.000003834169141632991
+                "frictionloss": 3.834169141632991e-6
               },
               {
                 "name": "g1",
@@ -242,13 +271,74 @@
         }
       },
       "1": {
-        "default": "mesh",
+        "default": "form",
         "variants": {
           "mesh": {
             "kind": "mesh",
             "placeholder": true,
             "omits": ["horn", "cable"],
             "files": ["placeholder:sg90.glb"]
+          },
+          "form": {
+            "kind": "form",
+            "form": "case@1",
+            "size": [0.023, 0.0122, 0.029],
+            "params": {
+              "color": "#2f6db5",
+              "opacity": 0.35,
+              "flange": 0.0047,
+              "boss": 0.0059,
+              "bossX": -0.0055
+            },
+            "inner": [
+              {
+                "form": "can@1",
+                "size": [0.0085, 0.0085, 0.012],
+                "at": [0.0055, 0, -0.0075],
+                "params": {
+                  "axis": "z"
+                }
+              },
+              {
+                "form": "gear@1",
+                "size": [0.011, 0.011, 0.0015],
+                "at": [-0.0055, 0, 0.0065],
+                "params": {
+                  "teeth": 30
+                }
+              },
+              {
+                "form": "gear@1",
+                "size": [0.008, 0.008, 0.0015],
+                "at": [0.0035, 0, 0.0045],
+                "params": {
+                  "teeth": 24
+                }
+              },
+              {
+                "form": "gear@1",
+                "size": [0.006, 0.006, 0.0015],
+                "at": [-0.0055, 0, 0.0025],
+                "params": {
+                  "teeth": 18
+                }
+              },
+              {
+                "form": "disc@1",
+                "size": [0.007, 0.007, 0.003],
+                "at": [-0.0055, 0, -0.004],
+                "params": {}
+              },
+              {
+                "form": "die@1",
+                "size": [0.009, 0.005, 0.0012],
+                "at": [0, 0, -0.0128],
+                "params": {
+                  "pins": 4
+                }
+              }
+            ],
+            "omits": ["horn", "cable", "gear mesh"]
           }
         }
       }

@@ -26,12 +26,11 @@ import type {
 } from "@sfab-bench/contract";
 
 import { collapse, reflection } from "@sfab-bench/engine-body";
-
+import { applyLevelEdit } from "@sfab-bench/parts";
 import { levelCard } from "../../web/src/lib/level-card";
 import { closeRootWatches } from "./projects";
 import { writeHingeSnapshot } from "./world/body/hinge-capture";
 import { attachWorld, readRecording, stopWorld } from "./world/host";
-import { applyLevelEdit } from "./world/level-edit";
 import { catalogRoot, planWorld } from "./world/plan";
 
 const catalog = catalogRoot();
@@ -327,8 +326,9 @@ try {
   if (!collapsedPlan.ok) throw new Error("unreachable");
   const card = levelCard(collapsedPlan.plan.report ?? null, "servo");
   expect(
-    card?.snapshot?.ref === "body sfab/sg90-hinge@1.0.0" &&
-      card.snapshot.quality === "Q2a",
+    card?.snapshot?.ref ===
+      "body sfab/sg90-hinge@1.0.0, sfab/sg90-servo@1.0.0" &&
+      card.snapshot.quality === "Q2a, Q2a",
     `card ${card?.snapshot?.ref} ${card?.snapshot?.quality}`
   );
   console.log(
@@ -445,7 +445,7 @@ function snapshotBody(id: string, ref: string) {
           variants: {
             datasheet: {
               kind: "form",
-              form: "dc-motor@1",
+              form: "position-servo@1",
               params: {
                 K: 0.458,
                 R: 7.1,
@@ -491,7 +491,7 @@ function idleTrainPart() {
           variants: {
             law: {
               kind: "form",
-              form: "dc-motor@1",
+              form: "position-servo@1",
               params: {
                 K: 0.458,
                 R: 7.1,
@@ -579,7 +579,7 @@ function twoBody() {
           variants: {
             datasheet: {
               kind: "form",
-              form: "dc-motor@1",
+              form: "position-servo@1",
               params: {
                 K: 0.458,
                 R: 7.1,
@@ -875,7 +875,7 @@ function volts(frames: RecordedFrame[]): string {
 }
 
 function brownout(frames: RecordedFrame[]): string {
-  return frames.some((frame) => frame.boards.nano?.brownoutAny === true)
+  return frames.some((frame) => frame.boards.nano?.inResetAny === true)
     ? "yes"
     : "none";
 }

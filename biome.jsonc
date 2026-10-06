@@ -14,6 +14,8 @@
       "!**/apps/server/fixtures/external",
       // Recorded at full float precision; formatting would rewrite the baseline.
       "!**/apps/server/fixtures/arm-baseline.json",
+      // The trace writer puts one channel per line; formatting would rewrap them.
+      "!**/apps/server/fixtures/traces",
       // Capture writes this as canonical JSON with 2-space indentation. Formatting it again would diverge from the tool.
       "!**/apps/server/catalog/snapshots",
       // cadgen writes this sidecar as one line. Formatting it would diverge from the generator.
@@ -139,7 +141,7 @@
       }
     },
     {
-      "includes": ["packages/parts/**"],
+      "includes": ["packages/parts/src/**"],
       "linter": {
         "rules": {
           "style": {
@@ -192,7 +194,7 @@
       }
     },
     {
-      "includes": ["packages/engine-*/**"],
+      "includes": ["packages/engine-*/src/**"],
       "linter": {
         "rules": {
           "style": {
@@ -252,7 +254,7 @@
       }
     },
     {
-      "includes": ["packages/sim/**"],
+      "includes": ["packages/sim/src/**"],
       "linter": {
         "rules": {
           "style": {
@@ -288,6 +290,34 @@
                       "apps/**"
                     ],
                     "message": "sim imports neither node nor the server nor apps"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      // A package's own checks may use node, but stay below the apps.
+      "includes": ["packages/*/test/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@sfab-bench/server",
+                      "@sfab-bench/server/**",
+                      "@sfab-bench/web",
+                      "@sfab-bench/web/**",
+                      "**/apps/**",
+                      "apps/**"
+                    ],
+                    "message": "a package's checks import neither the server nor apps"
                   }
                 ]
               }

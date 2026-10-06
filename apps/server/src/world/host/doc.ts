@@ -4,6 +4,7 @@ import type { Worker } from "node:worker_threads";
 import type {
   RunReport,
   WorldError,
+  WorldGhostSpec,
   WorldPinState,
   WorldSender,
   WorldServerMessage,
@@ -69,6 +70,8 @@ export type WorldHandle = {
   }) => Promise<
     Extract<WorldServerMessage, { type: "timeline-data" }> | { error: string }
   >;
+  /** Turn the snapshot ghost on or off. Restarts the run from zero. */
+  ghost: (spec: WorldGhostSpec | null) => void;
   detach: () => void;
 };
 
@@ -82,6 +85,8 @@ export type Doc = {
   fuseStart: "cold" | "tripped";
   /** Test only. Absent, the ADC query errors. */
   adcTrace: boolean;
+  /** The snapshot ghost the run carries, shared like play state. */
+  ghost: WorldGhostSpec | null;
   subs: Set<Sub>;
   worker: Worker | null;
   generation: number;

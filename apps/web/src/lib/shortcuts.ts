@@ -50,7 +50,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: "toggle-files",
     keys: ["Mod", "B"],
-    label: "Toggle files",
+    label: "Toggle sidebar",
     scope: "global",
     ignoreEditable: true,
   },
@@ -290,7 +290,7 @@ export const ESC_ORDER = [
   "popover-select",
   "dialog",
   "voice",
-  "compact-chat",
+  "popup-chat",
 ] as const;
 export type EscLayer = (typeof ESC_ORDER)[number];
 
@@ -298,7 +298,7 @@ export type EscLayersOpen = {
   mention?: boolean;
   popoverOrSelect?: boolean;
   dialog?: boolean;
-  compactChat?: boolean;
+  popupChat?: boolean;
   voice?: boolean;
 };
 
@@ -340,7 +340,7 @@ export function activeEscLayer(open: EscLayersOpen): EscLayer | null {
   if (open.popoverOrSelect) return "popover-select";
   if (open.dialog) return "dialog";
   if (open.voice) return "voice";
-  if (open.compactChat) return "compact-chat";
+  if (open.popupChat) return "popup-chat";
   return null;
 }
 
@@ -348,7 +348,36 @@ export function escBelongsTo(layer: EscLayer, open: EscLayersOpen): boolean {
   return activeEscLayer(open) === layer;
 }
 
-export function compactChatSheetOpen(root: QueryRoot | null): boolean {
-  if (!root) return false;
-  return Boolean(root.querySelector("[data-compact-chat]"));
+type PopupChatRoot = {
+  activeElement: unknown;
+  querySelector: (sel: string) => unknown;
+};
+
+/** True when focus is inside the grown popup card (`data-chat-popup="grown"`). */
+export function popupChatOwnsEscape(root: PopupChatRoot | null): boolean {
+  if (!root?.activeElement) return false;
+  const panel = root.querySelector("[data-chat-popup='grown']");
+  if (!panel || typeof panel !== "object" || !("contains" in panel)) {
+    return false;
+  }
+  const contains = panel.contains;
+  if (typeof contains !== "function") return false;
+  return Boolean(contains.call(panel, root.activeElement));
+}
+
+/**
+ * Escape collapses a grown popup card to the compact composer when focus is
+ * inside it and no higher layer (mention, menu, dialog, voice) owns Escape.
+ */
+export function popupChatEscape(input: {
+  popup: boolean;
+  open: boolean;
+  grown: boolean;
+  focusInside: boolean;
+  layers: EscLayersOpen;
+}): boolean {
+  if (!input.popup || !input.open || !input.grown || !input.focusInside) {
+    return false;
+  }
+  return escBelongsTo("popup-chat", { ...input.layers, popupChat: true });
 }

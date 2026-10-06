@@ -80,6 +80,7 @@ export interface ChatInputHandle {
   getText: () => string;
   setText: (text: string) => void;
   insertText: (text: string) => void;
+  insertMention: (key: string, item: BaseMentionItem) => boolean;
 }
 
 interface ChatInputHelpers {
@@ -525,7 +526,7 @@ type SharedChatInputProps = {
   defaultValue?: string;
   className?: string;
   children: ReactNode;
-  /** Imperative handle (clear/focus/getText/setText/insertText), not the DOM node. */
+  /** Imperative handle (clear/focus/getText/setText/insertText/insertMention), not the DOM node. */
   ref?: Ref<ChatInputHandle>;
 } & Omit<
   ComponentProps<"div">,
@@ -562,6 +563,7 @@ export function ChatInput({
   className,
   children,
   ref,
+  onInput,
   ...props
 }: SharedChatInputProps & {
   mentions?: MentionConfigs;
@@ -576,6 +578,19 @@ export function ChatInput({
 
   mentionsRef.current = mentions;
   onSubmitRef.current = onSubmit;
+  const onInputRef = useRef(onInput);
+  onInputRef.current = onInput;
+
+  useEffect(() => {
+    if (!editor) return;
+    const emit = () => {
+      onInputRef.current?.({} as Parameters<NonNullable<typeof onInput>>[0]);
+    };
+    editor.on("update", emit);
+    return () => {
+      editor.off("update", emit);
+    };
+  }, [editor]);
 
   const parse = useCallback(() => {
     if (!editor) {
@@ -619,6 +634,25 @@ export function ChatInput({
       },
       insertText: (text) => {
         editor?.chain().focus().insertContent(text).run();
+      },
+      insertMention: (key, item) => {
+        if (!editor) return false;
+        const type = `${key}-mention`;
+        if (!editor.schema.nodes[type]) return false;
+        const bucket = selectedItemsRef.current[key] ?? new Map();
+        bucket.set(item.id, item);
+        selectedItemsRef.current[key] = bucket;
+        const current = parse().text;
+        const lead = current.length > 0 && !/\s$/.test(current) ? " " : "";
+        return editor
+          .chain()
+          .focus("end")
+          .insertContent([
+            ...(lead ? [{ type: "text", text: lead }] : []),
+            { type, attrs: { id: item.id, label: item.name } },
+            { type: "text", text: " " },
+          ])
+          .run();
       },
     }),
     [clear, editor, focus, parse]
@@ -674,10 +708,12 @@ export function ChatInputEditor({
   placeholder = "Type a message...",
   className,
   autoFocus,
+  compact = false,
 }: {
   placeholder?: string;
   className?: string;
   autoFocus?: boolean;
+  compact?: boolean;
 }) {
   const {
     setEditor,
@@ -760,7 +796,8 @@ export function ChatInputEditor({
   return (
     <EditorContent
       className={cn(
-        "max-h-48 min-h-16 w-full flex-1 overflow-y-auto px-3 py-0",
+        "max-h-48 min-w-0 flex-1 overflow-y-auto px-3 py-0",
+        compact ? "min-h-10" : "min-h-16 w-full",
         "[&_.tiptap]:outline-none",
         "[&_.tiptap_p.is-editor-empty:first-child]:before:pointer-events-none",
         "[&_.tiptap_p.is-editor-empty:first-child]:before:float-left",

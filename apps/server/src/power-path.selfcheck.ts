@@ -17,22 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import type { RecordingRead, WorldState } from "@sfab-bench/contract";
 import { Engine, MF_MSMF050, PtcFuseElement } from "@sfab-bench/engine-circuit";
-import { closeRootWatches } from "./projects";
-import { boardStampOf } from "./world/circuit-stamp";
-import {
-  type AttachWorldOptions,
-  attachWorld,
-  readRecording,
-  stopWorld,
-} from "./world/host";
-import {
-  BOD_ASSERT_V,
-  BOD_RELEASE_V,
-  RESET_HOLD_MS,
-  runningBrownout,
-  solveRail,
-  stepBrownout,
-} from "./world/power";
+import { runningReset, solveRail, stepReset } from "@sfab-bench/sim/power";
 import {
   railAttachment,
   UNO_F1_IHOLD,
@@ -41,8 +26,28 @@ import {
   UNO_F1_TAU_S,
   UNO_F1_TMAX_8A_S,
   UNO_T1_RDS,
-} from "./world/power-path";
-import { createRailCircuit, type RailCircuit } from "./world/rail-circuit";
+  UNO_U2_LDO,
+} from "@sfab-bench/sim/power-path";
+import {
+  createRailCircuit,
+  type RailCircuit,
+} from "@sfab-bench/sim/rail-circuit";
+import { closeRootWatches } from "./projects";
+import { interp, spanError } from "./trace";
+import {
+  BOD_ASSERT_V,
+  BOD_RELEASE_V,
+  BROWNOUT_LIMITS,
+  RESET_HOLD_MS,
+} from "./world/chip-brownout";
+import { boardStampOf } from "./world/circuit-stamp";
+import {
+  type AttachWorldOptions,
+  attachWorld,
+  readRecording,
+  stopWorld,
+} from "./world/host";
+import { catalogRoot } from "./world/plan";
 import { readDraft, writeDraft } from "./world/selfcheck-draft";
 import { unoUsbTrace } from "./world/uno-reference";
 
@@ -78,45 +83,6 @@ const RECOVER_A = 0.03;
 
 function pct(frac: number): string {
   return `${(frac * 100).toFixed(4)}%`;
-}
-
-function interp(
-  time: readonly number[],
-  values: readonly number[],
-  t: number
-): number {
-  const n = time.length;
-  const t0 = time[0]!;
-  const tN = time[n - 1]!;
-  if (t <= t0) return values[0]!;
-  if (t >= tN) return values[n - 1]!;
-  let lo = 0;
-  let hi = n - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (time[mid]! <= t) lo = mid;
-    else hi = mid;
-  }
-  const a = time[lo]!;
-  const b = time[hi]!;
-  const u = b === a ? 0 : (t - a) / (b - a);
-  return values[lo]! * (1 - u) + values[hi]! * u;
-}
-
-function rangeError(ours: readonly number[], ref: readonly number[]): number {
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const v of ref) {
-    if (v < lo) lo = v;
-    if (v > hi) hi = v;
-  }
-  const span = hi - lo || 1;
-  let worst = 0;
-  for (let i = 0; i < ours.length; i++) {
-    const err = Math.abs(ours[i]! - ref[i]!) / span;
-    if (err > worst) worst = err;
-  }
-  return worst;
 }
 
 function loadCsv(name: string): { t: number[]; v: number[] } {
@@ -195,7 +161,7 @@ const trace = loadCsv("uno-usb.csv");
       t
     )
   );
-  const err = rangeError(ours, trace.v);
+  const err = spanError(ours, trace.v);
   expect(err <= LINE, `uno-usb ${pct(err)} of span exceeds 0.5%`);
   for (const sample of samples) {
     const v = sample.v.v5 ?? 0;
@@ -284,6 +250,20 @@ expect(
 }
 
 {
+  // The reference's U2 is the catalog part's law.
+  const u2 = JSON.parse(
+    readFileSync(
+      join(catalogRoot(), "parts/sfab/lp2985-3v3@1.0.0.json"),
+      "utf8"
+    )
+  ).axes.behaviour["1"].variants.fixed.params;
+  expect(
+    JSON.stringify(u2) === JSON.stringify(UNO_U2_LDO),
+    `UNO_U2_LDO ${JSON.stringify(UNO_U2_LDO)} vs catalog ${JSON.stringify(u2)}`
+  );
+}
+
+{
   const held = new PtcFuseElement("f", "a", "b", MF_MSMF050);
   for (let ms = 0; ms < 60_000; ms++) held.advance(UNO_F1_IHOLD, 0.001);
   expect(!held.tripped, `0.5 A tripped, u=${held.u}`);
@@ -295,7 +275,9 @@ expect(
     stamp: unoStamp,
     feed: "usb",
   });
-  onRail.setFixed(UNO_F1_IHOLD);
+  // U2 (3.3 V) draws its ground current from +5V as well: the fuse
+  // carries the hold current with the board load 65 µA under it.
+  onRail.setFixed(UNO_F1_IHOLD - UNO_U2_LDO.iGround);
   const matched = new PtcFuseElement("f", "a", "b", MF_MSMF050);
   for (let ms = 0; ms < 100; ms++) {
     onRail.solve();
@@ -330,7 +312,7 @@ expect(
     feed: "usb",
   });
   trip.setFixed(2);
-  let bo = runningBrownout();
+  let bo = runningReset();
   let trippedAt = -1;
   let assertAt = -1;
   let terminalAtAssert = 0;
@@ -346,8 +328,12 @@ expect(
       trip.setFixed(RECOVER_A);
       dropped = true;
     }
-    const stepped = stepBrownout(bo, trip.boardMinVoltage, ms);
-    bo = { phase: stepped.phase, releaseAtMs: stepped.releaseAtMs };
+    const stepped = stepReset(bo, trip.boardMinVoltage, ms, BROWNOUT_LIMITS);
+    bo = {
+      phase: stepped.phase,
+      releaseAtMs: stepped.releaseAtMs,
+      cause: stepped.cause,
+    };
     if (stepped.assertReset) {
       assertAt = ms;
       terminalAtAssert = trip.voltage;
@@ -495,7 +481,7 @@ async function runWorld(
   const amps = opened.state.supplies?.usb?.current ?? Number.NaN;
   const terminal = opened.state.supplies?.usb?.voltage ?? Number.NaN;
   expect(
-    opened.state.boards.uno?.brownout === true,
+    opened.state.boards.uno?.inReset === true,
     "tripped fuse did not reset"
   );
   expect(
@@ -513,7 +499,7 @@ async function runWorld(
 {
   const bench = await runWorld(armDir, "parts/sfab/arm-stall@1.0.0.json", 2000);
   const browned = bench.read.frames.some(
-    (frame) => frame.boards.uno?.brownoutAny === true
+    (frame) => frame.boards.uno?.inResetAny === true
   );
   let benchMin = Infinity;
   for (const frame of bench.read.frames) {
@@ -572,7 +558,7 @@ try {
     `servo V+ ${first.state.parts?.servo?.voltage} V is not the board node`
   );
   expect(
-    frames.every((frame) => frame.boards.uno?.brownout !== true),
+    frames.every((frame) => frame.boards.uno?.inReset !== true),
     "usb stall browned out"
   );
   expect(
@@ -583,9 +569,29 @@ try {
     last.parts.servo?.state === "stall",
     `tail state ${last.parts.servo?.state}`
   );
+  // A saturated drive draws the whole winding, so the shaft torque is
+  // efficiency·k times the current above quiescent on every frame,
+  // including the acceleration, where it changes step to step and a
+  // sample one step late would not match.
+  let moving = 0;
+  for (const frame of frames) {
+    const servo = frame.parts.servo;
+    const shaft = servo?.torqueNm ?? Number.NaN;
+    const fromCurrent =
+      law.efficiency * law.k * ((servo?.current ?? 0) - law.quiescent);
+    const bound = Math.max(1e-5 * Math.abs(fromCurrent), 1e-9);
+    expect(
+      Math.abs(Math.abs(shaft) - fromCurrent) <= bound,
+      `${frame.t} s: torque ${shaft} N·m vs ${fromCurrent} N·m from the current`
+    );
+    if (servo?.state === "moving") moving++;
+  }
+  expect(moving >= 10, `only ${moving} moving frames`);
+  const torque = last.parts.servo?.torqueNm ?? Number.NaN;
   console.log(
     `arm stall on the usb path: board ${steady.toFixed(4)} V at 3 s, ` +
-      `within 1 mV of ${stall.boardVoltage.toFixed(4)} V, no brownout, runs identical`
+      `within 1 mV of ${stall.boardVoltage.toFixed(4)} V, no brownout, runs identical, ` +
+      `shaft ${Math.abs(torque).toFixed(4)} N·m`
   );
 } finally {
   rmSync(usbRoot, { recursive: true, force: true });

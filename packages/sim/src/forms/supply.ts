@@ -3,10 +3,10 @@
  */
 import { batteryFrom, ocvAt } from "@sfab-bench/parts";
 
-import type { FormAdapter, SupplyCtx } from "./types";
+import type { FormAdapter, PlaceCtx } from "./types";
 
 function powerAndGround(
-  ctx: SupplyCtx,
+  ctx: PlaceCtx,
   pins: Record<string, { kind?: string; output?: boolean }>
 ): { positive: string; ground: string } | null {
   const positive = Object.entries(pins).find(
@@ -26,7 +26,7 @@ function powerAndGround(
   return { positive, ground };
 }
 
-function placeThevenin(ctx: SupplyCtx): void {
+function placeThevenin(ctx: PlaceCtx): void {
   const numbers = ctx.numbers();
   if (!numbers) {
     ctx.reject("the run needs thevenin-limit@1");
@@ -35,7 +35,7 @@ function placeThevenin(ctx: SupplyCtx): void {
   const pins = ctx.pins();
   const ports = powerAndGround(ctx, pins);
   if (!ports) return;
-  ctx.add({
+  ctx.addSupply({
     id: ctx.inst.path,
     type: ctx.typeId,
     voltage: numbers.V ?? 0,
@@ -46,10 +46,10 @@ function placeThevenin(ctx: SupplyCtx): void {
     connector: ctx.inst.type.ports[ports.positive]?.connector ?? null,
     pins,
   });
-  ctx.box();
+  ctx.box("supply");
 }
 
-function placeBattery(ctx: SupplyCtx): void {
+function placeBattery(ctx: PlaceCtx): void {
   const behaviour = ctx.behaviour;
   if (behaviour.kind !== "form") return;
   const built = batteryFrom(behaviour.params, ctx.inst.params);
@@ -62,7 +62,7 @@ function placeBattery(ctx: SupplyCtx): void {
   const ports = powerAndGround(ctx, pins);
   if (!ports) return;
   const voc = ocvAt(cell.ocv, cell.soc0);
-  ctx.add({
+  ctx.addSupply({
     id: ctx.inst.path,
     type: ctx.typeId,
     voltage: voc,
@@ -74,10 +74,10 @@ function placeBattery(ctx: SupplyCtx): void {
     pins,
     battery: cell,
   });
-  ctx.box();
+  ctx.box("supply");
 }
 
-function placeIdeal(ctx: SupplyCtx): void {
+function placeIdeal(ctx: PlaceCtx): void {
   const numbers = ctx.numbers();
   if (!numbers) {
     ctx.reject("the run needs ideal-voltage@1");
@@ -86,7 +86,7 @@ function placeIdeal(ctx: SupplyCtx): void {
   const pins = ctx.pins();
   const ports = powerAndGround(ctx, pins);
   if (!ports) return;
-  ctx.add({
+  ctx.addSupply({
     id: ctx.inst.path,
     type: ctx.typeId,
     voltage: numbers.V ?? 0,
@@ -98,7 +98,7 @@ function placeIdeal(ctx: SupplyCtx): void {
     pins,
     ideal: true,
   });
-  ctx.box();
+  ctx.box("supply");
 }
 
 export const supplyAdapters: FormAdapter[] = [

@@ -3,6 +3,7 @@ import { deepStrictEqual, ok as expect } from "node:assert/strict";
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -317,6 +318,28 @@ try {
   deepStrictEqual(readFileSync(libraryFile, "utf8"), libraryBytes);
 } finally {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+}
+
+// Undoing the last capture prunes only the directories the store made:
+// a `snapshots/` the user made stays, empty.
+{
+  const project = mkdtempSync(join(tmpdir(), "sfab-prune-"));
+  try {
+    const snapshots = join(project, "snapshots");
+    const file = join(snapshots, "sfab", "x-behaviour-1@1.0.0.json");
+    nodeStore.writeText(file, "{}");
+    nodeStore.remove(file);
+    expect(!existsSync(snapshots), "the store's own snapshots/ is pruned");
+    mkdirSync(snapshots);
+    nodeStore.writeText(file, "{}");
+    nodeStore.remove(file);
+    expect(
+      existsSync(snapshots) && readdirSync(snapshots).length === 0,
+      "a user-made snapshots/ stays, empty"
+    );
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
 }
 
 console.log(

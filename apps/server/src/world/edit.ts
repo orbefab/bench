@@ -65,6 +65,18 @@ export function historiesFor(
 }
 
 /**
+ * The web keeps one undo order across a world's parts, so a new edit in
+ * one part's history ends the redo of every other part this world has open.
+ */
+function dropOtherRedo(project: string, world: string, edited: string): void {
+  const id = worldKey(project, world);
+  for (const [file, session] of sessions) {
+    if (file === edited) continue;
+    if (sessionMeta.get(file)?.worlds.has(id)) session.dropRedo();
+  }
+}
+
+/**
  * Undo flags when a part tab connects. Includes this document's own
  * session even when it was first opened as a nested part of another file.
  */
@@ -135,6 +147,7 @@ export async function applyDocumentEdit(
   const applied = session.apply(op, label);
   if ("needsConfirm" in applied) return applied;
   if ("error" in applied) return applied;
+  dropOtherRedo(project, world, key);
   const unread = (applied.skipped ?? []).map(
     (row) => `${row.file}: ${row.error}`
   );

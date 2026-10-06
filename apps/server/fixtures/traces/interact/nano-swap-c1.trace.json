@@ -1,0 +1,69 @@
+{
+  "format": "sfab.trace@1",
+  "source": "parts/sfab/nano-swap-c1@1.0.0.json",
+  "tol": {"abs":1e-9,"rel":1e-9},
+  "t": [0,0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.09,0.1,0.11,0.12,0.13,0.14,0.15,0.16,0.17,0.18,0.19,0.2,0.21,0.22,0.23,0.24,0.25,0.26,0.27,0.28,0.29,0.3,0.31,0.32,0.33,0.34,0.35,0.36,0.37,0.38,0.39,0.4,0.41,0.42,0.43,0.44,0.45],
+  "channels": {
+    "boards.nano.belowSoa": {"at":[[0,false]]},
+    "boards.nano.inReset": {"at":[[0,false]]},
+    "boards.nano.inResetAny": {"at":[[0,false]]},
+    "boards.nano.minVoltage": {"unit":"V","v":4.735005379},
+    "boards.nano.pins.ddr.0": {"v":[0,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192]},
+    "boards.nano.pins.level.0": {"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192]},
+    "boards.nano.pins.toggled.0": {"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192,8192]},
+    "boards.nano.regulatorA": {"v":0},
+    "boards.nano.regulatorMax": {"v":0},
+    "boards.nano.running": {"at":[[0,true]]},
+    "boards.nano.voltage": {"unit":"V","v":4.735005379},
+    "supplies.supply.current": {"unit":"A","v":0.02520000003},
+    "supplies.supply.maxCurrent": {"unit":"A","v":0.02520000003},
+    "supplies.supply.minVoltage": {"unit":"V","v":4.987400055},
+    "supplies.supply.voltage": {"unit":"V","v":4.987400055}
+  },
+  "events": [
+    {"t":0.001,"kind":"serial","board":"nano","text":"E","from":0,"to":1},
+    {"t":0.301,"kind":"serial","board":"nano","text":"1","from":1,"to":2}
+  ],
+  "text": {
+    "nano": "E1"
+  },
+  "notes": [],
+  "samples": {
+    "swapped": {
+      "simTime": 0.3,
+      "boards.nano.running": true,
+      "boards.nano.pins.ddr.0": 8192,
+      "boards.nano.pins.level.0": 0,
+      "boards.nano.pins.toggled.0": 0,
+      "boards.nano.resets": 0,
+      "boards.nano.inReset": false,
+      "boards.nano.voltage": 4.735005442,
+      "supplies.supply.voltage": 4.9874,
+      "supplies.supply.current": 0.0252
+    },
+    "swap-serial": {
+      "simTime": 0.45,
+      "boards.nano.running": true,
+      "boards.nano.pins.ddr.0": 8192,
+      "boards.nano.pins.level.0": 8192,
+      "boards.nano.pins.toggled.0": 0,
+      "boards.nano.resets": 0,
+      "boards.nano.inReset": false,
+      "boards.nano.voltage": 4.735005442,
+      "supplies.supply.voltage": 4.9874,
+      "supplies.supply.current": 0.0252
+    },
+    "end": {
+      "simTime": 0.45,
+      "boards.nano.running": true,
+      "boards.nano.pins.ddr.0": 8192,
+      "boards.nano.pins.level.0": 8192,
+      "boards.nano.pins.toggled.0": 0,
+      "boards.nano.resets": 0,
+      "boards.nano.inReset": false,
+      "boards.nano.voltage": 4.735005442,
+      "supplies.supply.voltage": 4.9874,
+      "supplies.supply.current": 0.0252
+    }
+  }
+}

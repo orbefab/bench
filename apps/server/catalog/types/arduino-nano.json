@@ -17,10 +17,11 @@
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
         "logic": {
-          "vil": 1.5,
-          "vih": 3,
+          "vil": [0.3, 0],
+          "vih": [0.6, 0],
           "vol": 0.9,
-          "voh": 4.2
+          "voh": 4.2,
+          "vcc": 5
         }
       }
     },
@@ -31,14 +32,28 @@
       "role": "logic",
       "direction": "inout",
       "adc": true,
+      "resolution": [
+        {
+          "field": "voltage",
+          "kind": "reader",
+          "value": 0.0009765625,
+          "reference": { "kind": "ratio-to", "quantity": "5V.voltage" },
+          "conditions": [{ "kind": "within-ratings" }],
+          "source": {
+            "title": "ATmega328P datasheet DS40002061, Analog-to-Digital Converter",
+            "ref": "10-bit successive approximation: ADC = VIN * 1024 / VREF, so one step is VREF / 1024. With REFS = 01 the reference is AVCC, which this board ties to its 5V rail (Arduino board schematic)."
+          }
+        }
+      ],
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "absMaxCurrent": [-0.04, 0.04],
         "logic": {
-          "vil": 1.5,
-          "vih": 3,
+          "vil": [0.3, 0],
+          "vih": [0.6, 0],
           "vol": 0.9,
-          "voh": 4.2
+          "voh": 4.2,
+          "vcc": 5
         }
       }
     },
@@ -49,6 +64,19 @@
       "role": "analog",
       "direction": "in",
       "adc": true,
+      "resolution": [
+        {
+          "field": "voltage",
+          "kind": "reader",
+          "value": 0.0009765625,
+          "reference": { "kind": "ratio-to", "quantity": "5V.voltage" },
+          "conditions": [{ "kind": "within-ratings" }],
+          "source": {
+            "title": "ATmega328P datasheet DS40002061, Analog-to-Digital Converter",
+            "ref": "10-bit successive approximation: ADC = VIN * 1024 / VREF, so one step is VREF / 1024. With REFS = 01 the reference is AVCC, which this board ties to its 5V rail (Arduino board schematic)."
+          }
+        }
+      ],
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5]
       }
@@ -105,10 +133,9 @@
       "ratings": {
         "absMaxVoltage": [-0.5, 5.5],
         "logic": {
-          "vil": 1.5,
-          "vih": 3,
-          "vol": 0.9,
-          "voh": 4.2
+          "vil": [0.1, 0],
+          "vih": [0.9, 0],
+          "vcc": 5
         }
       }
     }

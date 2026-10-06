@@ -1,6 +1,7 @@
 /** The session's shared state: one typed object every domain module reads and writes. */
 
 import type {
+  ChipClock,
   Diagnostic,
   JointLimitKind,
   RunReport,
@@ -12,7 +13,7 @@ import type {
 import type { CompiledWorld } from "@sfab-bench/engine-body";
 import type { AvrBoard } from "@sfab-bench/engine-mcu";
 import type { BatteryParams } from "@sfab-bench/parts";
-import type { BrownoutState, MotorLaw } from "../power";
+import type { MotorLaw, ResetState } from "../power";
 import type { RailCircuit } from "../rail-circuit";
 import type { RangerRuntime } from "../ranger";
 import type { ServoTrack } from "../servo";
@@ -21,9 +22,11 @@ import type {
   AdcSampleStamp,
   SerialChunk,
   SimHost,
+  SimObserver,
   ToWorker,
 } from "../sim";
 import type { gpioInputNets, PowerFeeds } from "../wiring";
+import type { ControlRuntime, ShaftRuntime } from "./shafts";
 
 export type LiveWorld = CompiledWorld & {
   data: InstanceType<CompiledWorld["mj"]["MjData"]>;
@@ -44,8 +47,12 @@ export type BoardSpec = {
   firmware: string;
   /** The chip part's SOA band floor, volts. Null: no band. */
   minOperatingVoltage: number | null;
-  /** Wire bit to chip pin, from the board's `expose`. Absent: the Arduino header. */
-  wire?: (string | null)[];
+  /** The chip's name and clock for the SOA warning. Null: not registered. */
+  clock: ChipClock | null;
+  /** Chip pin name per pin-state index, from the board's `expose`. */
+  wire: readonly string[];
+  /** Pins the board names (its `pinOrder`). `wire` may add internal drives. */
+  pinCount: number;
 };
 
 export type ServoDrive = {
@@ -105,8 +112,11 @@ export type BoardPower = {
   /** Nominal BOD level, for the out-of-SOA warning. */
   brownoutVoltage: number;
   assertVoltage: number;
+  releaseVoltage: number;
+  /** Milliseconds reset stays after the rail releases. */
+  holdMs: number;
   resets: number;
-  brownout: BrownoutState;
+  reset: ResetState;
 };
 
 export type SupplySpec = {
@@ -140,6 +150,8 @@ export type RecLayout = {
   bodies: { robot: string; link: string; mj: string }[];
   parts: Load[];
   rangers: RangerRuntime[];
+  /** Shafts recorded as their instance's part row, after the rangers. */
+  shafts: ShaftRuntime[];
   supplies: SupplySpec[];
   boards: string[];
 };
@@ -158,6 +170,10 @@ export type SessionState = {
   specs: BoardSpec[];
   boards: AvrBoard[];
   loads: Load[];
+  /** `servo-control@1` parts, bound after the rails. */
+  controls: ControlRuntime[];
+  /** Joints circuit parts turn or read, bound after the rails. */
+  shafts: ShaftRuntime[];
   rangers: RangerRuntime[];
   boardPower: Map<string, BoardPower>;
   supplySpecs: SupplySpec[];
@@ -173,10 +189,22 @@ export type SessionState = {
    * after the solve, before a board that just left reset executes.
    */
   latchedNode: Map<string, number>;
-  /** Terminal of a supply that feeds no board. Latched with the board nodes. */
-  latchedTerminal: Map<string, number>;
+  /**
+   * Each supply's rail node (`boardNodeOf`), for a part with no power
+   * board. Latched with the board nodes.
+   */
+  latchedRail: Map<string, number>;
   adcNodes: AdcNodeStamp[];
   adcSamples: AdcSampleStamp[];
+  /** Listeners from `Sim.observe`. They outlive a reload. */
+  readonly observers: Set<SimObserver>;
+  /**
+   * The master step in which each board's current CPU ran its first
+   * cycle. A board runs at most once per master step, so no two of its
+   * CPUs start in the same step; with the CPU's own cycle count this names
+   * a conversion's exact instant.
+   */
+  startStep: Map<string, number>;
   /** Test only. Absent on load, stamps and samples are not allocated. */
   adcTrace: boolean;
   /** Test only. A tripped fuse starts hot, before the first solve. */
@@ -189,6 +217,8 @@ export type SessionState = {
   playing: boolean;
   timer: unknown;
   lastWall: number;
+  /** Master steps per simulated millisecond (`stepsPerMs` of the run's step). */
+  perMs: number;
   stepDebt: number;
   sinceState: number;
   readonly queue: ToWorker[];
@@ -210,11 +240,25 @@ export type SessionState = {
   readonly firmwareSha: Map<string, string>;
   inputNets: ReturnType<typeof gpioInputNets>;
   applyingInputs: boolean;
+  /**
+   * Per board, how much of its unflushed serial the recording has noted.
+   * Whoever drains the board's serial sets it back to 0.
+   */
   readonly txSeen: Map<string, number>;
-  readonly pendingNotes: { kind: "reset" | "reboot"; board: string }[];
+  /** `cause` is set only on a reset the RESET pin asserted. */
+  readonly pendingNotes: {
+    kind: "reset" | "reboot";
+    board: string;
+    cause?: "pin";
+  }[];
   layout: RecLayout | null;
   /** Drive mode of each stamped pin at the start of this millisecond. */
   readonly driveAtStart: Map<string, Map<number, PinMode>>;
+  /**
+   * Input level of each stamped GPIO, per board and bit. A node between
+   * VIL and VIH keeps it. Starts low.
+   */
+  readonly pinLatch: Map<string, Map<number, boolean>>;
 };
 
 export function createState(host: SimHost): SessionState {
@@ -231,15 +275,19 @@ export function createState(host: SimHost): SessionState {
     specs: [],
     boards: [],
     loads: [],
+    controls: [],
+    shafts: [],
     rangers: [],
     boardPower: new Map<string, BoardPower>(),
     supplySpecs: [],
     partFeeds: {},
     supplyLive: {},
     latchedNode: new Map<string, number>(),
-    latchedTerminal: new Map<string, number>(),
+    latchedRail: new Map<string, number>(),
     adcNodes: [],
     adcSamples: [],
+    observers: new Set<SimObserver>(),
+    startStep: new Map<string, number>(),
     adcTrace: false,
     fuseStart: "cold",
     rails: new Map<string, RailGroup>(),
@@ -249,6 +297,7 @@ export function createState(host: SimHost): SessionState {
     playing: false,
     timer: null,
     lastWall: 0,
+    perMs: 1,
     stepDebt: 0,
     sinceState: 0,
     queue: [],
@@ -271,5 +320,6 @@ export function createState(host: SimHost): SessionState {
     pendingNotes: [],
     layout: null,
     driveAtStart: new Map<string, Map<number, PinMode>>(),
+    pinLatch: new Map<string, Map<number, boolean>>(),
   };
 }
