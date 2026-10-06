@@ -560,57 +560,56 @@ function DesktopWorkbench({
             : "min-h-0 overflow-hidden bg-background"
         }
       >
-        {docked ? (
+        {showStudio ? (
+          // The group stays mounted across popup and docked. Only the chat
+          // panel comes and goes, so the canvas and the cards keep their state.
           <ResizablePanelGroup
             className="min-h-0 flex-1"
             orientation="horizontal"
           >
             <ResizablePanel
               className="flex min-h-0 flex-col overflow-hidden"
-              defaultSize="68%"
-              minSize="45%"
+              defaultSize={docked ? "68%" : "100%"}
+              id="viewer"
+              minSize={docked ? "45%" : "0%"}
             >
               <div
                 data-slot="viewer-pane"
                 className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-studio"
               >
-                {header(true)}
+                {header(docked)}
                 <PartParkDialog />
                 {stage}
               </div>
             </ResizablePanel>
-            <ResizableHandle className="bg-transparent" />
-            <ResizablePanel
-              className="flex min-h-0 flex-col overflow-hidden"
-              defaultSize="32%"
-              maxSize="55%"
-              minSize="22%"
-            >
-              <div
-                data-slot="chat-side-panel"
-                className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-background"
+            {docked ? <ResizableHandle className="bg-transparent" /> : null}
+            {docked ? (
+              <ResizablePanel
+                className="flex min-h-0 flex-col overflow-hidden"
+                defaultSize="32%"
+                id="chat"
+                maxSize="55%"
+                minSize="22%"
               >
-                <ChatPanel
-                  docked
-                  open
-                  toggleRef={chatToggleRef}
-                  width={width}
-                  onClose={floatChat}
-                />
-              </div>
-            </ResizablePanel>
+                <div
+                  data-slot="chat-side-panel"
+                  className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-background"
+                >
+                  <ChatPanel
+                    docked
+                    open
+                    toggleRef={chatToggleRef}
+                    width={width}
+                    onClose={floatChat}
+                  />
+                </div>
+              </ResizablePanel>
+            ) : null}
           </ResizablePanelGroup>
         ) : (
           <>
             {header(false)}
-            {showStudio ? (
-              <>
-                <PartParkDialog />
-                {stage}
-              </>
-            ) : (
-              <HomeProjects folder={folder} path={projectPath} />
-            )}
+            <HomeProjects folder={folder} path={projectPath} />
           </>
         )}
       </ShellInset>
