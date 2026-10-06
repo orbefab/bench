@@ -50,7 +50,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: "toggle-files",
     keys: ["Mod", "B"],
-    label: "Toggle files",
+    label: "Toggle sidebar",
     scope: "global",
     ignoreEditable: true,
   },

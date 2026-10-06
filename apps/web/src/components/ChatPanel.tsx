@@ -28,6 +28,7 @@ import {
 import { RenderErrorBoundary } from "@/components/RenderErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useSidebar } from "@/components/ui/sidebar";
 import { showToast } from "@/components/ui/toast";
 import { useProjectSession } from "@/hooks/useProjectSession";
 import { HIDDEN_CHAT_NOTICE, hiddenChatNotice } from "@/lib/feedback";
@@ -58,7 +59,7 @@ export function ChatPanel({
   /** Fixed panels beside the canvas, such as the world editor's tree and inspector. */
   panels?: number;
 }) {
-  const treeOpen = usePrefs((s) => s.treeOpen);
+  const { open: railOpen } = useSidebar();
   const setWidth = usePrefs((s) => s.setChatWidth);
   const setChatOpen = usePrefs((s) => s.setChatOpen);
   const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
@@ -129,9 +130,9 @@ export function ChatPanel({
 
   const persistWidth = useCallback(
     (next: number) => {
-      setWidth(clampChatDrag(next, window.innerWidth, treeOpen, panels));
+      setWidth(clampChatDrag(next, window.innerWidth, railOpen, panels));
     },
-    [setWidth, treeOpen, panels]
+    [setWidth, railOpen, panels]
   );
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
 
@@ -223,7 +224,7 @@ export function ChatPanel({
       ev.shiftKey,
       width,
       window.innerWidth,
-      treeOpen,
+      railOpen,
       panels
     );
     if (next == null) return;
@@ -234,7 +235,7 @@ export function ChatPanel({
   const resizeMax = clampChatDrag(
     CHAT_MAX_WIDTH,
     typeof window === "undefined" ? width : window.innerWidth,
-    treeOpen,
+    railOpen,
     panels
   );
 

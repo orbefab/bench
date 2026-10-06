@@ -1,6 +1,8 @@
 import { formatShortcut } from "./shortcuts";
 
 export const OPEN_SETTINGS_EVENT = "sfab-open-settings";
+export const OPEN_QUEST_EVENT = "sfab-open-quest";
+export const OPEN_COMMAND_PALETTE_EVENT = "sfab-open-command-palette";
 
 export type PaletteCommand = {
   id: string;
@@ -146,4 +148,14 @@ export function visiblePalette(
 export function requestOpenSettings() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(OPEN_SETTINGS_EVENT));
+}
+
+export function requestOpenQuest() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(OPEN_QUEST_EVENT));
+}
+
+export function requestOpenCommandPalette() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT));
 }

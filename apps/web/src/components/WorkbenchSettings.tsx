@@ -18,7 +18,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { OPEN_SETTINGS_EVENT } from "@/lib/command-palette";
+import { OPEN_QUEST_EVENT, OPEN_SETTINGS_EVENT } from "@/lib/command-palette";
 import { cn } from "@/lib/utils";
 
 type SettingsSectionId =
@@ -49,9 +49,18 @@ export function WorkbenchSettings({ host }: { host: boolean }) {
       setSection("appearance");
       setSettingsOpen(true);
     };
+    const onQuest = () => {
+      if (!host) return;
+      setPendingQuest(true);
+      setSettingsOpen(false);
+    };
     window.addEventListener(OPEN_SETTINGS_EVENT, onSettings);
-    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onSettings);
-  }, []);
+    window.addEventListener(OPEN_QUEST_EVENT, onQuest);
+    return () => {
+      window.removeEventListener(OPEN_SETTINGS_EVENT, onSettings);
+      window.removeEventListener(OPEN_QUEST_EVENT, onQuest);
+    };
+  }, [host]);
 
   const sections: {
     id: SettingsSectionId;

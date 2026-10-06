@@ -1,11 +1,5 @@
-import { Box, PanelRight, Scan } from "lucide-react";
-import {
-  type CSSProperties,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { PanelRight } from "lucide-react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { fileLabel } from "@/cad/loadCadReview";
 import {
@@ -25,17 +19,16 @@ import {
 import { DesktopSidebar } from "@/components/DesktopSidebar";
 import { DetailPanel } from "@/components/DetailPanel";
 import { EmptyScene } from "@/components/EmptyScene";
+import { HomeProjects } from "@/components/HomeProjects";
+import { InsetHeader } from "@/components/InsetHeader";
 import { BrowseFolderDialog, useOpenFolder } from "@/components/OpenFolder";
 import { PairPage } from "@/components/PairPage";
 import { PartTree } from "@/components/PartTree";
 import { RenderErrorBoundary } from "@/components/RenderErrorBoundary";
 import { Toolbar } from "@/components/Toolbar";
 import { Button } from "@/components/ui/button";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
+import { Shell, ShellInset } from "@/components/ui/shell";
+import { useSidebar } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { ToastProvider, Toasts } from "@/components/ui/toast";
 import {
@@ -44,11 +37,11 @@ import {
   WorldProblemCard,
 } from "@/components/WorldChrome";
 import { WorldInspector } from "@/components/WorldInspector";
+import { PartParkDialog } from "@/components/WorldPartTabs";
 import { WorldTimeline } from "@/components/WorldTimeline";
 import {
   WorldConfirmDialog,
   WorldHotkeys,
-  WorldTopBar,
   WorldTree,
 } from "@/components/WorldTree";
 import { useCanvasFit } from "@/hooks/useCanvasFit";
@@ -60,9 +53,7 @@ import {
 } from "@/hooks/useProjectSession";
 import { useWorldRun } from "@/hooks/useWorldRun";
 import { useXrSession } from "@/hooks/useXrSession";
-import { useXrSupport } from "@/hooks/useXrSupport";
 import { fetchMe, jsonApi, type MePrincipal } from "@/lib/api";
-import { filesRailToggleTitle } from "@/lib/files-rail";
 import {
   chatLayoutWidth,
   detailPanelWidth,
@@ -79,17 +70,16 @@ import {
 } from "@/lib/load-copy";
 import { redeemFragmentToken } from "@/lib/pairing";
 import { folderName } from "@/lib/project";
-import { isMacPlatform } from "@/lib/shortcuts";
 import { documentTitle, emptySceneKind, PRODUCT_TITLE } from "@/lib/welcome";
 import { ViewerCanvas } from "@/scene/ViewerCanvas";
 import { worldFitTarget } from "@/scene/world-fit";
 import { usePrefs } from "@/state/prefs";
 import { useScene } from "@/state/scene";
+import { studioNavStore, useStudioNav } from "@/state/studio-nav";
 import { useViewer } from "@/state/viewer";
 import { useWorld } from "@/state/world";
 import { worldCaptureHandlers } from "@/state/world-capture";
 import { useXrUi } from "@/state/xr";
-import { enterAR, enterVR } from "@/xrStore";
 
 const BOOT_ME_TIMEOUT_MS = 4_000;
 
@@ -173,26 +163,6 @@ function ChatToggle({
   );
 }
 
-function EnterXr() {
-  const { ar, vr, ready } = useXrSupport();
-  if (!ready || (!ar && !vr)) return null;
-  const studio = vr;
-  return (
-    <div className="pointer-events-auto rounded-xl border border-border bg-card/95 p-1 shadow-lg">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-9"
-        onClick={() => void (studio ? enterVR() : enterAR())}
-      >
-        {studio ? <Box /> : <Scan />}
-        {studio ? "Enter Studio" : "Enter AR"}
-      </Button>
-    </div>
-  );
-}
-
 function Overlay({
   folder,
   catalog,
@@ -200,6 +170,7 @@ function Overlay({
   canvasHeight,
   compactChat,
   chatToggleRef,
+  railOpen,
 }: {
   folder: ReturnType<typeof useOpenFolder>;
   catalog: CatalogState;
@@ -207,6 +178,7 @@ function Overlay({
   canvasHeight: number;
   compactChat: boolean;
   chatToggleRef: RefObject<HTMLButtonElement | null>;
+  railOpen: boolean;
 }) {
   const { review, progress, error, selectedId, url, title, loadModel } =
     useViewer(
@@ -230,7 +202,6 @@ function Overlay({
   const { project } = useProjectSession();
   const worldPath = useWorld((s) => s.path);
   const { files, ready: catalogReady, error: catalogError } = catalog;
-  const treeOpen = usePrefs((s) => s.treeOpen);
   const chatOpen = usePrefs((s) => s.chatOpen);
   const compactChatOpen = usePrefs((s) => s.compactChatOpen);
   const partsOpen = usePrefs((s) => s.partsOpen);
@@ -247,7 +218,7 @@ function Overlay({
     loadError: Boolean(error),
     sceneCrash: Boolean(sceneCrash),
     projectPath: project.path,
-    treeOpen,
+    treeOpen: railOpen,
     catalogReady,
     hasCad: files.length > 0,
     folderGone,
@@ -275,12 +246,10 @@ function Overlay({
   const showChatToggle =
     Boolean(project.path) && (compactChat ? !compactChatOpen : !chatOpen);
   const { tabStreaming } = useViewerChat();
-  const { ar, vr, ready: xrReady } = useXrSupport();
-  const enterXr = xrReady && (ar || vr);
-  const leftReserve = treeOpen ? 12 : 52;
+  const leftReserve = 12;
   const rightReserve = toolbarRightReserve(
     showChatToggle,
-    Boolean(enterXr),
+    false,
     showChatToggle && tabStreaming
   );
   const toolbar = toolbarLayout({ canvasWidth, leftReserve, rightReserve });
@@ -319,23 +288,10 @@ function Overlay({
     <>
       {!session && (
         <>
-          {!treeOpen ? (
-            <div className="pointer-events-auto absolute top-4 left-3 z-10 flex flex-col items-start gap-2">
-              <div className="rounded-xl border border-border bg-card/95 shadow-lg">
-                <SidebarTrigger
-                  className="h-9 w-9"
-                  title={filesRailToggleTitle(
-                    isMacPlatform(navigator.platform, navigator.userAgent),
-                    "show"
-                  )}
-                />
-              </div>
-              {folder.error && scene === "none" ? (
-                <p className="max-w-xs rounded-md border border-destructive/40 bg-card/95 px-2 py-1 text-xs text-error">
-                  {folder.error}
-                </p>
-              ) : null}
-            </div>
+          {folder.error && scene === "none" ? (
+            <p className="pointer-events-auto absolute top-4 left-3 z-10 max-w-xs rounded-md border border-destructive/40 bg-card/95 px-2 py-1 text-xs text-error">
+              {folder.error}
+            </p>
           ) : null}
           {worldPath ? (
             <WorldControls
@@ -384,7 +340,6 @@ function Overlay({
             />
           ) : null}
           <div className="pointer-events-none absolute top-4 right-3 z-10 flex items-start gap-2">
-            <EnterXr />
             {project.path ? (
               <div
                 className={
@@ -457,34 +412,24 @@ function Overlay({
   );
 }
 
-function ViewerShell({ host }: { host: boolean }) {
-  const session = useXrSession();
-  const treeOpen = usePrefs((s) => s.treeOpen);
-  const setTreeOpen = usePrefs((s) => s.setTreeOpen);
+function StageColumn({
+  folder,
+  catalog,
+  compactChat,
+  chatToggleRef,
+  railOpen,
+  editor,
+}: {
+  folder: ReturnType<typeof useOpenFolder>;
+  catalog: CatalogState;
+  compactChat: boolean;
+  chatToggleRef: RefObject<HTMLButtonElement | null>;
+  railOpen: boolean;
+  editor: boolean;
+}) {
   const url = useViewer((s) => s.url);
-  const worldPath = useWorld((s) => s.path);
-  const folder = useOpenFolder(host);
-  const projectPath = useProjectSession().project.path;
-  useWorldRun(projectPath, worldPath, worldCaptureHandlers);
-  const hasProject = Boolean(projectPath);
-  const chatWidth = usePrefs((s) => s.chatWidth);
-  const chatOpen = usePrefs((s) => s.chatOpen);
-  const setChatOpen = usePrefs((s) => s.setChatOpen);
-  const compactChatOpen = usePrefs((s) => s.compactChatOpen);
-  const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
-  const windowWidth = useWindowWidth();
-  const editor = Boolean(worldPath) && !session;
-  const panels = editor ? WORLD_PANELS_WIDTH : 0;
-  const compactChat = isCompactChat(windowWidth, treeOpen, panels);
-  const layoutWidth = chatLayoutWidth(chatWidth, windowWidth, treeOpen, panels);
-  const catalog = useCatalog(hasProject);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const chatToggleRef = useRef<HTMLButtonElement>(null);
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
-
-  useEffect(() => {
-    if (!compactChat) setCompactChatOpen(false);
-  }, [compactChat, setCompactChatOpen]);
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -499,6 +444,173 @@ function ViewerShell({ host }: { host: boolean }) {
     return () => ro.disconnect();
   }, [editor]);
 
+  const stage = (
+    <div
+      ref={canvasRef}
+      className="@container/stage relative min-h-0 min-w-0 flex-1 overflow-hidden"
+    >
+      <RenderErrorBoundary
+        resetKeys={[url]}
+        fallback={({ error, reset }) => (
+          <div className="absolute inset-0 z-10 grid place-items-center bg-studio">
+            <CrashCard error={error} onRetry={reset} />
+          </div>
+        )}
+      >
+        <ViewerCanvas />
+      </RenderErrorBoundary>
+      <Overlay
+        canvasHeight={canvasSize.h}
+        canvasWidth={canvasSize.w}
+        catalog={catalog}
+        chatToggleRef={chatToggleRef}
+        compactChat={compactChat}
+        folder={folder}
+        railOpen={railOpen}
+      />
+    </div>
+  );
+
+  if (!editor) return stage;
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <WorldTree />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {stage}
+          <WorldTimeline docked />
+        </div>
+        <WorldInspector />
+      </div>
+      <WorldHotkeys />
+      <WorldConfirmDialog />
+      <WorldEditDialog />
+    </div>
+  );
+}
+
+function DesktopWorkbench({
+  folder,
+  catalog,
+}: {
+  folder: ReturnType<typeof useOpenFolder>;
+  catalog: CatalogState;
+}) {
+  const { open: railOpen } = useSidebar();
+  const projectPath = useProjectSession().project.path;
+  const worldPath = useWorld((s) => s.path);
+  const atHome = useStudioNav((s) => s.atHome);
+  const hasProject = Boolean(projectPath);
+  const showStudio = hasProject && !atHome;
+  const chatWidth = usePrefs((s) => s.chatWidth);
+  const chatOpen = usePrefs((s) => s.chatOpen);
+  const setChatOpen = usePrefs((s) => s.setChatOpen);
+  const compactChatOpen = usePrefs((s) => s.compactChatOpen);
+  const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
+  const windowWidth = useWindowWidth();
+  const editor = Boolean(worldPath) && showStudio;
+  const panels = editor ? WORLD_PANELS_WIDTH : 0;
+  const compactChat = isCompactChat(windowWidth, railOpen, panels);
+  const layoutWidth = chatLayoutWidth(chatWidth, windowWidth, railOpen, panels);
+  const chatToggleRef = useRef<HTMLButtonElement>(null);
+  const [docked, setDocked] = useState(false);
+
+  useEffect(() => {
+    if (!compactChat) setCompactChatOpen(false);
+  }, [compactChat, setCompactChatOpen]);
+
+  return (
+    <>
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <ShellInset
+          className={
+            showStudio
+              ? "min-h-0 overflow-hidden bg-studio"
+              : "min-h-0 overflow-hidden bg-background"
+          }
+        >
+          <InsetHeader
+            docked={docked}
+            path={projectPath}
+            showDockToggle={showStudio}
+            onToggleDock={() => setDocked((open) => !open)}
+          />
+          {showStudio ? (
+            <>
+              <PartParkDialog />
+              <StageColumn
+                catalog={catalog}
+                chatToggleRef={chatToggleRef}
+                compactChat={compactChat}
+                editor={editor}
+                folder={folder}
+                railOpen={railOpen}
+              />
+            </>
+          ) : (
+            <HomeProjects folder={folder} path={projectPath} />
+          )}
+        </ShellInset>
+        {showStudio ? (
+          <RenderErrorBoundary
+            resetKeys={[projectPath]}
+            fallback={({ error, reset }) => (
+              <aside
+                className="flex h-full shrink-0 items-center justify-center border-l border-border bg-background p-4"
+                style={{ width: layoutWidth }}
+              >
+                <CrashCard error={error} onRetry={reset} />
+              </aside>
+            )}
+          >
+            <ChatPanel
+              compact={compactChat}
+              open={compactChat ? compactChatOpen : chatOpen}
+              panels={panels}
+              toggleRef={chatToggleRef}
+              width={layoutWidth}
+              onClose={() =>
+                compactChat ? setCompactChatOpen(false) : setChatOpen(false)
+              }
+            />
+          </RenderErrorBoundary>
+        ) : null}
+      </div>
+      <BrowseFolderDialog
+        open={folder.dialogOpen}
+        onOpenChange={folder.setDialogOpen}
+      />
+      <CloseFolderDialog />
+      <CommandPalette
+        catalogFiles={catalog.files}
+        compactChat={compactChat}
+        folder={folder}
+      />
+      <Toasts />
+    </>
+  );
+}
+
+function ViewerShell({ host }: { host: boolean }) {
+  const session = useXrSession();
+  const url = useViewer((s) => s.url);
+  const worldPath = useWorld((s) => s.path);
+  const folder = useOpenFolder(host);
+  const projectPath = useProjectSession().project.path;
+  useWorldRun(projectPath, worldPath, worldCaptureHandlers);
+  const hasProject = Boolean(projectPath);
+  const catalog = useCatalog(hasProject);
+  const chatToggleRef = useRef<HTMLButtonElement>(null);
+  const pathRef = useRef(projectPath);
+
+  useEffect(() => {
+    if (!projectPath) studioNavStore.getState().showHome();
+    else if (projectPath !== pathRef.current) {
+      studioNavStore.getState().showStudio();
+    }
+    pathRef.current = projectPath;
+  }, [projectPath]);
+
   useEffect(() => {
     const shown = worldPath || url;
     const file = shown ? fileLabel(shown) : "";
@@ -510,120 +622,29 @@ function ViewerShell({ host }: { host: boolean }) {
       document.title = PRODUCT_TITLE;
     };
   }, [projectPath, url, worldPath]);
+
+  if (session) {
+    return (
+      <div className="flex h-dvh min-h-0 w-full flex-col">
+        <StageColumn
+          catalog={catalog}
+          chatToggleRef={chatToggleRef}
+          compactChat={false}
+          editor={Boolean(worldPath)}
+          folder={folder}
+          railOpen={false}
+        />
+      </div>
+    );
+  }
+
   return (
-    <SidebarProvider
-      className="h-dvh min-h-0 overflow-hidden"
-      open={treeOpen}
-      onOpenChange={setTreeOpen}
-      style={{ "--sidebar-width": "19rem" } as CSSProperties}
+    <Shell
+      defaultOpen={false}
+      sidebar={<DesktopSidebar catalog={catalog} folder={folder} host={host} />}
     >
-      {!session ? (
-        <DesktopSidebar catalog={catalog} host={host} folder={folder} />
-      ) : null}
-      <SidebarInset className="min-h-0 overflow-hidden">
-        {editor ? (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <WorldTopBar />
-            <div className="flex min-h-0 min-w-0 flex-1">
-              <WorldTree />
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <div
-                  ref={canvasRef}
-                  className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
-                >
-                  <RenderErrorBoundary
-                    resetKeys={[url]}
-                    fallback={({ error, reset }) => (
-                      <div className="absolute inset-0 z-10 grid place-items-center bg-studio">
-                        <CrashCard error={error} onRetry={reset} />
-                      </div>
-                    )}
-                  >
-                    <ViewerCanvas />
-                  </RenderErrorBoundary>
-                  <Overlay
-                    canvasHeight={canvasSize.h}
-                    canvasWidth={canvasSize.w}
-                    catalog={catalog}
-                    chatToggleRef={chatToggleRef}
-                    compactChat={compactChat}
-                    folder={folder}
-                  />
-                </div>
-                <WorldTimeline docked />
-              </div>
-              <WorldInspector />
-            </div>
-            <WorldHotkeys />
-            <WorldConfirmDialog />
-            <WorldEditDialog />
-          </div>
-        ) : (
-          <div
-            ref={canvasRef}
-            className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
-          >
-            <RenderErrorBoundary
-              resetKeys={[url]}
-              fallback={({ error, reset }) => (
-                <div className="absolute inset-0 z-10 grid place-items-center bg-studio">
-                  <CrashCard error={error} onRetry={reset} />
-                </div>
-              )}
-            >
-              <ViewerCanvas />
-            </RenderErrorBoundary>
-            <Overlay
-              canvasHeight={canvasSize.h}
-              canvasWidth={canvasSize.w}
-              catalog={catalog}
-              chatToggleRef={chatToggleRef}
-              compactChat={compactChat}
-              folder={folder}
-            />
-          </div>
-        )}
-      </SidebarInset>
-      {!session && hasProject ? (
-        <RenderErrorBoundary
-          resetKeys={[projectPath]}
-          fallback={({ error, reset }) => (
-            <aside
-              className="flex h-full shrink-0 items-center justify-center border-l border-border bg-background p-4"
-              style={{ width: layoutWidth }}
-            >
-              <CrashCard error={error} onRetry={reset} />
-            </aside>
-          )}
-        >
-          <ChatPanel
-            compact={compactChat}
-            open={compactChat ? compactChatOpen : chatOpen}
-            toggleRef={chatToggleRef}
-            panels={panels}
-            width={layoutWidth}
-            onClose={() =>
-              compactChat ? setCompactChatOpen(false) : setChatOpen(false)
-            }
-          />
-        </RenderErrorBoundary>
-      ) : null}
-      {!session ? (
-        <>
-          <BrowseFolderDialog
-            open={folder.dialogOpen}
-            onOpenChange={folder.setDialogOpen}
-          />
-          <CloseFolderDialog />
-          <CommandPalette
-            catalogFiles={catalog.files}
-            compactChat={compactChat}
-            folder={folder}
-          />
-          <Toasts />
-        </>
-      ) : null}
-    </SidebarProvider>
+      <DesktopWorkbench catalog={catalog} folder={folder} />
+    </Shell>
   );
 }
 

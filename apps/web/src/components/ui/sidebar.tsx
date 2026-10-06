@@ -99,7 +99,7 @@ function Sidebar({
     return (
       <nav
         data-slot="sidebar"
-        aria-label="Files"
+        aria-label="Sidebar"
         className={cn(
           "flex h-full w-(--sidebar-width) flex-col bg-sidebar text-sidebar-foreground",
           className
@@ -145,7 +145,7 @@ function Sidebar({
       >
         <nav
           data-sidebar="sidebar"
-          aria-label="Files"
+          aria-label="Sidebar"
           className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
         >
           {children}

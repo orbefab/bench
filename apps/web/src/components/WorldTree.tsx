@@ -10,11 +10,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
-  PartBreadcrumb,
-  PartParkDialog,
-  PartTabStrip,
-} from "@/components/WorldPartTabs";
-import {
   sendWorldCommand,
   sendWorldRedo,
   sendWorldUndo,
@@ -34,7 +29,6 @@ import {
   confirmTitle,
 } from "@/lib/world-confirm";
 import { instanceEditTarget, wireEditTarget } from "@/lib/world-edit-target";
-import { historyButtons } from "@/lib/world-history";
 import { editorKeyAction } from "@/lib/world-keys";
 import { removeInstanceOp, renameInstanceOp, unwireOp } from "@/lib/world-ops";
 import { findViewNode, nextCollapse, treeRows } from "@/lib/world-tree";
@@ -48,46 +42,6 @@ import { useWorld, worldStore } from "@/state/world";
 import { breakWorldEdit, commitEdit, worldEditStore } from "@/state/world-edit";
 import { escapeWorldTool, toggleWorldTool } from "@/state/world-tool";
 import { useTreeFold, writeTreeFold } from "@/state/world-tree-fold";
-
-export function WorldTopBar() {
-  const history = useWorld((s) => s.history);
-  const buttons = historyButtons(history);
-  const label = useWorld((s) => s.editLabel);
-  return (
-    <header className="flex shrink-0 flex-col border-b border-border">
-      <div className="flex h-9 items-center gap-2 px-3">
-        <PartTabStrip />
-        {label ? (
-          <span className="hidden max-w-40 truncate text-xs text-muted-foreground sm:inline">
-            {label}
-          </span>
-        ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          disabled={!buttons.canUndo}
-          onClick={() => sendWorldUndo()}
-        >
-          Undo
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          disabled={!buttons.canRedo}
-          onClick={() => sendWorldRedo()}
-        >
-          Redo
-        </Button>
-      </div>
-      <PartBreadcrumb />
-      <PartParkDialog />
-    </header>
-  );
-}
 
 export function WorldHotkeys() {
   const path = useWorld((s) => s.path);

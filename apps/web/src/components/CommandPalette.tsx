@@ -15,11 +15,13 @@ import { useTheme } from "@/components/theme/theme-provider";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
+import { useSidebar } from "@/components/ui/sidebar";
 import { useProjectSession } from "@/hooks/useProjectSession";
 import {
   buildCommands,
   COMMAND_PALETTE_LIST_ID,
   clampActiveIndex,
+  OPEN_COMMAND_PALETTE_EVENT,
   type PaletteCommand,
   paletteOptionId,
   requestOpenSettings,
@@ -62,9 +64,9 @@ export function CommandPalette({
   const url = useViewer((s) => s.url);
   const worldPath = useWorld((s) => s.path);
   const currentPath = worldPath || url;
-  const { treeOpen, chatOpen, compactChatOpen } = usePrefs(
+  const { open: railOpen, toggleSidebar } = useSidebar();
+  const { chatOpen, compactChatOpen } = usePrefs(
     useShallow((s) => ({
-      treeOpen: s.treeOpen,
       chatOpen: s.chatOpen,
       compactChatOpen: s.compactChatOpen,
     }))
@@ -82,7 +84,7 @@ export function CommandPalette({
       mac,
       canOpenFolder: folder.canRegister,
       hasProject: Boolean(currentPath),
-      filesOpen: treeOpen,
+      filesOpen: railOpen,
       chatOpen: chatVisible,
       files: catalogFiles.map((file) => ({
         name: folderName(file.path),
@@ -103,7 +105,7 @@ export function CommandPalette({
     folder.canRegister,
     folder.recents,
     project.path,
-    treeOpen,
+    railOpen,
     chatVisible,
     catalogFiles,
     currentPath,
@@ -136,7 +138,7 @@ export function CommandPalette({
         return;
       }
       if (cmd.id === "action:toggle-files") {
-        s.setTreeOpen(!s.treeOpen);
+        toggleSidebar();
         return;
       }
       if (cmd.id === "action:toggle-chat") {
@@ -164,7 +166,7 @@ export function CommandPalette({
         setTheme(cmd.payload);
       }
     },
-    [compactChat, folder, setDoc, setTheme]
+    [compactChat, folder, setDoc, setTheme, toggleSidebar]
   );
 
   const run = useCallback(
@@ -210,6 +212,22 @@ export function CommandPalette({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [dialogOpen, finishClose, mac, open]);
+
+  useEffect(() => {
+    const onOpen = () => {
+      if (open || dialogOpen) return;
+      restoreRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      skipRestoreRef.current = false;
+      setQuery("");
+      setActiveIndex(0);
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpen);
+  }, [dialogOpen, open]);
 
   useEffect(() => {
     if (!open) return;
