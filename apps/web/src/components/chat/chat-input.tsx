@@ -77,6 +77,8 @@ export interface GalleryPromptMessage {
   text: string;
 }
 
+export type ChatComposerLayout = "stacked" | "inline";
+
 type HarnessCatalog = ReturnType<typeof useHarnesses>;
 
 function selectedPartFaceOrds(
@@ -141,6 +143,7 @@ function ChatInputInner({
   inputRef,
   cancelVoiceRef,
   catalog,
+  layout,
 }: {
   disabled: boolean;
   onStop?: () => void;
@@ -157,6 +160,7 @@ function ChatInputInner({
   inputRef: RefObject<ChatInputHandle | null>;
   cancelVoiceRef: MutableRefObject<() => void>;
   catalog: HarnessCatalog;
+  layout: ChatComposerLayout;
 }) {
   const draftTouchedRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -342,7 +346,11 @@ function ChatInputInner({
         className={
           attached
             ? "rounded-none border-0 bg-transparent shadow-none dark:bg-transparent"
-            : "rounded-2xl"
+            : cn(
+                "overflow-hidden rounded-2xl",
+                "has-[[data-slot=input-group-control]:focus-visible]:ring-0",
+                layout === "inline" && "bg-muted dark:bg-input/30"
+              )
         }
         defaultValue={getSessionDraft(threadId)}
         disabled={disabled}
@@ -373,18 +381,21 @@ function ChatInputInner({
       >
         <ChatInputEditor
           className={voice.active ? "invisible pointer-events-none" : undefined}
+          compact={layout === "inline"}
           placeholder={placeholder}
         />
         <InputGroupAddon
-          align="block-end"
+          align={layout === "inline" ? "inline-end" : "block-end"}
           aria-hidden={voice.active}
           className={cn(
-            "flex-wrap gap-y-1 pt-1 @[360px]/chat:flex-nowrap",
+            layout === "inline"
+              ? "gap-1 self-end"
+              : "flex-wrap gap-y-1 pt-1 @[360px]/chat:flex-nowrap",
             voice.active && "invisible pointer-events-none"
           )}
         >
-          <ModelPicker catalog={catalog} />
-          <EffortSelect />
+          <ModelPicker catalog={catalog} compact={layout === "inline"} />
+          {layout === "inline" ? null : <EffortSelect />}
           <ChatInputMentionButton
             aria-label="Mention a part (#)"
             disabled={!hasCadParts}
@@ -393,7 +404,12 @@ function ChatInputInner({
           >
             <Hash />
           </ChatInputMentionButton>
-          <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-1",
+              layout === "inline" ? undefined : "ml-auto"
+            )}
+          >
             <Button
               type="button"
               variant="ghost"
@@ -461,6 +477,8 @@ export function GalleryChatInput({
   canStop = false,
   loadingModel = false,
   modelLoaded = false,
+  layout = "stacked",
+  elevated = false,
   ref,
 }: {
   disabled?: boolean;
@@ -477,6 +495,8 @@ export function GalleryChatInput({
   canStop?: boolean;
   loadingModel?: boolean;
   modelLoaded?: boolean;
+  layout?: ChatComposerLayout;
+  elevated?: boolean;
   ref?: Ref<GalleryChatHandle>;
 }) {
   const askRef = useRef<AskUserQuestionsHandle>(null);
@@ -556,11 +576,20 @@ export function GalleryChatInput({
 
   return (
     <div
-      className="relative bottom-0 z-10 w-full min-w-0 overflow-x-hidden bg-background pt-2"
+      className={cn(
+        "relative z-10 w-full min-w-0 overflow-x-hidden",
+        elevated ? undefined : "bottom-0 bg-background pt-2"
+      )}
       data-chat-composer
+      data-composer-layout={layout}
       ref={rootRef}
     >
-      <div className="mx-auto w-full min-w-0 p-2 @[360px]/chat:px-4 @[360px]/chat:pb-4">
+      <div
+        className={cn(
+          "mx-auto w-full min-w-0",
+          elevated ? undefined : "p-2 @[360px]/chat:px-4 @[360px]/chat:pb-4"
+        )}
+      >
         <div
           className={cn(
             attached &&
@@ -587,6 +616,7 @@ export function GalleryChatInput({
               cancelVoiceRef={cancelVoiceRef}
               disabled={disabled}
               inputRef={inputRef}
+              layout={layout}
               loadingModel={loadingModel}
               lockSend={lockSend}
               onStop={onStop}
@@ -605,9 +635,11 @@ export function GalleryChatInput({
             />
           </div>
         </div>
-        <p className="hidden px-2 pt-1 text-[11px] text-muted-foreground @[360px]/chat:block">
-          {COMPOSER_HINT}
-        </p>
+        {layout === "inline" ? null : (
+          <p className="hidden px-2 pt-1 text-[11px] text-muted-foreground @[360px]/chat:block">
+            {COMPOSER_HINT}
+          </p>
+        )}
         <ProviderStatus catalog={catalog} />
       </div>
     </div>

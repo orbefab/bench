@@ -51,6 +51,7 @@ export function HistoryPopover({
   currentStatus,
   refreshThreads,
   onOpenThread,
+  side = "bottom",
 }: {
   threads: { id: string; title: string; updated_at: number }[];
   threadId: string | null;
@@ -59,6 +60,7 @@ export function HistoryPopover({
   currentStatus: { streaming: boolean; askUser: boolean; error: boolean };
   refreshThreads: () => Promise<unknown>;
   onOpenThread: (id: string) => void;
+  side?: "top" | "bottom";
 }) {
   const [open, setOpen] = useState(false);
   const [refreshError, setRefreshError] = useState(false);
@@ -103,7 +105,7 @@ export function HistoryPopover({
       >
         <History />
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-1">
+      <PopoverContent align="end" className="w-72 p-1" side={side}>
         {refreshError ? (
           <div className="px-2 py-1 text-[11px] text-error" role="status">
             Couldn't refresh

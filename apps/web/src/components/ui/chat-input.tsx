@@ -708,10 +708,12 @@ export function ChatInputEditor({
   placeholder = "Type a message...",
   className,
   autoFocus,
+  compact = false,
 }: {
   placeholder?: string;
   className?: string;
   autoFocus?: boolean;
+  compact?: boolean;
 }) {
   const {
     setEditor,
@@ -794,7 +796,8 @@ export function ChatInputEditor({
   return (
     <EditorContent
       className={cn(
-        "max-h-48 min-h-16 w-full flex-1 overflow-y-auto px-3 py-0",
+        "max-h-48 min-w-0 flex-1 overflow-y-auto px-3 py-0",
+        compact ? "min-h-10" : "min-h-16 w-full",
         "[&_.tiptap]:outline-none",
         "[&_.tiptap_p.is-editor-empty:first-child]:before:pointer-events-none",
         "[&_.tiptap_p.is-editor-empty:first-child]:before:float-left",

@@ -1,23 +1,12 @@
 /**
  * Desktop layout math for the Mac tab / Electron window.
- *
- * Compact chat rule (one place, so the self-check and the UI cannot drift):
- * sheet the chat when `window.innerWidth <= 980`
- * *or* when an open files rail + the panels beside the canvas + min chat (280)
- * + canvas floor (480) cannot fit. No phone layout — the rail stays a rail;
- * the user can still ⌘B it.
+ * The floating composer's width is the stored size, 280–720.
+ * Docked chat is a resizable panel and does not use this width.
  */
 
-export const CANVAS_MIN_WIDTH = 480;
 export const CHAT_MIN_WIDTH = 280;
 export const CHAT_MAX_WIDTH = 720;
 export const CHAT_DEFAULT_WIDTH = 384;
-/** `--sidebar-width: 19rem` on `SidebarProvider`. */
-export const FILES_RAIL_WIDTH = 19 * 16;
-/** The world editor's part tree (`w-64`) and inspector (`w-80`). */
-export const WORLD_PANELS_WIDTH = 64 * 4 + 80 * 4;
-/** Compact chat when the window is at most this wide. */
-export const COMPACT_CHAT_BREAKPOINT = 980;
 
 export const PART_TREE_WIDTH = 280;
 export const PART_TREE_CHIP_WIDTH = 96;
@@ -75,60 +64,9 @@ export function clampStoredChatWidth(n: number): number {
   return preferredChatWidth(n);
 }
 
-export function isCompactChat(
-  windowWidth: number,
-  railOpen: boolean,
-  panels = 0
-): boolean {
-  if (windowWidth <= COMPACT_CHAT_BREAKPOINT) return true;
-  const rail = railOpen ? FILES_RAIL_WIDTH : 0;
-  return rail + panels + CHAT_MIN_WIDTH + CANVAS_MIN_WIDTH > windowWidth;
-}
-
-export function chatMaxForWindow(
-  windowWidth: number,
-  railOpen: boolean,
-  panels = 0
-): number {
-  const rail = railOpen ? FILES_RAIL_WIDTH : 0;
-  return Math.max(
-    CHAT_MIN_WIDTH,
-    windowWidth - rail - panels - CANVAS_MIN_WIDTH
-  );
-}
-
-/**
- * Width used for layout. An over-wide stored preference is clamped here and
- * not written back until the user drags (or double-clicks) the handle.
- * `panels` is the width of fixed panels beside the canvas (the world editor's
- * tree and inspector), so a docked chat never squeezes the canvas below 480.
- */
-export function chatLayoutWidth(
-  stored: number,
-  windowWidth: number,
-  railOpen: boolean,
-  panels = 0
-): number {
-  const preferred = preferredChatWidth(stored);
-  if (isCompactChat(windowWidth, railOpen, panels)) {
-    const max = Math.min(CHAT_MAX_WIDTH, Math.floor(windowWidth * 0.9));
-    return Math.max(CHAT_MIN_WIDTH, Math.min(max, preferred));
-  }
-  const max = Math.min(
-    CHAT_MAX_WIDTH,
-    chatMaxForWindow(windowWidth, railOpen, panels)
-  );
-  return Math.max(CHAT_MIN_WIDTH, Math.min(max, preferred));
-}
-
 /** Drag / double-click: this value is what we persist. */
-export function clampChatDrag(
-  width: number,
-  windowWidth: number,
-  railOpen: boolean,
-  panels = 0
-): number {
-  return chatLayoutWidth(width, windowWidth, railOpen, panels);
+export function clampChatDrag(width: number): number {
+  return preferredChatWidth(width);
 }
 
 export const CHAT_RESIZE_STEP = 16;
@@ -141,13 +79,9 @@ export const CHAT_RESIZE_STEP_LARGE = 64;
 export function chatWidthAfterKey(
   key: string,
   shiftKey: boolean,
-  current: number,
-  windowWidth: number,
-  railOpen: boolean,
-  panels = 0
+  current: number
 ): number | null {
-  const clamp = (width: number) =>
-    clampChatDrag(width, windowWidth, railOpen, panels);
+  const clamp = (width: number) => clampChatDrag(width);
   if (key === "Home") return clamp(CHAT_MIN_WIDTH);
   if (key === "End") return clamp(CHAT_MAX_WIDTH);
   const step = shiftKey ? CHAT_RESIZE_STEP_LARGE : CHAT_RESIZE_STEP;

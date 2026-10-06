@@ -1,4 +1,4 @@
-import { PanelRight, Plus } from "lucide-react";
+import { MessageCircleDashedIcon, Minus, Plus } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -17,7 +17,11 @@ import {
   ChatSession,
   copyConversationJson,
 } from "@/components/chat/ChatSession";
-import type { GalleryChatHandle } from "@/components/chat/chat-input";
+import {
+  type ChatComposerLayout,
+  type GalleryChatHandle,
+  GalleryChatInput,
+} from "@/components/chat/chat-input";
 import { HistoryPopover } from "@/components/chat/HistoryPopover";
 import type { GalleryChatMessage } from "@/components/chat/mock-chat-messages";
 import {
@@ -27,8 +31,14 @@ import {
 } from "@/components/chat/useViewerChat";
 import { RenderErrorBoundary } from "@/components/RenderErrorBoundary";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
-import { useSidebar } from "@/components/ui/sidebar";
 import { showToast } from "@/components/ui/toast";
 import { useProjectSession } from "@/hooks/useProjectSession";
 import { HIDDEN_CHAT_NOTICE, hiddenChatNotice } from "@/lib/feedback";
@@ -39,30 +49,26 @@ import {
   chatWidthAfterKey,
   clampChatDrag,
 } from "@/lib/layout";
-import { escBelongsTo, probeEscLayers } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { usePrefs } from "@/state/prefs";
+
+const MINIMAL_HISTORY_SLOT = 32 + 6;
 
 export function ChatPanel({
   width,
   onClose,
   open = true,
-  compact = false,
+  docked = false,
   toggleRef,
-  panels = 0,
 }: {
   width: number;
   onClose: () => void;
   open?: boolean;
-  compact?: boolean;
+  docked?: boolean;
   toggleRef?: RefObject<HTMLButtonElement | null>;
-  /** Fixed panels beside the canvas, such as the world editor's tree and inspector. */
-  panels?: number;
 }) {
-  const { open: railOpen } = useSidebar();
   const setWidth = usePrefs((s) => s.setChatWidth);
   const setChatOpen = usePrefs((s) => s.setChatOpen);
-  const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
   const [resizing, setResizing] = useState(false);
   const [live, setLive] = useState(false);
   const [sessionPreview, setSessionPreview] = useState<string | null>(null);
@@ -75,7 +81,6 @@ export function ChatPanel({
   const messagesRef = useRef<GalleryChatMessage[]>([]);
   const messagesThreadIdRef = useRef<string | null>(null);
   const newChatLock = useRef(false);
-  const compactOpenRef = useRef(false);
   const panelRef = useRef<HTMLElement>(null);
   const stopTurnRef = useRef<(() => void) | null>(null);
   const captureDraftRef = useRef<(() => void) | null>(null);
@@ -100,10 +105,10 @@ export function ChatPanel({
       title: HIDDEN_CHAT_NOTICE[kind],
       action: {
         label: "Show chat",
-        onClick: () => (compact ? setCompactChatOpen(true) : setChatOpen(true)),
+        onClick: () => setChatOpen(true),
       },
     });
-  }, [open, tabStatus, compact, setChatOpen, setCompactChatOpen]);
+  }, [open, tabStatus, setChatOpen]);
 
   const onSessionMeta = useCallback(
     (meta: {
@@ -130,9 +135,9 @@ export function ChatPanel({
 
   const persistWidth = useCallback(
     (next: number) => {
-      setWidth(clampChatDrag(next, window.innerWidth, railOpen, panels));
+      setWidth(clampChatDrag(next));
     },
-    [setWidth, railOpen, panels]
+    [setWidth]
   );
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
 
@@ -162,82 +167,26 @@ export function ChatPanel({
     };
   }, [resizing, open, persistWidth]);
 
-  useEffect(() => {
-    const wasCompactOpen = compactOpenRef.current;
-    const isCompactOpen = compact && open;
-    compactOpenRef.current = isCompactOpen;
-    if (isCompactOpen && !wasCompactOpen) {
-      panelRef.current?.focus();
-      return;
-    }
-    if (wasCompactOpen && compact && !open) {
-      toggleRef?.current?.focus();
-    }
-  }, [compact, open, toggleRef]);
-
-  useEffect(() => {
-    if (!compact || !open || !threadId) return;
-    let cancelled = false;
-    let timer = 0;
-    const started = Date.now();
-    const tryFocus = () => {
-      if (cancelled) return;
-      if (composerRef.current?.isReady()) {
-        composerRef.current.focus();
-        return;
-      }
-      if (Date.now() - started > 1000) return;
-      timer = window.setTimeout(tryFocus, 16);
-    };
-    tryFocus();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [compact, open, threadId]);
-
-  // Hidden chat stays mounted (docked or compact), so stop any recording when it closes.
+  // A hidden popup stays mounted, so stop any recording when it closes.
   useEffect(() => {
     if (!open) composerRef.current?.cancelVoice();
   }, [open]);
 
+  const wasOpenRef = useRef(open);
   useEffect(() => {
-    if (!compact || !open) return;
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key !== "Escape") return;
-      // Capture so we see popovers/selects before Base UI unmounts them.
-      if (ev.defaultPrevented) return;
-      const layers = { ...probeEscLayers(document), compactChat: true };
-      if (!escBelongsTo("compact-chat", layers)) return;
-      ev.preventDefault();
-      onClose();
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [compact, open, onClose]);
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (wasOpen && !open && !docked) toggleRef?.current?.focus();
+  }, [docked, open, toggleRef]);
 
   const onResizeKeyDown = (ev: ReactKeyboardEvent<HTMLDivElement>) => {
-    const next = chatWidthAfterKey(
-      ev.key,
-      ev.shiftKey,
-      width,
-      window.innerWidth,
-      railOpen,
-      panels
-    );
+    const next = chatWidthAfterKey(ev.key, ev.shiftKey, width);
     if (next == null) return;
     ev.preventDefault();
     persistWidth(next);
   };
 
-  const resizeMax = clampChatDrag(
-    CHAT_MAX_WIDTH,
-    typeof window === "undefined" ? width : window.innerWidth,
-    railOpen,
-    panels
-  );
+  const resizeMax = clampChatDrag(CHAT_MAX_WIDTH);
 
   const onResizeDown = (ev: ReactMouseEvent) => {
     ev.preventDefault();
@@ -253,6 +202,34 @@ export function ChatPanel({
     liveCount: messagesRef.current.length,
     initialCount: initialMessages.length,
   });
+  const popup = !docked;
+  const bare = popup && (!threadId || currentEmpty);
+  const composerLayout: ChatComposerLayout = popup ? "inline" : "stacked";
+
+  const historyPopover = (side: "top" | "bottom") => (
+    <HistoryPopover
+      currentEmpty={currentEmpty}
+      currentPreview={sessionPreview}
+      currentStatus={tabStatus}
+      onOpenThread={(id) => {
+        if (id === threadId) return;
+        captureDraftRef.current?.();
+        stopTurnRef.current?.();
+        void openThread(id);
+      }}
+      refreshThreads={refreshThreads}
+      side={side}
+      threadId={threadId}
+      threads={threads}
+    />
+  );
+
+  const pendingSubmit = () => {
+    showToast({
+      type: "info",
+      title: projectPath ? "Still opening this chat" : "Open a folder to send",
+    });
+  };
 
   const startNewChat = () => {
     if (newChatLock.current) return;
@@ -302,41 +279,34 @@ export function ChatPanel({
   };
 
   return (
-    <>
-      {compact ? (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-hidden="true"
-          aria-label="Close chat"
-          className={cn(
-            "fixed inset-0 z-40 bg-black/30 transition-opacity duration-200",
-            open ? "opacity-100" : "pointer-events-none opacity-0"
-          )}
-          onClick={onClose}
-        />
-      ) : null}
-      <aside
-        ref={panelRef}
-        role={compact && open ? "dialog" : undefined}
-        aria-modal={compact && open ? true : undefined}
-        aria-label="Assistant"
-        aria-hidden={compact && !open ? true : undefined}
-        inert={compact && !open ? true : undefined}
-        tabIndex={compact ? -1 : undefined}
-        data-compact-chat={compact && open ? "" : undefined}
-        className={cn(
-          "@container/chat flex h-full min-h-0 min-w-0 flex-col overflow-x-hidden border-l border-border bg-background",
-          compact
+    <aside
+      ref={panelRef}
+      aria-label="Assistant"
+      aria-hidden={!docked && !open ? true : undefined}
+      inert={!docked && !open ? true : undefined}
+      data-chat-chrome={bare ? "input" : "panel"}
+      className={cn(
+        "@container/chat flex min-h-0 min-w-0 flex-col",
+        docked
+          ? "relative h-full w-full bg-background"
+          : bare
             ? cn(
-                "fixed inset-y-0 right-0 z-50 max-w-[90vw] outline-none transition-transform duration-200 ease-out",
-                open ? "translate-x-0" : "pointer-events-none translate-x-full"
+                "absolute right-3 bottom-3 z-20 max-w-[calc(100%-1.5rem)] rounded-3xl border border-white bg-background p-2 shadow-2xl",
+                !open && "hidden"
               )
-            : "relative shrink-0",
-          !compact && !open && "hidden"
-        )}
-        style={{ width }}
-      >
+            : cn(
+                "absolute right-3 bottom-3 z-20 overflow-hidden rounded-xl border border-border bg-background shadow-2xl",
+                "h-[min(640px,calc(100%-1.5rem))] max-w-[calc(100%-1.5rem)]",
+                !open && "hidden"
+              )
+      )}
+      style={
+        docked
+          ? undefined
+          : { width: bare ? width + MINIMAL_HISTORY_SLOT : width }
+      }
+    >
+      {docked || bare ? null : (
         <div
           role="separator"
           aria-orientation="vertical"
@@ -357,22 +327,28 @@ export function ChatPanel({
             persistWidth(CHAT_DEFAULT_WIDTH);
           }}
         />
+      )}
+      {bare ? null : (
         <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="size-7"
-            title="Hide chat"
-            aria-label="Hide chat"
-            onClick={onClose}
-          >
-            <PanelRight />
-          </Button>
-          <Separator
-            orientation="vertical"
-            className="mx-1 data-[orientation=vertical]:h-4"
-          />
+          {docked ? null : (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="size-7"
+                title="Minimize"
+                aria-label="Minimize"
+                onClick={onClose}
+              >
+                <Minus />
+              </Button>
+              <Separator
+                orientation="vertical"
+                className="mx-1 data-[orientation=vertical]:h-4"
+              />
+            </>
+          )}
           <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
             {live ? <LiveDot /> : null}
             <CadRefTitle
@@ -389,20 +365,7 @@ export function ChatPanel({
               })
             }
           />
-          <HistoryPopover
-            currentEmpty={currentEmpty}
-            currentPreview={sessionPreview}
-            currentStatus={tabStatus}
-            onOpenThread={(id) => {
-              if (id === threadId) return;
-              captureDraftRef.current?.();
-              stopTurnRef.current?.();
-              void openThread(id);
-            }}
-            refreshThreads={refreshThreads}
-            threadId={threadId}
-            threads={threads}
-          />
+          {historyPopover("bottom")}
           <Button
             type="button"
             variant="ghost"
@@ -415,32 +378,89 @@ export function ChatPanel({
             <Plus />
           </Button>
         </header>
-        <RenderErrorBoundary
-          resetKeys={[threadId]}
-          fallback={({ error, reset }) => (
-            <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-              <CrashCard error={error} onRetry={reset} />
+      )}
+      <RenderErrorBoundary
+        resetKeys={[threadId]}
+        fallback={({ error, reset }) => (
+          <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+            <CrashCard error={error} onRetry={reset} />
+          </div>
+        )}
+      >
+        {bare ? (
+          <div className="flex items-center gap-1.5">
+            <div className="min-w-0 flex-1">
+              {threadId ? (
+                <ChatSession
+                  key={threadId}
+                  captureDraftRef={captureDraftRef}
+                  composerRef={composerRef}
+                  hideEmpty
+                  initialMessages={initialMessages}
+                  layout="inline"
+                  messagesRef={messagesRef}
+                  messagesThreadIdRef={messagesThreadIdRef}
+                  registerTabTurn={registerTabTurn}
+                  stopTurnRef={stopTurnRef}
+                  threadId={threadId}
+                  onLive={setLive}
+                  onMeta={onSessionMeta}
+                  onPersist={() => void refreshThreads()}
+                />
+              ) : (
+                <GalleryChatInput
+                  elevated
+                  layout="inline"
+                  status="ready"
+                  threadId={projectPath ? `pending:${projectPath}` : "pending"}
+                  onSubmit={pendingSubmit}
+                />
+              )}
             </div>
-          )}
-        >
-          {threadId ? (
-            <ChatSession
-              key={threadId}
-              threadId={threadId}
-              initialMessages={initialMessages}
-              messagesRef={messagesRef}
-              messagesThreadIdRef={messagesThreadIdRef}
-              onLive={setLive}
-              onMeta={onSessionMeta}
-              onPersist={() => void refreshThreads()}
-              registerTabTurn={registerTabTurn}
-              stopTurnRef={stopTurnRef}
-              captureDraftRef={captureDraftRef}
-              composerRef={composerRef}
+            {historyPopover("top")}
+          </div>
+        ) : threadId ? (
+          <ChatSession
+            key={threadId}
+            captureDraftRef={captureDraftRef}
+            composerRef={composerRef}
+            hideEmpty={false}
+            initialMessages={initialMessages}
+            layout={composerLayout}
+            messagesRef={messagesRef}
+            messagesThreadIdRef={messagesThreadIdRef}
+            registerTabTurn={registerTabTurn}
+            stopTurnRef={stopTurnRef}
+            threadId={threadId}
+            onLive={setLive}
+            onMeta={onSessionMeta}
+            onPersist={() => void refreshThreads()}
+          />
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+              <Empty className="border-0">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <MessageCircleDashedIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>How can I help?</EmptyTitle>
+                  <EmptyDescription>
+                    {projectPath
+                      ? "Starting a chat…"
+                      : "Open a folder to send a message."}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </div>
+            <GalleryChatInput
+              status="ready"
+              threadId={projectPath ? `pending:${projectPath}` : "pending"}
+              onSubmit={pendingSubmit}
             />
-          ) : null}
-        </RenderErrorBoundary>
-      </aside>
-    </>
+          </div>
+        )}
+      </RenderErrorBoundary>
+    </aside>
   );
 }

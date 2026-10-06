@@ -45,11 +45,9 @@ function restoreFocus(el: HTMLElement | null) {
 
 export function CommandPalette({
   folder,
-  compactChat,
   catalogFiles,
 }: {
   folder: OpenFolderApi;
-  compactChat: boolean;
   catalogFiles: CatalogEntry[];
 }) {
   const [open, setOpen] = useState(false);
@@ -65,17 +63,17 @@ export function CommandPalette({
   const worldPath = useWorld((s) => s.path);
   const currentPath = worldPath || url;
   const { open: railOpen, toggleSidebar } = useSidebar();
-  const { chatOpen, compactChatOpen } = usePrefs(
+  const { chatOpen, chatDock } = usePrefs(
     useShallow((s) => ({
       chatOpen: s.chatOpen,
-      compactChatOpen: s.compactChatOpen,
+      chatDock: s.chatDock,
     }))
   );
   const mac = isMacPlatform(
     typeof navigator === "undefined" ? "" : navigator.platform,
     typeof navigator === "undefined" ? "" : navigator.userAgent
   );
-  const chatVisible = compactChat ? compactChatOpen : chatOpen;
+  const chatVisible = chatDock === "docked" || chatOpen;
 
   const commands = useMemo(() => {
     if (!open) return EMPTY_COMMANDS;
@@ -142,8 +140,12 @@ export function CommandPalette({
         return;
       }
       if (cmd.id === "action:toggle-chat") {
-        if (compactChat) s.setCompactChatOpen(!s.compactChatOpen);
-        else s.setChatOpen(!s.chatOpen);
+        if (s.chatDock === "docked") {
+          s.setChatDock("popup");
+          s.setChatOpen(false);
+          return;
+        }
+        s.setChatOpen(!s.chatOpen);
         return;
       }
       if (cmd.id === "action:settings") {
@@ -166,7 +168,7 @@ export function CommandPalette({
         setTheme(cmd.payload);
       }
     },
-    [compactChat, folder, setDoc, setTheme, toggleSidebar]
+    [folder, setDoc, setTheme, toggleSidebar]
   );
 
   const run = useCallback(

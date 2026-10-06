@@ -1,6 +1,7 @@
 import { ok as expect } from "node:assert/strict";
 import {
   CHAT_DEFAULT_WIDTH,
+  CHAT_MAX_WIDTH,
   CHAT_MIN_WIDTH,
   chatWidthAfterKey,
 } from "./layout";
@@ -412,40 +413,30 @@ expect(
 );
 
 expect(
-  chatWidthAfterKey("ArrowLeft", false, 384, 1440, true) === 400,
+  chatWidthAfterKey("ArrowLeft", false, 384) === 400,
   "arrow left grows 16"
 );
 expect(
-  chatWidthAfterKey("ArrowRight", false, 384, 1440, true) === 368,
+  chatWidthAfterKey("ArrowRight", false, 384) === 368,
   "arrow right shrinks 16"
 );
+expect(chatWidthAfterKey("ArrowLeft", true, 384) === 448, "shift arrow 64");
+expect(chatWidthAfterKey("Home", false, 500) === CHAT_MIN_WIDTH, "Home is min");
 expect(
-  chatWidthAfterKey("ArrowLeft", true, 384, 1440, true) === 448,
-  "shift arrow 64"
+  chatWidthAfterKey("End", false, 384) === CHAT_MAX_WIDTH,
+  "End is the floating max"
 );
 expect(
-  chatWidthAfterKey("Home", false, 500, 1440, true) === CHAT_MIN_WIDTH,
-  "Home is min"
-);
-expect(
-  chatWidthAfterKey("End", false, 384, 1440, true) === 1440 - 304 - 480,
-  "End is layout max"
-);
-expect(
-  chatWidthAfterKey("ArrowLeft", false, 650, 1440, true) === 656,
+  chatWidthAfterKey("ArrowLeft", false, 710) === CHAT_MAX_WIDTH,
   "step still clamps"
 );
 expect(
-  chatWidthAfterKey("ArrowRight", false, 290, 1440, true) === CHAT_MIN_WIDTH,
+  chatWidthAfterKey("ArrowRight", false, 290) === CHAT_MIN_WIDTH,
   "shrink still floors"
 );
+expect(chatWidthAfterKey("Enter", false, 384) === null, "other keys ignored");
 expect(
-  chatWidthAfterKey("Enter", false, 384, 1440, true) === null,
-  "other keys ignored"
-);
-expect(
-  chatWidthAfterKey("Home", false, CHAT_DEFAULT_WIDTH, 1440, true) ===
-    CHAT_MIN_WIDTH,
+  chatWidthAfterKey("Home", false, CHAT_DEFAULT_WIDTH) === CHAT_MIN_WIDTH,
   "Home from default"
 );
 

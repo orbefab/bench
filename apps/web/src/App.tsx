@@ -1,5 +1,11 @@
 import { PanelRight } from "lucide-react";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useShallow } from "zustand/react/shallow";
 import { fileLabel } from "@/cad/loadCadReview";
 import {
@@ -27,6 +33,11 @@ import { PartTree } from "@/components/PartTree";
 import { RenderErrorBoundary } from "@/components/RenderErrorBoundary";
 import { Toolbar } from "@/components/Toolbar";
 import { Button } from "@/components/ui/button";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { Shell, ShellInset } from "@/components/ui/shell";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
@@ -55,10 +66,9 @@ import { useWorldRun } from "@/hooks/useWorldRun";
 import { useXrSession } from "@/hooks/useXrSession";
 import { fetchMe, jsonApi, type MePrincipal } from "@/lib/api";
 import {
-  chatLayoutWidth,
   detailPanelWidth,
-  isCompactChat,
   overlayLayout,
+  preferredChatWidth,
 } from "@/lib/layout";
 import {
   displayLoadError,
@@ -80,31 +90,16 @@ import { useXrUi } from "@/state/xr";
 
 const BOOT_ME_TIMEOUT_MS = 4_000;
 
-function useWindowWidth() {
-  const [width, setWidth] = useState(() =>
-    typeof window === "undefined" ? 1280 : window.innerWidth
-  );
-  useEffect(() => {
-    const onResize = () => setWidth(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  return width;
-}
-
 function ChatToggle({
-  compact,
   buttonRef,
   hidden,
 }: {
-  compact: boolean;
   buttonRef: RefObject<HTMLButtonElement | null>;
   hidden?: boolean;
 }) {
   const setChatOpen = usePrefs((s) => s.setChatOpen);
-  const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
   const { tabStreaming, stopTabTurn } = useViewerChat();
-  const show = () => (compact ? setCompactChatOpen(true) : setChatOpen(true));
+  const show = () => setChatOpen(true);
   if (tabStreaming) {
     return (
       <div className="pointer-events-auto flex items-center gap-1.5 rounded-xl border border-border bg-card/95 px-2 py-1 text-xs shadow-lg">
@@ -165,7 +160,7 @@ function Overlay({
   catalog,
   canvasWidth,
   canvasHeight,
-  compactChat,
+  docked,
   chatToggleRef,
   railOpen,
 }: {
@@ -173,7 +168,7 @@ function Overlay({
   catalog: CatalogState;
   canvasWidth: number;
   canvasHeight: number;
-  compactChat: boolean;
+  docked: boolean;
   chatToggleRef: RefObject<HTMLButtonElement | null>;
   railOpen: boolean;
 }) {
@@ -200,7 +195,6 @@ function Overlay({
   const worldPath = useWorld((s) => s.path);
   const { files, ready: catalogReady, error: catalogError } = catalog;
   const chatOpen = usePrefs((s) => s.chatOpen);
-  const compactChatOpen = usePrefs((s) => s.compactChatOpen);
   const partsOpen = usePrefs((s) => s.partsOpen);
   const setPartsOpen = usePrefs((s) => s.setPartsOpen);
   const tool = useViewer((s) => s.tool);
@@ -240,8 +234,7 @@ function Overlay({
   const detailWidth = detailVisible
     ? detailPanelWidth(canvasWidth, overlays.detailCompact, partsChip)
     : 0;
-  const showChatToggle =
-    Boolean(project.path) && (compactChat ? !compactChatOpen : !chatOpen);
+  const showChatToggle = Boolean(project.path) && !docked && !chatOpen;
   const cameraMoved = useViewer((s) => s.cameraMoved);
   const { setPartsCard, setDetailCard } = useCanvasFit({
     xrActive: Boolean(session),
@@ -334,7 +327,6 @@ function Overlay({
               >
                 <ChatToggle
                   buttonRef={chatToggleRef}
-                  compact={compactChat}
                   hidden={!showChatToggle}
                 />
               </div>
@@ -409,17 +401,19 @@ function WorldFloatColumn() {
 function StageColumn({
   folder,
   catalog,
-  compactChat,
+  docked,
   chatToggleRef,
   railOpen,
   editor,
+  overlay,
 }: {
   folder: ReturnType<typeof useOpenFolder>;
   catalog: CatalogState;
-  compactChat: boolean;
+  docked: boolean;
   chatToggleRef: RefObject<HTMLButtonElement | null>;
   railOpen: boolean;
   editor: boolean;
+  overlay?: ReactNode;
 }) {
   const session = useXrSession();
   const url = useViewer((s) => s.url);
@@ -460,10 +454,11 @@ function StageColumn({
         canvasWidth={canvasSize.w}
         catalog={catalog}
         chatToggleRef={chatToggleRef}
-        compactChat={compactChat}
+        docked={docked}
         folder={folder}
         railOpen={railOpen}
       />
+      {overlay}
     </div>
   );
 
@@ -512,87 +507,119 @@ function DesktopWorkbench({
   const chatWidth = usePrefs((s) => s.chatWidth);
   const chatOpen = usePrefs((s) => s.chatOpen);
   const setChatOpen = usePrefs((s) => s.setChatOpen);
-  const compactChatOpen = usePrefs((s) => s.compactChatOpen);
-  const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
-  const windowWidth = useWindowWidth();
+  const chatDock = usePrefs((s) => s.chatDock);
+  const setChatDock = usePrefs((s) => s.setChatDock);
   const editor = Boolean(worldPath) && showStudio;
-  const panels = 0;
-  const compactChat = isCompactChat(windowWidth, railOpen, panels);
-  const layoutWidth = chatLayoutWidth(chatWidth, windowWidth, railOpen, panels);
+  const width = preferredChatWidth(chatWidth);
   const chatToggleRef = useRef<HTMLButtonElement>(null);
-  const [docked, setDocked] = useState(false);
+  const docked = showStudio && chatDock === "docked";
 
-  useEffect(() => {
-    if (!compactChat) setCompactChatOpen(false);
-  }, [compactChat, setCompactChatOpen]);
+  const dockChat = () => {
+    setChatOpen(true);
+    setChatDock("docked");
+  };
+  const floatChat = () => setChatDock("popup");
+
+  const floatingChat =
+    showStudio && !docked ? (
+      <ChatPanel
+        open={chatOpen}
+        toggleRef={chatToggleRef}
+        width={width}
+        onClose={() => setChatOpen(false)}
+      />
+    ) : null;
+
+  const stage = (
+    <StageColumn
+      catalog={catalog}
+      chatToggleRef={chatToggleRef}
+      docked={docked}
+      editor={editor}
+      folder={folder}
+      overlay={floatingChat}
+      railOpen={railOpen}
+    />
+  );
+
+  const header = (pressed: boolean) => (
+    <InsetHeader
+      docked={pressed}
+      path={projectPath}
+      showDockToggle={showStudio}
+      onToggleDock={pressed ? floatChat : dockChat}
+    />
+  );
 
   return (
     <>
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <ShellInset
-          className={
-            showStudio
-              ? "min-h-0 overflow-hidden bg-studio"
-              : "min-h-0 overflow-hidden bg-background"
-          }
-        >
-          <InsetHeader
-            docked={docked}
-            path={projectPath}
-            showDockToggle={showStudio}
-            onToggleDock={() => setDocked((open) => !open)}
-          />
-          {showStudio ? (
-            <>
-              <PartParkDialog />
-              <StageColumn
-                catalog={catalog}
-                chatToggleRef={chatToggleRef}
-                compactChat={compactChat}
-                editor={editor}
-                folder={folder}
-                railOpen={railOpen}
-              />
-            </>
-          ) : (
-            <HomeProjects folder={folder} path={projectPath} />
-          )}
-        </ShellInset>
-        {showStudio ? (
-          <RenderErrorBoundary
-            resetKeys={[projectPath]}
-            fallback={({ error, reset }) => (
-              <aside
-                className="flex h-full shrink-0 items-center justify-center border-l border-border bg-background p-4"
-                style={{ width: layoutWidth }}
-              >
-                <CrashCard error={error} onRetry={reset} />
-              </aside>
-            )}
+      <ShellInset
+        className={
+          showStudio && !docked
+            ? "min-h-0 overflow-hidden bg-studio"
+            : "min-h-0 overflow-hidden bg-background"
+        }
+      >
+        {docked ? (
+          <ResizablePanelGroup
+            className="min-h-0 flex-1"
+            orientation="horizontal"
           >
-            <ChatPanel
-              compact={compactChat}
-              open={compactChat ? compactChatOpen : chatOpen}
-              panels={panels}
-              toggleRef={chatToggleRef}
-              width={layoutWidth}
-              onClose={() =>
-                compactChat ? setCompactChatOpen(false) : setChatOpen(false)
-              }
-            />
-          </RenderErrorBoundary>
-        ) : null}
-      </div>
+            <ResizablePanel
+              className="flex min-h-0 flex-col overflow-hidden"
+              defaultSize="68%"
+              minSize="45%"
+            >
+              <div
+                data-slot="viewer-pane"
+                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-studio"
+              >
+                {header(true)}
+                <PartParkDialog />
+                {stage}
+              </div>
+            </ResizablePanel>
+            <ResizableHandle className="bg-transparent" />
+            <ResizablePanel
+              className="flex min-h-0 flex-col overflow-hidden"
+              defaultSize="32%"
+              maxSize="55%"
+              minSize="22%"
+            >
+              <div
+                data-slot="chat-side-panel"
+                className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-background"
+              >
+                <ChatPanel
+                  docked
+                  open
+                  toggleRef={chatToggleRef}
+                  width={width}
+                  onClose={floatChat}
+                />
+              </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          <>
+            {header(false)}
+            {showStudio ? (
+              <>
+                <PartParkDialog />
+                {stage}
+              </>
+            ) : (
+              <HomeProjects folder={folder} path={projectPath} />
+            )}
+          </>
+        )}
+      </ShellInset>
       <BrowseFolderDialog
         open={folder.dialogOpen}
         onOpenChange={folder.setDialogOpen}
       />
       <CloseFolderDialog />
-      <CommandPalette
-        catalogFiles={catalog.files}
-        compactChat={compactChat}
-        folder={folder}
-      />
+      <CommandPalette catalogFiles={catalog.files} folder={folder} />
       <Toasts />
     </>
   );
@@ -636,7 +663,7 @@ function ViewerShell({ host }: { host: boolean }) {
         <StageColumn
           catalog={catalog}
           chatToggleRef={chatToggleRef}
-          compactChat={false}
+          docked={false}
           editor={Boolean(worldPath)}
           folder={folder}
           railOpen={false}

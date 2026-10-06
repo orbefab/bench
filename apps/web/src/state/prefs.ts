@@ -14,6 +14,7 @@ import {
   type StateStorage,
 } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
+import { type ChatDock, chatDockMode } from "@/lib/chat-dock";
 import { CHAT_DEFAULT_WIDTH, clampStoredChatWidth } from "@/lib/layout";
 
 const DESKTOP_PREFS_KEY = "sfab-bench.desktop";
@@ -34,6 +35,7 @@ const PERSISTED_PREF_KEYS = [
   "chatHarness",
   "chatModel",
   "chatEffort",
+  "chatDock",
 ] as const;
 
 type DesktopPrefs = {
@@ -45,6 +47,7 @@ type DesktopPrefs = {
   chatHarness: HarnessId;
   chatModel: string;
   chatEffort: ChatEffort;
+  chatDock: ChatDock;
 };
 
 type StoredPrefs = Partial<DesktopPrefs> & { recentFiles?: unknown };
@@ -117,6 +120,7 @@ function validatedDesktopPrefs(stored: StoredPrefs | undefined): DesktopPrefs {
     chatEffort: isChatEffort(stored?.chatEffort ?? "")
       ? stored!.chatEffort!
       : DEFAULT_CHAT_EFFORT,
+    chatDock: chatDockMode(stored?.chatDock),
   };
 }
 
@@ -153,7 +157,8 @@ function settledDesktopPrefs(raw: string | null): DesktopPrefs {
     ) {
       return validated;
     }
-    return { ...validated, ...pickPersisted(stored) };
+    const next = { ...validated, ...pickPersisted(stored) };
+    return { ...next, chatDock: chatDockMode(next.chatDock) };
   } catch {
     return validatedDesktopPrefs(undefined);
   }
@@ -178,6 +183,7 @@ export type PrefsState = DesktopPrefs & {
   setChatSelection: (harness: HarnessId, model: string) => void;
   setChatEffort: (effort: ChatEffort) => void;
   setAxesVisible: (open: Setter) => void;
+  setChatDock: (mode: ChatDock) => void;
 };
 
 export const prefsStore = createStore<PrefsState>()(
@@ -233,6 +239,10 @@ export const prefsStore = createStore<PrefsState>()(
       },
       setAxesVisible: (open) =>
         set((s) => ({ axesVisible: resolve(s.axesVisible, open) })),
+      setChatDock: (mode) => {
+        const chatDock = chatDockMode(mode);
+        if (get().chatDock !== chatDock) set({ chatDock });
+      },
     }),
     {
       name: DESKTOP_PREFS_KEY,
@@ -254,6 +264,7 @@ export const prefsStore = createStore<PrefsState>()(
         chatHarness: s.chatHarness,
         chatModel: s.chatModel,
         chatEffort: s.chatEffort,
+        chatDock: s.chatDock,
       }),
       merge: (persisted, current) => {
         const stored = persisted as StoredPrefs | undefined;

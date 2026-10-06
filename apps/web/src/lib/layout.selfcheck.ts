@@ -1,23 +1,17 @@
 import { ok as expect } from "node:assert/strict";
 import {
-  CANVAS_MIN_WIDTH,
   CHAT_DEFAULT_WIDTH,
   CHAT_MAX_WIDTH,
   CHAT_MIN_WIDTH,
-  chatLayoutWidth,
-  chatMaxForWindow,
-  chatWidthAfterKey,
   clampChatDrag,
   clampStoredChatWidth,
   detailPanelWidth,
-  FILES_RAIL_WIDTH,
   fitBelowInsets,
   fitBesideInsets,
   fitCardsReady,
   fitDistanceScale,
   fitInsets,
   fitPanNdc,
-  isCompactChat,
   OVERLAY_CLUSTER_GAP,
   OVERLAY_LEFT,
   OVERLAY_RIGHT,
@@ -29,7 +23,6 @@ import {
   TOOLBAR_TOP,
   toolbarLayout,
   toolbarRightReserve,
-  WORLD_PANELS_WIDTH,
 } from "./layout";
 
 expect(preferredChatWidth(100) === CHAT_MIN_WIDTH, "stored below min");
@@ -38,72 +31,15 @@ expect(preferredChatWidth(384.4) === 384, "rounds");
 expect(clampStoredChatWidth(720) === 720, "persist path keeps 720");
 expect(clampStoredChatWidth(200) === 280, "persist path still has 280 floor");
 
-expect(isCompactChat(980, false), "980px is compact (max-width: 980px)");
-expect(isCompactChat(979, true), "below 980 compact");
-expect(isCompactChat(981, false) === false, "981 without rail is docked");
-expect(isCompactChat(1024, true), "1024 + rail cannot hold 304+280+480");
-expect(
-  isCompactChat(1064, true) === false,
-  "exactly rail+min chat+canvas stays docked"
-);
-expect(isCompactChat(1280, true) === false, "1280 + rail is docked");
-expect(isCompactChat(900, true), "900 is compact");
-expect(isCompactChat(800, false), "800 tab is compact even with rail closed");
-expect(
-  isCompactChat(1600, true, WORLD_PANELS_WIDTH),
-  "world editor at 1600: rail + tree + inspector + chat would leave the canvas under 480, so the chat sheets"
-);
-expect(
-  isCompactChat(1600, false, WORLD_PANELS_WIDTH) === false,
-  "world editor at 1600 with the rail closed docks the chat"
-);
-expect(
-  chatLayoutWidth(720, 1920, true, WORLD_PANELS_WIDTH) ===
-    1920 - FILES_RAIL_WIDTH - WORLD_PANELS_WIDTH - CANVAS_MIN_WIDTH,
-  "a docked chat beside the world panels keeps the canvas at 480"
-);
-expect(
-  chatWidthAfterKey("End", false, 384, 1920, true, WORLD_PANELS_WIDTH) ===
-    1920 - FILES_RAIL_WIDTH - WORLD_PANELS_WIDTH - CANVAS_MIN_WIDTH,
-  "keyboard resize clamps beside the world panels too"
-);
-
-expect(
-  chatMaxForWindow(1440, true) === 1440 - 304 - 480,
-  "1440 rail leaves 656 for chat"
-);
-expect(
-  chatLayoutWidth(720, 1440, true) === 656,
-  "layout clamps 720 so canvas stays 480"
-);
 expect(
   clampStoredChatWidth(720) === 720,
   "layout clamp does not rewrite stored 720"
 );
-expect(chatLayoutWidth(384, 1440, true) === 384, "default fits at 1440");
+expect(clampChatDrag(800) === CHAT_MAX_WIDTH, "drag stays within 720");
+expect(clampChatDrag(200) === CHAT_MIN_WIDTH, "drag still has 280 floor");
 expect(
-  chatLayoutWidth(720, 1280, true) === 1280 - 304 - 480,
-  "1280 clamps stored 720"
-);
-expect(clampChatDrag(800, 1440, true) === 656, "drag cannot starve the canvas");
-expect(clampChatDrag(200, 1440, true) === 280, "drag still has 280 floor");
-expect(
-  clampChatDrag(CHAT_DEFAULT_WIDTH, 1440, true) === CHAT_DEFAULT_WIDTH,
+  clampChatDrag(CHAT_DEFAULT_WIDTH) === CHAT_DEFAULT_WIDTH,
   "double-click default"
-);
-
-expect(
-  chatLayoutWidth(720, 900, true) === 720,
-  "900×90vw is above max so stored 720 wins"
-);
-expect(
-  chatLayoutWidth(720, 600, true) === Math.floor(600 * 0.9),
-  "compact sheet is min(stored, 90vw)"
-);
-expect(chatLayoutWidth(280, 900, true) === 280, "compact keeps 280");
-expect(
-  chatLayoutWidth(500, 500, false) === Math.floor(500 * 0.9),
-  "compact 90vw when stored is wider"
 );
 
 const overlaysWide = overlayLayout(800);
@@ -299,21 +235,6 @@ expect(toolbarRightReserve(true, false, true) === 12 + 220, "live chip");
 expect(
   toolbarRightReserve(true, true, true) === 12 + 140 + 220 + 8,
   "live chip plus Enter Studio"
-);
-
-const needed = FILES_RAIL_WIDTH + CHAT_MIN_WIDTH + CANVAS_MIN_WIDTH;
-expect(needed === 1064, "rail + min chat + canvas");
-expect(
-  isCompactChat(needed - 1, true),
-  "one pixel under the floor sheets chat"
-);
-expect(
-  chatLayoutWidth(720, needed, true) === 280,
-  "at the floor chat is min width"
-);
-expect(
-  needed - FILES_RAIL_WIDTH - 280 === CANVAS_MIN_WIDTH,
-  "canvas keeps 480 when docked at the floor"
 );
 
 console.log("layout.selfcheck ok");
