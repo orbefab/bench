@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { RunPlayingDialog } from "@/components/RunPlayingDialog";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { formatWorldIssues, visibleAssetIssues } from "@/lib/world-issues";
 import { moveTarget } from "@/lib/world-move";
 import { isPoseTool, toolTitle, WORLD_TOOLS } from "@/lib/world-tool";
@@ -23,7 +24,13 @@ export function useMoveReason(): string | null {
   return target.ok ? null : target.reason;
 }
 
-export function WorldControls({ onHome }: { onHome: () => void }) {
+export function WorldControls({
+  onHome,
+  layout,
+}: {
+  onHome: () => void;
+  layout: { left: number; top: number } | null;
+}) {
   const { connection, notice, selected } = useWorld(
     useShallow((s) => ({
       connection: s.connection,
@@ -41,7 +48,13 @@ export function WorldControls({ onHome }: { onHome: () => void }) {
         ? "Connecting…"
         : null;
   return (
-    <div className="pointer-events-none absolute top-4 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-2">
+    <div
+      className={cn(
+        "pointer-events-none absolute z-20 flex flex-col items-center gap-2",
+        layout ? undefined : "top-4 left-1/2 -translate-x-1/2"
+      )}
+      style={layout ? { left: layout.left, top: layout.top } : undefined}
+    >
       <div className="pointer-events-auto flex items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-lg">
         <Button
           type="button"

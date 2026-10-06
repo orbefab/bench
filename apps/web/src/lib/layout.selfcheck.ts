@@ -21,8 +21,11 @@ import {
   PART_TREE_WIDTH,
   preferredChatWidth,
   TOOLBAR_TOP,
+  TOOLBAR_WIDTH,
   toolbarLayout,
   toolbarRightReserve,
+  WORLD_FLOAT_RIGHT,
+  WORLD_TOOLBAR_WIDTH,
 } from "./layout";
 
 expect(preferredChatWidth(100) === CHAT_MIN_WIDTH, "stored below min");
@@ -226,6 +229,64 @@ const squeezed = toolbarLayout({
 expect(squeezed.stacked, "tiny canvas offsets the toolbar");
 expect(squeezed.top === TOOLBAR_TOP, "stays on the top row, not over PartTree");
 expect(squeezed.left >= 12, "offset toolbar stays on the canvas");
+
+expect(WORLD_TOOLBAR_WIDTH === 240, "world bar is home plus five tools");
+expect(WORLD_FLOAT_RIGHT === 332, "float column ends at left-3 plus w-80");
+const worldFree = toolbarLayout({
+  canvasWidth: 900,
+  leftReserve: WORLD_FLOAT_RIGHT,
+  rightReserve: 12,
+  barWidth: WORLD_TOOLBAR_WIDTH,
+});
+const worldGap = 900 - WORLD_FLOAT_RIGHT - 12;
+expect(
+  worldFree.stacked === false,
+  "900px stage keeps the bar beside the tree"
+);
+expect(
+  worldFree.left === WORLD_FLOAT_RIGHT + (worldGap - WORLD_TOOLBAR_WIDTH) / 2,
+  "world bar centers in the free rect"
+);
+expect(
+  worldFree.left >= WORLD_FLOAT_RIGHT,
+  "world bar starts to the right of the column"
+);
+expect(
+  worldFree.left + WORLD_TOOLBAR_WIDTH <= 900 - 12,
+  "world bar ends before the right reserve"
+);
+const dockedViewer = toolbarLayout({
+  canvasWidth: 640,
+  leftReserve: WORLD_FLOAT_RIGHT,
+  rightReserve: toolbarRightReserve(false, false),
+  barWidth: WORLD_TOOLBAR_WIDTH,
+});
+expect(
+  dockedViewer.stacked === false,
+  "a 640px docked viewer still clears the tree"
+);
+expect(
+  dockedViewer.left >= WORLD_FLOAT_RIGHT,
+  "docked bar stays to the right of the column"
+);
+const worldTight = toolbarLayout({
+  canvasWidth: 520,
+  leftReserve: WORLD_FLOAT_RIGHT,
+  rightReserve: 12,
+  barWidth: WORLD_TOOLBAR_WIDTH,
+});
+expect(worldTight.stacked, "a stage narrower than the bar drops the column");
+expect(worldTight.top === TOOLBAR_TOP, "the bar stays on the top row");
+const cadDefault = toolbarLayout({
+  canvasWidth: 752,
+  leftReserve: OVERLAY_LEFT,
+  rightReserve: 48,
+});
+expect(
+  cadDefault.left ===
+    OVERLAY_LEFT + (752 - OVERLAY_LEFT - 48 - TOOLBAR_WIDTH) / 2,
+  "omitted bar width is the CAD bar"
+);
 
 expect(toolbarRightReserve(false, false) === 12, "padding only");
 expect(toolbarRightReserve(true, false) === 12 + 44, "chat toggle");

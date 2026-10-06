@@ -67,8 +67,14 @@ import { useXrSession } from "@/hooks/useXrSession";
 import { fetchMe, jsonApi, type MePrincipal } from "@/lib/api";
 import {
   detailPanelWidth,
+  OVERLAY_LEFT,
   overlayLayout,
   preferredChatWidth,
+  TOOLBAR_WIDTH,
+  toolbarLayout,
+  toolbarRightReserve,
+  WORLD_FLOAT_RIGHT,
+  WORLD_TOOLBAR_WIDTH,
 } from "@/lib/layout";
 import {
   displayLoadError,
@@ -77,6 +83,7 @@ import {
 } from "@/lib/load-copy";
 import { redeemFragmentToken } from "@/lib/pairing";
 import { folderName } from "@/lib/project";
+import { cn } from "@/lib/utils";
 import { documentTitle, emptySceneKind, PRODUCT_TITLE } from "@/lib/welcome";
 import { ViewerCanvas } from "@/scene/ViewerCanvas";
 import { worldFitTarget } from "@/scene/world-fit";
@@ -155,6 +162,31 @@ function ChatToggle({
   );
 }
 
+type ToolbarPlace = { left: number; top: number } | null;
+
+function useChromePlacement(
+  canvasWidth: number,
+  bar: "world" | "cad",
+  docked: boolean
+): ToolbarPlace & { stacked: boolean } {
+  const chatOpen = usePrefs((s) => s.chatOpen);
+  const projectPath = useProjectSession().project.path;
+  const { tabStreaming } = useViewerChat();
+  const showChatToggle = Boolean(projectPath) && !docked && !chatOpen;
+  if (!(canvasWidth > 0)) return { stacked: false, left: 0, top: 0 };
+  const placed = toolbarLayout({
+    canvasWidth,
+    leftReserve: bar === "world" ? WORLD_FLOAT_RIGHT : OVERLAY_LEFT,
+    rightReserve: toolbarRightReserve(
+      showChatToggle,
+      false,
+      showChatToggle && tabStreaming
+    ),
+    barWidth: bar === "world" ? WORLD_TOOLBAR_WIDTH : TOOLBAR_WIDTH,
+  });
+  return placed;
+}
+
 function Overlay({
   folder,
   catalog,
@@ -163,6 +195,7 @@ function Overlay({
   docked,
   chatToggleRef,
   railOpen,
+  toolbarPlace,
 }: {
   folder: ReturnType<typeof useOpenFolder>;
   catalog: CatalogState;
@@ -171,6 +204,7 @@ function Overlay({
   docked: boolean;
   chatToggleRef: RefObject<HTMLButtonElement | null>;
   railOpen: boolean;
+  toolbarPlace: ToolbarPlace;
 }) {
   const { review, progress, error, selectedId, url, title, loadModel } =
     useViewer(
@@ -277,6 +311,7 @@ function Overlay({
           ) : null}
           {worldPath ? (
             <WorldControls
+              layout={toolbarPlace}
               onHome={() => {
                 const obj = worldFitTarget();
                 if (obj) fit?.(obj, homeFitDirection());
@@ -284,6 +319,7 @@ function Overlay({
             />
           ) : toolbarVisible ? (
             <Toolbar
+              layout={toolbarPlace}
               onHome={() => {
                 const obj = frameFitObject(review, selectedId, "model");
                 if (obj) fit?.(obj, fitDirectionFor("model"));
@@ -389,9 +425,14 @@ function Overlay({
   );
 }
 
-function WorldFloatColumn() {
+function WorldFloatColumn({ stacked }: { stacked: boolean }) {
   return (
-    <div className="pointer-events-none absolute top-4 left-3 z-20 flex h-[calc(100%-2rem)] w-80 max-w-[calc(100%-1.5rem)] flex-col gap-2">
+    <div
+      className={cn(
+        "pointer-events-none absolute left-3 z-20 flex w-80 max-w-[calc(100%-1.5rem)] flex-col gap-2",
+        stacked ? "top-16 h-[calc(100%-5rem)]" : "top-4 h-[calc(100%-2rem)]"
+      )}
+    >
       <WorldTree floating />
       <WorldInspector floating />
     </div>
@@ -419,6 +460,13 @@ function StageColumn({
   const url = useViewer((s) => s.url);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
+  const placement = useChromePlacement(
+    canvasSize.w,
+    editor ? "world" : "cad",
+    docked
+  );
+  const toolbarPlace: ToolbarPlace =
+    canvasSize.w > 0 ? { left: placement.left, top: placement.top } : null;
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -448,7 +496,9 @@ function StageColumn({
       >
         <ViewerCanvas />
       </RenderErrorBoundary>
-      {editor && !session ? <WorldFloatColumn /> : null}
+      {editor && !session ? (
+        <WorldFloatColumn stacked={canvasSize.w > 0 && placement.stacked} />
+      ) : null}
       <Overlay
         canvasHeight={canvasSize.h}
         canvasWidth={canvasSize.w}
@@ -457,6 +507,7 @@ function StageColumn({
         docked={docked}
         folder={folder}
         railOpen={railOpen}
+        toolbarPlace={toolbarPlace}
       />
       {overlay}
     </div>

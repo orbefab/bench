@@ -21,6 +21,13 @@ export const DETAIL_COMPACT_THRESHOLD = 480;
 export const OVERLAY_MAX_HEIGHT_CAP = 32 * 16;
 /** Five 36px tools + gap-0.5 + p-1 + border (~198 measured). */
 export const TOOLBAR_WIDTH = 198;
+/**
+ * World bar: Home 36 + gap-0.5 + tools `mx-0.5` + five 36px tools + four
+ * gaps + `p-1` + border. Wider than the CAD bar.
+ */
+export const WORLD_TOOLBAR_WIDTH = 240;
+/** World float column: `left-3` (12) + `w-80` (320). */
+export const WORLD_FLOAT_RIGHT = 12 + 320;
 export const TOOLBAR_TOP = 16;
 export const CHAT_TOGGLE_RESERVE = 44;
 /** Hidden-chat "Replying… · Stop · Show chat" chip. */
@@ -236,17 +243,20 @@ export function toolbarLayout(input: {
   canvasWidth: number;
   leftReserve: number;
   rightReserve: number;
+  /** Defaults to the CAD bar. Pass the world bar when that one is on screen. */
+  barWidth?: number;
 }): { stacked: boolean; left: number; top: number } {
   const { canvasWidth, leftReserve, rightReserve } = input;
+  const barWidth = input.barWidth ?? TOOLBAR_WIDTH;
   const remaining = canvasWidth - leftReserve - rightReserve;
-  if (remaining >= TOOLBAR_WIDTH + 8) {
+  if (remaining >= barWidth + 8) {
     return {
       stacked: false,
-      left: leftReserve + (remaining - TOOLBAR_WIDTH) / 2,
+      left: leftReserve + (remaining - barWidth) / 2,
       top: TOOLBAR_TOP,
     };
   }
-  const maxLeft = Math.max(12, canvasWidth - TOOLBAR_WIDTH - 12);
+  const maxLeft = Math.max(12, canvasWidth - barWidth - 12);
   return {
     stacked: true,
     left: Math.max(12, Math.min(leftReserve, maxLeft)),
