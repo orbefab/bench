@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { requestInsertPartMention } from "@/lib/part-mention";
 import {
   activeEscLayer,
-  compactChatSheetOpen,
   isEditableTarget,
+  popupChatOwnsEscape,
   probeEscLayers,
 } from "@/lib/shortcuts";
 import { accuracyView } from "@/lib/world-accuracy";
@@ -35,7 +35,7 @@ function useWorldSelectionEsc() {
       if (isEditableTarget(event.target, document.activeElement)) return;
       const layers = {
         ...probeEscLayers(document),
-        compactChat: compactChatSheetOpen(document),
+        popupChat: popupChatOwnsEscape(document),
       };
       if (activeEscLayer(layers)) return;
       worldStore.getState().select(null);

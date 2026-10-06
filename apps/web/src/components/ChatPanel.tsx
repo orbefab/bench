@@ -49,6 +49,11 @@ import {
   chatWidthAfterKey,
   clampChatDrag,
 } from "@/lib/layout";
+import {
+  popupChatEscape,
+  popupChatOwnsEscape,
+  probeEscLayers,
+} from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { usePrefs } from "@/state/prefs";
 
@@ -70,6 +75,7 @@ export function ChatPanel({
   const setWidth = usePrefs((s) => s.setChatWidth);
   const setChatOpen = usePrefs((s) => s.setChatOpen);
   const [resizing, setResizing] = useState(false);
+  const [pinnedBare, setPinnedBare] = useState(false);
   const [live, setLive] = useState(false);
   const [sessionPreview, setSessionPreview] = useState<string | null>(null);
   const [tabStatus, setTabStatus] = useState({
@@ -174,6 +180,12 @@ export function ChatPanel({
 
   const wasOpenRef = useRef(open);
   useEffect(() => {
+    setPinnedBare(false);
+  }, [threadId]);
+  useEffect(() => {
+    if (tabStatus.streaming) setPinnedBare(false);
+  }, [tabStatus.streaming]);
+  useEffect(() => {
     const wasOpen = wasOpenRef.current;
     wasOpenRef.current = open;
     if (wasOpen && !open && !docked) toggleRef?.current?.focus();
@@ -203,7 +215,29 @@ export function ChatPanel({
     initialCount: initialMessages.length,
   });
   const popup = !docked;
-  const bare = popup && (!threadId || currentEmpty);
+  const bare = popup && (pinnedBare || !threadId || currentEmpty);
+  const grown = popup && open && !bare;
+  useEffect(() => {
+    if (!grown) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape" || ev.defaultPrevented) return;
+      if (
+        !popupChatEscape({
+          popup: true,
+          open: true,
+          grown: true,
+          focusInside: popupChatOwnsEscape(document),
+          layers: probeEscLayers(document),
+        })
+      ) {
+        return;
+      }
+      ev.preventDefault();
+      setPinnedBare(true);
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [grown]);
   const composerLayout: ChatComposerLayout = popup ? "inline" : "stacked";
 
   const historyPopover = (side: "top" | "bottom") => (
@@ -285,6 +319,7 @@ export function ChatPanel({
       aria-hidden={!docked && !open ? true : undefined}
       inert={!docked && !open ? true : undefined}
       data-chat-chrome={bare ? "input" : "panel"}
+      data-chat-popup={grown ? "grown" : undefined}
       className={cn(
         "@container/chat flex min-h-0 min-w-0 flex-col",
         docked

@@ -101,10 +101,9 @@ function persistOpenPrefs(id: string) {
 
 export function ViewerChatProvider({ children }: { children: ReactNode }) {
   const chatOpen = usePrefs((s) => s.chatOpen);
-  const compactChatOpen = usePrefs((s) => s.compactChatOpen);
   const xrChatOpen = useXrUi((s) => s.xrChatOpen);
   const xrDock = useXrUi((s) => s.bringChat);
-  const active = chatOpen || compactChatOpen || xrChatOpen || xrDock != null;
+  const active = chatOpen || xrChatOpen || xrDock != null;
   const projectPath = useProjectSession().project.path;
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);

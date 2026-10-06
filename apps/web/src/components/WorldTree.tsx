@@ -23,9 +23,9 @@ import {
 } from "@/hooks/useWorldRun";
 import {
   activeEscLayer,
-  compactChatSheetOpen,
   isEditableTarget,
   matchesShortcut,
+  popupChatOwnsEscape,
   probeEscLayers,
 } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
@@ -118,7 +118,7 @@ export function WorldHotkeys() {
       }
       const layers = {
         ...probeEscLayers(document),
-        compactChat: compactChatSheetOpen(document),
+        popupChat: popupChatOwnsEscape(document),
       };
       if (activeEscLayer(layers)) return;
       if (escapeWorldTool()) event.preventDefault();

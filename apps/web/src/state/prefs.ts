@@ -170,13 +170,10 @@ const seededPrefs = settledDesktopPrefs(desktopBlob);
 export type PrefsState = DesktopPrefs & {
   /** Not persisted. The server sends the folder's list. */
   recentFiles: string[];
-  /** Compact-sheet open state. Not persisted — must not rewrite `chatOpen`. */
-  compactChatOpen: boolean;
   setRecentFiles: (paths: string[]) => void;
   setTreeOpen: (open: Setter) => void;
   setPartsOpen: (open: Setter) => void;
   setChatOpen: (open: Setter) => void;
-  setCompactChatOpen: (open: Setter) => void;
   setChatWidth: (width: number) => void;
   setChatHarness: (harness: HarnessId) => void;
   setChatModel: (model: string) => void;
@@ -191,7 +188,6 @@ export const prefsStore = createStore<PrefsState>()(
     (set, get) => ({
       ...seededPrefs,
       recentFiles: [],
-      compactChatOpen: false,
       setRecentFiles: (paths) => {
         const recentFiles = paths
           .filter((p): p is string => typeof p === "string" && p.length > 0)
@@ -211,8 +207,6 @@ export const prefsStore = createStore<PrefsState>()(
         set((s) => ({ partsOpen: resolve(s.partsOpen, open) })),
       setChatOpen: (open) =>
         set((s) => ({ chatOpen: resolve(s.chatOpen, open) })),
-      setCompactChatOpen: (open) =>
-        set((s) => ({ compactChatOpen: resolve(s.compactChatOpen, open) })),
       setChatWidth: (width) => {
         const chatWidth = clampStoredChatWidth(width);
         if (get().chatWidth !== chatWidth) set({ chatWidth });

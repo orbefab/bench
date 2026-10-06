@@ -60,9 +60,9 @@ import {
   type PartMention,
 } from "@/lib/part-mention";
 import {
-  compactChatSheetOpen,
   escBelongsTo,
   isEditableTarget,
+  popupChatOwnsEscape,
   probeEscLayers,
 } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
@@ -246,7 +246,7 @@ function ChatInputInner({
       if (e.key !== "Escape") return;
       const layers = {
         ...probeEscLayers(document),
-        compactChat: compactChatSheetOpen(document),
+        popupChat: popupChatOwnsEscape(document),
         voice: true,
       };
       if (!escBelongsTo("voice", layers)) return;
@@ -519,7 +519,6 @@ export function GalleryChatInput({
     modelLoaded,
   });
   const setChatOpen = usePrefs((s) => s.setChatOpen);
-  const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
   const harness = usePrefs((s) => s.chatHarness);
   const catalog = useHarnesses();
   const info = catalog.harnesses.find((h) => h.id === harness);
@@ -535,7 +534,6 @@ export function GalleryChatInput({
       const detail = (event as CustomEvent<PartMention>).detail;
       if (!detail?.id || !detail?.name) return;
       setChatOpen(true);
-      setCompactChatOpen(true);
       const insert = () =>
         inputRef.current?.insertMention("part", {
           id: detail.id,
@@ -547,7 +545,7 @@ export function GalleryChatInput({
     window.addEventListener(INSERT_PART_MENTION_EVENT, onInsert);
     return () =>
       window.removeEventListener(INSERT_PART_MENTION_EVENT, onInsert);
-  }, [setChatOpen, setCompactChatOpen]);
+  }, [setChatOpen]);
 
   useImperativeHandle(
     ref,
