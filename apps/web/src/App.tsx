@@ -164,17 +164,18 @@ function ChatToggle({
 
 type ToolbarPlace = { left: number; top: number } | null;
 
+/** Null until the canvas is measured; the bars then fall back to centring. */
 function useChromePlacement(
   canvasWidth: number,
   bar: "world" | "cad",
   docked: boolean
-): ToolbarPlace & { stacked: boolean } {
+): { stacked: boolean; left: number; top: number } | null {
   const chatOpen = usePrefs((s) => s.chatOpen);
   const projectPath = useProjectSession().project.path;
   const { tabStreaming } = useViewerChat();
   const showChatToggle = Boolean(projectPath) && !docked && !chatOpen;
-  if (!(canvasWidth > 0)) return { stacked: false, left: 0, top: 0 };
-  const placed = toolbarLayout({
+  if (!(canvasWidth > 0)) return null;
+  return toolbarLayout({
     canvasWidth,
     leftReserve: bar === "world" ? WORLD_FLOAT_RIGHT : OVERLAY_LEFT,
     rightReserve: toolbarRightReserve(
@@ -184,7 +185,6 @@ function useChromePlacement(
     ),
     barWidth: bar === "world" ? WORLD_TOOLBAR_WIDTH : TOOLBAR_WIDTH,
   });
-  return placed;
 }
 
 function Overlay({
@@ -465,8 +465,9 @@ function StageColumn({
     editor ? "world" : "cad",
     docked
   );
-  const toolbarPlace: ToolbarPlace =
-    canvasSize.w > 0 ? { left: placement.left, top: placement.top } : null;
+  const toolbarPlace: ToolbarPlace = placement
+    ? { left: placement.left, top: placement.top }
+    : null;
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -497,7 +498,7 @@ function StageColumn({
         <ViewerCanvas />
       </RenderErrorBoundary>
       {editor && !session ? (
-        <WorldFloatColumn stacked={canvasSize.w > 0 && placement.stacked} />
+        <WorldFloatColumn stacked={placement?.stacked ?? false} />
       ) : null}
       <Overlay
         canvasHeight={canvasSize.h}
