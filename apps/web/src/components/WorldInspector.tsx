@@ -1,6 +1,8 @@
 import type { WorldViewNode } from "@sfab-bench/contract";
-import { useEffect, useMemo } from "react";
+import { Box, Hash, Minus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { requestInsertPartMention } from "@/lib/part-mention";
 import {
   activeEscLayer,
   compactChatSheetOpen,
@@ -52,7 +54,7 @@ function leafRoot(
   return null;
 }
 
-export function WorldInspector() {
+export function WorldInspector({ floating = false }: { floating?: boolean }) {
   useWorldSelectionEsc();
   const tabs = usePartTabs();
   const selection = useWorld((s) => s.selection);
@@ -80,25 +82,102 @@ export function WorldInspector() {
     ? ("library" as const)
     : ("project" as const);
   const lone = leafRoot(tree);
+  const selectionKey = wire
+    ? `wire:${wire.owner}:${wire.index}`
+    : (selection?.path ?? "");
+  const [minimized, setMinimized] = useState(false);
+  const [trackedKey, setTrackedKey] = useState(selectionKey);
+  if (trackedKey !== selectionKey) {
+    setTrackedKey(selectionKey);
+    setMinimized(false);
+  }
+  const clearSelection = () => {
+    worldStore.getState().select(null);
+    worldStore.getState().selectWire(null);
+  };
+  if (floating && minimized) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        className="pointer-events-auto size-9 self-start rounded-xl border-border bg-background shadow-lg"
+        aria-label="Show details"
+        title={title}
+        onClick={() => setMinimized(false)}
+      >
+        <Box />
+      </Button>
+    );
+  }
+  const header = floating ? (
+    <header className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5">
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        {title}
+      </span>
+      {node && !wire ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Add to chat"
+          title="Add to chat"
+          onClick={() =>
+            requestInsertPartMention({ id: node.id, name: node.name })
+          }
+        >
+          <Hash />
+        </Button>
+      ) : null}
+      {selection || wire ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-muted-foreground"
+          onClick={clearSelection}
+        >
+          Clear
+        </Button>
+      ) : null}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label="Minimize details"
+        title="Minimize"
+        onClick={() => setMinimized(true)}
+      >
+        <Minus />
+      </Button>
+    </header>
+  ) : (
+    <header className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+      <span className="truncate text-[13px] font-medium">{title}</span>
+      {selection || wire ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-muted-foreground"
+          onClick={clearSelection}
+        >
+          Clear
+        </Button>
+      ) : null}
+    </header>
+  );
+  const shellClass = floating
+    ? "pointer-events-auto flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-lg"
+    : "flex h-full w-80 shrink-0 flex-col border-l border-border bg-card";
+  const Shell = floating ? "section" : "aside";
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-card">
-      <header className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-        <span className="truncate text-[13px] font-medium">{title}</span>
-        {selection || wire ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-muted-foreground"
-            onClick={() => {
-              worldStore.getState().select(null);
-              worldStore.getState().selectWire(null);
-            }}
-          >
-            Clear
-          </Button>
-        ) : null}
-      </header>
+    <Shell
+      aria-label={floating ? "Part details" : undefined}
+      data-slot={floating ? "world-detail" : undefined}
+      className={shellClass}
+    >
+      {header}
       <div className={inspectorBodyClass}>
         {playhead !== null ? (
           <p className="mb-2 text-[11px] text-muted-foreground">
@@ -151,6 +230,6 @@ export function WorldInspector() {
           </>
         )}
       </div>
-    </aside>
+    </Shell>
   );
 }

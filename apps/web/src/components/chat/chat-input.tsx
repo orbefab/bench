@@ -56,6 +56,10 @@ import { useHarnesses } from "@/hooks/useHarnesses";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { partLabelFileStem } from "@/lib/part-label";
 import {
+  INSERT_PART_MENTION_EVENT,
+  type PartMention,
+} from "@/lib/part-mention";
+import {
   compactChatSheetOpen,
   escBelongsTo,
   isEditableTarget,
@@ -494,6 +498,8 @@ export function GalleryChatInput({
     loadingModel,
     modelLoaded,
   });
+  const setChatOpen = usePrefs((s) => s.setChatOpen);
+  const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
   const harness = usePrefs((s) => s.chatHarness);
   const catalog = useHarnesses();
   const info = catalog.harnesses.find((h) => h.id === harness);
@@ -503,6 +509,25 @@ export function GalleryChatInput({
     status: info?.status,
     detail: info?.detail,
   });
+
+  useEffect(() => {
+    const onInsert = (event: Event) => {
+      const detail = (event as CustomEvent<PartMention>).detail;
+      if (!detail?.id || !detail?.name) return;
+      setChatOpen(true);
+      setCompactChatOpen(true);
+      const insert = () =>
+        inputRef.current?.insertMention("part", {
+          id: detail.id,
+          name: detail.name,
+        }) ?? false;
+      if (insert()) return;
+      window.setTimeout(insert, 50);
+    };
+    window.addEventListener(INSERT_PART_MENTION_EVENT, onInsert);
+    return () =>
+      window.removeEventListener(INSERT_PART_MENTION_EVENT, onInsert);
+  }, [setChatOpen, setCompactChatOpen]);
 
   useImperativeHandle(
     ref,

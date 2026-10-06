@@ -10,11 +10,9 @@ import { useViewer } from "@/state/viewer";
 type Props = {
   onHome: () => void;
   onFit: () => void;
-  top: number;
-  left: number;
 };
 
-export function Toolbar({ onHome, onFit, top, left }: Props) {
+export function Toolbar({ onHome, onFit }: Props) {
   const { review, selectedId, isolate, tool, setTool } = useViewer(
     useShallow((s) => ({
       review: s.review,
@@ -32,10 +30,7 @@ export function Toolbar({ onHome, onFit, top, left }: Props) {
     }))
   );
   return (
-    <div
-      className="pointer-events-auto absolute z-20 flex gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-lg"
-      style={{ top, left }}
-    >
+    <div className="pointer-events-auto absolute top-4 left-1/2 z-20 flex -translate-x-1/2 gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-lg">
       <Button
         type="button"
         variant="secondary"

@@ -59,9 +59,6 @@ import {
   detailPanelWidth,
   isCompactChat,
   overlayLayout,
-  toolbarLayout,
-  toolbarRightReserve,
-  WORLD_PANELS_WIDTH,
 } from "@/lib/layout";
 import {
   displayLoadError,
@@ -245,14 +242,6 @@ function Overlay({
     : 0;
   const showChatToggle =
     Boolean(project.path) && (compactChat ? !compactChatOpen : !chatOpen);
-  const { tabStreaming } = useViewerChat();
-  const leftReserve = 12;
-  const rightReserve = toolbarRightReserve(
-    showChatToggle,
-    false,
-    showChatToggle && tabStreaming
-  );
-  const toolbar = toolbarLayout({ canvasWidth, leftReserve, rightReserve });
   const cameraMoved = useViewer((s) => s.cameraMoved);
   const { setPartsCard, setDetailCard } = useCanvasFit({
     xrActive: Boolean(session),
@@ -295,8 +284,6 @@ function Overlay({
           ) : null}
           {worldPath ? (
             <WorldControls
-              left={toolbar.left}
-              top={toolbar.top}
               onHome={() => {
                 const obj = worldFitTarget();
                 if (obj) fit?.(obj, homeFitDirection());
@@ -304,8 +291,6 @@ function Overlay({
             />
           ) : toolbarVisible ? (
             <Toolbar
-              left={toolbar.left}
-              top={toolbar.top}
               onHome={() => {
                 const obj = frameFitObject(review, selectedId, "model");
                 if (obj) fit?.(obj, fitDirectionFor("model"));
@@ -412,6 +397,15 @@ function Overlay({
   );
 }
 
+function WorldFloatColumn() {
+  return (
+    <div className="pointer-events-none absolute top-4 left-3 z-20 flex h-[calc(100%-2rem)] w-80 max-w-[calc(100%-1.5rem)] flex-col gap-2">
+      <WorldTree floating />
+      <WorldInspector floating />
+    </div>
+  );
+}
+
 function StageColumn({
   folder,
   catalog,
@@ -427,6 +421,7 @@ function StageColumn({
   railOpen: boolean;
   editor: boolean;
 }) {
+  const session = useXrSession();
   const url = useViewer((s) => s.url);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
@@ -459,6 +454,7 @@ function StageColumn({
       >
         <ViewerCanvas />
       </RenderErrorBoundary>
+      {editor && !session ? <WorldFloatColumn /> : null}
       <Overlay
         canvasHeight={canvasSize.h}
         canvasWidth={canvasSize.w}
@@ -472,16 +468,27 @@ function StageColumn({
   );
 
   if (!editor) return stage;
+  if (session) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1">
+          <WorldTree />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {stage}
+            <WorldTimeline docked />
+          </div>
+          <WorldInspector />
+        </div>
+        <WorldHotkeys />
+        <WorldConfirmDialog />
+        <WorldEditDialog />
+      </div>
+    );
+  }
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <WorldTree />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {stage}
-          <WorldTimeline docked />
-        </div>
-        <WorldInspector />
-      </div>
+      {stage}
+      <WorldTimeline docked framed />
       <WorldHotkeys />
       <WorldConfirmDialog />
       <WorldEditDialog />
@@ -509,7 +516,7 @@ function DesktopWorkbench({
   const setCompactChatOpen = usePrefs((s) => s.setCompactChatOpen);
   const windowWidth = useWindowWidth();
   const editor = Boolean(worldPath) && showStudio;
-  const panels = editor ? WORLD_PANELS_WIDTH : 0;
+  const panels = 0;
   const compactChat = isCompactChat(windowWidth, railOpen, panels);
   const layoutWidth = chatLayoutWidth(chatWidth, windowWidth, railOpen, panels);
   const chatToggleRef = useRef<HTMLButtonElement>(null);

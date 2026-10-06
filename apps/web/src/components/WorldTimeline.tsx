@@ -40,7 +40,13 @@ import { goLive, scrubTo, useWorldTimeline } from "@/state/world-timeline";
  * Desktop scrub strip. Dragging moves this client's playhead only.
  * The shared run keeps its own sim time (D-015). Hidden in XR (D-008).
  */
-export function WorldTimeline({ docked = false }: { docked?: boolean }) {
+export function WorldTimeline({
+  docked = false,
+  framed = false,
+}: {
+  docked?: boolean;
+  framed?: boolean;
+}) {
   const { recording, data, playhead, previous } = useWorldTimeline();
   const probes = useProbes();
   const selection = useWorld((s) => s.selection);
@@ -91,7 +97,9 @@ export function WorldTimeline({ docked = false }: { docked?: boolean }) {
     </Button>
   );
   const shell = docked
-    ? "flex shrink-0 flex-col gap-1 border-t border-border bg-card px-2 py-1.5"
+    ? framed
+      ? "mx-3 mb-3 flex shrink-0 flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 shadow-lg"
+      : "flex shrink-0 flex-col gap-1 border-t border-border bg-card px-2 py-1.5"
     : "pointer-events-auto absolute inset-x-3 bottom-3 z-20 flex flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 shadow-lg";
   const rowClass = docked
     ? "flex items-center gap-2"

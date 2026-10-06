@@ -23,15 +23,7 @@ export function useMoveReason(): string | null {
   return target.ok ? null : target.reason;
 }
 
-export function WorldControls({
-  top,
-  left,
-  onHome,
-}: {
-  top: number;
-  left: number;
-  onHome: () => void;
-}) {
+export function WorldControls({ onHome }: { onHome: () => void }) {
   const { connection, notice, selected } = useWorld(
     useShallow((s) => ({
       connection: s.connection,
@@ -49,11 +41,8 @@ export function WorldControls({
         ? "Connecting…"
         : null;
   return (
-    <>
-      <div
-        className="pointer-events-auto absolute z-20 flex items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-lg"
-        style={{ top, left }}
-      >
+    <div className="pointer-events-none absolute top-4 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-2">
+      <div className="pointer-events-auto flex items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-lg">
         <Button
           type="button"
           variant="secondary"
@@ -95,26 +84,19 @@ export function WorldControls({
         ) : null}
       </div>
       {showReason ? (
-        <div
-          className="pointer-events-none absolute z-20 rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-lg"
-          style={{ top: top + 52, left }}
-        >
+        <div className="rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-lg">
           {reason}
         </div>
       ) : null}
       {notice ? (
         <div
-          className="pointer-events-none absolute z-20 rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs shadow-lg"
-          style={{
-            top: top + (showReason ? 92 : 52),
-            left,
-          }}
+          className="rounded-xl border border-border bg-card/95 px-3 py-1.5 text-xs shadow-lg"
           aria-live="polite"
         >
           {notice}
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 

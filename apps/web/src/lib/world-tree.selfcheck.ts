@@ -1,7 +1,12 @@
 import { ok as expect } from "node:assert/strict";
 import type { WorldViewNode } from "@sfab-bench/contract";
 
-import { initialCollapsed, revealCollapsed, treeRows } from "./world-tree";
+import {
+  filterTreeRows,
+  initialCollapsed,
+  revealCollapsed,
+  treeRows,
+} from "./world-tree";
 
 const pose = {
   position: [0, 0, 0] as [number, number, number],
@@ -106,6 +111,40 @@ expect(
 expect(
   revealCollapsed(seeded, tree, "missing", "instance") === seeded,
   "a missing path keeps the same collapsed set"
+);
+
+const bushy = [
+  node("scene", [
+    node("scene.nano", [node("scene.nano.led"), node("scene.nano.motor")]),
+  ]),
+];
+const bushyRows = treeRows(bushy, new Set(), new Set());
+const ledNames = filterTreeRows(bushyRows, "led")
+  .map((row) => row.name)
+  .join("|");
+expect(ledNames === "scene|nano|led", `filter keeps ancestors ${ledNames}`);
+const nanoNames = filterTreeRows(bushyRows, "nano")
+  .map((row) => row.name)
+  .join("|");
+expect(
+  nanoNames === "scene|nano|led|motor",
+  `filter keeps the match subtree ${nanoNames}`
+);
+expect(filterTreeRows(bushyRows, "LED").length === 3, "filter ignores case");
+expect(
+  filterTreeRows(bushyRows, "nope").length === 0,
+  "filter can match nothing"
+);
+expect(
+  filterTreeRows(bushyRows, "  ").length === bushyRows.length,
+  "a blank filter keeps every row"
+);
+const wireNames = filterTreeRows(open, "D13")
+  .map((row) => row.name)
+  .join("|");
+expect(
+  wireNames === "scene|nano|led.A → nano.D13",
+  `a wire match keeps its owner ${wireNames}`
 );
 
 console.log("world-tree.selfcheck ok");
