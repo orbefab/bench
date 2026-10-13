@@ -7,7 +7,9 @@ import {
   type BodyImpl,
   type CaptureAxisName,
   FORM_PARAMS,
+  isParamRef,
   type LevelClass,
+  type Netlist,
   type PartFile,
   type Pose,
   ROOT_PATH,
@@ -35,6 +37,7 @@ import {
   type RunSlot,
   type Store,
   splitPortRef,
+  structuredDecl,
 } from "@sfab-bench/parts";
 
 import {
@@ -159,7 +162,7 @@ export function runTree(input: {
       pose: poseOf(inst.pose),
       ports: portsOf(inst, world, dependents(inst.part.id)),
       params: structuredClone(inst.params),
-      ...structuredOf(behaviour),
+      ...structuredOf(inst.part, behaviour, netlist, partFile),
       ...(inst.forwards ? { forwards: { ...inst.forwards } } : {}),
       ...(netlist ? { wires: netlist.wires.map(([a, b]) => ({ a, b })) } : {}),
       levels: levelAxes(inst.part, chosenOf(inst), inst.declaredOnly, {
@@ -604,16 +607,31 @@ function behaviourRunnable(
   return { runnable: false, reason: "no behaviour" };
 }
 
-/** The structured params the instance's form declares, for the card. */
+/**
+ * The structured params the instance's running level declares, for the
+ * card: its form's, or the names its netlist forwards to a child that
+ * declares one, with that child's kind and quantity.
+ */
 function structuredOf(
-  behaviour: BehaviourImpl | null
+  part: PartFile,
+  behaviour: BehaviourImpl | null,
+  netlist: Netlist | null,
+  partFile: (id: string) => PartFile | null
 ): Pick<WorldViewNode, "structured"> {
-  if (behaviour?.kind !== "form") return {};
   const structured: Record<string, StructuredDecl> = {};
-  for (const [name, decl] of Object.entries(
-    FORM_PARAMS[behaviour.form]?.structured ?? {}
-  )) {
-    if (decl) structured[name] = { ...decl };
+  if (behaviour?.kind === "form") {
+    for (const [name, decl] of Object.entries(
+      FORM_PARAMS[behaviour.form]?.structured ?? {}
+    )) {
+      if (decl) structured[name] = { ...decl };
+    }
+  }
+  for (const child of Object.values(netlist?.instances ?? {})) {
+    for (const value of Object.values(child.params ?? {})) {
+      if (!isParamRef(value) || structured[value.$param]) continue;
+      const decl = structuredDecl(part, value.$param, partFile);
+      if (decl) structured[value.$param] = { ...decl };
+    }
   }
   return Object.keys(structured).length > 0 ? { structured } : {};
 }

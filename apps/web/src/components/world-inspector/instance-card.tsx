@@ -253,7 +253,7 @@ export function InstanceBody({
         </Section>
       ) : null}
       {card.structured.length > 0 ? (
-        <Section title="Programs">
+        <Section title="Programs and values">
           <StructuredParams node={node} rows={card.structured} />
         </Section>
       ) : null}

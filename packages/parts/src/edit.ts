@@ -148,13 +148,15 @@ function readEditOpRaw(value: unknown): EditOp | { error: string } {
         if ("error" in read) return read;
         level = read.level;
       }
+      const params = readParams(row.params);
+      if (params && "error" in params) return params;
       return {
         kind: "add-instance",
         document,
         id: row.id,
         part: row.part,
         ...(isPose(row.pose) ? { pose: row.pose } : {}),
-        ...(isParams(row.params) ? { params: row.params } : {}),
+        ...(params ? { params: params.params } : {}),
         ...(level !== undefined ? { level } : {}),
       };
     }
@@ -1394,11 +1396,31 @@ function isPose(value: unknown): value is Pose {
   return Array.isArray(pose.position) && Array.isArray(pose.rotation);
 }
 
-function isParams(value: unknown): value is NetlistParams {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value as Record<string, unknown>).every(
-    (item) => isParamValue(item) || isParamRef(item)
-  );
+/**
+ * An add-instance params bag: values, `$param` refs, and programs or value
+ * sets in their canonical form. A bag that is not one is an error, not a
+ * silent drop of every value in it.
+ */
+function readParams(
+  value: unknown
+): { params: NetlistParams } | { error: string } | null {
+  if (value === undefined) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { error: "add-instance: params must be an object" };
+  }
+  const params: NetlistParams = {};
+  for (const [name, item] of Object.entries(value)) {
+    if (isParamValue(item) || isParamRef(item)) {
+      params[name] = item;
+      continue;
+    }
+    const parsed = parseStructured(item);
+    if (!parsed.ok) {
+      return { error: `add-instance: params.${name}: ${parsed.error}` };
+    }
+    params[name] = parsed.value;
+  }
+  return { params };
 }
 
 function isParamValue(value: unknown): value is number | string | boolean {

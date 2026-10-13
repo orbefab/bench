@@ -9,7 +9,7 @@
  * start; from its total duration on, the last segment's left limit holds.
  * The sampler keeps no state: a chirp's phase and a PRBS register are
  * functions of the segment's own time, so a restart, a reload and any
- * call order give the same samples.
+ * call order give the same samples. Times resolve to `TIME_RESOLUTION`.
  */
 
 import type {
@@ -41,6 +41,14 @@ export const SEGMENT_FIELDS: Readonly<Record<SegmentKind, readonly string[]>> =
 
 /** The register a PRBS segment runs: x^7 + x^6 + 1, 127 bits long. */
 export const PRBS_BITS = 7;
+
+/**
+ * Seconds. A sample within this of a boundary belongs to the segment, or
+ * the PRBS bit, that starts there, so a running sum of durations
+ * (0.1 + 0.2 is 0.30000000000000004) cannot keep a millisecond grid point
+ * in the segment before. A `dur` or a `period` is at least this.
+ */
+export const TIME_RESOLUTION = 1e-9;
 
 export type StructuredParse<T> =
   | { ok: true; value: T }
@@ -79,13 +87,14 @@ function parseSegment(raw: unknown, what: string): StructuredParse<Segment> {
       return { ok: false, error: `${what}: ${key} is not a finite number` };
   }
   const dur = raw.dur as number;
-  if (dur <= 0) return { ok: false, error: `${what}: dur must be above 0` };
+  if (dur < TIME_RESOLUTION)
+    return { ok: false, error: `${what}: dur must be at least 1 ns` };
   if (kind === "prbs") {
     const seed = raw.seed as number;
     if (!Number.isInteger(seed) || seed < 1 || seed >= 2 ** PRBS_BITS)
       return { ok: false, error: `${what}: seed must be an integer 1..127` };
-    if ((raw.period as number) <= 0)
-      return { ok: false, error: `${what}: period must be above 0` };
+    if ((raw.period as number) < TIME_RESOLUTION)
+      return { ok: false, error: `${what}: period must be at least 1 ns` };
   }
   // Rebuilt in canonical key order: kind, dur, then the kind's fields.
   const segment: Row = { kind, dur };
@@ -199,8 +208,9 @@ function prbsBit(seed: number, n: number): number {
   return bit;
 }
 
-/** A segment's value at its own time `tau`, 0 <= tau <= dur. */
-function segmentAt(segment: Segment, tau: number): number {
+/** A segment's value at its own time `tau`, clamped to [0, dur]. */
+function segmentAt(segment: Segment, at: number): number {
+  const tau = Math.min(Math.max(at, 0), segment.dur);
   switch (segment.kind) {
     case "hold":
     case "step":
@@ -216,9 +226,13 @@ function segmentAt(segment: Segment, tau: number): number {
     case "prbs": {
       // The bit that holds over [n period, (n + 1) period); at the end,
       // the last bit of the segment (its left limit).
+      const last = Math.max(
+        0,
+        Math.ceil((segment.dur - TIME_RESOLUTION) / segment.period) - 1
+      );
       const n = Math.min(
-        Math.floor(tau / segment.period),
-        Math.ceil(segment.dur / segment.period) - 1
+        Math.floor((tau + TIME_RESOLUTION) / segment.period),
+        last
       );
       return prbsBit(segment.seed, n) ? segment.high : segment.low;
     }
@@ -237,8 +251,9 @@ export function sampleProgram(
   if (t < 0) return segmentAt(first, 0);
   let start = 0;
   for (const segment of segments) {
-    if (t < start + segment.dur) return segmentAt(segment, t - start);
-    start += segment.dur;
+    const end = start + segment.dur;
+    if (t < end - TIME_RESOLUTION) return segmentAt(segment, t - start);
+    start = end;
   }
   const last = segments[segments.length - 1] ?? first;
   return segmentAt(last, last.dur);

@@ -8,6 +8,8 @@
 import {
   type AxisName,
   isStructured,
+  parseDeclared,
+  parseStructured,
   type StructuredDecl,
   type StructuredValue,
   type WorldViewCapture,
@@ -39,14 +41,21 @@ export type CardParam = {
 /**
  * A program or a value set. `decl` is what the instance's form declares,
  * null when the param only reaches a child (`$param`); `value` is null
- * when the instance does not set it yet.
+ * when the instance does not set it yet. `error` is set when the value in
+ * the file does not parse (a hand edit; the load lints it). A `forward`
+ * row is read-only, set or not: its value belongs to the parent.
  */
 export type CardStructured = {
   name: string;
   decl: StructuredDecl | null;
   value: StructuredValue | null;
+  error?: string;
   forward?: { from: string; param: string };
 };
+
+function kindName(kind: StructuredValue["kind"]): string {
+  return kind === "values" ? "a value set" : "a program";
+}
 
 /** `from nano.firmware`. The names are the forward record, not a literal. */
 export function forwardLabel(forward: { from: string; param: string }): string {
@@ -72,14 +81,38 @@ export function instanceCard(node: WorldViewNode): InstanceCard {
       : {};
     if (isStructured(value)) {
       const decl = node.structured?.[name] ?? null;
-      structured.push({ name, decl, value, ...from });
+      const parsed =
+        decl && decl.kind !== value.kind
+          ? {
+              ok: false as const,
+              error: `${name} takes ${kindName(decl.kind)}, not ${kindName(value.kind)}`,
+            }
+          : decl
+            ? parseDeclared(decl, value)
+            : parseStructured(value);
+      structured.push({
+        name,
+        decl,
+        value,
+        ...(parsed.ok ? {} : { error: parsed.error }),
+        ...from,
+      });
     } else {
       params.push({ name, value, ...from });
     }
   }
   for (const [name, decl] of Object.entries(node.structured ?? {})) {
     if (Object.hasOwn(node.params, name)) continue;
-    structured.push({ name, decl, value: null });
+    // A forward the parent does not set is still the parent's to set.
+    const forward = node.forwards?.[name];
+    structured.push({
+      name,
+      decl,
+      value: null,
+      ...(forward
+        ? { forward: { from: forward.from, param: forward.param } }
+        : {}),
+    });
   }
   return {
     ports: node.ports.map((port) => ({ ...port })),

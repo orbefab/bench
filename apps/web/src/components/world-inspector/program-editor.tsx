@@ -111,6 +111,21 @@ export function StructuredParams({
 }) {
   return rows.map((row) => {
     const unit = unitOf(row.decl);
+    if (row.error) {
+      // A hand-edited value the parser refuses: the load already lints
+      // it; the card says why and edits nothing.
+      return (
+        <div key={row.name} className="mb-2 min-w-0">
+          <div className="font-mono text-[12px]">{row.name}</div>
+          <div className="text-[11px] text-destructive">{row.error}</div>
+          {row.forward ? (
+            <div className="text-[11px] text-muted-foreground">
+              {forwardLabel(row.forward)}
+            </div>
+          ) : null}
+        </div>
+      );
+    }
     if (row.forward) {
       return (
         <div key={row.name} className="mb-2 min-w-0">
@@ -297,7 +312,8 @@ function VariantName({
   onRename,
 }: {
   id: string;
-  onRename: (to: string) => void;
+  /** False when the name is refused: the field shows the stored one. */
+  onRename: (to: string) => boolean;
 }) {
   const [draft, setDraft] = useState(id);
   useEffect(() => setDraft(id), [id]);
@@ -309,8 +325,7 @@ function VariantName({
       onChange={(event) => setDraft(event.target.value)}
       onKeyDown={commitOnEnter}
       onBlur={() => {
-        if (draft.trim() && draft.trim() !== id) onRename(draft);
-        else setDraft(id);
+        if (draft.trim() === id || !onRename(draft)) setDraft(id);
       }}
     />
   );

@@ -160,6 +160,25 @@ deepEqual(card.structured, [
   },
 ]);
 
+// A hand-edited value the parser refuses, or of the other kind, is a row
+// with an error and no editor, never a preview that throws.
+{
+  const bad = instanceCard({
+    ...node,
+    params: {
+      torque: { ...longer, use: "none" },
+      inertia: { kind: "program", use: "a", variants: [] },
+    },
+  }).structured;
+  deepEqual(
+    bad.map((row) => [row.name, row.error]),
+    [
+      ["torque", "program: use none is no variant"],
+      ["inertia", "inertia takes a value set, not a program"],
+    ]
+  );
+}
+
 // One gesture is one whole-value `set-param`; no change is no op.
 const target = { document: "rig", id: "dyno" };
 deepEqual(setStructuredOp(target, "torque", b, longer), {

@@ -30,6 +30,7 @@ import {
   programDuration,
   sampleProgram,
   type ValueSet,
+  type WorldViewNode,
 } from "@sfab-bench/contract";
 import {
   applyEdit,
@@ -41,8 +42,10 @@ import {
   structuredDecl,
 } from "@sfab-bench/parts";
 
+import { viewOf } from "@sfab-bench/sim/view";
+import { instanceCard } from "../../web/src/lib/world-card";
 import { nodeStore } from "./world/node-store";
-import { catalogRoot } from "./world/plan";
+import { catalogRoot, planWorld } from "./world/plan";
 
 function program(...variants: [string, Program["variants"][0]["segments"]][]) {
   return {
@@ -93,8 +96,17 @@ function loose(...variants: [string, unknown[]][]): unknown {
   );
   rejects(
     loose(["a", [{ ...hold, dur: 0 }]]),
-    /dur must be above 0/,
+    /dur must be at least 1 ns/,
     "zero duration"
+  );
+  rejects(
+    loose(["a", [{ ...hold, dur: 1e-300 }]]),
+    /dur must be at least 1 ns/,
+    "a duration below the time resolution"
+  );
+  expect(
+    parseProgram(loose(["a", [{ ...hold, dur: 1e-9 }]])).ok,
+    "1 ns is a duration"
   );
   rejects(loose(["a", [{ ...hold, level: Number.NaN }]]), /finite/, "NaN");
   rejects(loose(["a", [{ ...hold, level: "1" }]]), /finite/, "a string level");
@@ -116,7 +128,7 @@ function loose(...variants: [string, unknown[]][]): unknown {
   );
   rejects(
     loose(["a", [{ ...prbs, period: 0 }]]),
-    /period must be/,
+    /period must be at least 1 ns/,
     "zero period"
   );
   rejects(loose(["a", []]), /non-empty/, "no segments");
@@ -281,6 +293,81 @@ function loose(...variants: [string, unknown[]][]): unknown {
     sampleProgram(ragged, 0.034),
     "a partial last bit holds to the end"
   );
+
+  // The bits themselves: pinned for seed 37, and the register's
+  // recurrence (left-shifting taps 6 and 5 emit s[n+7] = s[n+1] ^ s[n]),
+  // so another maximal register with 64 ones would fail here.
+  equal(
+    first
+      .slice(0, 32)
+      .map((v) => (v === 1 ? "1" : "0"))
+      .join(""),
+    "11011100110010101011111110000001",
+    "seed 37's first 32 bits"
+  );
+  const s = [...first, ...first].map((v) => (v === 1 ? 1 : 0));
+  for (let n = 0; n < 127; n++) {
+    equal(s[n + 7], (s[n + 1] ?? 0) ^ (s[n] ?? 0), `recurrence at ${n}`);
+  }
+  // Sampled at its own edges, bit k is bit k: k * period is not always
+  // the float the register divides back to k.
+  deepEqual(
+    Array.from({ length: 127 }, (_, k) => sampleProgram(alone, k * period)),
+    first,
+    "each bit from its own edge"
+  );
+  // At the end of exactly 127 bits the last bit holds, not bit 127 (= 0).
+  const exact = program(["a", [{ ...prbs, dur: 1.27 }]]);
+  equal(sampleProgram(exact, 1.27), first[126], "the end holds bit 126");
+}
+
+// Boundaries on a millisecond grid: the running sum of durations is not
+// the grid, so 0.1 + 0.2 must still hand t = 0.3 to the next segment.
+{
+  const grid = (levels: [number, number][]) => {
+    const p = program([
+      "a",
+      levels.map(([dur, level]) => ({ kind: "hold" as const, dur, level })),
+    ]);
+    const misses: string[] = [];
+    let at = 0;
+    for (const [dur, level] of levels) {
+      const from = Math.round(at * 1000);
+      const to = Math.round((at + dur) * 1000);
+      for (let k = from; k < to; k++) {
+        const got = sampleProgram(p, k * 0.001);
+        if (got !== level) misses.push(`k=${k} got ${got} expect ${level}`);
+      }
+      at += dur;
+    }
+    return misses;
+  };
+  deepEqual(
+    grid([
+      [0.1, 1],
+      [0.2, 2],
+      [0.1, 9],
+    ]),
+    [],
+    "100 + 200 + 100 ms"
+  );
+  deepEqual(
+    grid(
+      Array.from({ length: 20 }, (_, k) => [0.001, k] as [number, number])
+    ),
+    [],
+    "twenty 1 ms holds"
+  );
+  const sum = program([
+    "a",
+    [
+      { kind: "hold", dur: 0.1, level: 1 },
+      { kind: "hold", dur: 0.2, level: 2 },
+      { kind: "ramp", dur: 1, from: 5, to: 6 },
+    ],
+  ]);
+  equal(sampleProgram(sum, 0.3), 5, "t = 0.3 starts the ramp");
+  equal(sampleProgram(sum, 0.1 + 0.2), 5, "and so does the running sum");
 }
 
 // A capture runs every value against every variant, value-major.
@@ -575,6 +662,93 @@ try {
       ctx
     );
     expect("error" in wrongKind, "a program on a value-set param fails");
+  }
+
+  // add-instance takes programs in its params bag, canonical; a bag it
+  // cannot read is an error, not a silent drop of its other values.
+  {
+    const added = readEditOp({
+      kind: "add-instance",
+      document: "doc",
+      id: "d2",
+      part: DYNO,
+      params: {
+        gain: 1,
+        torque: { variants: drive.variants, use: drive.use, kind: "program" },
+      },
+    });
+    expect(
+      !("error" in added) && added.kind === "add-instance",
+      JSON.stringify(added)
+    );
+    if (!("error" in added) && added.kind === "add-instance") {
+      equal(added.params?.gain, 1, "the scalar beside it stays");
+      equal(
+        JSON.stringify(added.params?.torque),
+        JSON.stringify(drive),
+        "the program is canonical"
+      );
+    }
+    const broken = readEditOp({
+      kind: "add-instance",
+      document: "doc",
+      id: "d2",
+      part: DYNO,
+      params: { gain: 1, torque: { ...drive, use: "none" } },
+    });
+    expect(
+      "error" in broken && /params\.torque: program: use none/.test(broken.error),
+      JSON.stringify(broken)
+    );
+    const notBag = readEditOp({
+      kind: "add-instance",
+      document: "doc",
+      id: "d2",
+      part: DYNO,
+      params: [1],
+    });
+    expect("error" in notBag, "params that are not an object");
+  }
+
+  // A forward the parent does not set: the child records the forward, so
+  // the card leaves it to the parent, and the rig's card offers the program.
+  {
+    const rel = "parts/sfab/pp-unset@1.0.0.json";
+    write(
+      composite(
+        "sfab/pp-unset@1.0.0",
+        { rig: { part: rig.id }, spare: { part: DYNO } },
+        true
+      )
+    );
+    const planned = planWorld(dir, rel);
+    if (!planned.ok) {
+      throw new Error(planned.errors.map((row) => row.message).join("; "));
+    }
+    const view = viewOf(planned.plan);
+    const flat = (nodes: readonly WorldViewNode[]): WorldViewNode[] =>
+      nodes.flatMap((node) => [node, ...flat(node.children)]);
+    const nodes = flat(view.tree.nodes);
+    const rigNode = nodes.find((node) => node.id === "rig");
+    const child = nodes.find((node) => node.id === "rig.dyno");
+    deepEqual(
+      rigNode?.structured,
+      { drive: { kind: "program", quantity: "Torque" } },
+      `the rig declares drive: ${nodes.map((node) => node.id).join(",")}`
+    );
+    deepEqual(child?.forwards?.torque, { from: "rig", param: "drive" });
+    const rigCard = rigNode ? instanceCard(rigNode).structured : [];
+    deepEqual(
+      rigCard.map((row) => [row.name, row.value, row.forward ?? null]),
+      [["drive", null, null]],
+      "the rig card offers Set program"
+    );
+    const childCard = child ? instanceCard(child).structured : [];
+    const torque = childCard.find((row) => row.name === "torque");
+    expect(
+      torque?.value === null && torque.forward?.param === "drive",
+      `the child row is the parent's: ${JSON.stringify(torque)}`
+    );
   }
 
   // A session edit writes the file and its undo restores the bytes.

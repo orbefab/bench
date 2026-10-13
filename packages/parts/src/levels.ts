@@ -343,7 +343,8 @@ export type UnresolvedParam = {
  * A netlist child's params as plain values. `{ $param: name }` becomes the
  * parent instance's value of `name`, and `forwards` records that parent.
  * A name the parent lacks leaves the key out and is reported, so the child
- * never sees an `undefined`.
+ * never sees an `undefined`; `forwards` still records it, so the card
+ * leaves it to the parent.
  */
 function resolveParams(
   written: NetlistParams | undefined,
@@ -362,6 +363,7 @@ function resolveParams(
     const forwarded = Object.hasOwn(parent, value.$param)
       ? parent[value.$param]
       : undefined;
+    forwards[name] = { from: parentPath, param: value.$param };
     if (forwarded === undefined) {
       if (value.optional !== true) {
         unresolved.push({ path, param: name, ref: value.$param });
@@ -370,7 +372,6 @@ function resolveParams(
     }
     params[name] =
       typeof forwarded === "object" ? structuredClone(forwarded) : forwarded;
-    forwards[name] = { from: parentPath, param: value.$param };
   }
   return { params, forwards };
 }
