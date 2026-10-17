@@ -82,3 +82,7 @@ and `.claude/skills/release` symlink the skills above.
 - Mac and Quest share recents and thread history. The folder is the tab's (`?project=`). Each client keeps its own STEP or GLB file, selection, and live chat ([ADR 0003](docs/decisions/0003-library-not-viewport.md), [ADR 0006](docs/decisions/0006-folder-is-a-tab.md)). A world's run is shared per document; camera, selection, lens, and scrub stay per client ([ADR 0009](docs/decisions/0009-world-simulation.md)).
 - Do not merge `sfab-oss/sfab-cad` (cloud + Godot). That choice is [ADR 0001](docs/decisions/0001-new-private-repo.md).
 - Do not commit machine-specific home paths or usernames. CLI examples use `/abs/path`.
+
+Plans and logs for this repo: `~/notes/orbefab/lines/bench/`, read `STANDING-ORDERS.md` first.
+
+Private notes live in `~/notes/orbefab` (Orbefab/notes). Follow the `notes` skill for what goes there vs here, and `notes-sync` to pull/push them.
