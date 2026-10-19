@@ -1,3 +1,11 @@
+> **Archived (Oct 18, 2026).** This repo is no longer maintained. Its work moved to:
+> - **CAD viewer / "open a folder, open a STEP, talk" sessions, XR** → [orbefab/orbesim](https://github.com/orbefab/orbesim)
+> - **Circuit simulation** → [orbefab/sim-engine](https://github.com/orbefab/sim-engine) (Rust electronics engine, checked against ngspice)
+> - **Microcontroller emulation** → [orbefab/micro-emulator](https://github.com/orbefab/micro-emulator)
+> - **CAD parts and assemblies** → [orbefab/models](https://github.com/orbefab/models)
+>
+> Some of these repos are private.
+
 # sfab-bench
 
 A robotics simulation platform on your Mac: parts, boards, firmware and
